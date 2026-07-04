@@ -1,10 +1,14 @@
 <h1 align="center">⚡ VREEN ⚡</h1>
 
+<p align="center">
+  🌐 <b>中文</b> · <a href="./english.md">English</a>
+</p>
+
 
 > 全息级别的 3D 模型检视与展示平台,为独立游戏开发者和 3D 艺术家打造。
 > 检视 · 调节 · 截图 —— 浏览器即开即用,无需安装。
 
-![VREEN banner](https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=cyberpunk%20HUD%20style%203D%20model%20viewer%20interface%20with%20neon%20cyan%20and%20magenta%20accents%2C%20dark%20space%20background%2C%20holographic%20display%2C%20futuristic%20inspector%20UI&image_size=landscape_16_9)
+![VREEN banner](https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=futuristic%20holographic%20display%20showing%20a%20floating%20geometric%203D%20crystal%2C%20surrounded%20by%20neon%20cyan%20and%20magenta%20HUD%20interface%20elements%2C%20dark%20space%20background%20with%20subtle%20stars%2C%20scanning%20grid%20below%2C%20volumetric%20light%20rays%2C%20cinematic%208K%20hyper%20detailed%20digital%20art&image_size=landscape_16_9)
 
 [![React](https://img.shields.io/badge/React-18-61dafb?logo=react&logoColor=white)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
