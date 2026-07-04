@@ -2,12 +2,14 @@
 import { Suspense } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowUpRight, Box, Layers } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { PresetPreview } from '@/components/three/PresetPreview';
 import { HudPanel } from '@/components/hud/HudPanel';
 import { PRESETS } from '@/lib/presets';
 import { useUIStore } from '@/stores/uiStore';
 
 export function Gallery() {
+  const { t } = useTranslation();
   const pushLog = useUIStore((s) => s.pushLog);
 
   return (
@@ -16,19 +18,19 @@ export function Gallery() {
         <div>
           <div className="font-mono text-[11px] tracking-[0.32em] text-neon-cyan mb-2">
             <span className="inline-block w-8 h-px bg-neon-cyan align-middle mr-2" />
-            SECTION 02 / ASSET INDEX
+            {t('gallery.section')}
           </div>
           <h2 className="font-display font-black text-[clamp(1.8rem,3.6vw,3rem)] tracking-[0.04em] text-haze leading-tight">
-            PRESET ARCHETYPES
+            {t('gallery.title')}
           </h2>
           <p className="mt-2 text-mist text-sm max-w-2xl">
-            点击任意资产卡即可在检视器中加载。所有模型均为程序化生成，可直接调节材质、动画与灯光。
+            {t('gallery.subtitle')}
           </p>
         </div>
         <div className="flex items-center gap-3 font-mono text-[10px] tracking-[0.22em] text-mist">
-          <span>{PRESETS.length} ASSETS</span>
+          <span>{t('gallery.assetsCount', { count: PRESETS.length })}</span>
           <span className="w-1 h-1 rounded-full bg-neon-cyan" />
-          <span className="text-neon-cyan">ONLINE</span>
+          <span className="text-neon-cyan">{t('gallery.online')}</span>
         </div>
       </header>
 
@@ -37,7 +39,7 @@ export function Gallery() {
           <Link
             key={preset.id}
             to={`/viewer/${preset.id}`}
-            onClick={() => pushLog('INFO', `Loading preset ${preset.id} into inspector...`)}
+            onClick={() => pushLog('INFO', t('scene.loadingPreset', { id: preset.id }))}
             className="group relative block animate-fade-up"
             style={{ animationDelay: `${i * 70}ms` }}
           >
@@ -48,7 +50,7 @@ export function Gallery() {
                 <Suspense
                   fallback={
                     <div className="absolute inset-0 flex items-center justify-center text-mist text-xs font-mono">
-                      Loading...
+                      {t('gallery.loading')}
                     </div>
                   }
                 >
@@ -67,7 +69,7 @@ export function Gallery() {
                 <div className="absolute inset-0 bg-gradient-to-t from-space-900 via-space-900/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                 <div className="absolute bottom-3 right-3 z-10 opacity-0 group-hover:opacity-100 transition-all duration-300 group-hover:translate-y-0 translate-y-1">
                   <span className="hud-btn !text-[10px] !px-2.5 !py-1">
-                    INSPECT <ArrowUpRight className="w-3 h-3" />
+                    {t('gallery.inspect')} <ArrowUpRight className="w-3 h-3" />
                   </span>
                 </div>
               </div>
@@ -85,11 +87,11 @@ export function Gallery() {
                 <div className="flex items-center gap-4 pt-2 border-t border-neon-cyan/10 text-[10px] font-mono tracking-[0.2em] text-mist">
                   <span className="flex items-center gap-1.5">
                     <Box className="w-3 h-3" />
-                    {(preset.polyCount).toLocaleString()} TRIS
+                    {(preset.polyCount).toLocaleString()} {t('gallery.tris')}
                   </span>
                   <span className="flex items-center gap-1.5">
                     <Layers className="w-3 h-3" />
-                    IDLE LOOP
+                    {t('gallery.idleLoop')}
                   </span>
                 </div>
               </div>

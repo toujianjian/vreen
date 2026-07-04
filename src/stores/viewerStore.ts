@@ -60,9 +60,14 @@ const DEFAULT_ANIM: AnimationState = {
   duration: 4,
 };
 
+/** Default placeholders surfaced when no asset is selected yet.
+ * The corresponding i18n keys live in `viewer.noAsset` and `viewer.ready`. */
+export const NO_ASSET_NAME = '— no asset loaded —';
+export const NO_ASSET_NAME_KEY = 'viewer.noAsset';
+
 export const useViewerStore = create<ViewerState>((set) => ({
   assetSource: null,
-  assetName: '— no asset loaded —',
+  assetName: NO_ASSET_NAME,
   stats: { ...DEFAULT_STATS },
   animation: { ...DEFAULT_ANIM },
   camera: { ...DEFAULT_CAMERA },
@@ -109,7 +114,7 @@ export const useViewerStore = create<ViewerState>((set) => ({
   reset: () =>
     set({
       assetSource: null,
-      assetName: '— no asset loaded —',
+      assetName: NO_ASSET_NAME,
       stats: { ...DEFAULT_STATS },
       animation: { ...DEFAULT_ANIM },
       isLoading: false,

@@ -1,6 +1,7 @@
 // Viewer page: the full inspector experience
 import { useEffect } from 'react';
 import { useParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Stage } from '@/components/viewer/Stage';
 import { Outliner } from '@/components/viewer/Outliner';
 import { Inspector } from '@/components/viewer/Inspector';
@@ -12,6 +13,7 @@ import { getPresetById } from '@/lib/presets';
 
 export function ViewerPage() {
   const { assetId } = useParams<{ assetId?: string }>();
+  const { t } = useTranslation();
   const setAssetSource = useViewerStore((s) => s.setAssetSource);
   const pushLog = useUIStore((s) => s.pushLog);
 
@@ -21,7 +23,7 @@ export function ViewerPage() {
       const preset = getPresetById(assetId);
       if (preset) {
         setAssetSource({ kind: 'preset', presetId: preset.id }, preset.name);
-        pushLog('OK', `Booted preset "${preset.name}" (${preset.polyCount.toLocaleString()} tris)`);
+        pushLog('OK', t('scene.booted', { name: preset.name, tris: preset.polyCount.toLocaleString() }));
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -64,9 +66,10 @@ function CornerMarkers() {
 }
 
 function ScanOverlay() {
+  const { t } = useTranslation();
   return (
     <div className="absolute top-3 left-1/2 -translate-x-1/2 px-3 py-1 bg-space-900/60 backdrop-blur border border-neon-cyan/20 font-mono text-[10px] tracking-[0.22em] text-neon-cyan">
-      STAGE // LIVE
+      {t('scene.stageLive')}
     </div>
   );
 }

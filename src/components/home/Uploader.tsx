@@ -1,6 +1,7 @@
 // Drag-and-drop uploader for the home page.
 import { useCallback, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { CheckCircle2, FileBox, UploadCloud, X } from 'lucide-react';
 import { HudPanel } from '@/components/hud/HudPanel';
 import { ALL_FORMATS, FORMAT_LABEL, detectFormat, formatBytes } from '@/lib/format';
@@ -11,6 +12,7 @@ import { uploadBridge } from '@/lib/uploadBridge';
 const ACCEPT = '.glb,.gltf,.obj,.fbx,.stl,.ply';
 
 export function Uploader() {
+  const { t } = useTranslation();
   const [dragging, setDragging] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -25,19 +27,22 @@ export function Uploader() {
       setError(null);
       const fmt = detectFormat(f.name);
       if (!fmt) {
-        setError(`Unsupported format: ${f.name}`);
-        pushLog('ERR', `Rejected file: ${f.name} (unknown extension)`);
+        setError(t('uploader.errors.unsupported', { name: f.name }));
+        pushLog('ERR', t('uploader.logs.rejected', { name: f.name }));
         return;
       }
       if (f.size > 50 * 1024 * 1024) {
-        setError(`File too large (>50MB): ${f.name}`);
-        pushLog('WARN', `File exceeds size budget: ${f.name}`);
+        setError(t('uploader.errors.tooLarge', { name: f.name }));
+        pushLog('WARN', t('uploader.logs.exceeds', { name: f.name }));
         return;
       }
       setFile(f);
-      pushLog('OK', `Parsed ${f.name} as ${FORMAT_LABEL[fmt]} (${formatBytes(f.size)})`);
+      pushLog(
+        'OK',
+        t('uploader.logs.parsed', { name: f.name, format: FORMAT_LABEL[fmt], size: formatBytes(f.size) }),
+      );
     },
-    [pushLog],
+    [pushLog, t],
   );
 
   const onDrop = useCallback(
@@ -58,13 +63,13 @@ export function Uploader() {
     uploadBridge.set(file);
     setAssetSource({ kind: 'upload', uploadId: file.name }, file.name);
     setAssetName(file.name);
-    pushLog('INFO', `Initializing inspector for ${file.name}...`);
+    pushLog('INFO', t('uploader.logs.init', { name: file.name }));
     navigate('/viewer');
   };
 
   return (
     <section className="relative max-w-[1600px] mx-auto px-5 py-12">
-      <HudPanel title="CUSTOM UPLOAD" tag="INGEST">
+      <HudPanel title={t('uploader.title')} tag={t('uploader.tag')}>
         <div className="p-6 lg:p-10">
           <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
             <div className="lg:col-span-3">
@@ -106,10 +111,10 @@ export function Uploader() {
                   </div>
                   <div>
                     <div className="font-display text-[15px] tracking-[0.3em] text-haze">
-                      {dragging ? 'RELEASE TO INGEST' : 'DROP MODEL HERE'}
+                      {dragging ? t('uploader.drop') : t('uploader.subtitle')}
                     </div>
                     <div className="mt-1.5 font-mono text-[10px] tracking-[0.22em] text-mist">
-                      or click to browse local files · max 50MB
+                      {t('uploader.or')} {t('uploader.browse')} · {t('uploader.maxSize')}
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center justify-center gap-1.5 mt-2">
@@ -137,7 +142,7 @@ export function Uploader() {
               <div className="hud-clip hud-panel p-4 space-y-3">
                 <div className="flex items-center gap-2">
                   <FileBox className="w-4 h-4 text-neon-cyan" />
-                  <span className="hud-label">PARSED ASSET</span>
+                  <span className="hud-label">{t('uploader.parsed')}</span>
                 </div>
                 {file ? (
                   <div className="space-y-2">
@@ -149,11 +154,11 @@ export function Uploader() {
                     </div>
                     <div className="flex items-center gap-2 text-neon-cyan text-[10px] tracking-[0.2em] font-mono">
                       <CheckCircle2 className="w-3 h-3" />
-                      <span>READY TO INSPECT</span>
+                      <span>{t('uploader.ready')}</span>
                     </div>
                   </div>
                 ) : (
-                  <div className="text-mist text-[11px] font-mono">— no file selected —</div>
+                  <div className="text-mist text-[11px] font-mono">{t('uploader.empty')}</div>
                 )}
                 {error && (
                   <div className="flex items-center gap-2 text-neon-magenta text-[10px] tracking-[0.2em] font-mono">
@@ -163,16 +168,6 @@ export function Uploader() {
                 )}
               </div>
 
-              <div className="hud-clip hud-panel p-4 space-y-2">
-                <span className="hud-label">PIPELINE</span>
-                <ul className="space-y-1.5 font-mono text-[11px] text-haze">
-                  <li>1. Client-side parsing via three.js</li>
-                  <li>2. Auto-center &amp; normalize to 2.4u</li>
-                  <li>3. PBR material extraction</li>
-                  <li>4. IBL lighting + post-fx ready</li>
-                </ul>
-              </div>
-
               <button
                 onClick={onSubmit}
                 disabled={!file}
@@ -180,7 +175,7 @@ export function Uploader() {
                 aria-disabled={!file}
               >
                 <UploadCloud className="w-3.5 h-3.5" />
-                <span>Initialize Inspector</span>
+                <span>{t('uploader.submit')}</span>
               </button>
             </div>
           </div>

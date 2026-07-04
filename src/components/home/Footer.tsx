@@ -1,7 +1,9 @@
 // Page footer
 import { Github, Cpu, Layers, Box } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 export function Footer() {
+  const { t } = useTranslation();
   return (
     <footer className="relative mt-8 border-t border-neon-cyan/10 bg-space-900/70 backdrop-blur-md">
       <div className="max-w-[1600px] mx-auto px-5 py-8 grid grid-cols-1 md:grid-cols-4 gap-8 text-[12px] font-mono">
@@ -13,31 +15,29 @@ export function Footer() {
             </div>
             <span className="font-display font-bold tracking-[0.28em] text-haze">VREEN</span>
           </div>
-          <p className="text-mist leading-relaxed">
-            A holographic 3D display system for indie game developers and 3D artists. Pure-client. Open source.
-          </p>
+          <p className="text-mist leading-relaxed">{t('app.shortDescription')}</p>
         </div>
 
         <div>
-          <div className="hud-label mb-3">CAPABILITIES</div>
+          <div className="hud-label mb-3">{t('footer.capabilities')}</div>
           <ul className="space-y-1.5 text-haze/85">
             <li className="flex items-center gap-2">
               <Layers className="w-3 h-3 text-neon-cyan" />
-              Multi-format import
+              {t('footer.capMulti')}
             </li>
             <li className="flex items-center gap-2">
               <Cpu className="w-3 h-3 text-neon-cyan" />
-              Real-time PBR
+              {t('footer.capPbr')}
             </li>
             <li className="flex items-center gap-2">
               <Box className="w-3 h-3 text-neon-cyan" />
-              Inspector-grade UI
+              {t('footer.capUi')}
             </li>
           </ul>
         </div>
 
         <div>
-          <div className="hud-label mb-3">SUPPORTED</div>
+          <div className="hud-label mb-3">{t('footer.supported')}</div>
           <ul className="space-y-1.5 text-haze/85">
             <li>GLB · GLTF</li>
             <li>OBJ · FBX</li>
@@ -46,7 +46,7 @@ export function Footer() {
         </div>
 
         <div>
-          <div className="hud-label mb-3">LINKS</div>
+          <div className="hud-label mb-3">{t('footer.links')}</div>
           <ul className="space-y-1.5 text-haze/85">
             <li>
               <a
@@ -84,8 +84,8 @@ export function Footer() {
       </div>
       <div className="border-t border-neon-cyan/10">
         <div className="max-w-[1600px] mx-auto px-5 py-3 flex flex-wrap items-center justify-between gap-2 text-[10px] font-mono tracking-[0.2em] text-mist">
-          <span>VREEN © 2026 // HOLOGRAPHIC 3D DISPLAY SYSTEM</span>
-          <span className="text-neon-cyan">v0.1.0 // BUILD 2607-A1F3</span>
+          <span>{t('footer.copyright')}</span>
+          <span className="text-neon-cyan">{t('footer.buildTag')}</span>
         </div>
       </div>
     </footer>

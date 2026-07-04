@@ -1,0 +1,295 @@
+{
+  "app": {
+    "name": "VREEN",
+    "tagline": "3D 显示系统",
+    "systemLabel": "3D 显示系统",
+    "description": "一座为独立游戏开发者、3D 美术与技术艺术家打造的全息操控台。在浏览器内即可完成资产检视 · 材质编辑 · 动画播放 · 灯光环境调整 · 高质量出图,无需安装任何本地软件。",
+    "supports": "支持 GLB · GLTF · OBJ · FBX · STL · PLY",
+    "shortDescription": "为独立游戏开发者与 3D 美术打造的全息 3D 显示系统。纯客户端,开源。"
+  },
+  "nav": {
+    "home": "首页",
+    "viewer": "检视器",
+    "language": "语言",
+    "english": "English",
+    "chinese": "中文"
+  },
+  "topbar": {
+    "runtime": "运行中",
+    "idle": "待命",
+    "gpuOk": "显卡正常",
+    "linkStable": "链路稳定",
+    "version": "v0.1.0"
+  },
+  "hero": {
+    "launch": "启动检视器",
+    "browse": "浏览资源",
+    "kernel": "内核",
+    "kernelValue": "VREEN-0.1.0",
+    "mode": "模式",
+    "modeValue": "交互",
+    "pipeline": "管线",
+    "pipelineValue": "PBR · IBL · 后处理",
+    "feature": {
+      "formats": "种格式",
+      "formatsSub": "GLB/GLTF/OBJ/FBX/STL/PLY",
+      "pbr": "PBR",
+      "pbrSub": "实时 · 金属/粗糙/自发光",
+      "fps": "FPS",
+      "fpsSub": "目标 桌面级流畅",
+      "capture": "4K",
+      "captureSub": "PNG 出图"
+    },
+    "readout": {
+      "title": "系统读数",
+      "tag": "运行时",
+      "upline": "上行链路",
+      "online": "在线",
+      "gpu": "显卡负载",
+      "vram": "显存",
+      "draw": "绘制调用",
+      "session": "会话 0xA1F3 · 信道 04 · 节点 VREEN-LOCAL",
+      "unit": {
+        "calls": "次"
+      },
+      "lines": {
+        "assetIndex": "资产索引",
+        "assetIndexVal": "已加载 6 个原型",
+        "environment": "环境",
+        "environmentVal": "IBL // 城市预设",
+        "postfx": "后处理",
+        "postfxVal": "辉光 · 色差 · 暗角",
+        "camera": "相机",
+        "cameraVal": "iso-30° / 阻尼",
+        "renderer": "渲染器",
+        "rendererVal": "WebGL2 · PBR"
+      }
+    }
+  },
+  "uploader": {
+    "title": "上传你的资产",
+    "tag": "采集",
+    "subtitle": "拖入或点击 — GLB/GLTF/OBJ/FBX/STL/PLY 全支持",
+    "drop": "把文件拖到此处",
+    "or": "或",
+    "browse": "点击选择",
+    "ready": "已就绪",
+    "submit": "启动检视器",
+    "invalid": "无法识别文件格式",
+    "parsed": "已解析资产",
+    "empty": "— 尚未选择文件 —",
+    "maxSize": "最大 50MB",
+    "errors": {
+      "unsupported": "不支持的格式: {name}",
+      "tooLarge": "文件过大 (>50MB): {name}"
+    },
+    "logs": {
+      "rejected": "已拒绝文件: {name} (未知扩展名)",
+      "exceeds": "文件超出大小限制: {name}",
+      "parsed": "已解析 {name} 为 {format} ({size})",
+      "init": "正在为 {name} 初始化检视器…"
+    }
+  },
+  "gallery": {
+    "section": "节段 02 / 资产索引",
+    "title": "预设原型",
+    "subtitle": "点击任意资产卡即可在检视器中加载。所有模型均为程序化生成,可直接调节材质、动画与灯光。",
+    "assetsCount": "{count} 资产",
+    "online": "在线",
+    "loading": "加载中…",
+    "inspect": "检视",
+    "idleLoop": "循环动画",
+    "tris": "三角面"
+  },
+  "presets": {
+    "title": "程序化预设",
+    "subtitle": "Three.js 实时生成 — 无需外部资源"
+  },
+  "terminal": {
+    "title": "运行时日志",
+    "tag": "标准输出",
+    "kernelLog": "内核日志",
+    "systemSpecs": "系统规格",
+    "specs": {
+      "renderer": "渲染器",
+      "rendererVal": "WebGL2 / PBR",
+      "formats": "格式",
+      "formatsVal": "6 / 6 正常",
+      "hdri": "HDRI 预设",
+      "hdriVal": "studio · sunset · city",
+      "postfx": "后处理",
+      "postfxVal": "3 / 5 开启",
+      "license": "许可证",
+      "licenseVal": "MIT"
+    },
+    "press": "// 按下 <cyan>[ 启动检视器 ]</cyan> 进入运行时",
+    "boot": {
+      "k1": "VREEN 内核 v0.1.0 启动序列已发起…",
+      "k2": "渲染管线在线,3D 上下文校验通过。",
+      "k3": "资产索引加载完成,6 个预设原型就绪。",
+      "k4": "等待操作员输入。"
+    }
+  },
+  "toolbar": {
+    "exit": "退出",
+    "play": "播放",
+    "pause": "暂停",
+    "speed": "速度",
+    "logs": {
+      "paused": "动画已暂停",
+      "resumed": "动画已恢复",
+      "capturing": "正在采集中…",
+      "saved": "截图已保存到下载目录",
+      "failed": "采集失败: {msg}"
+    }
+  },
+  "statusbar": {
+    "streaming": "流式传输中",
+    "time": "时间",
+    "env": "环境",
+    "exp": "曝光"
+  },
+  "scene": {
+    "stageLive": "舞台 // 实时",
+    "placeholderLabel": "已上传资产\n{name}",
+    "placeholderLog": "[VREEN] 已为 {label} 渲染占位",
+    "booted": "已启动预设 \"{name}\" ({tris} 三角面)",
+    "loadingPreset": "正在将预设 {id} 加载到检视器…"
+  },
+  "outliner": {
+    "defaultRoot": "场景",
+    "nodes": {
+      "armature": "骨架",
+      "body": "主体网格",
+      "joints": "关节",
+      "head": "头部",
+      "armL": "左臂",
+      "armR": "右臂",
+      "materials": "材质",
+      "lightRig": "灯光组",
+      "keyLight": "主光",
+      "fillLight": "补光"
+    }
+  },
+  "nodeKind": {
+    "Group": "组",
+    "Mesh": "网格",
+    "Bone": "骨骼",
+    "Light": "灯光",
+    "Camera": "相机",
+    "Other": "其他"
+  },
+  "footer": {
+    "tagline": "为独立游戏开发者与 3D 美术打造的全息 3D 显示系统。纯客户端,开源。",
+    "capabilities": "能力",
+    "capMulti": "多格式导入",
+    "capPbr": "实时 PBR",
+    "capUi": "检视级 UI",
+    "supported": "支持格式",
+    "links": "链接",
+    "copyright": "VREEN © 2026 // 全息 3D 显示系统",
+    "buildTag": "v0.1.0 // 构建 2607-A1F3"
+  },
+  "viewer": {
+    "loading": "加载中",
+    "ready": "就绪",
+    "noAsset": "未选择资源",
+    "capture": "截图",
+    "capturing": "采集中…",
+    "autoRotate": "自动旋转",
+    "wireframe": "线框",
+    "ground": "地面",
+    "pov": "人称",
+    "fov": "视场",
+    "fps": "帧率",
+    "tris": "三角面",
+    "meshes": "网格",
+    "materials": "材质",
+    "animations": "动画",
+    "outliner": "大纲树",
+    "outlinerTag": "场景树",
+    "search": "过滤节点...",
+    "noMatch": "无匹配节点",
+    "inspector": "检查器",
+    "inspectorTag": "属性",
+    "selected": "已选中",
+    "noMaterials": "— 暂无材质 —",
+    "materialLab": "材质实验室",
+    "environment": "环境",
+    "postFX": "后处理",
+    "displayFlags": "显示选项",
+    "camera": "相机",
+    "cameraTag": "POV",
+    "cameraEditor": {
+      "povPreset": "人称预设",
+      "lens": "镜头",
+      "distance": "距离",
+      "targetHeight": "目标高度",
+      "cinematic": "电影镜头",
+      "orbitSpeed": "环绕速度",
+      "controls": "操控",
+      "damping": "阻尼",
+      "autoRotate": "自动旋转速度",
+      "freeOrbit": "自由轨道输入",
+      "open": "展开",
+      "closed": "收起",
+      "on": "开",
+      "off": "关"
+    },
+    "preset": {
+      "free": "FREE",
+      "iso": "ISO",
+      "front": "FRONT",
+      "back": "BACK",
+      "side": "SIDE",
+      "top": "TOP",
+      "first": "1ST",
+      "third": "3RD",
+      "cine": "CINE"
+    },
+    "presetDesc": {
+      "free": "完全自由轨道,默认工作相机。",
+      "iso": "经典 45° 等距视角,适合查看轮廓。",
+      "front": "正面人像视角。",
+      "back": "背面视角,适合检查角色后侧。",
+      "side": "侧面 (左) 视角。",
+      "top": "自上而下的平面视角。",
+      "first": "第一人称: 站立高度,直视模型。",
+      "third": "第三人称: 位于模型后上方。",
+      "cine": "自动环绕的电影镜头,无用户输入。"
+    },
+    "presetTag": {
+      "free": "ORBIT",
+      "iso": "GAME",
+      "front": "AXIS",
+      "back": "AXIS",
+      "side": "AXIS",
+      "top": "PLAN",
+      "first": "POV",
+      "third": "POV",
+      "cine": "PATH"
+    },
+    "hdri": "HDRI 预设",
+    "exposure": "曝光",
+    "background": "背景",
+    "bgEnv": "环境",
+    "bgSolid": "纯色",
+    "bgTransparent": "透明",
+    "bloom": "辉光",
+    "bloomIntensity": "辉光强度",
+    "chromatic": "色差",
+    "vignette": "暗角",
+    "ssao": "环境光遮蔽",
+    "reset": "重置",
+    "field": {
+      "baseColor": "基础色",
+      "metalness": "金属度",
+      "roughness": "粗糙度",
+      "emissive": "自发光",
+      "emissiveIntensity": "自发光强度",
+      "normalScale": "法线强度",
+      "opacity": "不透明度",
+      "wireframe": "线框"
+    }
+  }
+}

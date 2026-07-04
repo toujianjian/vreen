@@ -1,10 +1,12 @@
 // Status bar at the bottom of the viewer
 import { Box, Camera, Cpu, Gauge, Layers, Maximize2, Timer } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useViewerStore } from '@/stores/viewerStore';
 import { useUIStore } from '@/stores/uiStore';
 import { CAMERA_PRESETS } from '@/three/camera';
 
 export function ViewerStatusBar() {
+  const { t } = useTranslation();
   const stats = useViewerStore((s) => s.stats);
   const animation = useViewerStore((s) => s.animation);
   const cameraPreset = useViewerStore((s) => s.camera.preset);
@@ -13,14 +15,16 @@ export function ViewerStatusBar() {
   const loadProgress = useViewerStore((s) => s.loadProgress);
   const environment = useUIStore((s) => s.environment);
 
+  const povKey = presetToI18nKey(cameraPreset);
+
   const items = [
-    { icon: <Gauge className="w-3 h-3" />, k: 'FPS', v: stats.fps.toString().padStart(3, '0'), color: stats.fps >= 50 ? 'text-emerald-300' : stats.fps >= 30 ? 'text-neon-amber' : 'text-neon-magenta' },
-    { icon: <Box className="w-3 h-3" />, k: 'TRIS', v: stats.triangles.toLocaleString(), color: 'text-neon-cyan' },
-    { icon: <Layers className="w-3 h-3" />, k: 'MESHES', v: stats.geometries.toString(), color: 'text-neon-cyan' },
-    { icon: <Cpu className="w-3 h-3" />, k: 'MATS', v: stats.textures.toString(), color: 'text-neon-cyan' },
-    { icon: <Camera className="w-3 h-3" />, k: 'POV', v: CAMERA_PRESETS[cameraPreset].label, color: 'text-neon-magenta' },
-    { icon: <Maximize2 className="w-3 h-3" />, k: 'FOV', v: `${fov.toFixed(0)}°`, color: 'text-neon-cyan' },
-    { icon: <Timer className="w-3 h-3" />, k: 'T', v: `${animation.currentTime.toFixed(2)}s`, color: 'text-neon-amber' },
+    { icon: <Gauge className="w-3 h-3" />, k: t('viewer.fps'), v: stats.fps.toString().padStart(3, '0'), color: stats.fps >= 50 ? 'text-emerald-300' : stats.fps >= 30 ? 'text-neon-amber' : 'text-neon-magenta' },
+    { icon: <Box className="w-3 h-3" />, k: t('viewer.tris'), v: stats.triangles.toLocaleString(), color: 'text-neon-cyan' },
+    { icon: <Layers className="w-3 h-3" />, k: t('viewer.meshes'), v: stats.geometries.toString(), color: 'text-neon-cyan' },
+    { icon: <Cpu className="w-3 h-3" />, k: t('viewer.materials'), v: stats.textures.toString(), color: 'text-neon-cyan' },
+    { icon: <Camera className="w-3 h-3" />, k: t('viewer.pov'), v: t(`viewer.preset.${povKey}`), color: 'text-neon-magenta' },
+    { icon: <Maximize2 className="w-3 h-3" />, k: t('viewer.fov'), v: `${fov.toFixed(0)}°`, color: 'text-neon-cyan' },
+    { icon: <Timer className="w-3 h-3" />, k: t('statusbar.time'), v: `${animation.currentTime.toFixed(2)}s`, color: 'text-neon-amber' },
   ];
 
   return (
@@ -38,7 +42,7 @@ export function ViewerStatusBar() {
         {isLoading ? (
           <div className="flex items-center gap-2 text-neon-amber">
             <span className="w-1.5 h-1.5 rounded-full bg-neon-amber animate-pulse" />
-            <span>LOADING {Math.round(loadProgress * 100)}%</span>
+            <span>{t('viewer.loading')} {Math.round(loadProgress * 100)}%</span>
             <div className="w-20 h-1 bg-space-800 overflow-hidden">
               <div
                 className="h-full bg-neon-amber shadow-glow-amber"
@@ -49,12 +53,27 @@ export function ViewerStatusBar() {
         ) : (
           <div className="flex items-center gap-2 text-neon-cyan">
             <span className="w-1.5 h-1.5 rounded-full bg-neon-cyan animate-pulse" />
-            <span>STREAMING</span>
+            <span>{t('statusbar.streaming')}</span>
           </div>
         )}
-        <span className="text-mist">ENV: {environment.preset.toUpperCase()}</span>
-        <span className="text-mist">EXP: {environment.exposure.toFixed(2)}</span>
+        <span className="text-mist">{t('statusbar.env')}: {environment.preset.toUpperCase()}</span>
+        <span className="text-mist">{t('statusbar.exp')}: {environment.exposure.toFixed(2)}</span>
       </div>
     </div>
   );
+}
+
+function presetToI18nKey(v: string): 'free' | 'iso' | 'front' | 'back' | 'side' | 'top' | 'first' | 'third' | 'cine' {
+  switch (v) {
+    case 'free': return 'free';
+    case 'iso': return 'iso';
+    case 'front': return 'front';
+    case 'back': return 'back';
+    case 'side': return 'side';
+    case 'top': return 'top';
+    case 'first-person': return 'first';
+    case 'third-person': return 'third';
+    case 'cinematic': return 'cine';
+    default: return 'free';
+  }
 }

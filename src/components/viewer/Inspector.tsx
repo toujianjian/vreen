@@ -1,5 +1,6 @@
 // Inspector — right panel: material editor, lighting, environment, post-fx.
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Box,
   Brush,
@@ -28,6 +29,7 @@ const ENV_PRESETS: { value: EnvironmentPreset; label: string; color: string }[] 
 ];
 
 export function Inspector() {
+  const { t } = useTranslation();
   const showInspector = useUIStore((s) => s.showInspector);
   const selectedName = useInspectorStore((s) => s.selectedName);
   const selectedType = useInspectorStore((s) => s.selectedType);
@@ -43,29 +45,29 @@ export function Inspector() {
   if (!showInspector) return null;
 
   return (
-    <HudPanel title="INSPECTOR" tag="PROPERTIES" className="h-full" variant="magenta">
+    <HudPanel title={t('viewer.inspector')} tag={t('viewer.inspectorTag')} className="h-full" variant="magenta">
       <div className="px-4 py-3 border-b border-neon-magenta/15">
         <div className="flex items-center gap-2 text-magenta-300/90">
           <Box className="w-3.5 h-3.5" />
-          <span className="font-mono text-[10px] tracking-[0.2em] uppercase">SELECTED</span>
+          <span className="font-mono text-[10px] tracking-[0.2em] uppercase">{t('viewer.selected')}</span>
         </div>
         <div className="mt-1.5 font-display text-[13px] tracking-[0.14em] text-haze truncate">
           {selectedName}
         </div>
         <div className="mt-1 flex items-center gap-3 font-mono text-[10px] tracking-[0.18em] text-mist">
-          <span className="hud-tag hud-tag-magenta">{selectedType.toUpperCase()}</span>
+          <span className="hud-tag hud-tag-magenta">{t(`nodeKind.${selectedType}`, { defaultValue: selectedType.toUpperCase() })}</span>
           {triCount > 0 && <span>{Math.round(triCount).toLocaleString()} TRIS</span>}
         </div>
       </div>
 
       <div className="overflow-y-auto h-[calc(100%-130px)]">
-        <Section icon={<Camera className="w-3.5 h-3.5" />} title="Camera / POV">
+        <Section icon={<Camera className="w-3.5 h-3.5" />} title={t('viewer.camera')}>
           <CameraEditor />
         </Section>
 
-        <Section icon={<Brush className="w-3.5 h-3.5" />} title="Material Lab">
+        <Section icon={<Brush className="w-3.5 h-3.5" />} title={t('viewer.materialLab')}>
           {matList.length === 0 ? (
-            <div className="text-mist text-[11px] font-mono px-1">— no materials —</div>
+            <div className="text-mist text-[11px] font-mono px-1">{t('viewer.noMaterials')}</div>
           ) : (
             <>
               <div className="flex flex-wrap gap-1.5 mb-3">
@@ -98,15 +100,15 @@ export function Inspector() {
           )}
         </Section>
 
-        <Section icon={<Sun className="w-3.5 h-3.5" />} title="Environment">
+        <Section icon={<Sun className="w-3.5 h-3.5" />} title={t('viewer.environment')}>
           <EnvironmentEditor />
         </Section>
 
-        <Section icon={<Sparkles className="w-3.5 h-3.5" />} title="Post FX">
+        <Section icon={<Sparkles className="w-3.5 h-3.5" />} title={t('viewer.postFX')}>
           <PostFXEditor />
         </Section>
 
-        <Section icon={<Lightbulb className="w-3.5 h-3.5" />} title="Display Flags">
+        <Section icon={<Lightbulb className="w-3.5 h-3.5" />} title={t('viewer.displayFlags')}>
           <DisplayFlagsEditor />
         </Section>
       </div>
@@ -115,6 +117,7 @@ export function Inspector() {
 }
 
 function CameraEditor() {
+  const { t } = useTranslation();
   const cam = useViewerStore((s) => s.camera);
   const setCameraPreset = useViewerStore((s) => s.setCameraPreset);
   const setCamera = useViewerStore((s) => s.setCamera);
@@ -125,7 +128,7 @@ function CameraEditor() {
     <div className="space-y-4">
       {/* Preset grid */}
       <div>
-        <div className="hud-label mb-1.5">POV Preset</div>
+        <div className="hud-label mb-1.5">{t('viewer.cameraEditor.povPreset')}</div>
         <div className="grid grid-cols-3 gap-1.5">
           {CAMERA_PRESET_LIST.map((p) => (
             <button
@@ -135,7 +138,7 @@ function CameraEditor() {
                 'hud-btn !flex-col !items-center !justify-center !text-[9px] !px-1 !py-1.5 !gap-0.5',
                 cam.preset === p.value ? '' : 'hud-btn-ghost',
               )}
-              title={CAMERA_PRESETS[p.value].description}
+              title={t(CAMERA_PRESETS[p.value].descriptionKey)}
             >
               <span className="font-display tracking-[0.18em]">{p.label}</span>
               <span className="text-[8px] opacity-70 tracking-[0.16em]">{p.tag}</span>
@@ -143,15 +146,15 @@ function CameraEditor() {
           ))}
         </div>
         <p className="mt-1.5 text-[10px] font-mono text-mist leading-relaxed">
-          {presetCfg.description}
+          {t(presetCfg.descriptionKey)}
         </p>
       </div>
 
       {/* Tunables */}
       <div>
-        <div className="hud-label mb-1.5">Lens</div>
+        <div className="hud-label mb-1.5">{t('viewer.cameraEditor.lens')}</div>
         <SliderField
-          label="Field of View"
+          label={t('viewer.fov')}
           value={cam.fov}
           min={15}
           max={90}
@@ -160,7 +163,7 @@ function CameraEditor() {
           format={(v) => `${v.toFixed(0)}°`}
         />
         <SliderField
-          label="Distance"
+          label={t('viewer.cameraEditor.distance')}
           value={cam.distance}
           min={0.4}
           max={3.0}
@@ -169,7 +172,7 @@ function CameraEditor() {
           format={(v) => `${v.toFixed(2)}x`}
         />
         <SliderField
-          label="Target Height"
+          label={t('viewer.cameraEditor.targetHeight')}
           value={cam.targetHeight}
           min={-0.5}
           max={3.0}
@@ -181,9 +184,9 @@ function CameraEditor() {
 
       {cam.preset === 'cinematic' && (
         <div>
-          <div className="hud-label mb-1.5">Cinematic Path</div>
+          <div className="hud-label mb-1.5">{t('viewer.cameraEditor.cinematic')}</div>
           <SliderField
-            label="Orbit Speed"
+            label={t('viewer.cameraEditor.orbitSpeed')}
             value={cam.cinematicSpeed}
             min={0}
             max={1.5}
@@ -195,9 +198,9 @@ function CameraEditor() {
       )}
 
       <div>
-        <div className="hud-label mb-1.5">Controls</div>
+        <div className="hud-label mb-1.5">{t('viewer.cameraEditor.controls')}</div>
         <SliderField
-          label="Damping"
+          label={t('viewer.cameraEditor.damping')}
           value={cam.damping}
           min={0}
           max={0.3}
@@ -206,7 +209,7 @@ function CameraEditor() {
           format={(v) => v.toFixed(2)}
         />
         <SliderField
-          label="Auto-Rotate Speed"
+          label={t('viewer.cameraEditor.autoRotate')}
           value={cam.autoRotateSpeed}
           min={0}
           max={1.2}
@@ -215,7 +218,7 @@ function CameraEditor() {
           format={(v) => `${v.toFixed(2)} rad/s`}
         />
         <ToggleRow
-          label="Free Orbit Input"
+          label={t('viewer.cameraEditor.freeOrbit')}
           value={cam.orbitEnabled && cam.preset !== 'cinematic'}
           onChange={(v) => setCamera({ orbitEnabled: v })}
         />
@@ -226,7 +229,7 @@ function CameraEditor() {
         className="hud-btn hud-btn-ghost w-full justify-center !text-[10px]"
       >
         <RotateCcw className="w-3 h-3" />
-        <span>Reset Camera</span>
+        <span>{t('viewer.reset')}</span>
       </button>
     </div>
   );
@@ -241,6 +244,7 @@ function Section({
   title: string;
   children: React.ReactNode;
 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(true);
   return (
     <div className="border-b border-neon-cyan/5">
@@ -251,7 +255,7 @@ function Section({
         <span className="text-neon-cyan">{open ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}</span>
         <span className="text-neon-cyan">{icon}</span>
         <span className="font-display text-[11px] tracking-[0.22em] text-haze uppercase">{title}</span>
-        <span className="ml-auto hud-label">{open ? 'OPEN' : 'CLOSED'}</span>
+        <span className="ml-auto hud-label">{open ? t('viewer.cameraEditor.open') : t('viewer.cameraEditor.closed')}</span>
       </button>
       {open && <div className="px-4 pb-4 space-y-3">{children}</div>}
     </div>
@@ -265,9 +269,10 @@ function MaterialEditor({
   material: ReturnType<typeof useInspectorStore.getState>['materials'][string];
   onChange: (patch: Record<string, unknown>) => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="space-y-3">
-      <Field label="Base Color">
+      <Field label={t('viewer.field.baseColor')}>
         <div className="flex items-center gap-2">
           <input
             type="color"
@@ -284,7 +289,7 @@ function MaterialEditor({
       </Field>
 
       <SliderField
-        label="Metalness"
+        label={t('viewer.field.metalness')}
         value={material.metalness}
         min={0}
         max={1}
@@ -292,7 +297,7 @@ function MaterialEditor({
         onChange={(v) => onChange({ metalness: v })}
       />
       <SliderField
-        label="Roughness"
+        label={t('viewer.field.roughness')}
         value={material.roughness}
         min={0}
         max={1}
@@ -300,7 +305,7 @@ function MaterialEditor({
         onChange={(v) => onChange({ roughness: v })}
       />
 
-      <Field label="Emissive">
+      <Field label={t('viewer.field.emissive')}>
         <div className="flex items-center gap-2">
           <input
             type="color"
@@ -316,7 +321,7 @@ function MaterialEditor({
         </div>
       </Field>
       <SliderField
-        label="Emissive Intensity"
+        label={t('viewer.field.emissiveIntensity')}
         value={material.emissiveIntensity}
         min={0}
         max={6}
@@ -324,7 +329,7 @@ function MaterialEditor({
         onChange={(v) => onChange({ emissiveIntensity: v })}
       />
       <SliderField
-        label="Normal Scale"
+        label={t('viewer.field.normalScale')}
         value={material.normalScale}
         min={0}
         max={2}
@@ -332,7 +337,7 @@ function MaterialEditor({
         onChange={(v) => onChange({ normalScale: v })}
       />
       <SliderField
-        label="Opacity"
+        label={t('viewer.field.opacity')}
         value={material.opacity}
         min={0}
         max={1}
@@ -340,7 +345,7 @@ function MaterialEditor({
         onChange={(v) => onChange({ opacity: v })}
       />
 
-      <Field label="Wireframe">
+      <Field label={t('viewer.field.wireframe')}>
         <button
           onClick={() => onChange({ wireframe: !material.wireframe })}
           className={cn(
@@ -348,7 +353,7 @@ function MaterialEditor({
             material.wireframe ? 'hud-btn-magenta' : 'hud-btn-ghost',
           )}
         >
-          {material.wireframe ? 'ON' : 'OFF'}
+          {material.wireframe ? t('viewer.cameraEditor.on') : t('viewer.cameraEditor.off')}
         </button>
       </Field>
     </div>
@@ -402,12 +407,18 @@ function SliderField({
 }
 
 function EnvironmentEditor() {
+  const { t } = useTranslation();
   const environment = useUIStore((s) => s.environment);
   const setEnvironment = useUIStore((s) => s.setEnvironment);
+  const bgLabel = (b: 'envmap' | 'solid' | 'transparent') => {
+    if (b === 'envmap') return t('viewer.bgEnv');
+    if (b === 'solid') return t('viewer.bgSolid');
+    return t('viewer.bgTransparent');
+  };
   return (
     <div className="space-y-3">
       <div>
-        <div className="hud-label mb-1.5">HDRI Preset</div>
+        <div className="hud-label mb-1.5">{t('viewer.hdri')}</div>
         <div className="grid grid-cols-2 gap-1.5">
           {ENV_PRESETS.map((p) => (
             <button
@@ -425,14 +436,14 @@ function EnvironmentEditor() {
         </div>
       </div>
       <SliderField
-        label="Exposure"
+        label={t('viewer.exposure')}
         value={environment.exposure}
         min={0.2}
         max={2.5}
         step={0.05}
         onChange={(v) => setEnvironment({ exposure: v })}
       />
-      <Field label="Background">
+      <Field label={t('viewer.background')}>
         <div className="grid grid-cols-3 gap-1.5">
           {(['envmap', 'solid', 'transparent'] as const).map((b) => (
             <button
@@ -443,7 +454,7 @@ function EnvironmentEditor() {
                 environment.background === b ? '' : 'hud-btn-ghost',
               )}
             >
-              {b.toUpperCase()}
+              {bgLabel(b)}
             </button>
           ))}
         </div>
@@ -453,14 +464,15 @@ function EnvironmentEditor() {
 }
 
 function PostFXEditor() {
+  const { t } = useTranslation();
   const postFX = useUIStore((s) => s.postFX);
   const setPostFX = useUIStore((s) => s.setPostFX);
   return (
     <div className="space-y-3">
-      <ToggleRow label="Bloom" value={postFX.bloom} onChange={(v) => setPostFX({ bloom: v })} />
+      <ToggleRow label={t('viewer.bloom')} value={postFX.bloom} onChange={(v) => setPostFX({ bloom: v })} />
       {postFX.bloom && (
         <SliderField
-          label="Bloom Intensity"
+          label={t('viewer.bloomIntensity')}
           value={postFX.bloomIntensity}
           min={0}
           max={2}
@@ -469,12 +481,12 @@ function PostFXEditor() {
         />
       )}
       <ToggleRow
-        label="Chromatic Aberration"
+        label={t('viewer.chromatic')}
         value={postFX.chromaticAberration}
         onChange={(v) => setPostFX({ chromaticAberration: v })}
       />
-      <ToggleRow label="Vignette" value={postFX.vignette} onChange={(v) => setPostFX({ vignette: v })} />
-      <ToggleRow label="SSAO" value={postFX.ssao} onChange={(v) => setPostFX({ ssao: v })} />
+      <ToggleRow label={t('viewer.vignette')} value={postFX.vignette} onChange={(v) => setPostFX({ vignette: v })} />
+      <ToggleRow label={t('viewer.ssao')} value={postFX.ssao} onChange={(v) => setPostFX({ ssao: v })} />
     </div>
   );
 }
@@ -502,6 +514,7 @@ function ToggleRow({ label, value, onChange }: { label: string; value: boolean; 
 }
 
 function DisplayFlagsEditor() {
+  const { t } = useTranslation();
   const showWireframe = useViewerStore((s) => s.showWireframe);
   const toggleWireframe = useViewerStore((s) => s.toggleWireframe);
   const showGround = useViewerStore((s) => s.showGround);
@@ -511,9 +524,9 @@ function DisplayFlagsEditor() {
 
   return (
     <div className="space-y-3">
-      <ToggleRow label="Wireframe" value={showWireframe} onChange={toggleWireframe} />
-      <ToggleRow label="Show Ground" value={showGround} onChange={toggleGround} />
-      <ToggleRow label="Auto Rotate" value={autoRotate} onChange={toggleAutoRotate} />
+      <ToggleRow label={t('viewer.wireframe')} value={showWireframe} onChange={toggleWireframe} />
+      <ToggleRow label={t('viewer.ground')} value={showGround} onChange={toggleGround} />
+      <ToggleRow label={t('viewer.autoRotate')} value={autoRotate} onChange={toggleAutoRotate} />
     </div>
   );
 }

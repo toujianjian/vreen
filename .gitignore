@@ -37,3 +37,20 @@ dist-ssr/
 
 # Local models (when users upload them at runtime)
 public/uploads/
+
+# Electron / electron-builder outputs
+release/
+dist-electron/
+out/
+*.exe
+*.dmg
+*.AppImage
+*.deb
+*.rpm
+
+# Build resources (uncomment to track custom icons)
+# build/icon.ico
+# build/icon.png
+
+# npm cache (when using mirror)
+.npmrc.local

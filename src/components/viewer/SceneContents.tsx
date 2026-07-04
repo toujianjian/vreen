@@ -2,6 +2,7 @@
 // normalizes it, applies material updates, and feeds the inspector store.
 import { useFrame } from '@react-three/fiber';
 import { useEffect, useMemo, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import * as THREE from 'three';
 import { GENERATORS } from '@/three/generators';
 import { loadModel } from '@/three/loaders';
@@ -18,6 +19,7 @@ import { uploadBridge } from '@/lib/uploadBridge';
 import { detectFormat } from '@/lib/format';
 
 export function SceneContents() {
+  const { t } = useTranslation();
   const assetSource = useViewerStore((s) => s.assetSource);
   const setStats = useViewerStore((s) => s.setStats);
   const setAssetName = useViewerStore((s) => s.setAssetName);
@@ -58,7 +60,8 @@ export function SceneContents() {
           const file = uploadBridge.consume();
           if (!file) {
             // No file was handed off (e.g. page reload). Show a friendly placeholder.
-            root = buildPlaceholder(`UPLOADED ASSET\n${assetSource.uploadId}`);
+            const label = t('scene.placeholderLabel', { name: assetSource.uploadId });
+            root = buildPlaceholder(label);
             assetName = assetSource.uploadId;
             await new Promise((r) => setTimeout(r, 200));
             setLoadProgress(0.95);
@@ -256,7 +259,7 @@ function buildPlaceholder(label: string): THREE.Object3D {
   g.add(inner);
   // Console log label
   // eslint-disable-next-line no-console
-  console.info(`[VREEN] placeholder rendered for: ${label}`);
+  console.info(`[VREEN] placeholder rendered for: ${label.replace(/\n/g, ' / ')}`);
   return g;
 }
 

@@ -1,6 +1,7 @@
 // Outliner — left panel showing scene tree.
 import { ChevronDown, ChevronRight, Eye, FolderTree, Search } from 'lucide-react';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { HudPanel } from '@/components/hud/HudPanel';
 import { useViewerStore } from '@/stores/viewerStore';
 import { useInspectorStore } from '@/stores/inspectorStore';
@@ -18,6 +19,7 @@ const KIND_COLOR: Record<string, string> = {
 };
 
 export function Outliner() {
+  const { t } = useTranslation();
   const showOutliner = useUIStore((s) => s.showOutliner);
   const assetName = useViewerStore((s) => s.assetName);
   const triCount = useViewerStore((s) => s.stats.triangles);
@@ -25,26 +27,26 @@ export function Outliner() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set(['root']));
   const [search, setSearch] = useState('');
 
-  const tree = buildSyntheticTree(assetName, triCount);
+  const tree = buildSyntheticTree(assetName, triCount, t('outliner.defaultRoot'));
   const filtered = filterTree(tree, search);
   const isEmpty = !filtered;
 
   if (!showOutliner) return null;
 
   return (
-    <HudPanel title="OUTLINER" tag="SCENE TREE" className="h-full">
+    <HudPanel title={t('viewer.outliner')} tag={t('viewer.outlinerTag')} className="h-full">
       <div className="px-3 py-2 border-b border-neon-cyan/10 flex items-center gap-2">
         <Search className="w-3 h-3 text-mist shrink-0" />
         <input
           className="hud-input !border-0 !bg-transparent !px-0 !py-0"
-          placeholder="filter nodes..."
+          placeholder={t('viewer.search')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
       </div>
       <div className="overflow-y-auto h-[calc(100%-90px)] py-2 text-[12px] font-mono">
         {isEmpty || !filtered.children.length && !filtered.name ? (
-          <div className="px-4 py-6 text-mist text-center text-[11px]">no matching nodes</div>
+          <div className="px-4 py-6 text-mist text-center text-[11px]">{t('viewer.noMatch')}</div>
         ) : (
           <TreeNode
             node={filtered}
@@ -63,14 +65,14 @@ export function Outliner() {
   );
 }
 
-function buildSyntheticTree(assetName: string, triCount: number): SceneNode {
+function buildSyntheticTree(assetName: string, triCount: number, defaultName: string): SceneNode {
   // We don't have direct access to the THREE tree from the React tree (it's mounted in R3F).
   // Render a representative hierarchy based on the active asset.
   const rootId = 'root';
   return {
     id: rootId,
     uuid: rootId,
-    name: assetName || 'Scene',
+    name: assetName || defaultName,
     type: 'Group',
     visible: true,
     triCount,
@@ -78,17 +80,17 @@ function buildSyntheticTree(assetName: string, triCount: number): SceneNode {
     parentId: null,
     depth: 0,
     children: [
-      child('armature', 'Armature', 'Group', rootId, 0, []),
-      child('body', 'Body_Mesh', 'Mesh', rootId, 0.6 * triCount, []),
-      child('joints', 'Joints', 'Group', rootId, 0, [
-        child('head', 'Head', 'Mesh', 'joints', 0.2 * triCount, []),
-        child('arm_L', 'Arm.L', 'Bone', 'joints', 0, []),
-        child('arm_R', 'Arm.R', 'Bone', 'joints', 0, []),
+      child('armature', 'armature', 'Group', rootId, 0, []),
+      child('body', 'body', 'Mesh', rootId, 0.6 * triCount, []),
+      child('joints', 'joints', 'Group', rootId, 0, [
+        child('head', 'head', 'Mesh', 'joints', 0.2 * triCount, []),
+        child('arm_L', 'armL', 'Bone', 'joints', 0, []),
+        child('arm_R', 'armR', 'Bone', 'joints', 0, []),
       ]),
-      child('materials', 'Materials', 'Other', rootId, 0, []),
-      child('light_rig', 'LightRig', 'Group', rootId, 0, [
-        child('key', 'Key_Light', 'Light', 'light_rig', 0, []),
-        child('fill', 'Fill_Light', 'Light', 'light_rig', 0, []),
+      child('materials', 'materials', 'Other', rootId, 0, []),
+      child('light_rig', 'lightRig', 'Group', rootId, 0, [
+        child('key', 'keyLight', 'Light', 'light_rig', 0, []),
+        child('fill', 'fillLight', 'Light', 'light_rig', 0, []),
       ]),
     ],
   };
@@ -136,11 +138,13 @@ interface TreeNodeProps {
 }
 
 function TreeNode({ node, depth, expanded, onToggle }: TreeNodeProps) {
+  const { t } = useTranslation();
   const setSelection = useInspectorStore((s) => s.setSelection);
   const selectedUuid = useInspectorStore((s) => s.selectedUuid);
   const hasChildren = node.children.length > 0;
   const isOpen = expanded.has(node.id);
   const isSelected = selectedUuid === node.uuid;
+  const label = t(`outliner.nodes.${node.name}`, { defaultValue: node.name });
 
   return (
     <div>
@@ -151,7 +155,7 @@ function TreeNode({ node, depth, expanded, onToggle }: TreeNodeProps) {
         )}
         style={{ paddingLeft: `${depth * 14 + 8}px` }}
         onClick={() => {
-          setSelection(node.uuid, node.name, node.type, Math.round(node.triCount));
+          setSelection(node.uuid, label, node.type, Math.round(node.triCount));
           if (hasChildren) onToggle(node.id);
         }}
       >
@@ -163,7 +167,7 @@ function TreeNode({ node, depth, expanded, onToggle }: TreeNodeProps) {
           )}
         </span>
         <FolderTree className={cn('w-3 h-3 shrink-0', KIND_COLOR[node.type] ?? 'text-mist')} />
-        <span className="truncate flex-1">{node.name}</span>
+        <span className="truncate flex-1">{label}</span>
         {node.triCount > 0 && (
           <span className="text-[9px] text-mist tabular-nums shrink-0">
             {Math.round(node.triCount).toLocaleString()}

@@ -1,0 +1,295 @@
+{
+  "app": {
+    "name": "VREEN",
+    "tagline": "3D DISPLAY SYSTEM",
+    "systemLabel": "3D DISPLAY SYSTEM",
+    "description": "A holographic workbench built for indie game developers, 3D artists, and technical artists. Inspect assets, edit materials, play animations, tune lighting, and capture — all in your browser. No local software required.",
+    "supports": "SUPPORTS GLB · GLTF · OBJ · FBX · STL · PLY",
+    "shortDescription": "A holographic 3D display system for indie game developers and 3D artists. Pure-client. Open source."
+  },
+  "nav": {
+    "home": "Home",
+    "viewer": "Viewer",
+    "language": "Language",
+    "english": "English",
+    "chinese": "中文"
+  },
+  "topbar": {
+    "runtime": "RUNTIME",
+    "idle": "IDLE",
+    "gpuOk": "GPU OK",
+    "linkStable": "LINK STABLE",
+    "version": "v0.1.0"
+  },
+  "hero": {
+    "launch": "Launch Inspector",
+    "browse": "Browse Assets",
+    "kernel": "KERNEL",
+    "kernelValue": "VREEN-0.1.0",
+    "mode": "MODE",
+    "modeValue": "INTERACTIVE",
+    "pipeline": "PIPELINE",
+    "pipelineValue": "PBR · IBL · POSTFX",
+    "feature": {
+      "formats": "FORMATS",
+      "formatsSub": "GLB/GLTF/OBJ/FBX/STL/PLY",
+      "pbr": "PBR",
+      "pbrSub": "METAL · ROUGH · EMISSIVE",
+      "fps": "FPS TARGET",
+      "fpsSub": "BUILT FOR DESKTOP",
+      "capture": "4K",
+      "captureSub": "PNG EXPORT"
+    },
+    "readout": {
+      "title": "SYSTEM READOUT",
+      "tag": "RUNTIME",
+      "upline": "UPLINK",
+      "online": "ONLINE",
+      "gpu": "GPU LOAD",
+      "vram": "VRAM",
+      "draw": "DRAW",
+      "session": "SESSION 0xA1F3 · CHANNEL 04 · NODE VREEN-LOCAL",
+      "unit": {
+        "calls": "CALLS"
+      },
+      "lines": {
+        "assetIndex": "ASSET_INDEX",
+        "assetIndexVal": "6 archetypes loaded",
+        "environment": "ENVIRONMENT",
+        "environmentVal": "IBL // city preset",
+        "postfx": "POSTFX",
+        "postfxVal": "BLOOM · CHROMA · VIGNETTE",
+        "camera": "CAMERA",
+        "cameraVal": "iso-30° / damped",
+        "renderer": "RENDERER",
+        "rendererVal": "WebGL2 · PBR"
+      }
+    }
+  },
+  "uploader": {
+    "title": "Upload Your Asset",
+    "tag": "INGEST",
+    "subtitle": "Drop or click — GLB / GLTF / OBJ / FBX / STL / PLY all supported",
+    "drop": "Drop a file here",
+    "or": "or",
+    "browse": "click to browse",
+    "ready": "READY",
+    "submit": "Launch Inspector",
+    "invalid": "Unrecognized file format",
+    "parsed": "PARSED ASSET",
+    "empty": "— no file selected —",
+    "maxSize": "max 50MB",
+    "errors": {
+      "unsupported": "Unsupported format: {name}",
+      "tooLarge": "File too large (>50MB): {name}"
+    },
+    "logs": {
+      "rejected": "Rejected file: {name} (unknown extension)",
+      "exceeds": "File exceeds size budget: {name}",
+      "parsed": "Parsed {name} as {format} ({size})",
+      "init": "Initializing inspector for {name}..."
+    }
+  },
+  "gallery": {
+    "section": "SECTION 02 / ASSET INDEX",
+    "title": "PRESET ARCHETYPES",
+    "subtitle": "Click any asset card to load it in the inspector. All models are procedurally generated and can be tuned for materials, animation, and lighting.",
+    "assetsCount": "{count} ASSETS",
+    "online": "ONLINE",
+    "loading": "Loading...",
+    "inspect": "INSPECT",
+    "idleLoop": "IDLE LOOP",
+    "tris": "TRIS"
+  },
+  "presets": {
+    "title": "Procedural Presets",
+    "subtitle": "Generated live by Three.js — no external assets needed"
+  },
+  "terminal": {
+    "title": "Runtime Log",
+    "tag": "STDOUT",
+    "kernelLog": "KERNEL LOG",
+    "systemSpecs": "SYSTEM SPECS",
+    "specs": {
+      "renderer": "Renderer",
+      "rendererVal": "WebGL2 / PBR",
+      "formats": "Formats",
+      "formatsVal": "6 / 6 OK",
+      "hdri": "HDRI Presets",
+      "hdriVal": "studio · sunset · city",
+      "postfx": "PostFX",
+      "postfxVal": "3 / 5 ON",
+      "license": "License",
+      "licenseVal": "MIT"
+    },
+    "press": "// press <cyan>[ LAUNCH INSPECTOR ]</cyan> to enter runtime",
+    "boot": {
+      "k1": "VREEN kernel v0.1.0 boot sequence initiated...",
+      "k2": "Shader pipeline online. 3D context verified.",
+      "k3": "Asset index loaded. 6 preset archetypes ready.",
+      "k4": "Awaiting operator input."
+    }
+  },
+  "toolbar": {
+    "exit": "EXIT",
+    "play": "PLAY",
+    "pause": "PAUSE",
+    "speed": "SPEED",
+    "logs": {
+      "paused": "Animation paused",
+      "resumed": "Animation resumed",
+      "capturing": "Capturing frame...",
+      "saved": "Screenshot saved to downloads",
+      "failed": "Capture failed: {msg}"
+    }
+  },
+  "statusbar": {
+    "streaming": "STREAMING",
+    "time": "T",
+    "env": "ENV",
+    "exp": "EXP"
+  },
+  "scene": {
+    "stageLive": "STAGE // LIVE",
+    "placeholderLabel": "UPLOADED ASSET\n{name}",
+    "placeholderLog": "[VREEN] placeholder rendered for: {label}",
+    "booted": "Booted preset \"{name}\" ({tris} tris)",
+    "loadingPreset": "Loading preset {id} into inspector..."
+  },
+  "outliner": {
+    "defaultRoot": "Scene",
+    "nodes": {
+      "armature": "Armature",
+      "body": "Body Mesh",
+      "joints": "Joints",
+      "head": "Head",
+      "armL": "Arm.L",
+      "armR": "Arm.R",
+      "materials": "Materials",
+      "lightRig": "Light Rig",
+      "keyLight": "Key Light",
+      "fillLight": "Fill Light"
+    }
+  },
+  "nodeKind": {
+    "Group": "Group",
+    "Mesh": "Mesh",
+    "Bone": "Bone",
+    "Light": "Light",
+    "Camera": "Camera",
+    "Other": "Other"
+  },
+  "footer": {
+    "tagline": "A holographic 3D display system for indie game developers and 3D artists. Pure-client. Open source.",
+    "capabilities": "CAPABILITIES",
+    "capMulti": "Multi-format import",
+    "capPbr": "Real-time PBR",
+    "capUi": "Inspector-grade UI",
+    "supported": "SUPPORTED",
+    "links": "LINKS",
+    "copyright": "VREEN © 2026 // HOLOGRAPHIC 3D DISPLAY SYSTEM",
+    "buildTag": "v0.1.0 // BUILD 2607-A1F3"
+  },
+  "viewer": {
+    "loading": "LOADING",
+    "ready": "READY",
+    "noAsset": "NO ASSET",
+    "capture": "CAPTURE",
+    "capturing": "CAPTURING…",
+    "autoRotate": "Auto Rotate",
+    "wireframe": "Wireframe",
+    "ground": "Show Ground",
+    "pov": "POV",
+    "fov": "FOV",
+    "fps": "FPS",
+    "tris": "Tris",
+    "meshes": "Meshes",
+    "materials": "Materials",
+    "animations": "Anims",
+    "outliner": "OUTLINER",
+    "outlinerTag": "SCENE TREE",
+    "search": "filter nodes...",
+    "noMatch": "no matching nodes",
+    "inspector": "INSPECTOR",
+    "inspectorTag": "PROPERTIES",
+    "selected": "SELECTED",
+    "noMaterials": "— no materials —",
+    "materialLab": "Material Lab",
+    "environment": "Environment",
+    "postFX": "Post FX",
+    "displayFlags": "Display Flags",
+    "camera": "Camera",
+    "cameraTag": "POV",
+    "cameraEditor": {
+      "povPreset": "POV Preset",
+      "lens": "Lens",
+      "distance": "Distance",
+      "targetHeight": "Target Height",
+      "cinematic": "Cinematic Path",
+      "orbitSpeed": "Orbit Speed",
+      "controls": "Controls",
+      "damping": "Damping",
+      "autoRotate": "Auto-Rotate Speed",
+      "freeOrbit": "Free Orbit Input",
+      "open": "OPEN",
+      "closed": "CLOSED",
+      "on": "ON",
+      "off": "OFF"
+    },
+    "preset": {
+      "free": "FREE",
+      "iso": "ISO",
+      "front": "FRONT",
+      "back": "BACK",
+      "side": "SIDE",
+      "top": "TOP",
+      "first": "1ST",
+      "third": "3RD",
+      "cine": "CINE"
+    },
+    "presetDesc": {
+      "free": "Full free orbit. Default working camera.",
+      "iso": "Classic 45° isometric. Great for inspecting silhouettes.",
+      "front": "Head-on portrait view.",
+      "back": "Rear view. Useful for back-of-character inspection.",
+      "side": "Side profile (left).",
+      "top": "Top-down plan view.",
+      "first": "First-person: stand at eye-level, look at the model.",
+      "third": "Third-person: behind & slightly above the model.",
+      "cine": "Auto-orbiting cinematic path. No user input."
+    },
+    "presetTag": {
+      "free": "ORBIT",
+      "iso": "GAME",
+      "front": "AXIS",
+      "back": "AXIS",
+      "side": "AXIS",
+      "top": "PLAN",
+      "first": "POV",
+      "third": "POV",
+      "cine": "PATH"
+    },
+    "hdri": "HDRI Preset",
+    "exposure": "Exposure",
+    "background": "Background",
+    "bgEnv": "ENVMAP",
+    "bgSolid": "SOLID",
+    "bgTransparent": "TRANSPARENT",
+    "bloom": "Bloom",
+    "bloomIntensity": "Bloom Intensity",
+    "chromatic": "Chromatic Aberration",
+    "vignette": "Vignette",
+    "ssao": "SSAO",
+    "reset": "Reset",
+    "field": {
+      "baseColor": "Base Color",
+      "metalness": "Metalness",
+      "roughness": "Roughness",
+      "emissive": "Emissive",
+      "emissiveIntensity": "Emissive Intensity",
+      "normalScale": "Normal Scale",
+      "opacity": "Opacity",
+      "wireframe": "Wireframe"
+    }
+  }
+}

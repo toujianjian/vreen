@@ -3,11 +3,13 @@ import { Suspense } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { Link } from 'react-router-dom';
 import { ArrowRight, Crosshair, Zap } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { BackgroundScene } from '@/components/three/BackgroundScene';
 import { HudPanel } from '@/components/hud/HudPanel';
 import { useEffect, useState } from 'react';
 
 export function Hero() {
+  const { t } = useTranslation();
   return (
     <section className="relative min-h-[88vh] w-full overflow-hidden">
       {/* 3D background */}
@@ -35,13 +37,11 @@ export function Hero() {
             <h1 className="font-display font-black text-[clamp(2.4rem,7.5vw,7rem)] leading-[0.92] tracking-[0.04em] text-haze">
               <span className="block text-glow-soft text-neon-cyan">VREEN</span>
               <span className="block text-haze/90 text-[clamp(1rem,1.8vw,1.5rem)] tracking-[0.6em] font-mono font-light">
-                // 3D DISPLAY SYSTEM
+                // {t('app.tagline').toUpperCase()}
               </span>
             </h1>
             <p className="max-w-2xl text-mist text-[15px] leading-relaxed font-light">
-              一座为独立游戏开发者、3D 美术与技术艺术家打造的全息操控台。
-              <span className="text-haze/80">在浏览器内即可完成资产检视 · 材质编辑 · 动画播放 · 灯光环境调整 · 高质量出图</span>，
-              无需安装任何本地软件。
+              {t('app.description')}
             </p>
           </div>
 
@@ -49,19 +49,19 @@ export function Hero() {
             <Link
               to="/viewer/mech-walker"
               className="hud-btn group"
-              aria-label="启动检视器"
+              aria-label={t('hero.launch')}
             >
               <Zap className="w-3.5 h-3.5" />
-              <span>Launch Inspector</span>
+              <span>{t('hero.launch')}</span>
               <ArrowRight className="w-3.5 h-3.5 transition-transform duration-200 group-hover:translate-x-0.5" />
             </Link>
             <a href="#gallery" className="hud-btn hud-btn-ghost">
               <Crosshair className="w-3.5 h-3.5" />
-              <span>Browse Assets</span>
+              <span>{t('hero.browse')}</span>
             </a>
             <div className="flex items-center gap-2 ml-2 font-mono text-[10px] tracking-[0.2em] text-mist">
               <span className="w-8 h-px bg-neon-cyan/50" />
-              <span>SUPPORTS GLB · GLTF · OBJ · FBX · STL · PLY</span>
+              <span>{t('app.supports')}</span>
             </div>
           </div>
 
@@ -77,10 +77,11 @@ export function Hero() {
 }
 
 function SystemStatusStrip() {
+  const { t } = useTranslation();
   const items = [
-    { label: 'KERNEL', value: 'VREEN-0.1.0', color: 'text-neon-cyan' },
-    { label: 'MODE', value: 'INTERACTIVE', color: 'text-neon-magenta' },
-    { label: 'PIPELINE', value: 'PBR · IBL · POSTFX', color: 'text-neon-amber' },
+    { label: t('hero.kernel'), value: t('hero.kernelValue'), color: 'text-neon-cyan' },
+    { label: t('hero.mode'), value: t('hero.modeValue'), color: 'text-neon-magenta' },
+    { label: t('hero.pipeline'), value: t('hero.pipelineValue'), color: 'text-neon-amber' },
   ];
   return (
     <div className="flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-[0.2em]">
@@ -98,11 +99,12 @@ function SystemStatusStrip() {
 }
 
 function FeatureRow() {
+  const { t } = useTranslation();
   const features = [
-    { kpi: '06', label: 'FORMAT TYPES', sub: 'GLB/GLTF/OBJ/FBX/STL/PLY' },
-    { kpi: 'PBR', label: 'REAL-TIME', sub: 'METAL · ROUGH · EMISSIVE' },
-    { kpi: '60+', label: 'FPS TARGET', sub: 'BUILT FOR DESKTOP' },
-    { kpi: '4K', label: 'CAPTURE', sub: 'PNG EXPORT' },
+    { kpi: '06', label: t('hero.feature.formats'), sub: t('hero.feature.formatsSub') },
+    { kpi: 'PBR', label: t('hero.feature.pbr'), sub: t('hero.feature.pbrSub') },
+    { kpi: '60+', label: t('hero.feature.fps'), sub: t('hero.feature.fpsSub') },
+    { kpi: '4K', label: t('hero.feature.capture'), sub: t('hero.feature.captureSub') },
   ];
   return (
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 max-w-3xl">
@@ -123,6 +125,7 @@ function FeatureRow() {
 }
 
 function HeroReadout() {
+  const { t } = useTranslation();
   const [tick, setTick] = useState(0);
   useEffect(() => {
     const id = setInterval(() => setTick((t) => t + 1), 1200);
@@ -130,21 +133,21 @@ function HeroReadout() {
   }, []);
 
   const lines = [
-    { k: 'ASSET_INDEX', v: '6 archetypes loaded' },
-    { k: 'ENVIRONMENT', v: 'IBL // city preset' },
-    { k: 'POSTFX', v: 'BLOOM · CHROMA · VIGNETTE' },
-    { k: 'CAMERA', v: 'iso-30° / damped' },
-    { k: 'RENDERER', v: 'WebGL2 · PBR' },
+    { k: t('hero.readout.lines.assetIndex'), v: t('hero.readout.lines.assetIndexVal') },
+    { k: t('hero.readout.lines.environment'), v: t('hero.readout.lines.environmentVal') },
+    { k: t('hero.readout.lines.postfx'), v: t('hero.readout.lines.postfxVal') },
+    { k: t('hero.readout.lines.camera'), v: t('hero.readout.lines.cameraVal') },
+    { k: t('hero.readout.lines.renderer'), v: t('hero.readout.lines.rendererVal') },
   ];
 
   return (
-    <HudPanel title="SYSTEM READOUT" tag="RUNTIME">
+    <HudPanel title={t('hero.readout.title')} tag={t('hero.readout.tag')}>
       <div className="p-4 space-y-3 font-mono text-[11px]">
         <div className="flex items-center justify-between text-mist">
-          <span>UPLINK</span>
+          <span>{t('hero.readout.upline')}</span>
           <span className="flex items-center gap-1.5 text-neon-cyan">
             <span className="w-1.5 h-1.5 rounded-full bg-neon-cyan animate-pulse" />
-            ONLINE
+            {t('hero.readout.online')}
           </span>
         </div>
         <div className="hud-divider" />
@@ -168,13 +171,13 @@ function HeroReadout() {
         </ul>
         <div className="hud-divider" />
         <div className="space-y-1.5">
-          <StatBar label="GPU LOAD" value={tick % 4 === 0 ? 38 : 42 + (tick % 3) * 4} max={100} unit="%" color="cyan" />
-          <StatBar label="VRAM" value={12 + (tick % 5) * 2} max={64} unit="%" color="magenta" />
-          <StatBar label="DRAW" value={184} max={512} unit="CALLS" color="amber" />
+          <StatBar label={t('hero.readout.gpu')} value={tick % 4 === 0 ? 38 : 42 + (tick % 3) * 4} max={100} unit="%" color="cyan" />
+          <StatBar label={t('hero.readout.vram')} value={12 + (tick % 5) * 2} max={64} unit="%" color="magenta" />
+          <StatBar label={t('hero.readout.draw')} value={184} max={512} unit={t('hero.readout.unit.calls')} color="amber" />
         </div>
         <div className="hud-divider" />
         <div className="text-[9px] tracking-[0.2em] text-mist/80">
-          SESSION 0xA1F3 · CHANNEL 04 · NODE VREEN-LOCAL
+          {t('hero.readout.session')}
         </div>
       </div>
     </HudPanel>

@@ -24,8 +24,19 @@ export interface CameraRigConfig {
   label: string;
   /** Short chip-style badge, e.g. 'POV'. */
   tag: string;
-  /** Brief description for the inspector. */
+  /** English fallback description (used in tooltips and as last-resort i18n fallback). */
   description: string;
+  /** i18n key for the translated description (viewer.presetDesc.*). */
+  descriptionKey:
+    | 'viewer.presetDesc.free'
+    | 'viewer.presetDesc.iso'
+    | 'viewer.presetDesc.front'
+    | 'viewer.presetDesc.back'
+    | 'viewer.presetDesc.side'
+    | 'viewer.presetDesc.top'
+    | 'viewer.presetDesc.first'
+    | 'viewer.presetDesc.third'
+    | 'viewer.presetDesc.cine';
 }
 
 export const CAMERA_PRESETS: Record<CameraPreset, CameraRigConfig> = {
@@ -35,6 +46,7 @@ export const CAMERA_PRESETS: Record<CameraPreset, CameraRigConfig> = {
     label: 'FREE',
     tag: 'ORBIT',
     description: 'Full free orbit. Default working camera.',
+    descriptionKey: 'viewer.presetDesc.free',
   },
   iso: {
     position: [4.2, 3, 4.2],
@@ -42,6 +54,7 @@ export const CAMERA_PRESETS: Record<CameraPreset, CameraRigConfig> = {
     label: 'ISO',
     tag: 'GAME',
     description: 'Classic 45° isometric. Great for inspecting silhouettes.',
+    descriptionKey: 'viewer.presetDesc.iso',
   },
   front: {
     position: [0, 1.4, 6],
@@ -51,6 +64,7 @@ export const CAMERA_PRESETS: Record<CameraPreset, CameraRigConfig> = {
     label: 'FRONT',
     tag: 'AXIS',
     description: 'Head-on portrait view.',
+    descriptionKey: 'viewer.presetDesc.front',
   },
   back: {
     position: [0, 1.4, -6],
@@ -60,6 +74,7 @@ export const CAMERA_PRESETS: Record<CameraPreset, CameraRigConfig> = {
     label: 'BACK',
     tag: 'AXIS',
     description: 'Rear view. Useful for back-of-character inspection.',
+    descriptionKey: 'viewer.presetDesc.back',
   },
   side: {
     position: [6, 1.4, 0],
@@ -69,6 +84,7 @@ export const CAMERA_PRESETS: Record<CameraPreset, CameraRigConfig> = {
     label: 'SIDE',
     tag: 'AXIS',
     description: 'Side profile (left).',
+    descriptionKey: 'viewer.presetDesc.side',
   },
   top: {
     position: [0.01, 7, 0.01],
@@ -78,6 +94,7 @@ export const CAMERA_PRESETS: Record<CameraPreset, CameraRigConfig> = {
     label: 'TOP',
     tag: 'PLAN',
     description: 'Top-down plan view.',
+    descriptionKey: 'viewer.presetDesc.top',
   },
   'first-person': {
     position: [0, 1.6, 2.2],
@@ -88,6 +105,7 @@ export const CAMERA_PRESETS: Record<CameraPreset, CameraRigConfig> = {
     label: '1ST',
     tag: 'POV',
     description: 'First-person: stand at eye-level, look at the model.',
+    descriptionKey: 'viewer.presetDesc.first',
   },
   'third-person': {
     position: [0, 1.8, -3.6],
@@ -98,6 +116,7 @@ export const CAMERA_PRESETS: Record<CameraPreset, CameraRigConfig> = {
     label: '3RD',
     tag: 'POV',
     description: 'Third-person: behind & slightly above the model.',
+    descriptionKey: 'viewer.presetDesc.third',
   },
   cinematic: {
     position: [4.5, 2.4, 4.5],
@@ -107,6 +126,7 @@ export const CAMERA_PRESETS: Record<CameraPreset, CameraRigConfig> = {
     label: 'CINE',
     tag: 'PATH',
     description: 'Auto-orbiting cinematic path. No user input.',
+    descriptionKey: 'viewer.presetDesc.cine',
   },
 };
 
