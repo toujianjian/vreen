@@ -50,13 +50,24 @@ export function Footer() {
           <ul className="space-y-1.5 text-haze/85">
             <li>
               <a
-                href="https://github.com/KhronosGroup/glTF-Sample-Models"
+                href="https://github.com/toujianjian/vreen"
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex items-center gap-1.5 hover:text-neon-cyan transition-colors"
               >
                 <Github className="w-3 h-3" />
-                glTF Sample Models
+                VREEN
+              </a>
+            </li>
+            <li>
+              <a
+                href="https://github.com/toujianjian"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 hover:text-neon-cyan transition-colors"
+              >
+                <Github className="w-3 h-3" />
+                toujianjian
               </a>
             </li>
             <li>
@@ -67,16 +78,6 @@ export function Footer() {
                 className="hover:text-neon-cyan transition-colors"
               >
                 three.js
-              </a>
-            </li>
-            <li>
-              <a
-                href="https://r3f.docs.pmnd.rs/"
-                target="_blank"
-                rel="noreferrer"
-                className="hover:text-neon-cyan transition-colors"
-              >
-                @react-three/fiber
               </a>
             </li>
           </ul>
