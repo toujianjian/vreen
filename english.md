@@ -8,8 +8,6 @@
 > A holographic-grade 3D model inspector and showcase platform built for indie game developers and 3D artists.
 > Inspect · Tune · Screenshot — zero install, runs entirely in the browser.
 
-![VREEN banner](https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=futuristic%20holographic%20display%20showing%20a%20floating%20geometric%203D%20crystal%2C%20surrounded%20by%20neon%20cyan%20and%20magenta%20HUD%20interface%20elements%2C%20dark%20space%20background%20with%20subtle%20stars%2C%20scanning%20grid%20below%2C%20volumetric%20light%20rays%2C%20cinematic%208K%20hyper%20detailed%20digital%20art&image_size=landscape_16_9)
-
 [![React](https://img.shields.io/badge/React-18-61dafb?logo=react&logoColor=white)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![Three.js](https://img.shields.io/badge/Three.js-r169-black?logo=three.js)](https://threejs.org)
