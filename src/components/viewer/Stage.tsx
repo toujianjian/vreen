@@ -33,6 +33,7 @@ import {
 export function Stage() {
   const environment = useUIStore((s) => s.environment);
   const postFX = useUIStore((s) => s.postFX);
+  const envCustomFile = useUIStore((s) => s.envCustomFile);
   const showGround = useViewerStore((s) => s.showGround);
   const camera = useViewerStore((s) => s.camera);
 
@@ -58,11 +59,19 @@ export function Stage() {
         <SceneEnvironment />
         <Suspense fallback={null}>
           <SceneContents />
-          <SafeEnvironment
-            preset={environment.preset}
-            environmentIntensity={environment.exposure * 0.9}
-            background={environment.background === 'envmap' ? 'only' : false}
-          />
+          {envCustomFile ? (
+            <SafeEnvironment
+              files={envCustomFile}
+              environmentIntensity={environment.exposure * 0.9}
+              background={environment.background === 'envmap' ? 'only' : false}
+            />
+          ) : (
+            <SafeEnvironment
+              preset={environment.preset}
+              environmentIntensity={environment.exposure * 0.9}
+              background={environment.background === 'envmap' ? 'only' : false}
+            />
+          )}
         </Suspense>
 
         {showGround && (

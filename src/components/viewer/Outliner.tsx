@@ -21,15 +21,15 @@ const KIND_COLOR: Record<string, string> = {
 export function Outliner() {
   const { t } = useTranslation();
   const showOutliner = useUIStore((s) => s.showOutliner);
-  const assetName = useViewerStore((s) => s.assetName);
-  const triCount = useViewerStore((s) => s.stats.triangles);
+  const sceneTree = useViewerStore((s) => s.sceneTree);
 
-  const [expanded, setExpanded] = useState<Set<string>>(new Set(['root']));
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState('');
 
-  const tree = buildSyntheticTree(assetName, triCount, t('outliner.defaultRoot'));
-  const filtered = filterTree(tree, search);
-  const isEmpty = !filtered;
+  const filteredRoots = sceneTree
+    .map((n) => filterTree(n, search))
+    .filter((n): n is SceneNode => n !== null);
+  const isEmpty = filteredRoots.length === 0;
 
   if (!showOutliner) return null;
 
@@ -45,77 +45,27 @@ export function Outliner() {
         />
       </div>
       <div className="overflow-y-auto h-[calc(100%-90px)] py-2 text-[12px] font-mono">
-        {isEmpty || !filtered.children.length && !filtered.name ? (
+        {isEmpty ? (
           <div className="px-4 py-6 text-mist text-center text-[11px]">{t('viewer.noMatch')}</div>
         ) : (
-          <TreeNode
-            node={filtered}
-            depth={0}
-            expanded={expanded}
-            onToggle={(id) => {
-              const next = new Set(expanded);
-              if (next.has(id)) next.delete(id);
-              else next.add(id);
-              setExpanded(next);
-            }}
-          />
+          filteredRoots.map((node) => (
+            <TreeNode
+              key={node.id}
+              node={node}
+              depth={0}
+              expanded={expanded}
+              onToggle={(id) => {
+                const next = new Set(expanded);
+                if (next.has(id)) next.delete(id);
+                else next.add(id);
+                setExpanded(next);
+              }}
+            />
+          ))
         )}
       </div>
     </HudPanel>
   );
-}
-
-function buildSyntheticTree(assetName: string, triCount: number, defaultName: string): SceneNode {
-  // We don't have direct access to the THREE tree from the React tree (it's mounted in R3F).
-  // Render a representative hierarchy based on the active asset.
-  const rootId = 'root';
-  return {
-    id: rootId,
-    uuid: rootId,
-    name: assetName || defaultName,
-    type: 'Group',
-    visible: true,
-    triCount,
-    materialIds: [],
-    parentId: null,
-    depth: 0,
-    children: [
-      child('armature', 'armature', 'Group', rootId, 0, []),
-      child('body', 'body', 'Mesh', rootId, 0.6 * triCount, []),
-      child('joints', 'joints', 'Group', rootId, 0, [
-        child('head', 'head', 'Mesh', 'joints', 0.2 * triCount, []),
-        child('arm_L', 'armL', 'Bone', 'joints', 0, []),
-        child('arm_R', 'armR', 'Bone', 'joints', 0, []),
-      ]),
-      child('materials', 'materials', 'Other', rootId, 0, []),
-      child('light_rig', 'lightRig', 'Group', rootId, 0, [
-        child('key', 'keyLight', 'Light', 'light_rig', 0, []),
-        child('fill', 'fillLight', 'Light', 'light_rig', 0, []),
-      ]),
-    ],
-  };
-}
-
-function child(
-  id: string,
-  name: string,
-  type: SceneNode['type'],
-  parentId: string,
-  triCount: number,
-  children: SceneNode[],
-): SceneNode {
-  return {
-    id,
-    uuid: id,
-    name,
-    type,
-    visible: true,
-    triCount,
-    materialIds: [],
-    parentId,
-    depth: 0,
-    children,
-  };
 }
 
 function filterTree(node: SceneNode, q: string): SceneNode | null {

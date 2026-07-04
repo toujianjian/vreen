@@ -19,6 +19,8 @@ interface UIState {
   showInspector: boolean;
   /** Log entries for the terminal-style footer on home */
   logs: LogEntry[];
+  /** Blob URL for custom HDRI environment file (.hdr / .exr), or null */
+  envCustomFile: string | null;
 
   setEnvironment: (patch: Partial<EnvironmentState>) => void;
   setPreset: (preset: EnvironmentPreset) => void;
@@ -27,6 +29,7 @@ interface UIState {
   toggleInspector: () => void;
   pushLog: (level: 'INFO' | 'OK' | 'WARN' | 'ERR', text: string, textKey?: string) => void;
   clearLogs: () => void;
+  setEnvCustomFile: (url: string | null) => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -45,6 +48,7 @@ export const useUIStore = create<UIState>((set) => ({
   },
   showOutliner: true,
   showInspector: true,
+  envCustomFile: null,
   logs: [
     { id: 0, ts: '00:00:00', level: 'INFO', text: 'VREEN kernel v0.1.0 boot sequence initiated...', textKey: 'terminal.boot.k1' },
     { id: 1, ts: '00:00:01', level: 'OK', text: 'Shader pipeline online. 3D context verified.', textKey: 'terminal.boot.k2' },
@@ -53,7 +57,8 @@ export const useUIStore = create<UIState>((set) => ({
   ],
 
   setEnvironment: (patch) => set((s) => ({ environment: { ...s.environment, ...patch } })),
-  setPreset: (preset) => set((s) => ({ environment: { ...s.environment, preset } })),
+  setPreset: (preset) =>
+    set((s) => ({ environment: { ...s.environment, preset }, envCustomFile: null })),
   setPostFX: (patch) => set((s) => ({ postFX: { ...s.postFX, ...patch } })),
   toggleOutliner: () => set((s) => ({ showOutliner: !s.showOutliner })),
   toggleInspector: () => set((s) => ({ showInspector: !s.showInspector })),
@@ -70,4 +75,5 @@ export const useUIStore = create<UIState>((set) => ({
       return { logs: next.slice(-60) };
     }),
   clearLogs: () => set({ logs: [] }),
+  setEnvCustomFile: (url) => set({ envCustomFile: url }),
 }));

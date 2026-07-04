@@ -9,7 +9,8 @@ import { Component, type ReactNode, Suspense } from 'react';
 import { Environment } from '@react-three/drei';
 
 interface Props {
-  preset: 'studio' | 'sunset' | 'warehouse' | 'night' | 'city';
+  preset?: 'studio' | 'sunset' | 'warehouse' | 'night' | 'city';
+  files?: string;
   environmentIntensity?: number;
   background?: boolean | 'only';
   children?: ReactNode;
@@ -40,17 +41,25 @@ class EnvErrorBoundary extends Component<{ children: ReactNode }, State> {
   }
 }
 
-export function SafeEnvironment({ preset, environmentIntensity, background }: Props) {
+export function SafeEnvironment({ preset, files, environmentIntensity, background }: Props) {
   const bgProp = background === 'only' ? 'only' : background ? undefined : false;
 
   return (
     <EnvErrorBoundary>
       <Suspense fallback={null}>
-        <Environment
-          preset={preset}
-          environmentIntensity={environmentIntensity}
-          background={bgProp as any}
-        />
+        {files ? (
+          <Environment
+            files={files}
+            environmentIntensity={environmentIntensity}
+            background={bgProp as any}
+          />
+        ) : (
+          <Environment
+            preset={preset}
+            environmentIntensity={environmentIntensity}
+            background={bgProp as any}
+          />
+        )}
       </Suspense>
     </EnvErrorBoundary>
   );

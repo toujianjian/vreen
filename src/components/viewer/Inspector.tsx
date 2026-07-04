@@ -7,10 +7,13 @@ import {
   Camera,
   ChevronDown,
   ChevronRight,
+  Download,
   Lightbulb,
   RotateCcw,
   Sparkles,
   Sun,
+  Upload,
+  X,
 } from 'lucide-react';
 import { HudPanel } from '@/components/hud/HudPanel';
 import { useInspectorStore } from '@/stores/inspectorStore';
@@ -19,6 +22,7 @@ import { useViewerStore } from '@/stores/viewerStore';
 import { cn } from '@/lib/cn';
 import type { EnvironmentPreset } from '@/types';
 import { CAMERA_PRESET_LIST, CAMERA_PRESETS } from '@/three/camera';
+import { exportVreenPackage, downloadVreenPackage } from '@/lib/export';
 
 const ENV_PRESETS: { value: EnvironmentPreset; label: string; color: string }[] = [
   { value: 'studio', label: 'STUDIO', color: 'text-neon-cyan' },
@@ -111,6 +115,20 @@ export function Inspector() {
         <Section icon={<Lightbulb className="w-3.5 h-3.5" />} title={t('viewer.displayFlags')}>
           <DisplayFlagsEditor />
         </Section>
+      </div>
+
+      <div className="px-4 py-3 border-t border-neon-magenta/15">
+        <button
+          onClick={() => {
+            const pkg = exportVreenPackage();
+            downloadVreenPackage(pkg);
+            useUIStore.getState().pushLog('OK', 'Project exported as .vreen.json');
+          }}
+          className="hud-btn hud-btn-magenta w-full justify-center !text-[10px]"
+        >
+          <Download className="w-3 h-3" />
+          <span>{t('viewer.exportProject')}</span>
+        </button>
       </div>
     </HudPanel>
   );
@@ -410,6 +428,8 @@ function EnvironmentEditor() {
   const { t } = useTranslation();
   const environment = useUIStore((s) => s.environment);
   const setEnvironment = useUIStore((s) => s.setEnvironment);
+  const envCustomFile = useUIStore((s) => s.envCustomFile);
+  const setEnvCustomFile = useUIStore((s) => s.setEnvCustomFile);
   const bgLabel = (b: 'envmap' | 'solid' | 'transparent') => {
     if (b === 'envmap') return t('viewer.bgEnv');
     if (b === 'solid') return t('viewer.bgSolid');
@@ -459,6 +479,36 @@ function EnvironmentEditor() {
           ))}
         </div>
       </Field>
+
+      {/* Custom HDRI upload */}
+      <div>
+        <div className="hud-label mb-1.5">{t('viewer.customHdri')}</div>
+        <label className="hud-btn hud-btn-ghost w-full justify-center !text-[10px] cursor-pointer">
+          <Upload className="w-3 h-3" />
+          <span>{envCustomFile ? t('viewer.replaceHdri') : t('viewer.uploadHdri')}</span>
+          <input
+            type="file"
+            accept=".hdr,.exr"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) {
+                const url = URL.createObjectURL(file);
+                setEnvCustomFile(url);
+              }
+            }}
+          />
+        </label>
+        {envCustomFile && (
+          <button
+            onClick={() => { URL.revokeObjectURL(envCustomFile); setEnvCustomFile(null); }}
+            className="hud-btn hud-btn-ghost w-full justify-center !text-[10px] mt-1"
+          >
+            <X className="w-3 h-3" />
+            <span>{t('viewer.resetHdri')}</span>
+          </button>
+        )}
+      </div>
     </div>
   );
 }

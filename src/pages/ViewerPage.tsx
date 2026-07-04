@@ -7,6 +7,7 @@ import { Outliner } from '@/components/viewer/Outliner';
 import { Inspector } from '@/components/viewer/Inspector';
 import { ViewerToolbar } from '@/components/viewer/ViewerToolbar';
 import { ViewerStatusBar } from '@/components/viewer/ViewerStatusBar';
+import { Timeline } from '@/components/viewer/Timeline';
 import { useViewerStore } from '@/stores/viewerStore';
 import { useUIStore } from '@/stores/uiStore';
 import { getPresetById } from '@/lib/presets';
@@ -48,6 +49,7 @@ export function ViewerPage() {
           <Inspector />
         </aside>
       </div>
+      <Timeline />
       <ViewerStatusBar />
     </div>
   );

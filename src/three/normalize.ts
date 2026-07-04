@@ -1,6 +1,7 @@
 // Helpers to normalize a loaded model — center, scale, enable shadows, traverse materials.
 
 import * as THREE from 'three';
+import type { SceneNode, NodeKind } from '@/types';
 
 export interface NormalizeOptions {
   /** Target diameter in world units after normalization */
@@ -116,6 +117,54 @@ export function snapshotMaterial(material: THREE.Material, id: string) {
     normalScale: std.normalScale ? std.normalScale.x : 1,
     opacity: std.opacity ?? 1,
     wireframe: !!std.wireframe,
+  };
+}
+
+/**
+ * Build a serializable scene tree from a THREE.Object3D hierarchy.
+ * Each node maps to a real three.js object with its uuid as the key.
+ */
+export function buildSceneTree(root: THREE.Object3D): SceneNode[] {
+  const nodes: SceneNode[] = [];
+  for (const child of root.children) {
+    nodes.push(buildNode(child, null, 0));
+  }
+  return nodes;
+}
+
+function buildNode(obj: THREE.Object3D, parentId: string | null, depth: number): SceneNode {
+  let type: NodeKind = 'Other';
+  if ((obj as THREE.Mesh).isMesh) type = 'Mesh';
+  else if ((obj as THREE.Group).isGroup) type = 'Group';
+  else if ((obj as THREE.Bone).isBone) type = 'Bone';
+  else if ((obj as THREE.Light).isLight) type = 'Light';
+  else if ((obj as THREE.Camera).isCamera) type = 'Camera';
+
+  let triCount = 0;
+  if ((obj as THREE.Mesh).isMesh) {
+    const geo = (obj as THREE.Mesh).geometry;
+    if (geo) {
+      if (geo.index) triCount = geo.index.count / 3;
+      else if (geo.attributes.position) triCount = geo.attributes.position.count / 3;
+    }
+  }
+
+  const children: SceneNode[] = [];
+  for (const child of obj.children) {
+    children.push(buildNode(child, obj.uuid, depth + 1));
+  }
+
+  return {
+    id: obj.uuid,
+    uuid: obj.uuid,
+    name: obj.name || 'Unnamed',
+    type,
+    visible: obj.visible,
+    triCount: Math.round(triCount),
+    materialIds: [],
+    parentId,
+    depth,
+    children,
   };
 }
 

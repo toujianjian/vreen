@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { AssetSource, SceneStats, AnimationState, CameraState } from '@/types';
+import type { AssetSource, SceneStats, AnimationState, CameraState, SceneNode } from '@/types';
 import { DEFAULT_CAMERA } from '@/types';
 
 interface ViewerState {
@@ -25,9 +25,12 @@ interface ViewerState {
   showGround: boolean;
   /** Is auto-rotate enabled */
   autoRotate: boolean;
+  /** Real scene tree built from loaded THREE.Object3D */
+  sceneTree: SceneNode[];
 
   // Actions
   setAssetSource: (source: AssetSource | null, name?: string) => void;
+  setSceneTree: (nodes: SceneNode[]) => void;
   setAssetName: (name: string) => void;
   setStats: (stats: Partial<SceneStats>) => void;
   setAnimation: (anim: Partial<AnimationState>) => void;
@@ -53,11 +56,11 @@ const DEFAULT_STATS: SceneStats = {
 };
 
 const DEFAULT_ANIM: AnimationState = {
-  clipName: 'idle',
-  isPlaying: true,
+  clipName: '',
+  isPlaying: false,
   speed: 1,
   currentTime: 0,
-  duration: 4,
+  duration: 0,
 };
 
 /** Default placeholders surfaced when no asset is selected yet.
@@ -77,6 +80,7 @@ export const useViewerStore = create<ViewerState>((set) => ({
   showWireframe: false,
   showGround: true,
   autoRotate: true,
+  sceneTree: [],
 
   setAssetSource: (source, name) =>
     set(() => ({
@@ -86,7 +90,9 @@ export const useViewerStore = create<ViewerState>((set) => ({
       loadProgress: source ? 0.05 : 0,
       errorMessage: null,
       animation: { ...DEFAULT_ANIM },
+      sceneTree: [],
     })),
+  setSceneTree: (nodes) => set({ sceneTree: nodes }),
   setAssetName: (name) => set({ assetName: name }),
   setStats: (partial) =>
     set((s) => ({
@@ -120,5 +126,6 @@ export const useViewerStore = create<ViewerState>((set) => ({
       isLoading: false,
       loadProgress: 0,
       errorMessage: null,
+      sceneTree: [],
     }),
 }));

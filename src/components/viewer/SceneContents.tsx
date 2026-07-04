@@ -1,6 +1,6 @@
 // SceneContents: loads the active asset (preset generator or uploaded model),
 // normalizes it, applies material updates, and feeds the inspector store.
-import { useFrame } from '@react-three/fiber';
+import { type ThreeEvent, useFrame } from '@react-three/fiber';
 import { useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import * as THREE from 'three';
@@ -8,6 +8,7 @@ import { GENERATORS } from '@/three/generators';
 import { loadModel } from '@/three/loaders';
 import {
   applyMaterialPatch,
+  buildSceneTree,
   countScene,
   normalizeObject,
   snapshotMaterial,
@@ -26,13 +27,38 @@ export function SceneContents() {
   const setIsLoading = useViewerStore((s) => s.setLoading);
   const setLoadProgress = useViewerStore((s) => s.setLoadProgress);
   const setError = useViewerStore((s) => s.setError);
+  const setSceneTree = useViewerStore((s) => s.setSceneTree);
   const autoRotate = useViewerStore((s) => s.autoRotate);
 
+  const setAnimation = useViewerStore((s) => s.setAnimation);
   const setMaterials = useInspectorStore((s) => s.setMaterials);
+  const setSelection = useInspectorStore((s) => s.setSelection);
   const materials = useInspectorStore((s) => s.materials);
 
   const groupRef = useRef<THREE.Group>(null);
+  const mixerRef = useRef<THREE.AnimationMixer | null>(null);
   const fpsAcc = useRef({ frames: 0, t: performance.now() });
+
+  // Mesh picking — click an object in the 3D view to select it in the outliner
+  const handlePointerDown = (e: ThreeEvent<PointerEvent>) => {
+    e.stopPropagation();
+    const obj = e.object;
+    let type: string = 'Other';
+    if ((obj as THREE.Mesh).isMesh) type = 'Mesh';
+    else if ((obj as THREE.Group).isGroup) type = 'Group';
+    else if ((obj as THREE.Bone).isBone) type = 'Bone';
+    else if ((obj as THREE.Light).isLight) type = 'Light';
+    else if ((obj as THREE.Camera).isCamera) type = 'Camera';
+    let triCount = 0;
+    if ((obj as THREE.Mesh).isMesh) {
+      const geo = (obj as THREE.Mesh).geometry;
+      if (geo) {
+        if (geo.index) triCount = geo.index.count / 3;
+        else if (geo.attributes.position) triCount = geo.attributes.position.count / 3;
+      }
+    }
+    setSelection(obj.uuid, obj.name || 'Unnamed', type, Math.round(triCount));
+  };
 
   // Build or load current asset
   useEffect(() => {
@@ -92,13 +118,41 @@ export function SceneContents() {
 
         // Mount into scene
         if (groupRef.current) {
-          // Clear previous
+          // Stop & clear previous mixer
+          if (mixerRef.current) {
+            mixerRef.current.stopAllAction();
+            mixerRef.current = null;
+          }
+          // Clear previous children
           while (groupRef.current.children.length > 0) {
             const c = groupRef.current.children[0];
             groupRef.current.remove(c);
             disposeObject(c);
           }
           groupRef.current.add(root);
+
+          // Detect animation clips and initialise mixer
+          const clips = root.animations ?? [];
+          if (clips.length > 0) {
+            const mixer = new THREE.AnimationMixer(root);
+            mixerRef.current = mixer;
+            const action = mixer.clipAction(clips[0]);
+            action.play();
+            setAnimation({
+              clipName: clips[0].name || 'animation',
+              isPlaying: true,
+              speed: 1,
+              currentTime: 0,
+              duration: clips[0].duration,
+            });
+          } else {
+            setAnimation({
+              clipName: '',
+              isPlaying: false,
+              currentTime: 0,
+              duration: 0,
+            });
+          }
         }
 
         // Collect material snapshot
@@ -123,6 +177,10 @@ export function SceneContents() {
           geometries: counts.meshes,
           textures: counts.materials,
         });
+
+        // Build scene tree for the outliner
+        const tree = buildSceneTree(root);
+        setSceneTree(tree);
 
         setAssetName(assetName);
         setIsLoading(false);
@@ -159,8 +217,25 @@ export function SceneContents() {
     });
   }, [materials]);
 
-  // FPS counter
+  // Animation mixer update + FPS counter
   useFrame((_, delta) => {
+    // Sync animation mixer
+    if (mixerRef.current) {
+      const anim = useViewerStore.getState().animation;
+      mixerRef.current.timeScale = anim.speed;
+      if (anim.isPlaying) {
+        mixerRef.current.update(delta);
+        setAnimation({ currentTime: mixerRef.current.time });
+      } else {
+        // Scrub sync: if user dragged the scrubber, jump the mixer
+        const mixerTime = mixerRef.current.time;
+        if (Math.abs(mixerTime - anim.currentTime) > 0.005) {
+          mixerRef.current.setTime(anim.currentTime);
+        }
+      }
+    }
+
+    // FPS counter
     const a = fpsAcc.current;
     a.frames++;
     const elapsed = performance.now() - a.t;
@@ -178,7 +253,7 @@ export function SceneContents() {
   });
 
   return (
-    <group ref={groupRef}>
+    <group ref={groupRef} onPointerDown={handlePointerDown}>
       {!assetSource && <WelcomeModel />}
     </group>
   );
