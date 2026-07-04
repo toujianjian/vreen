@@ -163,19 +163,18 @@ Click the **CAPTURE** button at the top right to download the current frame as a
 - [x] Procedural preset gallery
 - [x] One-click PNG screenshot
 - [x] Cyberpunk HUD theme
-- [ ] Skeletal animation playback (with timeline scrubbing)
-- [ ] Mesh picking (click a part to focus the outliner)
-- [ ] Real scene tree (built from `THREE.Object3D` — currently illustrative)
-- [ ] HDRI upload + custom environment maps
+- [x] Skeletal animation playback (with timeline scrubbing)
+- [x] Mesh picking (click a part to focus the outliner)
+- [x] Real scene tree (built from `THREE.Object3D`)
+- [x] HDRI upload + custom environment maps
+- [x] Project export (`.vreen` package = model + camera + materials + lighting preset)
 - [ ] GLTF Draco / Meshopt compression
 - [ ] VR / WebXR mode
 - [ ] Multi-asset comparison view
-- [ ] Project export (`.vreen` package = model + camera + materials + lighting preset)
 
 ---
 
 ## 🐛 Known Limitations
-- The **Outliner** is currently an illustrative tree, not a live `THREE` scene graph. A real tree is on the roadmap.
 - **FBX** material conversion depends on the source FBX — some complex PBR textures may not transfer perfectly.
 - On Windows + project paths containing non-ASCII characters, the `lucide-react` `replace-all` icon may be lost during install — if you see `Could not read from file ... replace-all.js`, see the one-liner shim in [setup-git.ps1](./setup-git.ps1).
 
@@ -226,3 +225,17 @@ git push origin feat/your-feature
 - Inspired by Sketchfab, three.js editor, and the Blender viewport
 
 > "VREEN" — **V**ector **R**ender **E**ngine **EN**vironment. Built with care by [toujianjian](https://github.com/toujianjian).
+
+---
+
+### 🌐 Repository Links
+
+<div align="center">
+
+[![GitHub](https://img.shields.io/badge/GitHub-toujianjian%2Fvreen-181717?logo=github)](https://github.com/toujianjian/vreen)
+[![Gitee](https://img.shields.io/badge/Gitee-toujianjian%2Fvreen-c71d23?logo=gitee)](https://gitee.com/toujianjian/vreen)
+
+**GitHub**: https://github.com/toujianjian/vreen
+**Gitee**: https://gitee.com/toujianjian/vreen
+
+</div>

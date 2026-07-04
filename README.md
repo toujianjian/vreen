@@ -163,19 +163,18 @@ vreen/
 - [x] 程序化预设画廊
 - [x] 一键 PNG 截图
 - [x] 赛博朋克 HUD 主题
-- [ ] 骨骼动画播放(带时间轴拖动)
-- [ ] 网格选中(点击聚焦大纲树中的部件)
-- [ ] 真实场景树(从 `THREE.Object3D` 构建,目前为示意树)
-- [ ] HDRI 上传 + 自定义环境贴图
+- [x] 骨骼动画播放(带时间轴拖动)
+- [x] 网格选中(点击聚焦大纲树中的部件)
+- [x] 真实场景树(从 `THREE.Object3D` 构建)
+- [x] HDRI 上传 + 自定义环境贴图
+- [x] 项目导出(`.vreen` 包 = 模型 + 相机 + 材质 + 灯光预设)
 - [ ] GLTF Draco / Meshopt 压缩
 - [ ] VR / WebXR 模式
 - [ ] 多资源对比视图
-- [ ] 项目导出(`.vreen` 包 = 模型 + 相机 + 材质 + 灯光预设)
 
 ---
 
 ## 🐛 已知问题
-- **大纲树**目前为示意树,非实时 `THREE` 场景图。后续版本将接入真实树。
 - **FBX** 贴图/材质转换取决于源 FBX 本身;部分复杂 PBR 贴图可能无法完美还原。
 - 在 Windows + 含非 ASCII 字符的工程路径下,`lucide-react` 的 `replace-all` 图标可能在 install 时丢失 —— 遇到 `Could not read from file ... replace-all.js` 时,见 [setup-git.ps1](./setup-git.ps1) 中的一行 shim。
 
@@ -226,3 +225,17 @@ git push origin feat/your-feature
 - 灵感来源:Sketchfab、three.js editor、Blender 视口
 
 > "VREEN" —— 即 "Vector Render Engine ENvironment"(矢量渲染引擎环境)。由 [toujianjian](https://github.com/toujianjian) 用心打造。
+
+---
+
+### 🌐 项目地址
+
+<div align="center">
+
+[![GitHub](https://img.shields.io/badge/GitHub-toujianjian%2Fvreen-181717?logo=github)](https://github.com/toujianjian/vreen)
+[![Gitee](https://img.shields.io/badge/Gitee-toujianjian%2Fvreen-c71d23?logo=gitee)](https://gitee.com/toujianjian/vreen)
+
+**GitHub**: https://github.com/toujianjian/vreen
+**Gitee**: https://gitee.com/toujianjian/vreen
+
+</div>
