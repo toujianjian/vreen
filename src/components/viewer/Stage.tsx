@@ -23,24 +23,12 @@ import * as THREE from 'three';
 import { useUIStore } from '@/stores/uiStore';
 import { useViewerStore } from '@/stores/viewerStore';
 import { SceneContents } from './SceneContents';
+import { SafeEnvironment } from '@/components/three/SafeEnvironment';
 import type { EnvironmentPreset } from '@/types';
 import {
   CAMERA_PRESETS,
   animateCameraToPreset,
 } from '@/three/camera';
-
-type DreiEnvPreset = 'apartment' | 'city' | 'dawn' | 'forest' | 'lobby' | 'night' | 'park' | 'studio' | 'sunset' | 'warehouse';
-
-function envPresetToDrei(preset: EnvironmentPreset): DreiEnvPreset {
-  switch (preset) {
-    case 'studio': return 'studio';
-    case 'sunset': return 'sunset';
-    case 'warehouse': return 'warehouse';
-    case 'night': return 'night';
-    case 'city': return 'city';
-    default: return 'studio';
-  }
-}
 
 export function Stage() {
   const environment = useUIStore((s) => s.environment);
@@ -70,8 +58,8 @@ export function Stage() {
         <SceneEnvironment />
         <Suspense fallback={null}>
           <SceneContents />
-          <Environment
-            preset={envPresetToDrei(environment.preset)}
+          <SafeEnvironment
+            preset={environment.preset}
             environmentIntensity={environment.exposure * 0.9}
             background={environment.background === 'envmap' ? 'only' : false}
           />

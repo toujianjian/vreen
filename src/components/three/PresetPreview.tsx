@@ -2,7 +2,8 @@
 // Renders one of the 6 procedural archetypes inside a mini Canvas.
 import { Suspense, useMemo } from 'react';
 import { Canvas } from '@react-three/fiber';
-import { Environment, OrbitControls, ContactShadows } from '@react-three/drei';
+import { OrbitControls, ContactShadows } from '@react-three/drei';
+import { SafeEnvironment } from '@/components/three/SafeEnvironment';
 import { GENERATORS } from '@/three/generators';
 import { normalizeObject } from '@/three/normalize';
 
@@ -43,7 +44,7 @@ export function PresetPreview({ generator, className, rotate = true, exposure = 
         />
         <Suspense fallback={null}>
           <PreviewMesh generator={generator} />
-          <Environment preset="city" environmentIntensity={0.55 * exposure} />
+          <SafeEnvironment preset="city" environmentIntensity={0.55 * exposure} />
         </Suspense>
         <ContactShadows position={[0, 0, 0]} opacity={0.55} scale={4} blur={2.4} far={2.5} />
         <OrbitControls
