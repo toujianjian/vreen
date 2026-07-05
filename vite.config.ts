@@ -3,6 +3,9 @@ import react from '@vitejs/plugin-react';
 import { fileURLToPath, URL } from 'node:url';
 
 export default defineConfig({
+  // Use relative paths so the bundle works under file:// (Electron) as well
+  // as HTTP (Vite dev server, static hosting).
+  base: './',
   plugins: [react()],
   resolve: {
     alias: {

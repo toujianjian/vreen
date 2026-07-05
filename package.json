@@ -62,26 +62,15 @@
     "win": {
       "target": [
         {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        },
-        {
           "target": "portable",
           "arch": [
             "x64"
           ]
         }
       ],
-      "artifactName": "${productName}-Setup-${version}.${ext}"
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "VREEN"
+      "artifactName": "${productName}-Portable-${version}.${ext}",
+      "signAndEditExecutable": false,
+      "signDlls": false
     },
     "portable": {
       "artifactName": "${productName}-Portable-${version}.${ext}"
