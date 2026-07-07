@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VREEN — 启动中</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #05070d;
+      color: #a0b0c8;
+      font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    /* Background scanlines */
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0, 240, 255, 0.03) 2px,
+        rgba(0, 240, 255, 0.03) 4px
+      );
+      pointer-events: none;
+    }
+
+    .splash {
+      text-align: center;
+      max-width: 560px;
+      width: 100%;
+      padding: 40px;
+      animation: fadeIn 0.6s ease-out;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(12px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Logo */
+    .logo {
+      position: relative;
+      display: inline-block;
+      margin-bottom: 32px;
+    }
+    .logo-text {
+      font-family: 'Segoe UI', sans-serif;
+      font-weight: 800;
+      font-size: 64px;
+      letter-spacing: 0.06em;
+      background: linear-gradient(135deg, #00f0ff 0%, #ff2bd6 80%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      filter: drop-shadow(0 0 30px rgba(0, 240, 255, 0.3));
+    }
+    .logo-sub {
+      font-size: 11px;
+      letter-spacing: 0.3em;
+      color: #4a5a7a;
+      text-transform: uppercase;
+      margin-top: 4px;
+    }
+
+    /* Corner brackets */
+    .frame {
+      position: relative;
+      margin-bottom: 36px;
+    }
+    .frame::before,
+    .frame::after {
+      content: '';
+      position: absolute;
+      width: 20px;
+      height: 20px;
+      border-color: rgba(0, 240, 255, 0.25);
+      border-style: solid;
+    }
+    .frame::before {
+      top: -10px; left: -10px;
+      border-width: 2px 0 0 2px;
+    }
+    .frame::after {
+      bottom: -10px; right: -10px;
+      border-width: 0 2px 2px 0;
+    }
+
+    /* Boot log */
+    .boot-log {
+      text-align: left;
+      font-family: 'Cascadia Code', 'JetBrains Mono', 'Consolas', monospace;
+      font-size: 12px;
+      line-height: 1.8;
+      color: #6a7a9a;
+      margin-bottom: 24px;
+      min-height: 160px;
+    }
+    .boot-log .line {
+      opacity: 0;
+      animation: typeIn 0.3s ease-out forwards;
+    }
+    .boot-log .line.ok { color: #34d399; }
+    .boot-log .line.info { color: #22d3ee; }
+    .boot-log .line.warn { color: #fbbf24; }
+    .boot-log .line.tag { color: #4a5a7a; }
+    @keyframes typeIn {
+      to { opacity: 1; }
+    }
+
+    /* Cursor blink */
+    .cursor {
+      display: inline-block;
+      width: 8px;
+      height: 14px;
+      background: #22d3ee;
+      animation: blink 0.8s step-end infinite;
+      vertical-align: middle;
+      margin-left: 2px;
+    }
+    @keyframes blink {
+      50% { opacity: 0; }
+    }
+
+    /* Progress bar */
+    .progress-track {
+      width: 100%;
+      height: 2px;
+      background: #1a2a3a;
+      margin-top: 12px;
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #00f0ff, #ff2bd6);
+      transition: width 0.3s ease;
+      box-shadow: 0 0 12px rgba(0, 240, 255, 0.4);
+    }
+
+    .status-text {
+      font-family: 'Cascadia Code', monospace;
+      font-size: 10px;
+      color: #4a5a7a;
+      letter-spacing: 0.18em;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+<div class="splash">
+  <div class="logo">
+    <div class="logo-text">VREEN</div>
+    <div class="logo-sub">3D Display System</div>
+  </div>
+
+  <div class="frame">
+    <div class="boot-log" id="bootLog">
+      <div class="line info">[KERNEL]  VREEN kernel v0.1.0 boot sequence initiated...</div>
+      <div class="line tag">[SHADER] Shader pipeline online. 3D context verified.</div>
+      <div class="line ok">[ASSET]  Asset index loaded. 6 preset archetypes ready.</div>
+      <div class="line tag">[MEMORY] Heap allocation: 256 MB / 1024 MB</div>
+      <div class="line info">[GPU]    Adapter: WebGL2 — hardware acceleration enabled</div>
+      <div class="line ok">[NET]    Link stable. Uplink established.</div>
+      <div class="line warn">[STATUS] All systems nominal. Awaiting operator input.</div>
+    </div>
+    <span class="cursor"></span>
+  </div>
+
+  <div class="progress-track">
+    <div class="progress-fill" id="progressFill"></div>
+  </div>
+  <div class="status-text" id="statusText">INITIALIZING SUBSYSTEMS...</div>
+</div>
+
+<script>
+  const bootLines = document.querySelectorAll('.boot-log .line');
+  const progressFill = document.getElementById('progressFill');
+  const statusText = document.getElementById('statusText');
+
+  const MESSAGES = [
+    'LOADING KERNEL MODULES...',
+    'COMPILING SHADER GRAPHS...',
+    'PARSING ASSET INDEX...',
+    'ALLOCATING GPU MEMORY...',
+    'INITIALIZING RENDER PIPELINE...',
+    'ESTABLISHING UPLINK...',
+    'ALL SYSTEMS NOMINAL ✓',
+  ];
+
+  let step = 0;
+  let progress = 0;
+
+  // Reveal boot lines one by one, advance progress
+  function advance() {
+    if (step < bootLines.length) {
+      // Reveal current line (already visible via CSS animation delay)
+      progress = ((step + 1) / bootLines.length) * 100;
+      progressFill.style.width = progress + '%';
+      statusText.textContent = MESSAGES[Math.min(step, MESSAGES.length - 1)];
+      step++;
+      setTimeout(advance, 280 + Math.random() * 200);
+    } else {
+      // All lines shown — fill progress and close
+      progressFill.style.width = '100%';
+      statusText.textContent = 'READY — LAUNCHING INTERFACE...';
+      setTimeout(() => {
+        // Notify Electron main process to close splash and show main window
+        if (window.__SPLASH_READY__) window.__SPLASH_READY__();
+      }, 600);
+    }
+  }
+
+  // Stagger the initial reveal
+  bootLines.forEach((line, i) => {
+    line.style.animationDelay = (i * 320) + 'ms';
+  });
+
+  // Start after a brief pause
+  setTimeout(advance, 800);
+</script>
+</body>
+</html>

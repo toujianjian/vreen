@@ -16,6 +16,9 @@ export interface SceneNode {
   parentId: string | null;
   children: SceneNode[];
   depth: number;
+  /** Pre-computed geometry stats (only populated for Mesh nodes; null for
+   *  Group/Light/Bone etc.). Powers the Inspector's Geometry panel. */
+  stats: import('@/stores/inspectorStore').GeometryStats | null;
 }
 
 export interface MaterialState {
@@ -84,6 +87,8 @@ export interface CameraState {
   cinematicAngle: number;
   /** Cinematic mode: orbit speed in rad/s. */
   cinematicSpeed: number;
+  /** Camera yaw in radians;PlayerInputSystem 用它把 WASD 转到世界空间。 */
+  yaw: number;
 }
 
 export const DEFAULT_CAMERA: CameraState = {
@@ -96,6 +101,7 @@ export const DEFAULT_CAMERA: CameraState = {
   orbitEnabled: true,
   cinematicAngle: 0,
   cinematicSpeed: 0.35,
+  yaw: 0,
 };
 
 export interface PresetAsset {

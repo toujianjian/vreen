@@ -36,8 +36,9 @@ export const useUIStore = create<UIState>((set) => ({
   environment: {
     preset: 'studio',
     exposure: 1.05,
-    background: 'envmap',
-    backgroundColor: '#05070d',
+    /** 默认纯黑,用户可手动切到 envmap / transparent */
+    background: 'solid',
+    backgroundColor: '#000000',
   },
   postFX: {
     bloom: true,

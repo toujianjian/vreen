@@ -23,6 +23,7 @@ import * as THREE from 'three';
 import { useUIStore } from '@/stores/uiStore';
 import { useViewerStore } from '@/stores/viewerStore';
 import { SceneContents } from './SceneContents';
+import { CustomStage } from './CustomStage';
 import { SafeEnvironment } from '@/components/three/SafeEnvironment';
 import type { EnvironmentPreset } from '@/types';
 import {
@@ -36,11 +37,19 @@ export function Stage() {
   const envCustomFile = useUIStore((s) => s.envCustomFile);
   const showGround = useViewerStore((s) => s.showGround);
   const camera = useViewerStore((s) => s.camera);
+  const useCustomRenderer = useViewerStore((s) => s.useCustomRenderer);
+  const assetSource = useViewerStore((s) => s.assetSource);
+
+  // 自定义渲染器当前仅支持上传的 .glb；其他情况自动 fallback 到 three.js
+  const canUseCustom =
+    useCustomRenderer && assetSource?.kind === 'upload';
 
   return (
     <div className="relative w-full h-full">
-      {/* Background gradient fallback (drei Environment handles it; this is for resilience) */}
-      <Canvas
+      {canUseCustom ? (
+        <CustomStage />
+      ) : (
+        <Canvas
         shadows
         dpr={[1, 2]}
         gl={{
@@ -76,6 +85,8 @@ export function Stage() {
 
         {showGround && (
           <>
+            {/* ContactShadows sit closest to y=0, so the soft shadow is the
+                bottommost visual layer. Model sits at GROUND_LIFT=0.002. */}
             <ContactShadows
               position={[0, 0, 0]}
               opacity={0.55}
@@ -85,6 +96,8 @@ export function Stage() {
               resolution={1024}
               color="#000000"
             />
+            {/* Grid sits a hair above the contact shadow plane so it never
+                z-fights with it. Model is above this. */}
             <Grid
               args={[20, 20]}
               cellSize={0.4}
@@ -103,6 +116,7 @@ export function Stage() {
 
         <CameraRig />
         <CinematicOrbiter />
+        <CameraYawTracker />
 
         <OrbitControls
           makeDefault
@@ -146,6 +160,7 @@ export function Stage() {
           </EffectComposer>
         )}
       </Canvas>
+      )}
 
       {/* Subtle scanline overlay for cyberpunk feel */}
       <div className="pointer-events-none absolute inset-0 bg-scanlines opacity-30 mix-blend-overlay" />
@@ -167,15 +182,21 @@ function SceneEnvironment() {
         position={[4, 6, 3]}
         intensity={1.2}
         castShadow
+        // 2048² is a good fidelity/perf balance; the frustum is now wide
+        // enough to cover the entire ground plane (10×10) plus a margin so
+        // we never see shadow clipping at the edges.
         shadow-mapSize-width={2048}
         shadow-mapSize-height={2048}
         shadow-camera-near={0.5}
-        shadow-camera-far={30}
-        shadow-camera-left={-5}
-        shadow-camera-right={5}
-        shadow-camera-top={5}
-        shadow-camera-bottom={-5}
-        shadow-bias={-0.0002}
+        shadow-camera-far={50}
+        shadow-camera-left={-8}
+        shadow-camera-right={8}
+        shadow-camera-top={8}
+        shadow-camera-bottom={-8}
+        // Tightened bias + a normal bias so we never get shadow acne on the
+        // model's own surfaces (a common source of "穿模" / Z-fighting look).
+        shadow-bias={-0.0005}
+        shadow-normalBias={0.02}
       />
       <directionalLight position={[-4, 3, -2]} intensity={0.45} color="#ff2bd6" />
       <directionalLight position={[0, -2, 4]} intensity={0.25} color="#00f0ff" />
@@ -241,6 +262,22 @@ function CameraRig() {
       ]}
     />
   );
+}
+
+/**
+ * CameraYawTracker
+ *
+ * Syncs the camera's horizontal heading (yaw) into viewerStore.camera.yaw,
+ * so PlayerInputSystem can orient WASD movement to the current view.
+ */
+function CameraYawTracker() {
+  const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera;
+  const setCamera = useViewerStore((s) => s.setCamera);
+  useFrame(() => {
+    const yaw = Math.atan2(camera.position.x, camera.position.z);
+    setCamera({ yaw });
+  });
+  return null;
 }
 
 /**

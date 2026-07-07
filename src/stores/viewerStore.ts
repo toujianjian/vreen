@@ -27,6 +27,12 @@ interface ViewerState {
   autoRotate: boolean;
   /** Real scene tree built from loaded THREE.Object3D */
   sceneTree: SceneNode[];
+  /** Reference to the originally uploaded model File, kept so the Inspector
+   *  can re-export a self-contained `.vreen` (state + model) bundle. Not
+   *  serialized. Cleared when a preset or new asset replaces the current one. */
+  currentModelFile: File | null;
+  /** Experimental: render with the custom WebGL2 engine instead of three.js. */
+  useCustomRenderer: boolean;
 
   // Actions
   setAssetSource: (source: AssetSource | null, name?: string) => void;
@@ -43,6 +49,8 @@ interface ViewerState {
   toggleWireframe: () => void;
   toggleGround: () => void;
   toggleAutoRotate: () => void;
+  setCurrentModelFile: (f: File | null) => void;
+  toggleCustomRenderer: () => void;
   reset: () => void;
 }
 
@@ -81,6 +89,8 @@ export const useViewerStore = create<ViewerState>((set) => ({
   showGround: true,
   autoRotate: true,
   sceneTree: [],
+  currentModelFile: null,
+  useCustomRenderer: false,
 
   setAssetSource: (source, name) =>
     set(() => ({
@@ -94,6 +104,7 @@ export const useViewerStore = create<ViewerState>((set) => ({
     })),
   setSceneTree: (nodes) => set({ sceneTree: nodes }),
   setAssetName: (name) => set({ assetName: name }),
+  setCurrentModelFile: (f) => set({ currentModelFile: f }),
   setStats: (partial) =>
     set((s) => ({
       stats: { ...s.stats, ...partial },
@@ -117,6 +128,7 @@ export const useViewerStore = create<ViewerState>((set) => ({
   toggleWireframe: () => set((s) => ({ showWireframe: !s.showWireframe })),
   toggleGround: () => set((s) => ({ showGround: !s.showGround })),
   toggleAutoRotate: () => set((s) => ({ autoRotate: !s.autoRotate })),
+  toggleCustomRenderer: () => set((s) => ({ useCustomRenderer: !s.useCustomRenderer })),
   reset: () =>
     set({
       assetSource: null,

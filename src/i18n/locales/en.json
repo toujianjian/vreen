@@ -74,20 +74,26 @@
     "or": "or",
     "browse": "click to browse",
     "ready": "READY",
+    "vreenReady": "Project ready (state applied)",
+    "vreenHint": "Also accepts .vreen project packages (state only — load the original model alongside)",
+    "openProject": "Open Inspector",
     "submit": "Launch Inspector",
     "invalid": "Unrecognized file format",
     "parsed": "PARSED ASSET",
     "empty": "— no file selected —",
-    "maxSize": "max 50MB",
+    "maxSize": "max 200MB",
     "errors": {
       "unsupported": "Unsupported format: {name}",
-      "tooLarge": "File too large (>50MB): {name}"
+      "tooLarge": "File too large (>{size}): {name}",
+      "vreenInvalid": ".vreen package failed to parse ({name}): {msg}"
     },
     "logs": {
       "rejected": "Rejected file: {name} (unknown extension)",
-      "exceeds": "File exceeds size budget: {name}",
+      "exceeds": "File exceeds size budget (>{size}): {name}",
       "parsed": "Parsed {name} as {format} ({size})",
-      "init": "Initializing inspector for {name}..."
+      "init": "Initializing inspector for {name}...",
+      "vreenImported": "Imported project {name} → applied to {asset}",
+      "vreenFailed": "Project {name} import failed: {msg}"
     }
   },
   "gallery": {
@@ -135,6 +141,7 @@
     "play": "PLAY",
     "pause": "PAUSE",
     "speed": "SPEED",
+    "project": "PROJECT",
     "logs": {
       "paused": "Animation paused",
       "resumed": "Animation resumed",
@@ -275,11 +282,18 @@
     "bgEnv": "ENVMAP",
     "bgSolid": "SOLID",
     "bgTransparent": "TRANSPARENT",
+    "engineDemo": {
+      "title": "ENGINE DEMO"
+    },
     "customHdri": "Custom HDRI",
     "uploadHdri": "Upload .hdr / .exr",
     "replaceHdri": "Replace File",
     "resetHdri": "Reset to Preset",
-    "exportProject": "Export Project (.vreen)",
+    "exportProject": "Export Project (state)",
+    "exportBundle": "Export Project (with model)",
+    "exportJsonHint": "Scene state only (.vreen.json) — model is NOT embedded",
+    "exportBundleHint": "Scene state + embedded model as a .vreen zip — self-contained, shareable",
+    "importProject": "Import Project (.vreen)",
     "bloom": "Bloom",
     "bloomIntensity": "Bloom Intensity",
     "chromatic": "Chromatic Aberration",

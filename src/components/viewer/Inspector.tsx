@@ -7,6 +7,7 @@ import {
   Camera,
   ChevronDown,
   ChevronRight,
+  Cpu,
   Download,
   Lightbulb,
   RotateCcw,
@@ -19,21 +20,26 @@ import { HudPanel } from '@/components/hud/HudPanel';
 import { useInspectorStore } from '@/stores/inspectorStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useViewerStore } from '@/stores/viewerStore';
+import { useWorldStore } from '@/stores/worldStore';
 import { cn } from '@/lib/cn';
 import type { EnvironmentPreset } from '@/types';
 import { CAMERA_PRESET_LIST, CAMERA_PRESETS } from '@/three/camera';
-import { exportVreenPackage, downloadVreenPackage } from '@/lib/export';
-
-const ENV_PRESETS: { value: EnvironmentPreset; label: string; color: string }[] = [
-  { value: 'studio', label: 'STUDIO', color: 'text-neon-cyan' },
-  { value: 'sunset', label: 'SUNSET', color: 'text-neon-amber' },
-  { value: 'warehouse', label: 'WAREHOUSE', color: 'text-neon-magenta' },
-  { value: 'night', label: 'NIGHT', color: 'text-violet-300' },
-  { value: 'city', label: 'CITY', color: 'text-emerald-300' },
-];
+import { ColorField } from '@/components/viewer/ColorField';
+import { ECSPanel } from '@/components/viewer/ECSPanel';
+import {
+  packVreenPackage,
+  unpackVreenPackage,
+  downloadVreenBytes,
+  type VreenScene,
+  type PackAssetInput,
+} from '@/lib/vreenPack';
+import { importVreenPackageFile } from '@/lib/export';
+import { uploadBridge } from '@/lib/uploadBridge';
+import { useNavigate } from 'react-router-dom';
 
 export function Inspector() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const showInspector = useUIStore((s) => s.showInspector);
   const selectedName = useInspectorStore((s) => s.selectedName);
   const selectedType = useInspectorStore((s) => s.selectedType);
@@ -42,6 +48,7 @@ export function Inspector() {
   const focusedMaterialId = useInspectorStore((s) => s.focusedMaterialId);
   const setFocusedMaterial = useInspectorStore((s) => s.setFocusedMaterial);
   const updateMaterial = useInspectorStore((s) => s.updateMaterial);
+  const currentModelFile = useViewerStore((s) => s.currentModelFile);
 
   const matList = useMemo(() => Object.values(materials), [materials]);
   const focusedMaterial = focusedMaterialId ? materials[focusedMaterialId] : matList[0];
@@ -49,8 +56,8 @@ export function Inspector() {
   if (!showInspector) return null;
 
   return (
-    <HudPanel title={t('viewer.inspector')} tag={t('viewer.inspectorTag')} className="h-full" variant="magenta">
-      <div className="px-4 py-3 border-b border-neon-magenta/15">
+    <HudPanel title={t('viewer.inspector')} tag={t('viewer.inspectorTag')} className="h-full flex flex-col" bodyClassName="flex-1 min-h-0 flex flex-col" variant="magenta">
+      <div className="shrink-0 px-4 py-3 border-b border-neon-magenta/15">
         <div className="flex items-center gap-2 text-magenta-300/90">
           <Box className="w-3.5 h-3.5" />
           <span className="font-mono text-[10px] tracking-[0.2em] uppercase">{t('viewer.selected')}</span>
@@ -64,9 +71,13 @@ export function Inspector() {
         </div>
       </div>
 
-      <div className="overflow-y-auto h-[calc(100%-130px)]">
+      <div className="flex-1 min-h-0 overflow-y-auto">
         <Section icon={<Camera className="w-3.5 h-3.5" />} title={t('viewer.camera')}>
           <CameraEditor />
+        </Section>
+
+        <Section icon={<Box className="w-3.5 h-3.5" />} title="GEOMETRY">
+          <GeometryPanel />
         </Section>
 
         <Section icon={<Brush className="w-3.5 h-3.5" />} title={t('viewer.materialLab')}>
@@ -104,10 +115,6 @@ export function Inspector() {
           )}
         </Section>
 
-        <Section icon={<Sun className="w-3.5 h-3.5" />} title={t('viewer.environment')}>
-          <EnvironmentEditor />
-        </Section>
-
         <Section icon={<Sparkles className="w-3.5 h-3.5" />} title={t('viewer.postFX')}>
           <PostFXEditor />
         </Section>
@@ -115,22 +122,264 @@ export function Inspector() {
         <Section icon={<Lightbulb className="w-3.5 h-3.5" />} title={t('viewer.displayFlags')}>
           <DisplayFlagsEditor />
         </Section>
+
+        <Section icon={<Cpu className="w-3.5 h-3.5" />} title="ECS WORLD">
+          <ECSPanel />
+        </Section>
       </div>
 
-      <div className="px-4 py-3 border-t border-neon-magenta/15">
+      <div className="shrink-0 px-4 py-3 border-t border-neon-magenta/15 space-y-1.5">
         <button
-          onClick={() => {
-            const pkg = exportVreenPackage();
-            downloadVreenPackage(pkg);
-            useUIStore.getState().pushLog('OK', 'Project exported as .vreen.json');
+          onClick={async () => {
+            const viewer = useViewerStore.getState();
+            const inspector = useInspectorStore.getState();
+            const ui = useUIStore.getState();
+            const modelFile = useViewerStore.getState().currentModelFile;
+            try {
+              const scene: VreenScene = {
+                version: '0.2.1' as const,
+                camera: viewer.camera as unknown as Record<string, unknown>,
+                animation: { speed: viewer.animation.speed },
+                environment: ui.environment as unknown as Record<string, unknown>,
+                postFX: ui.postFX as unknown as Record<string, unknown>,
+                materials: inspector.materials as unknown as Record<string, unknown>,
+              };
+              const assets: PackAssetInput[] = [];
+              if (modelFile) {
+                const buf = new Uint8Array(await modelFile.arrayBuffer());
+                assets.push({ kind: 'model', data: buf, originalName: modelFile.name });
+              }
+              const worldJson = useWorldStore.getState().serialize();
+              const { bytes, manifest } = packVreenPackage({
+                name: viewer.assetName || 'project',
+                assetName: viewer.assetName || 'project',
+                scene,
+                assets,
+                world: worldJson ?? undefined,
+              });
+              downloadVreenBytes(bytes, viewer.assetName);
+              const worldNote = worldJson
+                ? ` + world(${worldJson.entities.length})`
+                : '';
+              const modelNote = assets.length > 0 ? ` + model(${assets[0].originalName})` : '';
+              useUIStore
+                .getState()
+                .pushLog('OK', `Saved .vreen → ${manifest.version}${modelNote}${worldNote}`);
+            } catch (e) {
+              const msg = e instanceof Error ? e.message : String(e);
+              useUIStore.getState().pushLog('ERR', `Export failed: ${msg}`);
+            }
           }}
           className="hud-btn hud-btn-magenta w-full justify-center !text-[10px]"
+          title={
+            currentModelFile
+              ? t('viewer.exportBundleHint')
+              : t('viewer.exportJsonHint')
+          }
         >
           <Download className="w-3 h-3" />
-          <span>{t('viewer.exportProject')}</span>
+          <span>
+            {currentModelFile
+              ? t('viewer.exportBundle')
+              : t('viewer.exportProject')}
+          </span>
         </button>
+        <label className="hud-btn hud-btn-ghost w-full justify-center !text-[10px] cursor-pointer">
+          <Upload className="w-3 h-3" />
+          <span>{t('viewer.importProject')}</span>
+          <input
+            type="file"
+            accept=".vreen,.vreen.json,application/json,application/zip"
+            className="hidden"
+            onChange={async (e) => {
+              const f = e.target.files?.[0];
+              e.target.value = '';
+              if (!f) return;
+              try {
+                // 嗅探 zip / json：zip 走 0.2.1 unpackVreenPackage, json 走 export.ts 的 0.1.0 legacy。
+                const head = new Uint8Array(await f.slice(0, 4).arrayBuffer());
+                const isZip = head[0] === 0x50 && head[1] === 0x4b && head[2] === 0x03 && head[3] === 0x04;
+                if (isZip) {
+                  const bytes = new Uint8Array(await f.arrayBuffer());
+                  const unpacked = await unpackVreenPackage(bytes);
+                  useViewerStore.setState((s) => ({
+                    camera: { ...s.camera, ...(unpacked.scene.camera as object) },
+                    animation: { ...s.animation, ...unpacked.scene.animation },
+                    assetName: unpacked.manifest.assetName || unpacked.manifest.name,
+                  }));
+                  useInspectorStore.setState({ materials: unpacked.scene.materials as never });
+                  useUIStore.setState({
+                    environment: unpacked.scene.environment as never,
+                    postFX: unpacked.scene.postFX as never,
+                    envCustomFile: null,
+                  });
+                  if (unpacked.manifest.world) {
+                    useWorldStore.getState().deserialize(unpacked.manifest.world);
+                  }
+                  const modelEntry = unpacked.manifest.assets.find((a) => a.kind === 'model');
+                  if (modelEntry) {
+                    const data = unpacked.assets.get(modelEntry.id);
+                    if (data) {
+                      const ext = (modelEntry.originalName ?? 'glb').split('.').pop() ?? 'glb';
+                      const mFile = new File([data as unknown as BlobPart], `embedded.${ext}`, { type: 'application/octet-stream' });
+                      uploadBridge.set(mFile);
+                      useViewerStore.getState().setAssetSource(
+                        { kind: 'upload', uploadId: mFile.name },
+                        unpacked.manifest.assetName,
+                      );
+                      useUIStore
+                        .getState()
+                        .pushLog('OK', `Imported .vreen 0.2.1 → ${unpacked.manifest.assetName} + model`);
+                      navigate('/viewer');
+                      return;
+                    }
+                  }
+                  useUIStore
+                    .getState()
+                    .pushLog('OK', `Imported .vreen 0.2.1 state → ${unpacked.manifest.assetName}`);
+                } else {
+                  // 0.1.x 兼容路径
+                  const { pkg, modelFile } = await importVreenPackageFile(f);
+                  if (modelFile) {
+                    uploadBridge.set(modelFile);
+                    useViewerStore
+                      .getState()
+                      .setAssetSource(
+                        { kind: 'upload', uploadId: modelFile.name },
+                        modelFile.name,
+                      );
+                    useUIStore
+                      .getState()
+                      .pushLog(
+                        'OK',
+                        `Imported .vreen 0.1.x → ${modelFile.name} + state`,
+                      );
+                    navigate('/viewer');
+                  } else {
+                    useUIStore
+                      .getState()
+                      .pushLog(
+                        'OK',
+                        `Imported .vreen.json 0.1.x state (${pkg.assetName || '—'})`,
+                      );
+                  }
+                }
+              } catch (err) {
+                const msg = err instanceof Error ? err.message : String(err);
+                useUIStore.getState().pushLog('ERR', `Import failed: ${msg}`);
+              }
+            }}
+          />
+        </label>
       </div>
     </HudPanel>
+  );
+}
+
+/**
+ * GeometryPanel — shows vertex / face / attribute / bbox / texture info
+ * for the currently selected mesh. Game developers typically want this
+ * before optimizing a model (LOD decisions, texture budget, etc.).
+ */
+function GeometryPanel() {
+  const selectedUuid = useInspectorStore((s) => s.selectedUuid);
+  const selectedName = useInspectorStore((s) => s.selectedName);
+  const selectedType = useInspectorStore((s) => s.selectedType);
+  const triCount = useInspectorStore((s) => s.triCount);
+  const stats = useInspectorStore((s) => s.geometryStats);
+
+  if (!stats) {
+    return (
+      <div className="text-mist text-[11px] font-mono px-1 py-2 leading-relaxed">
+        {selectedUuid
+          ? `Selected: ${selectedName} (${selectedType}). Click a Mesh in the outliner or 3D view to inspect vertex / face / texture data.`
+          : 'No mesh selected. Click a part in the 3D view or outliner.'}
+      </div>
+    );
+  }
+
+  const fmt = (n: number) => n.toLocaleString('en-US');
+  const fmtVec = (v: [number, number, number], digits = 3) =>
+    `(${v.map((x) => x.toFixed(digits)).join(', ')})`;
+
+  return (
+    <div className="space-y-2.5">
+      {/* Identity row */}
+      <div className="grid grid-cols-2 gap-1.5 font-mono text-[10px]">
+        <Stat label="NAME" value={selectedName} mono />
+        <Stat label="KIND" value={selectedType} mono />
+        <Stat label="VERTICES" value={fmt(stats.vertexCount)} accent />
+        <Stat label="TRIANGLES" value={fmt(Math.max(stats.faceCount, triCount))} accent />
+        <Stat label="INDEXED" value={stats.indexed ? 'YES' : 'NO'} mono />
+        <Stat label="GROUPS" value={String(stats.groupCount)} mono />
+      </div>
+
+      {/* Attributes */}
+      <div>
+        <div className="hud-label mb-1">ATTRIBUTES</div>
+        <div className="grid grid-cols-5 gap-1 font-mono text-[10px]">
+          <AttrTag on={stats.hasPosition} label="POS" />
+          <AttrTag on={stats.hasNormal} label="NRM" />
+          <AttrTag on={stats.hasUV} label="UV" />
+          <AttrTag on={stats.hasColor} label="CLR" />
+          <AttrTag on={stats.hasTangent} label="TAN" />
+        </div>
+      </div>
+
+      {/* AABB */}
+      {stats.bbox && (
+        <div>
+          <div className="hud-label mb-1">BOUNDING BOX (LOCAL)</div>
+          <div className="font-mono text-[10px] leading-relaxed">
+            <div className="text-mist">min  <span className="text-haze">{fmtVec(stats.bbox.min)}</span></div>
+            <div className="text-mist">max  <span className="text-haze">{fmtVec(stats.bbox.max)}</span></div>
+            <div className="text-mist">size <span className="text-neon-cyan">{fmtVec(stats.bbox.size)}</span></div>
+          </div>
+        </div>
+      )}
+
+      {/* Textures */}
+      <div>
+        <div className="hud-label mb-1">TEXTURES · {stats.textures.length}</div>
+        {stats.textures.length === 0 ? (
+          <div className="text-mist text-[10px] font-mono">none</div>
+        ) : (
+          <ul className="font-mono text-[10px] space-y-0.5 max-h-32 overflow-y-auto">
+            {stats.textures.map((t, i) => (
+              <li key={i} className="text-haze/85 truncate" title={t}>
+                <span className="text-neon-cyan mr-1">▸</span>{t}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Stat({ label, value, mono, accent }: { label: string; value: string; mono?: boolean; accent?: boolean }) {
+  return (
+    <div className="border border-neon-cyan/10 bg-space-800/40 px-2 py-1">
+      <div className="text-[9px] tracking-[0.18em] text-mist">{label}</div>
+      <div className={accent ? 'text-neon-cyan' : 'text-haze'} style={{ fontFamily: mono ? 'inherit' : undefined }}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function AttrTag({ on, label }: { on: boolean; label: string }) {
+  return (
+    <div
+      className={cn(
+        'text-center py-1 border transition-colors',
+        on
+          ? 'border-neon-cyan/40 bg-neon-cyan/10 text-neon-cyan'
+          : 'border-neon-cyan/10 text-mist/40',
+      )}
+    >
+      {label}
+    </div>
   );
 }
 
@@ -291,19 +540,10 @@ function MaterialEditor({
   return (
     <div className="space-y-3">
       <Field label={t('viewer.field.baseColor')}>
-        <div className="flex items-center gap-2">
-          <input
-            type="color"
-            value={material.baseColor}
-            onChange={(e) => onChange({ baseColor: e.target.value })}
-            className="w-8 h-8 bg-transparent border border-neon-cyan/30 cursor-pointer"
-          />
-          <input
-            value={material.baseColor}
-            onChange={(e) => onChange({ baseColor: e.target.value })}
-            className="hud-input font-mono"
-          />
-        </div>
+        <ColorField
+          value={material.baseColor}
+          onChange={(v) => onChange({ baseColor: v })}
+        />
       </Field>
 
       <SliderField
@@ -324,19 +564,10 @@ function MaterialEditor({
       />
 
       <Field label={t('viewer.field.emissive')}>
-        <div className="flex items-center gap-2">
-          <input
-            type="color"
-            value={material.emissive}
-            onChange={(e) => onChange({ emissive: e.target.value })}
-            className="w-8 h-8 bg-transparent border border-neon-cyan/30 cursor-pointer"
-          />
-          <input
-            value={material.emissive}
-            onChange={(e) => onChange({ emissive: e.target.value })}
-            className="hud-input font-mono"
-          />
-        </div>
+        <ColorField
+          value={material.emissive}
+          onChange={(v) => onChange({ emissive: v })}
+        />
       </Field>
       <SliderField
         label={t('viewer.field.emissiveIntensity')}
@@ -418,97 +649,8 @@ function SliderField({
         step={step}
         value={value}
         onChange={(e) => onChange(parseFloat(e.target.value))}
-        className="w-full h-1 mt-1.5 appearance-none bg-space-700 cursor-pointer accent-neon-cyan"
+        className="hud-range mt-1.5"
       />
-    </div>
-  );
-}
-
-function EnvironmentEditor() {
-  const { t } = useTranslation();
-  const environment = useUIStore((s) => s.environment);
-  const setEnvironment = useUIStore((s) => s.setEnvironment);
-  const envCustomFile = useUIStore((s) => s.envCustomFile);
-  const setEnvCustomFile = useUIStore((s) => s.setEnvCustomFile);
-  const bgLabel = (b: 'envmap' | 'solid' | 'transparent') => {
-    if (b === 'envmap') return t('viewer.bgEnv');
-    if (b === 'solid') return t('viewer.bgSolid');
-    return t('viewer.bgTransparent');
-  };
-  return (
-    <div className="space-y-3">
-      <div>
-        <div className="hud-label mb-1.5">{t('viewer.hdri')}</div>
-        <div className="grid grid-cols-2 gap-1.5">
-          {ENV_PRESETS.map((p) => (
-            <button
-              key={p.value}
-              onClick={() => setEnvironment({ preset: p.value })}
-              className={cn(
-                'hud-btn !text-[10px] !px-2 !py-1.5',
-                environment.preset === p.value ? '' : 'hud-btn-ghost',
-              )}
-            >
-              <span className={p.color}>●</span>
-              <span>{p.label}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-      <SliderField
-        label={t('viewer.exposure')}
-        value={environment.exposure}
-        min={0.2}
-        max={2.5}
-        step={0.05}
-        onChange={(v) => setEnvironment({ exposure: v })}
-      />
-      <Field label={t('viewer.background')}>
-        <div className="grid grid-cols-3 gap-1.5">
-          {(['envmap', 'solid', 'transparent'] as const).map((b) => (
-            <button
-              key={b}
-              onClick={() => setEnvironment({ background: b })}
-              className={cn(
-                'hud-btn !text-[10px] !px-1 !py-1',
-                environment.background === b ? '' : 'hud-btn-ghost',
-              )}
-            >
-              {bgLabel(b)}
-            </button>
-          ))}
-        </div>
-      </Field>
-
-      {/* Custom HDRI upload */}
-      <div>
-        <div className="hud-label mb-1.5">{t('viewer.customHdri')}</div>
-        <label className="hud-btn hud-btn-ghost w-full justify-center !text-[10px] cursor-pointer">
-          <Upload className="w-3 h-3" />
-          <span>{envCustomFile ? t('viewer.replaceHdri') : t('viewer.uploadHdri')}</span>
-          <input
-            type="file"
-            accept=".hdr,.exr"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) {
-                const url = URL.createObjectURL(file);
-                setEnvCustomFile(url);
-              }
-            }}
-          />
-        </label>
-        {envCustomFile && (
-          <button
-            onClick={() => { URL.revokeObjectURL(envCustomFile); setEnvCustomFile(null); }}
-            className="hud-btn hud-btn-ghost w-full justify-center !text-[10px] mt-1"
-          >
-            <X className="w-3 h-3" />
-            <span>{t('viewer.resetHdri')}</span>
-          </button>
-        )}
-      </div>
     </div>
   );
 }

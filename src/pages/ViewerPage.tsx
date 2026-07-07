@@ -10,13 +10,17 @@ import { ViewerStatusBar } from '@/components/viewer/ViewerStatusBar';
 import { Timeline } from '@/components/viewer/Timeline';
 import { useViewerStore } from '@/stores/viewerStore';
 import { useUIStore } from '@/stores/uiStore';
+import { useWorldStore } from '@/stores/worldStore';
 import { getPresetById } from '@/lib/presets';
+import { PlayerInput } from '@/engine/ECS';
 
 export function ViewerPage() {
   const { assetId } = useParams<{ assetId?: string }>();
   const { t } = useTranslation();
   const setAssetSource = useViewerStore((s) => s.setAssetSource);
   const pushLog = useUIStore((s) => s.pushLog);
+  const cameraYaw = useViewerStore((s) => s.camera.yaw);
+  const world = useWorldStore((s) => s.world);
 
   // Resolve route param to an asset source on mount
   useEffect(() => {
@@ -29,6 +33,42 @@ export function ViewerPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [assetId]);
+
+  // Keyboard → PlayerInput (WASD + Shift + Space). 监听在 ViewerPage 顶层,
+  // 避免 Canvas 抢焦点问题。
+  useEffect(() => {
+    const keys = new Set<string>();
+    const onDown = (e: KeyboardEvent) => {
+      const k = e.key.toLowerCase();
+      if (['w', 'a', 's', 'd', ' ', 'shift'].includes(k)) {
+        e.preventDefault();
+      }
+      keys.add(k);
+      syncInput();
+    };
+    const onUp = (e: KeyboardEvent) => {
+      keys.delete(e.key.toLowerCase());
+      syncInput();
+    };
+    const syncInput = () => {
+      if (!world) return;
+      // 把 cameraYaw 同步给所有带 PlayerInput 的 entity (root entity)
+      world.queryWith(PlayerInput, (id, input) => {
+        input.forward = (keys.has('w') ? 1 : 0) - (keys.has('s') ? 1 : 0);
+        input.right = (keys.has('d') ? 1 : 0) - (keys.has('a') ? 1 : 0);
+        input.run = keys.has('shift');
+        input.jump = keys.has(' ');
+        input.cameraYaw = cameraYaw ?? 0;
+      });
+      useWorldStore.setState((s) => ({ version: s.version + 1 }));
+    };
+    window.addEventListener('keydown', onDown);
+    window.addEventListener('keyup', onUp);
+    return () => {
+      window.removeEventListener('keydown', onDown);
+      window.removeEventListener('keyup', onUp);
+    };
+  }, [world, cameraYaw]);
 
   return (
     <div className="flex flex-col h-[calc(100vh-3.5rem)] -mt-0">

@@ -26,7 +26,7 @@ body,
   padding: 0;
   width: 100%;
   min-height: 100vh;
-  background-color: var(--color-space-900);
+  background-color: #000;
   color: var(--color-haze);
   font-family: 'Noto Sans SC', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -34,12 +34,11 @@ body,
   text-rendering: optimizeLegibility;
 }
 
+/* Pure-black canvas for the 3D viewport. The HUD keeps its
+   #05070d frame (border + glow + corners) as the only "non-black"
+   elements — matches Unity / Blender / Substance conventions. */
 body {
-  background-image:
-    radial-gradient(ellipse at top, rgba(0, 240, 255, 0.07) 0%, transparent 55%),
-    radial-gradient(ellipse at bottom right, rgba(255, 43, 214, 0.06) 0%, transparent 50%),
-    linear-gradient(180deg, var(--color-space-900) 0%, var(--color-space-950) 100%);
-  background-attachment: fixed;
+  background: #000;
 }
 
 /* Custom scrollbars */
@@ -77,6 +76,11 @@ select:focus-visible {
 @layer components {
   .hud-panel {
     @apply relative bg-glass backdrop-blur-xl border border-neon-cyan/20;
+    /* overflow:hidden keeps the ::before gradient and the box-shadow
+       strictly inside the panel. isolation:isolate creates a new
+       stacking context so child z-indexes don't leak. */
+    overflow: hidden;
+    isolation: isolate;
     box-shadow:
       inset 0 0 0 1px rgba(0, 240, 255, 0.06),
       0 0 0 1px rgba(0, 0, 0, 0.6),
@@ -88,6 +92,12 @@ select:focus-visible {
     inset: 0;
     background: linear-gradient(135deg, rgba(0, 240, 255, 0.06) 0%, transparent 50%, rgba(255, 43, 214, 0.04) 100%);
     pointer-events: none;
+    z-index: 0;
+  }
+  /* Children that should sit above the ::before gradient must use z-[1]+ */
+  .hud-panel > * {
+    position: relative;
+    z-index: 1;
   }
   .hud-panel-magenta {
     @apply border-neon-magenta/30;
@@ -185,6 +195,67 @@ select:focus-visible {
   .hud-input {
     @apply w-full font-mono text-[12px] px-2 py-1.5 bg-space-800/60 text-haze border border-neon-cyan/20 focus:border-neon-cyan/70 transition-colors duration-200;
   }
+  /* Range slider — strip the browser's chrome so the track stays inside the panel. */
+  .hud-range {
+    @apply w-full appearance-none cursor-pointer bg-transparent;
+    height: 18px;
+    margin: 0;
+    padding: 0;
+  }
+  .hud-range::-webkit-slider-runnable-track {
+    height: 4px;
+    background: var(--color-space-700);
+    border: 1px solid rgba(0, 240, 255, 0.15);
+    border-radius: 2px;
+  }
+  .hud-range::-moz-range-track {
+    height: 4px;
+    background: var(--color-space-700);
+    border: 1px solid rgba(0, 240, 255, 0.15);
+    border-radius: 2px;
+  }
+  .hud-range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    margin-top: -5px;
+    background: var(--color-neon-cyan);
+    border: 1px solid var(--color-space-900);
+    border-radius: 2px;
+    box-shadow: 0 0 6px rgba(0, 240, 255, 0.5);
+  }
+  .hud-range::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    background: var(--color-neon-cyan);
+    border: 1px solid var(--color-space-900);
+    border-radius: 2px;
+    box-shadow: 0 0 6px rgba(0, 240, 255, 0.5);
+  }
+  .hud-range:focus {
+    outline: none;
+  }
+  /* Color swatch button (replaces native input[type=color] which pops a
+     system color picker that ignores overflow:hidden). */
+  .hud-swatch {
+    @apply shrink-0 cursor-pointer border border-neon-cyan/30 transition-colors;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    background-image:
+      linear-gradient(45deg, #1a2030 25%, transparent 25%),
+      linear-gradient(-45deg, #1a2030 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #1a2030 75%),
+      linear-gradient(-45deg, transparent 75%, #1a2030 75%);
+    background-size: 8px 8px;
+    background-position: 0 0, 0 4px, 4px -4px, -4px 0;
+  }
+  .hud-swatch-fill {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
   .hud-divider {
     @apply h-px w-full;
     background: linear-gradient(90deg, transparent, rgba(0, 240, 255, 0.4), transparent);
@@ -194,6 +265,9 @@ select:focus-visible {
     width: 12px;
     height: 12px;
     border-color: var(--color-neon-cyan);
+    /* Corner accents are pure decoration — they must NEVER swallow clicks. */
+    pointer-events: none;
+    z-index: 2;
   }
   .hud-corner-tl {
     top: 0;

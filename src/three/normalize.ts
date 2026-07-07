@@ -2,57 +2,86 @@
 
 import * as THREE from 'three';
 import type { SceneNode, NodeKind } from '@/types';
+import { extractGeometryStats } from '@/three/extractGeometryStats';
+
+/** Lift the model this much above the ground plane to avoid Z-fighting with
+ *  the Grid / ContactShadows plane sitting at y=0. */
+const GROUND_LIFT = 0.002;
 
 export interface NormalizeOptions {
   /** Target diameter in world units after normalization */
   targetSize?: number;
-  /** Lift the model so the bottom of its bounding box sits at y=0 */
+  /** Lift the model so the bottom of its bounding box sits just above y=0 */
   sitOnGround?: boolean;
 }
 
 /**
  * Center a model at the origin, scale it to the target size, and ensure
- * shadow flags are set on all meshes. Returns the original root unchanged
- * in identity but mutated in transform.
+ * shadow flags are set on all meshes. The result is a clean, well-behaved
+ * model that doesn't z-fight with the ground.
+ *
+ * Robustness notes:
+ *  - We always recompute `updateMatrixWorld(true)` between operations so that
+ *    Box3.setFromObject returns true world-space bounds.
+ *  - We translate BEFORE we scale (cheaper and gives an exact result) but
+ *    re-measure AFTER scaling to compute the sit-on-ground lift.
+ *  - We use GROUND_LIFT > 0 so the lowest vertex sits 2 mm above the ground
+ *    plane, which prevents Z-fighting against the Grid / ContactShadows.
+ *  - We always reset the root's local rotation/position to the *post-*
+ *    transform values, but we DO NOT touch the root's rotation, so any
+ *    authored orientation is preserved.
  */
 export function normalizeObject(root: THREE.Object3D, opts: NormalizeOptions = {}): THREE.Object3D {
   const targetSize = opts.targetSize ?? 2.4;
   const sitOnGround = opts.sitOnGround ?? true;
 
-  // Compute bounding box
+  // 0. Make sure world matrices are up to date before measuring.
+  root.updateMatrixWorld(true);
+
+  // 1. Measure original world bounds.
   const box = new THREE.Box3().setFromObject(root);
   const size = new THREE.Vector3();
   const center = new THREE.Vector3();
   box.getSize(size);
   box.getCenter(center);
 
-  // Move children so root effectively centers at origin
-  root.position.x -= center.x;
-  root.position.y -= center.y;
-  root.position.z -= center.z;
+  // Guard against pathological empty / zero-size models.
+  if (!isFinite(box.min.x) || !isFinite(box.max.x)) {
+    console.warn('[VREEN] normalize: invalid bounding box, skipping centering');
+  } else {
+    // 2. Translate root so the model is centered around the origin.
+    //    We rely on the root having no parent transform — which is true in
+    //    our pipeline (groupRef is the root and is parented directly to the
+    //    scene). If a caller uses this in a different context, they should
+    //    wrap the input in a fresh Group first.
+    root.position.x -= center.x;
+    root.position.y -= center.y;
+    root.position.z -= center.z;
+    root.updateMatrixWorld(true);
+  }
 
-  // Update world matrices
-  root.updateMatrixWorld(true);
-
-  // Compute new bounds after translation
+  // 3. Measure again (post-translation) and compute uniform scale.
   const box2 = new THREE.Box3().setFromObject(root);
   const size2 = new THREE.Vector3();
   box2.getSize(size2);
-
-  // Scale uniformly
   const maxDim = Math.max(size2.x, size2.y, size2.z);
-  const scale = maxDim > 0 ? targetSize / maxDim : 1;
-  root.scale.multiplyScalar(scale);
-
-  // If sitting on ground, shift up so y=0 is the lowest point
-  if (sitOnGround) {
+  if (maxDim > 0) {
+    const scale = targetSize / maxDim;
+    root.scale.multiplyScalar(scale);
     root.updateMatrixWorld(true);
-    const box3 = new THREE.Box3().setFromObject(root);
-    const minY = box3.min.y;
-    root.position.y -= minY;
   }
 
-  // Recursively enable shadow flags and frustum culling
+  // 4. Sit on the ground: shift up so the lowest point is GROUND_LIFT above y=0.
+  if (sitOnGround) {
+    const box3 = new THREE.Box3().setFromObject(root);
+    const minY = box3.min.y;
+    if (isFinite(minY)) {
+      root.position.y += -minY + GROUND_LIFT;
+      root.updateMatrixWorld(true);
+    }
+  }
+
+  // 5. Enable shadow flags and frustum culling on every mesh.
   root.traverse((obj) => {
     if ((obj as THREE.Mesh).isMesh) {
       obj.castShadow = true;
@@ -101,11 +130,32 @@ export function countScene(root: THREE.Object3D): TraverseCounts {
   return { meshes, triangles: Math.round(triangles), materials, lights };
 }
 
-/** Convert a THREE material into a serializable state object */
-export function snapshotMaterial(material: THREE.Material, id: string) {
-  const std = material as THREE.MeshStandardMaterial;
-  const color = std.color ? '#' + std.color.getHexString() : '#cccccc';
-  const emissive = std.emissive ? '#' + std.emissive.getHexString() : '#000000';
+/** Convert a material (three.js OR our new engine) into a serializable
+ *  state object the Inspector can edit. */
+export function snapshotMaterial(material: THREE.Material | unknown, id: string) {
+  const std = material as {
+    color?: { getHexString(): string };
+    emissive?: { getHexString(): string };
+    baseColor?: { r: number; g: number; b: number };
+    emissiveCol?: { r: number; g: number; b: number };
+    metalness?: number;
+    roughness?: number;
+    emissiveIntensity?: number;
+    normalScale?: { x: number; y: number };
+    opacity?: number;
+    wireframe?: boolean;
+    name?: string;
+  };
+  const color = std.color
+    ? '#' + std.color.getHexString()
+    : std.baseColor
+    ? rgbToHex(std.baseColor)
+    : '#cccccc';
+  const emissive = std.emissive
+    ? '#' + std.emissive.getHexString()
+    : std.emissiveCol
+    ? rgbToHex(std.emissiveCol)
+    : '#000000';
   return {
     id,
     name: std.name || id,
@@ -118,6 +168,13 @@ export function snapshotMaterial(material: THREE.Material, id: string) {
     opacity: std.opacity ?? 1,
     wireframe: !!std.wireframe,
   };
+}
+
+function rgbToHex(c: { r: number; g: number; b: number }): string {
+  const r = Math.round(c.r * 255).toString(16).padStart(2, '0');
+  const g = Math.round(c.g * 255).toString(16).padStart(2, '0');
+  const b = Math.round(c.b * 255).toString(16).padStart(2, '0');
+  return '#' + r + g + b;
 }
 
 /**
@@ -141,12 +198,18 @@ function buildNode(obj: THREE.Object3D, parentId: string | null, depth: number):
   else if ((obj as THREE.Camera).isCamera) type = 'Camera';
 
   let triCount = 0;
+  let stats: SceneNode['stats'] = null;
   if ((obj as THREE.Mesh).isMesh) {
     const geo = (obj as THREE.Mesh).geometry;
     if (geo) {
       if (geo.index) triCount = geo.index.count / 3;
       else if (geo.attributes.position) triCount = geo.attributes.position.count / 3;
     }
+    // Pre-compute inspector stats while we still have the live three.js
+    // object. The result is cached on the SceneNode so the Outliner can
+    // synchronously surface vertex / face / texture counts on click
+    // without re-traversing the scene.
+    stats = extractGeometryStats(obj);
   }
 
   const children: SceneNode[] = [];
@@ -165,6 +228,7 @@ function buildNode(obj: THREE.Object3D, parentId: string | null, depth: number):
     parentId,
     depth,
     children,
+    stats,
   };
 }
 

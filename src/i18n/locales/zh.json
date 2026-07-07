@@ -74,20 +74,26 @@
     "or": "或",
     "browse": "点击选择",
     "ready": "已就绪",
+    "vreenReady": "项目已就绪 (状态已应用)",
+    "vreenHint": "也支持 .vreen 项目包(仅场景状态,需配合原模型)",
+    "openProject": "打开检视器",
     "submit": "启动检视器",
     "invalid": "无法识别文件格式",
     "parsed": "已解析资产",
     "empty": "— 尚未选择文件 —",
-    "maxSize": "最大 50MB",
+    "maxSize": "最大 200MB",
     "errors": {
       "unsupported": "不支持的格式: {name}",
-      "tooLarge": "文件过大 (>50MB): {name}"
+      "tooLarge": "文件过大 (>{size}): {name}",
+      "vreenInvalid": ".vreen 包解析失败 ({name}): {msg}"
     },
     "logs": {
       "rejected": "已拒绝文件: {name} (未知扩展名)",
-      "exceeds": "文件超出大小限制: {name}",
+      "exceeds": "文件超出大小限制 (>{size}): {name}",
       "parsed": "已解析 {name} 为 {format} ({size})",
-      "init": "正在为 {name} 初始化检视器…"
+      "init": "正在为 {name} 初始化检视器…",
+      "vreenImported": "已导入项目 {name} → 应用到 {asset}",
+      "vreenFailed": "项目 {name} 导入失败: {msg}"
     }
   },
   "gallery": {
@@ -135,6 +141,7 @@
     "play": "播放",
     "pause": "暂停",
     "speed": "速度",
+    "project": "项目",
     "logs": {
       "paused": "动画已暂停",
       "resumed": "动画已恢复",
@@ -275,11 +282,18 @@
     "bgEnv": "环境",
     "bgSolid": "纯色",
     "bgTransparent": "透明",
+    "engineDemo": {
+      "title": "ENGINE DEMO"
+    },
     "customHdri": "自定义 HDRI",
     "uploadHdri": "上传 .hdr / .exr",
     "replaceHdri": "替换文件",
     "resetHdri": "重置为预设",
-    "exportProject": "导出项目 (.vreen)",
+    "exportProject": "导出项目 (状态)",
+    "exportBundle": "导出项目 (含模型)",
+    "exportJsonHint": "仅导出场景状态 (.vreen.json),不包含模型文件",
+    "exportBundleHint": "导出场景状态 + 嵌入当前模型为 .vreen zip 容器,可独立打开",
+    "importProject": "导入项目 (.vreen)",
     "bloom": "辉光",
     "bloomIntensity": "辉光强度",
     "chromatic": "色差",

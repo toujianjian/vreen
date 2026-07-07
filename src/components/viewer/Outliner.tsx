@@ -34,8 +34,8 @@ export function Outliner() {
   if (!showOutliner) return null;
 
   return (
-    <HudPanel title={t('viewer.outliner')} tag={t('viewer.outlinerTag')} className="h-full">
-      <div className="px-3 py-2 border-b border-neon-cyan/10 flex items-center gap-2">
+    <HudPanel title={t('viewer.outliner')} tag={t('viewer.outlinerTag')} className="h-full flex flex-col" bodyClassName="flex-1 min-h-0 flex flex-col">
+      <div className="shrink-0 px-3 py-2 border-b border-neon-cyan/10 flex items-center gap-2">
         <Search className="w-3 h-3 text-mist shrink-0" />
         <input
           className="hud-input !border-0 !bg-transparent !px-0 !py-0"
@@ -44,7 +44,7 @@ export function Outliner() {
           onChange={(e) => setSearch(e.target.value)}
         />
       </div>
-      <div className="overflow-y-auto h-[calc(100%-90px)] py-2 text-[12px] font-mono">
+      <div className="flex-1 min-h-0 overflow-y-auto py-2 text-[12px] font-mono">
         {isEmpty ? (
           <div className="px-4 py-6 text-mist text-center text-[11px]">{t('viewer.noMatch')}</div>
         ) : (
@@ -105,7 +105,7 @@ function TreeNode({ node, depth, expanded, onToggle }: TreeNodeProps) {
         )}
         style={{ paddingLeft: `${depth * 14 + 8}px` }}
         onClick={() => {
-          setSelection(node.uuid, label, node.type, Math.round(node.triCount));
+          setSelection(node.uuid, label, node.type, Math.round(node.triCount), node.stats);
           if (hasChildren) onToggle(node.id);
         }}
       >

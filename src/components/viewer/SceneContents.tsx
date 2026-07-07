@@ -15,9 +15,15 @@ import {
 } from '@/three/normalize';
 import { useViewerStore } from '@/stores/viewerStore';
 import { useInspectorStore } from '@/stores/inspectorStore';
+import { useWorldStore } from '@/stores/worldStore';
 import { getPresetById } from '@/lib/presets';
 import { uploadBridge } from '@/lib/uploadBridge';
 import { detectFormat } from '@/lib/format';
+import { extractGeometryStats } from '@/three/extractGeometryStats';
+import { AnimationMixer as CustomAnimationMixer } from '@/engine/Animation';
+import { convertThreeClips } from '@/three/threeToCustomAnim';
+import type { Object3D as CustomObject3D } from '@/engine/Core/Object3D';
+import { Velocity, VelocityC } from '@/engine/ECS';
 
 export function SceneContents() {
   const { t } = useTranslation();
@@ -29,6 +35,7 @@ export function SceneContents() {
   const setError = useViewerStore((s) => s.setError);
   const setSceneTree = useViewerStore((s) => s.setSceneTree);
   const autoRotate = useViewerStore((s) => s.autoRotate);
+  const setCurrentModelFile = useViewerStore((s) => s.setCurrentModelFile);
 
   const setAnimation = useViewerStore((s) => s.setAnimation);
   const setMaterials = useInspectorStore((s) => s.setMaterials);
@@ -36,7 +43,17 @@ export function SceneContents() {
   const materials = useInspectorStore((s) => s.materials);
 
   const groupRef = useRef<THREE.Group>(null);
-  const mixerRef = useRef<THREE.AnimationMixer | null>(null);
+  // 自研 AnimationMixer：Phase 2 接入,SkinnedMeshRef / AnimState 都靠它。
+  // 之所以能驱动 three.js 节点:自研 track.apply 写的是
+  //   node.position.set / node.scale.set / node.rotation.set
+  // 这三个 setter three.js 也有,所以一套 mixer 同时服务渲染和 ECS。
+  const customMixerRef = useRef<CustomAnimationMixer | null>(null);
+  // three.js mixer 保留为 fallback (OBJ/FBX/STL/PLY 等没走自研 GLBLoader 的格式)。
+  const legacyMixerRef = useRef<THREE.AnimationMixer | null>(null);
+  // Phase 2 演示:MovementSystem 改 root entity 的 Transform,这个 ref 让我们
+  // 在 useFrame 之后把 entity.sceneNode 的 TRS 同步回 three.js group。
+  // null = 当前没有 root entity (asset 未加载)。
+  const rootEntityIdRef = useRef<number | null>(null);
   const fpsAcc = useRef({ frames: 0, t: performance.now() });
 
   // Mesh picking — click an object in the 3D view to select it in the outliner
@@ -57,7 +74,9 @@ export function SceneContents() {
         else if (geo.attributes.position) triCount = geo.attributes.position.count / 3;
       }
     }
-    setSelection(obj.uuid, obj.name || 'Unnamed', type, Math.round(triCount));
+    // Pull rich geometry stats for the Inspector's Geometry panel.
+    const stats = extractGeometryStats(obj);
+    setSelection(obj.uuid, obj.name || 'Unnamed', type, Math.round(triCount), stats);
   };
 
   // Build or load current asset
@@ -78,7 +97,7 @@ export function SceneContents() {
           }
           setLoadProgress(0.4);
           await new Promise((r) => setTimeout(r, 60));
-          root = GENERATORS[preset.generator]();
+          root = GENERATORS[preset.generator]() as unknown as THREE.Object3D;
           assetName = preset.name;
           setLoadProgress(0.9);
         } else {
@@ -89,10 +108,14 @@ export function SceneContents() {
             const label = t('scene.placeholderLabel', { name: assetSource.uploadId });
             root = buildPlaceholder(label);
             assetName = assetSource.uploadId;
+            setCurrentModelFile(null);
             await new Promise((r) => setTimeout(r, 200));
             setLoadProgress(0.95);
           } else {
             setLoadProgress(0.3);
+            // Keep a reference to the original file so the Inspector can
+            // re-export a self-contained `.vreen` (state + model) bundle.
+            setCurrentModelFile(file);
             const fmt = detectFormat(file.name) ?? 'glb';
             const url = URL.createObjectURL(file);
             try {
@@ -118,10 +141,14 @@ export function SceneContents() {
 
         // Mount into scene
         if (groupRef.current) {
-          // Stop & clear previous mixer
-          if (mixerRef.current) {
-            mixerRef.current.stopAllAction();
-            mixerRef.current = null;
+          // Stop & clear previous mixer(s)
+          if (customMixerRef.current) {
+            customMixerRef.current.stopAll();
+            customMixerRef.current = null;
+          }
+          if (legacyMixerRef.current) {
+            legacyMixerRef.current.stopAllAction();
+            legacyMixerRef.current = null;
           }
           // Clear previous children
           while (groupRef.current.children.length > 0) {
@@ -132,18 +159,38 @@ export function SceneContents() {
           groupRef.current.add(root);
 
           // Detect animation clips and initialise mixer
-          const clips = root.animations ?? [];
-          if (clips.length > 0) {
-            const mixer = new THREE.AnimationMixer(root);
-            mixerRef.current = mixer;
-            const action = mixer.clipAction(clips[0]);
-            action.play();
+          const threeClips = (root as THREE.Object3D & { animations?: THREE.AnimationClip[] }).animations ?? [];
+          // 转成自研 clips 后构造自研 mixer,即使 root 是 three.js 的也能驱动
+          // (apply 写的是 .position.set / .scale.set / .rotation.set, three.js 节点都有)。
+          const customClips = convertThreeClips(threeClips);
+          let activeMixerForEcs: CustomAnimationMixer | null = null;
+
+          if (customClips.length > 0) {
+            const mixer = new CustomAnimationMixer(root as unknown as CustomObject3D);
+            customMixerRef.current = mixer;
+            activeMixerForEcs = mixer;
+            const first = mixer.play(customClips[0]);
+            void first;
             setAnimation({
-              clipName: clips[0].name || 'animation',
+              clipName: customClips[0].name || 'animation',
               isPlaying: true,
               speed: 1,
               currentTime: 0,
-              duration: clips[0].duration,
+              duration: customClips[0].duration,
+            });
+          } else if (threeClips.length > 0) {
+            // Fallback: 自研 converter 没拿到 clip(可能含 Color/Bool track 等),
+            // 用 three.js mixer 顶一下,保证动画还在跑。
+            const mixer = new THREE.AnimationMixer(root);
+            legacyMixerRef.current = mixer;
+            const action = mixer.clipAction(threeClips[0]);
+            action.play();
+            setAnimation({
+              clipName: threeClips[0].name || 'animation',
+              isPlaying: true,
+              speed: 1,
+              currentTime: 0,
+              duration: threeClips[0].duration,
             });
           } else {
             setAnimation({
@@ -152,6 +199,31 @@ export function SceneContents() {
               currentTime: 0,
               duration: 0,
             });
+          }
+
+          // Phase 2: 把 scene graph 同步成 ECS entities。
+          // 自研 mixer 已经在 customClips > 0 时构造好,这里直接传过去,
+          // 让 SkinnedMeshRef 真正持 mixer 引用(不再传 null)。
+          // 桥接说明:worldStore.syncFromSceneGraph 类型是 engine.Object3D,
+          // runtime 用 duck typing 写入,three.js 节点有同名 setter,安全。
+          const syncResult = useWorldStore.getState().syncFromSceneGraph(
+            root as unknown as CustomObject3D,
+            activeMixerForEcs,
+            customClips,
+          );
+          rootEntityIdRef.current = syncResult.rootEntityId;
+
+          // Phase 2 演示：给 root entity 加 Velocity 组件,但不主动开。
+          // 用户在 Inspector / 后续 UI 打开 ecsMovementEnabled 后,
+          // MovementSystem 会按这个 velocity 推进。
+          if (syncResult.rootEntityId != null) {
+            const w = useWorldStore.getState().world;
+            if (w) {
+              const v = new Velocity();
+              v.linear = [0, 0.4, 0]; // 默认每帧上浮 0.4 m/s
+              v.angularY = 0.5; // 0.5 rad/s 绕 Y 轴自转
+              w.setComponent(syncResult.rootEntityId, VelocityC, v);
+            }
           }
         }
 
@@ -219,20 +291,82 @@ export function SceneContents() {
 
   // Animation mixer update + FPS counter
   useFrame((_, delta) => {
-    // Sync animation mixer
-    if (mixerRef.current) {
-      const anim = useViewerStore.getState().animation;
-      mixerRef.current.timeScale = anim.speed;
-      if (anim.isPlaying) {
-        mixerRef.current.update(delta);
-        setAnimation({ currentTime: mixerRef.current.time });
-      } else {
-        // Scrub sync: if user dragged the scrubber, jump the mixer
-        const mixerTime = mixerRef.current.time;
-        if (Math.abs(mixerTime - anim.currentTime) > 0.005) {
-          mixerRef.current.setTime(anim.currentTime);
+    const anim = useViewerStore.getState().animation;
+    // 1) 把 UI 层的 isPlaying / timeScale 同步到自研 mixer 的 action 上。
+    //    自研 AnimationAction.update() 内部已经检查 isPlaying,
+    //    没播放时 mixer.update() 是 no-op,所以 ECS 接管后也不会乱跑。
+    if (customMixerRef.current) {
+      const mixer = customMixerRef.current as unknown as {
+        actions: Map<string, { timeScale: number; isPlaying: boolean; time: number }>;
+        update(dt: number): void;
+      };
+      for (const action of mixer.actions.values()) {
+        action.timeScale = anim.speed;
+        action.isPlaying = anim.isPlaying;
+      }
+
+      // Scrub: 用户拖动 scrubber,isPlaying=false,需要直接跳到 anim.currentTime。
+      if (!anim.isPlaying) {
+        const firstAction = mixer.actions.values().next().value;
+        if (firstAction) {
+          if (Math.abs(firstAction.time - anim.currentTime) > 0.005) {
+            firstAction.time = anim.currentTime;
+            // update(0) 不推进时间,但会把当前 frame 的 track 应用一次。
+            mixer.update(0);
+          }
         }
       }
+    } else if (legacyMixerRef.current) {
+      // Fallback: 自研 converter 失败的格式 (含 Color/Bool track) 用 three.js mixer
+      legacyMixerRef.current.timeScale = anim.speed;
+      if (anim.isPlaying) {
+        legacyMixerRef.current.update(delta);
+        setAnimation({ currentTime: legacyMixerRef.current.time });
+      } else {
+        const mixerTime = legacyMixerRef.current.time;
+        if (Math.abs(mixerTime - anim.currentTime) > 0.005) {
+          legacyMixerRef.current.setTime(anim.currentTime);
+        }
+      }
+    }
+
+    // 2) 让 ECS World 推进一帧。AnimationTickSystem 会扫描所有
+    //    SkinnedMeshRef 并 mixer.update(dt)。这是 Phase 2 的关键点:
+    //    SceneContents 不再亲自 mixer.update(),改由 system 推进。
+    const world = useWorldStore.getState().world;
+    if (world) world.update(delta);
+
+    // 3) Phase 2 演示:MovementSystem 改 root entity 的 Transform,这里把
+    //    root sceneNode 的 TRS 桥回 three.js group。关掉时不影响原行为。
+    const ecsMovementEnabled = useWorldStore.getState().ecsMovementEnabled;
+    if (ecsMovementEnabled && groupRef.current && world && rootEntityIdRef.current != null) {
+      const rootNode = world.getSceneNode(rootEntityIdRef.current);
+      if (rootNode) {
+        groupRef.current.position.set(
+          rootNode.position.x,
+          rootNode.position.y,
+          rootNode.position.z,
+        );
+        groupRef.current.quaternion.set(
+          rootNode.rotation.x,
+          rootNode.rotation.y,
+          rootNode.rotation.z,
+          rootNode.rotation.w,
+        );
+        groupRef.current.scale.set(
+          rootNode.scale.x,
+          rootNode.scale.y,
+          rootNode.scale.z,
+        );
+      }
+    }
+
+    // 3) 读回第一个 action 的 time 给 UI 时间轴显示。
+    if (customMixerRef.current) {
+      const firstAction = (customMixerRef.current as unknown as {
+        actions: Map<string, { time: number }>;
+      }).actions.values().next().value;
+      setAnimation({ currentTime: firstAction ? firstAction.time : 0 });
     }
 
     // FPS counter
