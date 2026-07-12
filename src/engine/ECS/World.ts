@@ -16,6 +16,17 @@
 
 import { Object3D } from '../Core/Object3D';
 import { AnimStateC } from './Components';
+// ComponentType 单独抽出到 ComponentType.ts,避免 World.ts ↔ Components.ts
+// 之间形成循环 import —— 后者反过来 import ComponentType 即可,不再
+// 依赖 World.ts。这样生产构建(Rollup)下,Components.ts 的
+// `new ComponentType<T>('Transform')` 总是先于 World.ts 的逻辑执行,
+// 不会触发 `Cannot access 'X' before initialization` TDZ。
+import { createLogger } from '@/lib/logger';
+import { ComponentTypeRegistry } from './ComponentType';
+import type { ComponentType } from './ComponentType';
+export { defineComponentType, ComponentTypeRegistry, type ComponentType } from './ComponentType';
+
+const log = createLogger('ECS');
 
 // ── EntityId ────────────────────────────────────────────────────────
 /** 32-bit packed id: high 12 bits = version, low 20 bits = index.
@@ -48,41 +59,8 @@ export function isValidEntityId(id: EntityId, current: { version: number }): boo
 }
 
 // ── ComponentType ───────────────────────────────────────────────────
-/** 组件类型标识。每个逻辑类型一个 ComponentType 实例。
- *  全局按 name / id 双向索引，方便 World.toJSON() 还原和
- *  World.loadJSON() 通过 name 查回 type。 */
-export class ComponentType<T> {
-  private static _nextId = 1;
-  private static _byName = new Map<string, ComponentType<unknown>>();
-  private static _byId = new Map<number, ComponentType<unknown>>();
-
-  /** 全局唯一 id，用于内部 Map key。 */
-  readonly id: number;
-  /** 人类可读名（用于调试 / 序列化）。 */
-  readonly name: string;
-
-  constructor(name: string) {
-    this.id = ComponentType._nextId++;
-    this.name = name;
-    ComponentType._byName.set(name, this as unknown as ComponentType<unknown>);
-    ComponentType._byId.set(this.id, this as unknown as ComponentType<unknown>);
-  }
-
-  /** 按 name 查 type；用于 World.loadJSON() 把 POJO 数据还原回强类型。 */
-  static byName(name: string): ComponentType<unknown> | undefined {
-    return ComponentType._byName.get(name);
-  }
-
-  /** 按 id 查 type；用于 World.toJSON() 内部把 cid 翻回 name。 */
-  static byId(id: number): ComponentType<unknown> | undefined {
-    return ComponentType._byId.get(id);
-  }
-
-  /** 列出当前所有已注册的 ComponentType（调试 / 工具用）。 */
-  static knownTypes(): readonly ComponentType<unknown>[] {
-    return Array.from(ComponentType._byId.values());
-  }
-}
+// 实际定义在 ./ComponentType.ts。这里只 re-export,避免在 World.ts ↔
+// Components.ts 之间形成循环 import(后者反过来需要 ComponentType)。
 
 /** Component factory 签名：返回该组件的空实例 (POJO)。
  *  World.loadJSON() 会调用 factory() 拿模板，然后用 JSON 数据 Object.assign 覆盖字段。
@@ -178,14 +156,20 @@ export class World {
     this.sceneRoot.add(sceneNode);
     const rec: EntityRecord = { id, name: sceneNode.name, sceneNode, componentSet: new Set() };
     this._records[idx] = rec;
+    log.debug(`createEntity → id=0x${id.toString(16)} (idx=${idx}, ver=${version}), ` +
+      `name="${sceneNode.name}", total=${this.entityCount()}`);
     return id;
   }
 
   /** 销毁实体。复用其 index，version +1。 */
   destroyEntity(id: EntityId): void {
-    if (!this._isLive(id)) return;
+    if (!this._isLive(id)) {
+      log.warn(`destroyEntity: id=0x${id.toString(16)} not alive — noop`);
+      return;
+    }
     const idx = entityIndex(id);
     const rec = this._records[idx]!;
+    const compCount = rec.componentSet.size;
     // 清除所有 component
     for (const cid of rec.componentSet) {
       this._components.get(cid)?.delete(id);
@@ -196,6 +180,8 @@ export class World {
     this._records[idx] = null;
     this._versions[idx] = (this._versions[idx] ?? 0) + 1;
     this._freeList.push(idx);
+    log.debug(`destroyEntity: id=0x${id.toString(16)} ("${rec.name}"), ` +
+      `freed ${compCount} components, total=${this.entityCount()}`);
   }
 
   /** 检查 EntityId 是否还指向有效实体。 */
@@ -247,7 +233,7 @@ export class World {
       if (!r) continue;
       const compNames: string[] = [];
       for (const cid of r.componentSet) {
-        const t = ComponentType.byId(cid);
+        const t = ComponentTypeRegistry.byId(cid);
         if (t) compNames.push(t.name);
       }
       compNames.sort();
@@ -264,7 +250,7 @@ export class World {
     const node = rec.sceneNode;
     const components: Record<string, unknown> = {};
     for (const cid of rec.componentSet) {
-      const t = ComponentType.byId(cid);
+      const t = ComponentTypeRegistry.byId(cid);
       if (!t) continue;
       // 非 POJO 不展开:Inspector 显示 "runtime ref" 提示。
       if (NON_POJO_COMPONENTS.has(t.name)) {
@@ -287,6 +273,53 @@ export class World {
       },
       components,
     };
+  }
+
+  /** 给当前 World 拍一份完整快照。用于快照对比 / 序列化导出。
+   *  POJO 组件会被 deep-clone,避免快照后被 world 继续修改污染。 */
+  takeSnapshot(label?: string): WorldSnapshot {
+    const entities: EntitySnapshot[] = [];
+    for (let i = 0; i < this._records.length; i++) {
+      const rec = this._records[i];
+      if (!rec) continue;
+      const snap = this.getEntitySnapshot(rec.id);
+      if (snap) entities.push(structuredClone(snap));
+    }
+    return {
+      frame: this.frame(),
+      timestamp: Date.now(),
+      label: label ?? `frame@${this.frame()}`,
+      entities,
+    };
+  }
+
+  /** 对比两个 WorldSnapshot,产出 added/removed/modified 三类。 */
+  static diffSnapshots(before: WorldSnapshot, after: WorldSnapshot): WorldDiff {
+    const beforeMap = new Map(before.entities.map((e) => [e.id, e]));
+    const afterMap = new Map(after.entities.map((e) => [e.id, e]));
+
+    const added: EntityId[] = [];
+    const removed: EntityId[] = [];
+    for (const id of afterMap.keys()) if (!beforeMap.has(id)) added.push(id);
+    for (const id of beforeMap.keys()) if (!afterMap.has(id)) removed.push(id);
+
+    const modified: { id: EntityId; componentChanges: { name: string; before: unknown; after: unknown }[] }[] = [];
+    for (const [id, b] of beforeMap) {
+      const a = afterMap.get(id);
+      if (!a) continue;
+      const changes: { name: string; before: unknown; after: unknown }[] = [];
+      const allKeys = new Set([...Object.keys(b.components), ...Object.keys(a.components)]);
+      for (const k of allKeys) {
+        const beforeVal = b.components[k];
+        const afterVal = a.components[k];
+        if (JSON.stringify(beforeVal) !== JSON.stringify(afterVal)) {
+          changes.push({ name: k, before: beforeVal, after: afterVal });
+        }
+      }
+      if (changes.length > 0) modified.push({ id, componentChanges: changes });
+    }
+
+    return { added, removed, modified };
   }
 
   /** 读 entity 的 AnimState 运行时快照(给 Inspector 渲染用)。
@@ -318,8 +351,10 @@ export class World {
       store = new Map<EntityId, T>();
       this._components.set(type.id, store);
     }
+    const replacing = store.has(id);
     store.set(id, data);
     rec.componentSet.add(type.id);
+    log.debug(`setComponent<${type.name}>: id=0x${id.toString(16)} "${rec.name}" ${replacing ? '(replaced)' : '(new)'}`);
   }
 
   /** 读取组件数据。 */
@@ -417,11 +452,15 @@ export class World {
 
   // ── System 生命周期 ────────────────────────────────────────────
   addSystem(s: System): void {
-    if (this._systemMap.has(s)) return;
+    if (this._systemMap.has(s)) {
+      log.warn(`addSystem: "${s.name}" already attached — noop`);
+      return;
+    }
     this._systems.push(s);
     this._systems.sort((x, y) => x.priority - y.priority);
     this._systemMap.set(s, this._systems.indexOf(s));
     s.onAttach?.(this);
+    log.info(`addSystem: "${s.name}" priority=${s.priority}, total systems=${this._systems.length}`);
   }
 
   removeSystem(s: System): boolean {
@@ -432,6 +471,7 @@ export class World {
     this._systemMap.delete(s);
     // 重排
     for (let i = idx; i < this._systems.length; i++) this._systemMap.set(this._systems[i], i);
+    log.info(`removeSystem: "${s.name}", remaining=${this._systems.length}`);
     return true;
   }
 
@@ -445,12 +485,50 @@ export class World {
     return this._frame;
   }
 
+  private _systemTimings: SystemTiming[] = [];
+  private _timingHistory: SystemTiming[][] = [];
+  private readonly _maxTimingHistory = 60;
+
   /** 推进所有 System。 */
   update(dt: number): void {
     this._frame++;
+    const t0 = performance.now();
+    this._systemTimings = [];
+
     for (const s of this._systems) {
-      if (s.enabled) s.update(this, dt);
+      if (!s.enabled) continue;
+      const st0 = performance.now();
+      s.update(this, dt);
+      const st1 = performance.now();
+      this._systemTimings.push({
+        name: s.name,
+        priority: s.priority,
+        duration: st1 - st0,
+        enabled: s.enabled,
+      });
     }
+
+    this._timingHistory.push([...this._systemTimings]);
+    if (this._timingHistory.length > this._maxTimingHistory) {
+      this._timingHistory.shift();
+    }
+
+    if (this._frame === 1 || this._frame % 120 === 0) {
+      const elapsed = performance.now() - t0;
+      log.debug(`World#${this._frame}: ${this._systems.length} systems, ` +
+        `${this.entityCount()} entities, dt=${(dt * 1000).toFixed(2)}ms, ` +
+        `update took ${elapsed.toFixed(2)}ms`);
+    }
+  }
+
+  /** 获取上一帧各 System 的执行时间。 */
+  getSystemTimings(): readonly SystemTiming[] {
+    return this._systemTimings;
+  }
+
+  /** 获取最近 N 帧的时序历史，用于可视化。 */
+  getTimingHistory(): readonly SystemTiming[][] {
+    return this._timingHistory;
   }
 
   // ── 序列化 (POJO-friendly) ────────────────────────────────────
@@ -474,7 +552,7 @@ export class World {
       };
       for (const cid of r.componentSet) {
         const store = this._components.get(cid);
-        const type = ComponentType.byId(cid);
+        const type = ComponentTypeRegistry.byId(cid);
         if (!store || !type) continue;
         // 跳过非 POJO 组件（含 Object3D / AnimationMixer 引用）。
         if (NON_POJO_COMPONENTS.has(type.name)) continue;
@@ -542,15 +620,15 @@ export class World {
           // 不参与 .vreen 序列化；调用方需要在 import 后重新 attach
           continue;
         }
-        const type = ComponentType.byName(compName);
+        const type = ComponentTypeRegistry.byName(compName);
         if (!type) {
-          console.warn(`[World.loadJSON] unknown component "${compName}" — skipped. ` +
+          log.warn(`unknown component "${compName}" — skipped. ` +
             `Make sure it's imported once so ComponentType is registered.`);
           continue;
         }
         const factory = registry[compName];
         if (!factory) {
-          console.warn(`[World.loadJSON] no factory for component "${compName}" — skipped. ` +
+          log.warn(`no factory for component "${compName}" — skipped. ` +
             `Add it to the ComponentRegistry.`);
           continue;
         }
@@ -601,6 +679,14 @@ export interface WorldEntityJson {
 }
 
 // ── 调试 / Inspector 用 POJO 快照（同步读取，不持久化） ─────────
+/** System 执行时序记录。 */
+export interface SystemTiming {
+  name: string;
+  priority: number;
+  duration: number;
+  enabled: boolean;
+}
+
 /** 实体简要列表：id + name + 组件名。 */
 export interface EntitySummary {
   id: EntityId;
@@ -622,6 +708,21 @@ export interface EntitySnapshot {
     scale: [number, number, number];
   };
   components: Record<string, unknown>;
+}
+
+/** World 完整快照,用于对比两个时间点的状态。 */
+export interface WorldSnapshot {
+  frame: number;
+  timestamp: number;
+  label: string;
+  entities: EntitySnapshot[];
+}
+
+/** 两个快照的差异。 */
+export interface WorldDiff {
+  added: EntityId[];
+  removed: EntityId[];
+  modified: { id: EntityId; componentChanges: { name: string; before: unknown; after: unknown }[] }[];
 }
 
 /** AnimState runtime 数据 (给 Inspector 画 state machine 面板用)。 */

@@ -12,6 +12,7 @@
 //
 // 这只是数据层 sanity check，不验证渲染管线。
 
+import { createLogger } from '@/lib/logger';
 import {
   World,
   Transform,
@@ -29,6 +30,8 @@ import {
 } from '@/engine/ECS';
 import { packVreenPackage, unpackVreenPackage } from '@/lib/vreenPack';
 
+const log = createLogger('Demo');
+
 export interface RoundtripReport {
   ok: boolean;
   /** 源 world entity 数 */
@@ -43,6 +46,8 @@ export interface RoundtripReport {
   healthMismatches: number;
   /** frame 是否一致 */
   frameMatch: boolean;
+  /** 含 "Mesh:" 前缀的 entity 数量 (Phase 2 验证) */
+  meshEntityCount: number;
   /** 错误信息（ok=false 时填） */
   error: string | null;
 }
@@ -113,6 +118,7 @@ export async function runRoundtripDemo(): Promise<RoundtripReport> {
     return {
       ok: false, sourceEntityCount: src.entityCount(), restoredEntityCount: 0,
       nameMismatches: 0, positionMismatches: 0, healthMismatches: 0, frameMatch: false,
+      meshEntityCount: 0,
       error: 'unpacked .vreen missing manifest.world',
     };
   }
@@ -120,6 +126,7 @@ export async function runRoundtripDemo(): Promise<RoundtripReport> {
     return {
       ok: false, sourceEntityCount: src.entityCount(), restoredEntityCount: 0,
       nameMismatches: 0, positionMismatches: 0, healthMismatches: 0, frameMatch: false,
+      meshEntityCount: 0,
       error: `manifest version mismatch: ${unpacked.manifest.version}`,
     };
   }
@@ -198,21 +205,17 @@ export async function runRoundtripDemoAndLog(): Promise<void> {
   try {
     const r = await runRoundtripDemo();
     if (r.ok) {
-      // eslint-disable-next-line no-console
-      console.log(
-        `%c[roundtrip OK] ${r.sourceEntityCount} entities, frame match=${r.frameMatch}`,
-        'color:#0f0;font-weight:bold',
+      log.info(
+        `roundtrip OK — ${r.sourceEntityCount} entities, frame match=${r.frameMatch}`,
       );
     } else {
-      // eslint-disable-next-line no-console
-      console.error(
-        `[roundtrip FAIL] source=${r.sourceEntityCount} restored=${r.restoredEntityCount} ` +
+      log.error(
+        `roundtrip FAIL — source=${r.sourceEntityCount} restored=${r.restoredEntityCount} ` +
         `nameMismatches=${r.nameMismatches} positionMismatches=${r.positionMismatches} ` +
         `healthMismatches=${r.healthMismatches} frameMatch=${r.frameMatch}\n${r.error}`,
       );
     }
   } catch (e) {
-    // eslint-disable-next-line no-console
-    console.error('[roundtrip THREW]', e);
+    log.error('roundtrip THREW', e);
   }
 }

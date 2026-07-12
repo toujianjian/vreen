@@ -167,7 +167,13 @@ export function applyCameraPreset(
 
 /** Animate the camera to a preset+target over a duration (ms). */
 export function animateCameraToPreset(
-  camera: THREE.PerspectiveCamera,
+  camera: THREE.PerspectiveCamera | {
+    position: THREE.Vector3;
+    fov: number;
+    updateProjectionMatrix(): void;
+    getWorldDirection(target: THREE.Vector3): THREE.Vector3;
+    lookAt(x: number | THREE.Vector3, y?: number, z?: number): void;
+  },
   preset: CameraPreset,
   tunables: { distance: number; targetHeight: number; fov: number },
   options: { duration?: number; easing?: (k: number) => number } = {},

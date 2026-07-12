@@ -1,0 +1,34 @@
+<!--
+  @vreen/engine — minimal demo.
+
+  Bare-bones browser app that boots the self-developed WebGL2 engine:
+    - one PerspectiveCamera + OrbitControls
+    - one DirectionalLight + AmbientLight
+    - one Mesh with StandardMaterial (PBR + IBL)
+    - one GridHelper for scale
+
+  Compile via:
+    npx tsc minimal.ts --target ES2022 --module ESNext --moduleResolution Bundler \
+        --lib ES2022,DOM --strict --outDir dist
+  Or with any bundler. The demo uses no third-party deps.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>@vreen/engine — minimal demo</title>
+  <style>
+    html, body { margin: 0; padding: 0; overflow: hidden; background: #05070d; color: #cbd5f5; font-family: monospace; }
+    #app { position: fixed; inset: 0; }
+    #info { position: fixed; top: 8px; left: 8px; padding: 8px 12px; background: rgba(5,7,13,0.85); border: 1px solid #1e293b; font-size: 11px; }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <div id="info">
+    <div>@vreen/engine demo</div>
+    <div id="fps">— fps</div>
+  </div>
+  <script type="module" src="./minimal.js"></script>
+</body>
+</html>

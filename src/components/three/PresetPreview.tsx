@@ -3,9 +3,10 @@
 import { Suspense, useMemo } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, ContactShadows } from '@react-three/drei';
-import type { Object3D as ThreeObject3D } from 'three';
+import * as THREE from 'three';
 import { SafeEnvironment } from '@/components/three/SafeEnvironment';
 import { GENERATORS } from '@/three/generators';
+import { convertToThreeObject, isCustomObject3D } from '@/three/convertCustomToThree';
 import { normalizeObject } from '@/three/normalize';
 
 interface PresetPreviewProps {
@@ -18,12 +19,13 @@ interface PresetPreviewProps {
 function PreviewMesh({ generator }: { generator: keyof typeof GENERATORS }) {
   const group = useMemo(() => {
     const g = GENERATORS[generator]();
-    // 自研 Group -> three.js 渲染管线边界。step2.7/2.8 阶段会彻底走自研渲染管线。
-    normalizeObject(g as unknown as ThreeObject3D, { targetSize: 1.6, sitOnGround: true });
-    return g;
+    // 自研 engine 对象→ THREE.js 对象,否则 three.js 不渲染
+    const threeRoot = isCustomObject3D(g) ? convertToThreeObject(g) : g as unknown as THREE.Object3D;
+    normalizeObject(threeRoot, { targetSize: 1.6, sitOnGround: true });
+    return threeRoot;
   }, [generator]);
 
-  return <primitive object={group as unknown as object} />;
+  return <primitive object={group} />;
 }
 
 export function PresetPreview({ generator, className, rotate = true, exposure = 1.0 }: PresetPreviewProps) {

@@ -35,13 +35,16 @@ import {
   VectorKeyframeTrack,
 } from '../Animation';
 import { Matrix4 } from '../Math/Matrix4';
-import {
-  AssetSource,
+import { createLogger } from '@/lib/logger';
+import { AssetSource,
   Loader,
   LoaderContext,
   toArrayBuffer,
   fetchAsArrayBuffer,
 } from './Loader';
+import { decodeDraco, type DracoAttributeSpec } from './DracoDecoder';
+
+const log = createLogger('GLBLoader');
 
 // ── Public result ───────────────────────────────────────────────────
 export interface LoadedGLB {
@@ -62,12 +65,23 @@ export class GLBLoader implements Loader<LoadedGLB> {
   }
 
   async load(source: AssetSource, ctx?: LoaderContext): Promise<LoadedGLB> {
+    const t0 = performance.now();
+    log.debug(`load() start, source=${describeSource(source)}`);
     const buf = await this._readSource(source, ctx);
     if (ctx?.signal?.aborted) throw new DOMException('aborted', 'AbortError');
+    log.debug(`source read ok, ${(buf.byteLength / 1024).toFixed(1)} KB in ${(performance.now() - t0).toFixed(1)}ms`);
     ctx?.onProgress?.({ loaded: buf.byteLength, total: buf.byteLength, ratio: 0.5 });
+    const tParse0 = performance.now();
     const { json, bin } = parseGLB(buf);
     if (ctx?.signal?.aborted) throw new DOMException('aborted', 'AbortError');
-    const result = buildFromGltf(json, bin);
+    log.debug(`GLB header parsed in ${(performance.now() - tParse0).toFixed(1)}ms ` +
+      `(asset=${json.asset?.version ?? '?'}, generator=${json.asset?.generator ?? '?'})`);
+    const tBuild0 = performance.now();
+    const result = await buildFromGltf(json, bin);
+    log.info(`build done in ${(performance.now() - tBuild0).toFixed(1)}ms — ` +
+      `meshes=${result.root.children.length}, animations=${result.animations.length}, ` +
+      `materials=${result.materials.length}`);
+    log.debug(`load() end, total ${(performance.now() - t0).toFixed(1)}ms`);
     ctx?.onProgress?.({ loaded: buf.byteLength, total: buf.byteLength, ratio: 1 });
     return result;
   }
@@ -81,6 +95,16 @@ export class GLBLoader implements Loader<LoadedGLB> {
   }
 }
 
+function describeSource(source: AssetSource): string {
+  if (typeof source === 'string') return `url(${source})`;
+  if (source instanceof URL) return `url(${source.toString()})`;
+  if (source instanceof File) return `file(${source.name}, ${source.size}B)`;
+  if (source instanceof Blob) return `blob(${source.size}B, ${source.type || '?'})`;
+  if (source instanceof ArrayBuffer) return `ab(${source.byteLength}B)`;
+  if (source instanceof Uint8Array) return `u8(${source.byteLength}B)`;
+  return 'unknown';
+}
+
 // ── GLB container parser ────────────────────────────────────────────
 const GLB_MAGIC = 0x46546C67;   // 'glTF' (little-endian)
 const GLB_VERSION = 2;
@@ -88,6 +112,7 @@ const CHUNK_JSON = 0x4E4F534A;  // 'JSON'
 const CHUNK_BIN  = 0x004E4942;  // 'BIN\0'
 
 export function parseGLB(buf: ArrayBuffer): { json: GltfJson; bin: Uint8Array | null } {
+  log.debug(`parseGLB: ${buf.byteLength} bytes`);
   if (buf.byteLength < 12) throw new Error('GLBLoader: file too small');
   const dv = new DataView(buf);
   const magic = dv.getUint32(0, true);
@@ -95,7 +120,7 @@ export function parseGLB(buf: ArrayBuffer): { json: GltfJson; bin: Uint8Array | 
   const version = dv.getUint32(4, true);
   if (version !== GLB_VERSION) {
     // 不致命 — 一些工具写 1。仍然尝试。
-    console.warn(`GLBLoader: glTF version ${version} (expected 2)`);
+    log.warn(`glTF version ${version} (expected 2)`);
   }
   const length = dv.getUint32(8, true);
   if (length > buf.byteLength) {
@@ -118,6 +143,11 @@ export function parseGLB(buf: ArrayBuffer): { json: GltfJson; bin: Uint8Array | 
   } catch (e) {
     throw new Error(`GLBLoader: invalid JSON in chunk 0: ${(e as Error).message}`);
   }
+  log.debug(`chunk 0 JSON: ${jLen}B, scenes=${json.scenes?.length ?? 0}, ` +
+    `nodes=${json.nodes?.length ?? 0}, meshes=${json.meshes?.length ?? 0}, ` +
+    `materials=${json.materials?.length ?? 0}, anims=${json.animations?.length ?? 0}, ` +
+    `skins=${json.skins?.length ?? 0}, buffers=${json.buffers?.length ?? 0}, ` +
+    `accessors=${json.accessors?.length ?? 0}`);
   off += 8 + jLen;
 
   let bin: Uint8Array | null = null;
@@ -127,10 +157,13 @@ export function parseGLB(buf: ArrayBuffer): { json: GltfJson; bin: Uint8Array | 
     const bType = dv.getUint32(off + 4, true);
     if (bType !== CHUNK_BIN) {
       // 一些工具写错了。仍然尽量解析 JSON 部分。
-      console.warn(`GLBLoader: chunk 1 type 0x${bType.toString(16)} (expected BIN)`);
+      log.warn(`chunk 1 type 0x${bType.toString(16)} (expected BIN)`);
     } else {
       bin = new Uint8Array(buf, off + 8, bLen);
+      log.debug(`chunk 1 BIN: ${bLen}B (${(bLen / 1024).toFixed(1)} KB)`);
     }
+  } else {
+    log.debug(`no BIN chunk — pure JSON glTF inside GLB container`);
   }
   return { json, bin };
 }
@@ -148,6 +181,8 @@ interface GltfJson {
   materials?: GltfMaterial[];
   skins?: GltfSkin[];
   animations?: GltfAnimation[];
+  extensionsUsed?: string[];
+  extensionsRequired?: string[];
 }
 
 interface GltfNode {
@@ -171,6 +206,24 @@ interface GltfPrimitive {
   indices?: number;
   material?: number;
   mode?: number;
+  /** KHR_draco_mesh_compression: 指向压缩 bufferView。 */
+  extensions?: {
+    KHR_draco_mesh_compression?: {
+      bufferView: number;
+      attributes: Record<string, number>;
+    };
+  };
+  /** GLBLoader 内部填:Draco 预解码结果。buildPrimitive 优先用它,
+   *  避免重新走 readAccessor* 路径。 */
+  _decodedDraco?: {
+    positions: Float32Array | null;
+    normals: Float32Array | null;
+    uvs: Float32Array | null;
+    tangents: Float32Array | null;
+    colors: Float32Array | null;
+    indices: Uint32Array;
+    vertexCount: number;
+  };
 }
 interface GltfAccessor {
   bufferView?: number;
@@ -215,7 +268,68 @@ interface GltfAnimation {
 }
 
 // ── Build the scene graph ───────────────────────────────────────────
-function buildFromGltf(json: GltfJson, bin: Uint8Array | null): LoadedGLB {
+
+/** 遍历所有 mesh.primitives,若 KHR_draco_mesh_compression 存在则异步预解码。
+ *  解码结果挂到 prim._decodedDraco,buildPrimitive 检测后走快路径。 */
+async function decodeDracoPrimitives(json: GltfJson, bin: Uint8Array): Promise<void> {
+  const used = json.extensionsUsed ?? [];
+  if (!used.includes('KHR_draco_mesh_compression')) return;
+  const required = json.extensionsRequired ?? [];
+  if (required.includes('KHR_draco_mesh_compression')) {
+    log.info('extensionsRequired includes KHR_draco_mesh_compression');
+  }
+  const meshes = json.meshes ?? [];
+  let n = 0;
+  for (const mesh of meshes) {
+    for (const prim of mesh.primitives) {
+      const draco = prim.extensions?.KHR_draco_mesh_compression;
+      if (!draco) continue;
+      const view = (json.bufferViews ?? [])[draco.bufferView];
+      if (!view) {
+        log.warn(`Draco: bufferView ${draco.bufferView} missing`);
+        continue;
+      }
+      const base = (view.byteOffset ?? 0);
+      const bytes = new Uint8Array(bin.buffer, bin.byteOffset + base, view.byteLength);
+      const specs: DracoAttributeSpec[] = [];
+      for (const sem of Object.keys(draco.attributes)) {
+        const acc = (json.accessors ?? [])[draco.attributes[sem]!];
+        if (!acc) continue;
+        const comps =
+          acc.type === 'VEC4' ? 4 :
+          acc.type === 'VEC3' ? 3 :
+          acc.type === 'VEC2' ? 2 : 1;
+        specs.push({ semantic: sem as DracoAttributeSpec['semantic'], componentCount: comps });
+      }
+      try {
+        const decoded = await decodeDraco(bytes, specs);
+        prim._decodedDraco = {
+          positions: decoded.positions,
+          normals: decoded.normals,
+          uvs: decoded.uvs,
+          tangents: decoded.tangents,
+          colors: decoded.colors,
+          indices: decoded.indices,
+          vertexCount: decoded.vertexCount,
+        };
+        // 解码完成,移除 extension 标记避免重复处理
+        if (prim.extensions) delete prim.extensions.KHR_draco_mesh_compression;
+        n++;
+      } catch (e) {
+        log.error(`Draco: decode failed for prim (mesh=${mesh.name ?? '?'}): ${(e as Error).message}`);
+      }
+    }
+  }
+  if (n > 0) log.info(`Draco: decoded ${n} compressed primitive(s)`);
+}
+
+async function buildFromGltf(json: GltfJson, bin: Uint8Array | null): Promise<LoadedGLB> {
+  // 0) KHR_draco_mesh_compression — 预解码所有 Draco primitive,把结果
+  // 物化成 prim._decodedDraco。后续 buildPrimitive 走快路径。
+  if (bin) {
+    await decodeDracoPrimitives(json, bin);
+  }
+
   const acc = json.accessors ?? [];
   const bufViews = json.bufferViews ?? [];
   const nodesJson = json.nodes ?? [];
@@ -224,8 +338,15 @@ function buildFromGltf(json: GltfJson, bin: Uint8Array | null): LoadedGLB {
   const skinsJson = json.skins ?? [];
   const animsJson = json.animations ?? [];
 
+  log.debug(`build: ${nodesJson.length} nodes, ${meshesJson.length} meshes, ` +
+    `${materialsJson.length} materials, ${skinsJson.length} skins, ${animsJson.length} anims`);
+
   // 1) 材质
+  const tMat0 = performance.now();
   const materials: StandardMaterial[] = materialsJson.map((m) => gtfMaterialToStd(m));
+  if (materialsJson.length > 0) {
+    log.debug(`built ${materials.length} materials in ${(performance.now() - tMat0).toFixed(1)}ms`);
+  }
 
   // 2) node → Object3D 映射（占位，最后填 mesh/skin）
   // isBone 用索引判断:node 是否被任何 skin.joints 引用
@@ -243,6 +364,22 @@ function buildFromGltf(json: GltfJson, bin: Uint8Array | null): LoadedGLB {
   // 3) mesh 工厂
   function buildPrimitive(prim: GltfPrimitive, primOwner: Mesh | SkinnedMesh): void {
     const geom = new BufferGeometry();
+    // 快路径:Draco 预解码结果已挂在 prim._decodedDraco,直接用。
+    if (prim._decodedDraco) {
+      const d = prim._decodedDraco;
+      if (d.positions) geom.setAttribute('position', new BufferAttribute(d.positions, 3));
+      if (d.normals) geom.setAttribute('normal', new BufferAttribute(d.normals, 3));
+      if (d.uvs) geom.setAttribute('uv', new BufferAttribute(d.uvs, 2));
+      if (d.tangents) geom.setAttribute('tangent', new BufferAttribute(d.tangents, 4));
+      if (d.colors) geom.setAttribute('color', new BufferAttribute(d.colors, 4));
+      if (d.indices.length > 0) geom.setIndex(d.indices);
+      if (!geom.attributes.normal) geom.computeVertexNormals();
+      geom.computeBoundingBox();
+      if (prim.material !== undefined) primOwner.material = materials[prim.material] ?? materials[0];
+      primOwner.geometry = geom;
+      return;
+    }
+    // 默认路径:直接读 BIN。
     const attrs = prim.attributes;
     for (const [sem, accIdx] of Object.entries(attrs)) {
       const name = gtfAttrToEngine(sem);
@@ -266,6 +403,9 @@ function buildFromGltf(json: GltfJson, bin: Uint8Array | null): LoadedGLB {
   }
 
   // 4) 把 mesh 挂到节点
+  const tMesh0 = performance.now();
+  let meshCount = 0;
+  let skinnedCount = 0;
   for (let i = 0; i < nodesJson.length; i++) {
     const n = nodesJson[i];
     if (n.mesh === undefined) continue;
@@ -282,13 +422,19 @@ function buildFromGltf(json: GltfJson, bin: Uint8Array | null): LoadedGLB {
       const sk = gtfSkinToSkeleton(json, bin, skinsJson[n.skin!], nodes);
       if (sk) {
         owner.skeleton = sk;
+        skinnedCount++;
         // bindMatrixInverse 已是 default identity; 但如果根骨架不是世界原点要再算
       }
     }
     nodes[i].add(owner);
+    meshCount++;
+  }
+  if (meshCount > 0) {
+    log.debug(`built ${meshCount} meshes (${skinnedCount} skinned) in ${(performance.now() - tMesh0).toFixed(1)}ms`);
   }
 
   // 5) 节点层级
+  const tHier0 = performance.now();
   const root = new Group();
   root.name = 'GLB_ROOT';
   for (let i = 0; i < nodesJson.length; i++) {
@@ -296,8 +442,12 @@ function buildFromGltf(json: GltfJson, bin: Uint8Array | null): LoadedGLB {
     if (!n.children || n.children.length === 0) continue;
     for (const c of n.children) nodes[c].parent = nodes[i];
   }
+  let rootChildCount = 0;
   for (let i = 0; i < nodesJson.length; i++) {
-    if (nodes[i].parent === null && nodes[i] !== root) root.add(nodes[i]);
+    if (nodes[i].parent === null && nodes[i] !== root) {
+      root.add(nodes[i]);
+      rootChildCount++;
+    }
   }
   // 默认场景
   const sceneIdx = json.scene ?? 0;
@@ -310,12 +460,30 @@ function buildFromGltf(json: GltfJson, bin: Uint8Array | null): LoadedGLB {
       if (c) sceneRoot.add(c);
     }
     root.add(sceneRoot);
+    log.debug(`scene #${sceneIdx} (${sceneDef.name || 'unnamed'}) with ${sceneDef.nodes.length} root nodes`);
   }
   // 让骨架 update matrix
   root.updateMatrixWorld(true);
+  log.debug(`hierarchy wired in ${(performance.now() - tHier0).toFixed(1)}ms, ` +
+    `${rootChildCount} top-level nodes`);
 
   // 6) 动画
+  const tAnim0 = performance.now();
   const animations: AnimationClip[] = (animsJson).map((a) => gtfAnimToClip(json, bin, a, nodes)).filter(Boolean) as AnimationClip[];
+  if (animsJson.length > 0) {
+    let totalTracks = 0;
+    let totalDuration = 0;
+    for (const c of animations) {
+      totalTracks += c.tracks.length;
+      if (c.duration > totalDuration) totalDuration = c.duration;
+    }
+    log.info(`animations: ${animations.length}/${animsJson.length} parsed, ` +
+      `${totalTracks} tracks, longest=${totalDuration.toFixed(2)}s ` +
+      `(${ (performance.now() - tAnim0).toFixed(1) }ms)`);
+    for (const c of animations) {
+      log.debug(`  clip "${c.name}": ${c.tracks.length} tracks, ${c.duration.toFixed(2)}s`);
+    }
+  }
 
   return { root, animations, materials };
 }

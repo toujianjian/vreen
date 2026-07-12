@@ -328,6 +328,101 @@ select:focus-visible {
       linear-gradient(90deg, rgba(0, 240, 255, 0.06) 1px, transparent 1px);
     background-size: 32px 32px;
   }
+
+  /* Vreen Inspector Panel */
+  .vreen-inspector {
+    min-width: 320px;
+    max-width: 480px;
+  }
+  .vreen-inspector .tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 8px;
+  }
+  .vreen-inspector .tab-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border-radius: 4px;
+    background: rgba(0, 240, 255, 0.04);
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 11px;
+    border: 1px solid rgba(0, 240, 255, 0.15);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .vreen-inspector .tab-btn:hover {
+    background: rgba(0, 240, 255, 0.10);
+  }
+  .vreen-inspector .tab-btn.active {
+    background: rgba(0, 240, 255, 0.18);
+    color: rgba(0, 240, 255, 1);
+    border-color: rgba(0, 240, 255, 0.4);
+  }
+  .vreen-inspector .tab-body {
+    font-size: 12px;
+  }
+  .vreen-inspector .picker-btn,
+  .vreen-inspector .run-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border-radius: 4px;
+    background: rgba(0, 240, 255, 0.10);
+    color: rgba(0, 240, 255, 1);
+    font-size: 11px;
+    border: 1px solid rgba(0, 240, 255, 0.3);
+    cursor: pointer;
+    margin: 2px 4px 2px 0;
+  }
+  .vreen-inspector .picker-btn:disabled,
+  .vreen-inspector .run-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .vreen-inspector .run-btn {
+    margin: 6px 0;
+    background: rgba(0, 240, 255, 0.20);
+  }
+  .vreen-inspector .verbose-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.6);
+    margin-left: 8px;
+  }
+  .vreen-inspector .report {
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(0, 240, 255, 0.15);
+    border-radius: 4px;
+    padding: 6px 8px;
+    font-family: var(--font-mono, monospace);
+    font-size: 11px;
+    color: rgba(0, 240, 255, 0.85);
+    white-space: pre-wrap;
+    max-height: 240px;
+    overflow: auto;
+  }
+  .vreen-inspector .report.ok { border-color: rgba(0, 255, 128, 0.4); }
+  .vreen-inspector .report.fail { border-color: rgba(255, 100, 100, 0.5); color: rgba(255, 200, 200, 1); }
+  .vreen-inspector .err { color: rgba(255, 120, 120, 1); display: inline-flex; align-items: center; gap: 4px; }
+  .vreen-inspector .ok { color: rgba(0, 255, 128, 1); display: inline-flex; align-items: center; gap: 4px; }
+  .vreen-inspector .busy { color: rgba(255, 255, 255, 0.5); }
+  .vreen-inspector .row { display: flex; flex-wrap: wrap; align-items: center; }
+  .vreen-inspector .asset-list code { color: rgba(0, 240, 255, 0.7); }
+  .vreen-inspector .asset-list .path { color: rgba(255, 255, 255, 0.5); }
+  .vreen-inspector .asset-list .size { color: rgba(255, 255, 255, 0.4); }
+  .vreen-inspector table { border-collapse: collapse; width: 100%; margin-top: 4px; font-size: 11px; }
+  .vreen-inspector th, .vreen-inspector td { padding: 2px 4px; text-align: left; }
+  .vreen-inspector tr.added td { color: rgba(0, 255, 128, 0.9); }
+  .vreen-inspector tr.removed td { color: rgba(255, 120, 120, 0.9); text-decoration: line-through; }
+  .vreen-inspector tr.modified td { color: rgba(255, 200, 80, 0.9); }
+  .vreen-inspector tr.unchanged td { color: rgba(255, 255, 255, 0.4); }
+  .vreen-inspector fieldset { border: 1px solid rgba(0, 240, 255, 0.15); border-radius: 4px; padding: 6px 8px; margin: 6px 0; }
+  .vreen-inspector legend { color: rgba(0, 240, 255, 0.8); font-size: 11px; padding: 0 4px; }
   .mask-radial {
     -webkit-mask-image: radial-gradient(ellipse at center, black 50%, transparent 85%);
     mask-image: radial-gradient(ellipse at center, black 50%, transparent 85%);

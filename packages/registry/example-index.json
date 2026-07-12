@@ -1,0 +1,66 @@
+{
+  "version": "1.0.0",
+  "generatedAt": "2026-07-11T00:00:00.000Z",
+  "baseUrl": "https://registry.vreen.dev/packages",
+  "packages": [
+    {
+      "id": "robot.glb",
+      "name": "Robot Character",
+      "description": "Stylized low-poly robot rigged with PlayerInput skeleton.",
+      "tags": ["character", "rigged", "demo"],
+      "author": "VREEN",
+      "license": "MIT",
+      "latest": "1.2.0",
+      "versions": [
+        {
+          "version": "1.2.0",
+          "releasedAt": "2026-07-10T00:00:00.000Z",
+          "downloadUrl": "{baseUrl}/robot.glb/1.2.0/robot.glb.vreen",
+          "deltaUrl": "{baseUrl}/robot.glb/1.2.0/robot.glb.vreen-delta",
+          "size": 1048576,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "formatVersion": "0.2.1",
+          "engineVersions": ["^0.2.0"]
+        },
+        {
+          "version": "1.1.0",
+          "releasedAt": "2026-06-01T00:00:00.000Z",
+          "downloadUrl": "{baseUrl}/robot.glb/1.1.0/robot.glb.vreen",
+          "size": 987654,
+          "sha256": "f2c1a3b4d5e6f7081920a1b2c3d4e5f60718293a4b5c6d7e8f9012a3b4c5d6e7",
+          "formatVersion": "0.2.1",
+          "engineVersions": ["^0.2.0"]
+        },
+        {
+          "version": "1.0.0",
+          "releasedAt": "2026-05-01T00:00:00.000Z",
+          "downloadUrl": "{baseUrl}/robot.glb/1.0.0/robot.glb.vreen",
+          "size": 524288,
+          "sha256": "a1b2c3d4e5f60718293a4b5c6d7e8f9012a3b4c5d6e7f8091a2b3c4d5e6f7081",
+          "formatVersion": "0.2.0",
+          "engineVersions": ["^0.2.0"]
+        }
+      ]
+    },
+    {
+      "id": "studio-hdri",
+      "name": "Studio HDRI",
+      "description": "Pre-baked neutral studio lighting HDRI for product showcases.",
+      "tags": ["hdri", "lighting"],
+      "author": "VREEN",
+      "license": "MIT",
+      "latest": "2.0.0",
+      "versions": [
+        {
+          "version": "2.0.0",
+          "releasedAt": "2026-07-01T00:00:00.000Z",
+          "downloadUrl": "{baseUrl}/studio-hdri/2.0.0/studio-hdri.vreen",
+          "size": 8388608,
+          "sha256": "b2c3d4e5f6071829abcdef0123456789abcdef0123456789abcdef012345678",
+          "formatVersion": "0.2.1",
+          "engineVersions": ["^0.2.0"]
+        }
+      ]
+    }
+  ]
+}

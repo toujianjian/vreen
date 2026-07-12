@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { Stage } from '@/components/viewer/Stage';
 import { Outliner } from '@/components/viewer/Outliner';
 import { Inspector } from '@/components/viewer/Inspector';
+import { VreenInspectorPanel } from '@/components/viewer/VreenInspectorPanel';
 import { ViewerToolbar } from '@/components/viewer/ViewerToolbar';
 import { ViewerStatusBar } from '@/components/viewer/ViewerStatusBar';
 import { Timeline } from '@/components/viewer/Timeline';
@@ -12,7 +13,7 @@ import { useViewerStore } from '@/stores/viewerStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useWorldStore } from '@/stores/worldStore';
 import { getPresetById } from '@/lib/presets';
-import { PlayerInput } from '@/engine/ECS';
+import { PlayerInput, PlayerInputC } from '@/engine/ECS';
 
 export function ViewerPage() {
   const { assetId } = useParams<{ assetId?: string }>();
@@ -53,7 +54,7 @@ export function ViewerPage() {
     const syncInput = () => {
       if (!world) return;
       // 把 cameraYaw 同步给所有带 PlayerInput 的 entity (root entity)
-      world.queryWith(PlayerInput, (id, input) => {
+      world.queryWith(PlayerInputC, (id, input) => {
         input.forward = (keys.has('w') ? 1 : 0) - (keys.has('s') ? 1 : 0);
         input.right = (keys.has('d') ? 1 : 0) - (keys.has('a') ? 1 : 0);
         input.run = keys.has('shift');
@@ -87,6 +88,7 @@ export function ViewerPage() {
         </main>
         <aside className="hidden lg:flex flex-col border-l border-neon-magenta/15 min-h-0">
           <Inspector />
+          <VreenInspectorPanel />
         </aside>
       </div>
       <Timeline />

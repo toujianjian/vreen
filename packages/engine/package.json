@@ -1,0 +1,39 @@
+{
+  "name": "@vreen/engine",
+  "version": "0.1.0",
+  "description": "Self-developed WebGL2 engine kernel: scene graph, ECS, PBR, IBL, post-FX, physics. Zero runtime deps.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "watch": "tsc -p tsconfig.json --watch"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "webgl2",
+    "engine",
+    "3d",
+    "ecs",
+    "scene-graph",
+    "pbr",
+    "ibl",
+    "post-processing",
+    "physics"
+  ],
+  "license": "MIT"
+}

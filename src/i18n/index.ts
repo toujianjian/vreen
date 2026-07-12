@@ -1,8 +1,11 @@
 // i18n bootstrap — Chinese first, English fallback, localStorage persistence.
+import { createLogger } from '@/lib/logger';
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import zh from './locales/zh.json';
 import en from './locales/en.json';
+
+const log = createLogger('i18n');
 
 const STORAGE_KEY = 'vreen.lang';
 
@@ -63,8 +66,7 @@ void i18n.use(initReactI18next).init({
   saveMissing: import.meta.env.DEV,
   missingKeyHandler: (_lngs, _ns, key) => {
     if (import.meta.env.DEV) {
-      // eslint-disable-next-line no-console
-      console.warn(`[i18n] missing key: ${key}`);
+      log.warn(`missing key: ${key}`);
     }
   },
 });

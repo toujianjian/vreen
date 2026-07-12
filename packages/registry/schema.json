@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "$id": "https://vreen.dev/schemas/registry-1.json",
+  "title": "Vreen Package Registry",
+  "description": "Index of available .vreen packages for clients to discover and resolve. Served as a single JSON file at a known URL (e.g. /registry/index.json) and fetched by clients (npm package, Unity Editor, Unreal plugin).",
+  "type": "object",
+  "required": ["version", "generatedAt", "packages"],
+  "additionalProperties": true,
+  "properties": {
+    "version": {
+      "type": "string",
+      "const": "1.0.0",
+      "description": "Registry schema version."
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp the index was generated."
+    },
+    "baseUrl": {
+      "type": "string",
+      "format": "uri",
+      "description": "Default base URL for relative download paths. May be overridden per-package."
+    },
+    "packages": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/package" }
+    }
+  },
+  "$defs": {
+    "package": {
+      "type": "object",
+      "required": ["id", "name", "latest", "versions"],
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{1,63}$",
+          "description": "URL-safe id (lowercase, dot/dash/underscore)."
+        },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "description": { "type": "string", "maxLength": 1000 },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "author": { "type": "string" },
+        "license": { "type": "string" },
+        "homepage": { "type": "string", "format": "uri" },
+        "icon": { "type": "string", "format": "uri" },
+        "latest": { "type": "string", "description": "Pointer into versions[].version." },
+        "versions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/version" }
+        }
+      }
+    },
+    "version": {
+      "type": "object",
+      "required": ["version", "downloadUrl", "size", "sha256"],
+      "additionalProperties": true,
+      "properties": {
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(-[A-Za-z0-9.-]+)?$"
+        },
+        "releasedAt": { "type": "string", "format": "date-time" },
+        "downloadUrl": { "type": "string", "format": "uri" },
+        "deltaUrl": { "type": "string", "format": "uri" },
+        "size": { "type": "integer", "minimum": 0 },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "formatVersion": { "type": "string", "description": ".vreen manifest version, e.g. '0.2.1'." },
+        "engineVersions": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Compatible VREEN engine versions, e.g. ['^0.2.0']."
+        },
+        "dependencies": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "Map of packageId → semver range."
+        },
+        "yanked": { "type": "boolean" },
+        "yankReason": { "type": "string" }
+      }
+    }
+  }
+}

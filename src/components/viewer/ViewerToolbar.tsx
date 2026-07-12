@@ -1,8 +1,10 @@
 // Viewer toolbar: top bar with camera presets, playback, screenshot, exit.
 import {
   ArrowLeft,
+  Atom,
   Camera,
   Circle,
+  CircleDot,
   Download,
   Pause,
   Play,
@@ -11,6 +13,7 @@ import {
   ChevronDown,
   Upload,
   Cpu,
+  Activity,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useEffect, useRef, useState } from 'react';
@@ -59,6 +62,12 @@ export function ViewerToolbar() {
   const assetName = useViewerStore((s) => s.assetName);
   const useCustomRenderer = useViewerStore((s) => s.useCustomRenderer);
   const toggleCustomRenderer = useViewerStore((s) => s.toggleCustomRenderer);
+  const physicsDemo = useViewerStore((s) => s.physicsDemo);
+  const togglePhysicsDemo = useViewerStore((s) => s.togglePhysicsDemo);
+  const physicsDebug = useViewerStore((s) => s.physicsDebug);
+  const togglePhysicsDebug = useViewerStore((s) => s.togglePhysicsDebug);
+  const profilerEnabled = useViewerStore((s) => s.profilerEnabled);
+  const toggleProfiler = useViewerStore((s) => s.toggleProfiler);
   // 用 selector 订阅,避免 getState 闭包捕到旧值
   const modelFile = useViewerStore((s) => s.currentModelFile);
   const pushLog = useUIStore((s) => s.pushLog);
@@ -364,6 +373,42 @@ export function ViewerToolbar() {
         >
           <Cpu className="w-3.5 h-3.5" />
           <span className="hidden md:inline">{useCustomRenderer ? 'CUSTOM' : 'THREE'}</span>
+        </button>
+
+        <button
+          onClick={() => {
+            togglePhysicsDemo();
+            pushLog('INFO', !physicsDemo ? 'Physics demo: ON (24 boxes + particle emitter)' : 'Physics demo: OFF');
+          }}
+          className={cn('hud-btn', physicsDemo && 'bg-neon-magenta/15 text-neon-magenta')}
+          title="Toggle physics demo (ECS Rigidbody / Collider / Particles)"
+        >
+          <Atom className="w-3.5 h-3.5" />
+          <span className="hidden md:inline">PHYSICS</span>
+        </button>
+
+        <button
+          onClick={() => {
+            togglePhysicsDebug();
+            pushLog('INFO', !physicsDebug ? 'Physics debug viz: ON (collider/contact/velocity)' : 'Physics debug viz: OFF');
+          }}
+          className={cn('hud-btn', physicsDebug && 'bg-neon-amber/15 text-neon-amber')}
+          title="Toggle physics debug visualization (collider wireframes / contact normals / velocity vectors)"
+        >
+          <CircleDot className="w-3.5 h-3.5" />
+          <span className="hidden md:inline">PHYS-DBG</span>
+        </button>
+
+        <button
+          onClick={() => {
+            toggleProfiler();
+            pushLog('INFO', !profilerEnabled ? 'Profiler: ON (CPU/GPU/System timing)' : 'Profiler: OFF');
+          }}
+          className={cn('hud-btn', profilerEnabled && 'bg-neon-cyan/15 text-neon-cyan')}
+          title="Toggle performance profiler HUD"
+        >
+          <Activity className="w-3.5 h-3.5" />
+          <span className="hidden md:inline">PROFILER</span>
         </button>
 
         <button

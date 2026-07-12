@@ -1,0 +1,21 @@
+{
+  "name": "io.vreen.unity",
+  "version": "0.2.1",
+  "displayName": "VREEN Unity",
+  "description": "Load, validate, and diff .vreen packages in Unity. Pure C#, no external dependencies.",
+  "unity": "2021.3",
+  "documentation": "https://vreen.dev/docs/format/",
+  "keywords": ["vreen", "3d", "package", "gltf", "scene"],
+  "author": {
+    "name": "VREEN",
+    "url": "https://vreen.dev"
+  },
+  "license": "MIT",
+  "samples": [
+    {
+      "displayName": "Basic .vreen loader",
+      "description": "Demonstrates loading a .vreen file and instantiating its primary model.",
+      "path": "Samples~/BasicLoader"
+    }
+  ]
+}

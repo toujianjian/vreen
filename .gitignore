@@ -54,3 +54,9 @@ out/
 
 # npm cache (when using mirror)
 .npmrc.local
+
+# Trae IDE local workspace documents (project planning, scratch notes)
+.trae/
+
+# .vreen build scratch directory (electron-builder temp output)
+.vreen-build/

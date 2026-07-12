@@ -150,6 +150,34 @@
       "failed": "Capture failed: {msg}"
     }
   },
+  "profiler": {
+    "title": "PROFILER",
+    "show": "Show Profiler",
+    "hide": "Hide Profiler",
+    "expand": "expand",
+    "collapse": "collapse",
+    "idle": "waiting for frame…",
+    "noData": "no data",
+    "noSystems": "no systems ran this frame",
+    "tab": {
+      "cpu": "CPU",
+      "gpu": "GPU",
+      "system": "SYSTEM",
+      "draws": "DRAW"
+    },
+    "cpuTotal": "CPU total",
+    "fps": "FPS",
+    "drawCalls": "Draw Calls",
+    "tris": "Triangles",
+    "marks": "marks",
+    "gpuTotal": "GPU total",
+    "gpuNa": "GPU timing unavailable (EXT_disjoint_timer_query_webgl2 disabled)",
+    "gpuNaHint": "Chrome: enable chrome://flags/#enable-webgl-developer-extensions, or switch to a hardware-accelerated environment.",
+    "systems": "ECS Systems",
+    "history": "frame timing history",
+    "noDraws": "no draw call breakdown for this frame",
+    "topDraws": "top draw call contributors"
+  },
   "statusbar": {
     "streaming": "STREAMING",
     "time": "T",
@@ -309,6 +337,23 @@
       "normalScale": "Normal Scale",
       "opacity": "Opacity",
       "wireframe": "Wireframe"
+    }
+  },
+  "vreen": {
+    "inspector": {
+      "title": "Vreen Inspector",
+      "tab": {
+        "validate": "Validate",
+        "diff": "Diff",
+        "delta": "Delta"
+      },
+      "pickFile": "Pick a .vreen file",
+      "verbose": "Verbose",
+      "assets": "Assets ({{n}})",
+      "assetDiffs": "Asset diffs ({{n}})",
+      "diffRun": "Run diff",
+      "deltaMake": "Build & download .vreen-delta",
+      "deltaApply": "Apply & download"
     }
   }
 }

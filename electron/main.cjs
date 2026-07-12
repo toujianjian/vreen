@@ -9,9 +9,26 @@
 
 const { app, BrowserWindow, shell, ipcMain, dialog } = require('electron');
 const path = require('node:path');
+const fsSync = require('node:fs');
 
 const isDev = process.env.VREEN_DEV === '1' || !app.isPackaged;
 const DEV_URL = process.env.VREEN_DEV_URL || 'http://localhost:5173';
+
+// ── Diagnostics: mirror console → file in userData (works on Windows where
+//    GUI subsystem discards stdout). Only writes once userData exists, i.e.
+//    after `app.whenReady()`. ─────────────────────────────────────────────
+function logToFile(...args) {
+  try {
+    const logPath = path.join(app.getPath('userData'), 'vreen-main.log');
+    const line = `[${new Date().toISOString()}] ${args.map((a) => typeof a === 'string' ? a : JSON.stringify(a)).join(' ')}\n`;
+    fsSync.appendFileSync(logPath, line);
+  } catch (_) { /* ignore */ }
+}
+// Override console.* so every log also lands in userData/vreen-main.log.
+const _origLog = console.log, _origErr = console.error, _origWarn = console.warn;
+console.log = (...a) => { _origLog(...a); logToFile(...a); };
+console.error = (...a) => { _origErr(...a); logToFile('ERROR', ...a); };
+console.warn = (...a) => { _origWarn(...a); logToFile('WARN', ...a); };
 
 let mainWindow = null;
 
@@ -181,7 +198,23 @@ ipcMain.handle('vreen:app-info', () => ({
 ipcMain.handle('vreen:quit', () => app.quit());
 
 // ── App lifecycle ──────────────────────────────────────────────────────────
+logToFile('=== VREEN main.cjs start ===');
+logToFile('isDev=' + isDev + '  isPackaged=' + app.isPackaged + '  resourcesPath=' + (process.resourcesPath || '(none)'));
+logToFile('__dirname=' + __dirname);
+
 app.whenReady().then(() => {
+  logToFile('app ready, userData=' + app.getPath('userData'));
+  // 启动时就扫描 dist/index.html 候选路径并把结果记到日志
+  const candidates = [
+    path.join(__dirname, '..', 'dist', 'index.html'),
+    path.join(__dirname, 'dist', 'index.html'),
+    path.join(process.resourcesPath || '', 'app', 'dist', 'index.html'),
+    path.join(process.resourcesPath || '', 'dist', 'index.html'),
+    path.join(process.resourcesPath || '', 'app.asar', 'dist', 'index.html'),
+  ];
+  for (const c of candidates) {
+    logToFile('candidate: ' + c + '  exists=' + (fsSync.existsSync(c) ? 'YES' : 'no'));
+  }
   createSplash();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createSplash();

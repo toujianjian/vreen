@@ -211,4 +211,20 @@ export class BufferGeometry {
     if (this.groups.length > 0) out.groups = this.groups;
     return out;
   }
+
+  /**
+   * Release GPU resources held by this geometry. Our engine does not
+   * own any per-geometry GL objects directly (the renderer keeps them
+   * in a WeakMap-keyed cache), so this is a no-op that simply nudges
+   * the version counters to invalidate the cache entries on next draw.
+   * Three.js's `geometry.dispose()` API is mirrored for compatibility.
+   */
+  dispose(): void {
+    for (const attr of Object.values(this.attributes)) {
+      attr.version++;
+    }
+    if (this.index) this.index.version++;
+    this.boundingBox = null;
+    this.boundingSphere = null;
+  }
 }

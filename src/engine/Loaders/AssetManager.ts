@@ -21,6 +21,9 @@ import {
   cacheKeyFor,
   isAbortError,
 } from './Loader';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('AssetMgr');
 
 interface CacheEntry {
   promise: Promise<unknown>;
@@ -44,12 +47,16 @@ export class AssetManager {
 
   /** 注册一个 loader。format 重复时后者覆盖前者。 */
   registerLoader<T>(format: string, loader: Loader<T>): void {
+    const prev = this.loaders.has(format);
     this.loaders.set(format, loader as unknown as Loader<unknown>);
+    log.info(`registerLoader("${format}") ${prev ? '(overriding previous)' : '(new)'}`);
   }
 
   /** 取消注册。 */
   unregisterLoader(format: string): void {
-    this.loaders.delete(format);
+    if (this.loaders.delete(format)) {
+      log.info(`unregisterLoader("${format}")`);
+    }
   }
 
   /** 查询已注册的 loader。 */
@@ -70,18 +77,32 @@ export class AssetManager {
   /** 加载资产。返回解析后的对象。 */
   async load<T>(format: string, source: AssetSource, ctx?: LoaderContext): Promise<T> {
     const key = this.keyFor(format, source);
+    const t0 = performance.now();
     const existing = this.cache.get(key);
     if (existing) {
       existing.hits++;
+      log.info(`cache HIT "${format}" key=${truncate(key, 60)} (hits=${existing.hits}, age=${(performance.now() - t0).toFixed(1)}ms)`);
       return existing.promise as Promise<T>;
     }
     const loader = this.loaders.get(format);
     if (!loader) {
+      const known = Array.from(this.loaders.keys()).join(', ') || '<none>';
+      log.error(`no loader for format "${format}" (registered: ${known})`);
       throw new Error(`AssetManager: no loader registered for format "${format}"`);
     }
-    const p = loader.load(source, ctx).catch((err) => {
+    log.info(`cache MISS "${format}" key=${truncate(key, 60)} — invoking loader ${loader.constructor.name}`);
+    const p = loader.load(source, ctx).then((result) => {
+      log.debug(`loader finished for "${format}" key=${truncate(key, 60)} in ${(performance.now() - t0).toFixed(1)}ms`);
+      return result;
+    }).catch((err) => {
       // 失败时清掉缓存，让下次重试
-      if (!isAbortError(err)) this.cache.delete(key);
+      if (!isAbortError(err)) {
+        this.cache.delete(key);
+        log.warn(`loader failed for "${format}" key=${truncate(key, 60)}: ${(err as Error).message ?? err}`);
+      } else {
+        log.info(`loader aborted for "${format}" key=${truncate(key, 60)}`);
+        this.cache.delete(key);
+      }
       throw err;
     });
     this.cache.set(key, { promise: p, size: estimateSize(source), hits: 0 });
@@ -91,12 +112,19 @@ export class AssetManager {
 
   /** 显式驱逐某条缓存。 */
   invalidate(format: string, source: AssetSource): void {
-    this.cache.delete(this.keyFor(format, source));
+    const key = this.keyFor(format, source);
+    if (this.cache.delete(key)) {
+      log.info(`invalidate("${format}") key=${truncate(key, 60)}`);
+    } else {
+      log.debug(`invalidate("${format}") key=${truncate(key, 60)} — was not cached`);
+    }
   }
 
   /** 全部清空。 */
   clear(): void {
+    const n = this.cache.size;
     this.cache.clear();
+    log.info(`clear() — dropped ${n} entries`);
   }
 
   /** 当前缓存条目数。 */
@@ -112,10 +140,19 @@ export class AssetManager {
     const entries = [...this.cache.entries()];
     entries.sort((a, b) => a[1].hits - b[1].hits);
     const toRemove = entries.length - this.maxEntries;
+    const evictedKeys: string[] = [];
     for (let i = 0; i < toRemove; i++) {
       this.cache.delete(entries[i][0]);
+      evictedKeys.push(entries[i][0]);
     }
+    log.warn(`LRU eviction: dropped ${toRemove} entries (cap=${this.maxEntries}, current=${this.cache.size})`);
+    for (const k of evictedKeys) log.debug(`  evicted: ${truncate(k, 80)}`);
   }
+}
+
+function truncate(s: string, max: number): string {
+  if (s.length <= max) return s;
+  return `${s.slice(0, max - 3)}...`;
 }
 
 function estimateSize(source: AssetSource): number {

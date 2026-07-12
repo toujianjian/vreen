@@ -150,6 +150,34 @@
       "failed": "采集失败: {msg}"
     }
   },
+  "profiler": {
+    "title": "PROFILER",
+    "show": "显示 Profiler",
+    "hide": "隐藏 Profiler",
+    "expand": "展开",
+    "collapse": "折叠",
+    "idle": "等待帧…",
+    "noData": "暂无数据",
+    "noSystems": "当前帧无 System 执行",
+    "tab": {
+      "cpu": "CPU",
+      "gpu": "GPU",
+      "system": "System",
+      "draws": "DRAW"
+    },
+    "cpuTotal": "CPU 总耗时",
+    "fps": "FPS",
+    "drawCalls": "Draw Calls",
+    "tris": "Triangles",
+    "marks": "标记段",
+    "gpuTotal": "GPU 总耗时",
+    "gpuNa": "GPU 计时不可用(浏览器未开启 EXT_disjoint_timer_query_webgl2)",
+    "gpuNaHint": "Chrome: 启用 chrome://flags/#enable-webgl-developer-extensions,或换 GPU 加速环境。",
+    "systems": "ECS Systems",
+    "history": "帧耗时历史",
+    "noDraws": "本帧无 draw call 拆解数据",
+    "topDraws": "Top draw call 贡献"
+  },
   "statusbar": {
     "streaming": "流式传输中",
     "time": "时间",
@@ -309,6 +337,23 @@
       "normalScale": "法线强度",
       "opacity": "不透明度",
       "wireframe": "线框"
+    }
+  },
+  "vreen": {
+    "inspector": {
+      "title": "Vreen 检查器",
+      "tab": {
+        "validate": "校验",
+        "diff": "差异",
+        "delta": "增量"
+      },
+      "pickFile": "选择 .vreen 文件",
+      "verbose": "详细",
+      "assets": "资产 ({{n}})",
+      "assetDiffs": "资产差异 ({{n}})",
+      "diffRun": "生成差异",
+      "deltaMake": "生成并下载增量包",
+      "deltaApply": "应用并下载"
     }
   }
 }

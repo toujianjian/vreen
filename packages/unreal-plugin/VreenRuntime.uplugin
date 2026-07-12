@@ -1,0 +1,25 @@
+{
+  "fileVersion": "1.0.0",
+  "version": "0.2.1",
+  "versionName": "0.2.1",
+  "friendlyName": "VREEN Runtime",
+  "description": "Load, validate, and diff .vreen packages in Unreal Engine. C++17, no external dependencies.",
+  "category": "3D Pipeline",
+  "createdBy": "VREEN",
+  "createdByURL": "https://vreen.dev",
+  "docsURL": "https://vreen.dev/docs/format/",
+  "marketplaceURL": "",
+  "supportURL": "https://github.com/vreen/vreen/issues",
+  "enabledByDefault": true,
+  "canContainContent": true,
+  "isBetaVersion": false,
+  "installed": false,
+  "Modules": [
+    {
+      "Name": "VreenRuntime",
+      "Type": "Runtime",
+      "LoadingPhase": "Default",
+      "WhitelistPlatforms": [ "Win64", "Mac", "Linux" ]
+    }
+  ]
+}

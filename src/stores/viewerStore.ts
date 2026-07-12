@@ -33,6 +33,12 @@ interface ViewerState {
   currentModelFile: File | null;
   /** Experimental: render with the custom WebGL2 engine instead of three.js. */
   useCustomRenderer: boolean;
+  /** Demo flag: 启用 ECS 物理 demo(box 掉落 + 粒子)。 */
+  physicsDemo: boolean;
+  /** 物理调试可视化:在 CustomStage 里画 collider / contact / velocity。 */
+  physicsDebug: boolean;
+  /** Profiler HUD 显示开关(CustomStage 内置)。 */
+  profilerEnabled: boolean;
 
   // Actions
   setAssetSource: (source: AssetSource | null, name?: string) => void;
@@ -51,6 +57,9 @@ interface ViewerState {
   toggleAutoRotate: () => void;
   setCurrentModelFile: (f: File | null) => void;
   toggleCustomRenderer: () => void;
+  togglePhysicsDemo: () => void;
+  togglePhysicsDebug: () => void;
+  toggleProfiler: () => void;
   reset: () => void;
 }
 
@@ -90,7 +99,10 @@ export const useViewerStore = create<ViewerState>((set) => ({
   autoRotate: true,
   sceneTree: [],
   currentModelFile: null,
-  useCustomRenderer: false,
+  useCustomRenderer: true,
+  physicsDemo: false,
+  physicsDebug: true,
+  profilerEnabled: false,
 
   setAssetSource: (source, name) =>
     set(() => ({
@@ -129,6 +141,9 @@ export const useViewerStore = create<ViewerState>((set) => ({
   toggleGround: () => set((s) => ({ showGround: !s.showGround })),
   toggleAutoRotate: () => set((s) => ({ autoRotate: !s.autoRotate })),
   toggleCustomRenderer: () => set((s) => ({ useCustomRenderer: !s.useCustomRenderer })),
+  togglePhysicsDemo: () => set((s) => ({ physicsDemo: !s.physicsDemo })),
+  togglePhysicsDebug: () => set((s) => ({ physicsDebug: !s.physicsDebug })),
+  toggleProfiler: () => set((s) => ({ profilerEnabled: !s.profilerEnabled })),
   reset: () =>
     set({
       assetSource: null,

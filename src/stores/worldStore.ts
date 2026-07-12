@@ -11,6 +11,7 @@
 import { create } from 'zustand';
 import {
   World,
+  ComponentTypeRegistry,
   ComponentType,
   Transform,
   TransformC,
@@ -168,7 +169,7 @@ export const useWorldStore = create<WorldStoreState>((set, get) => ({
   setComponentByName: (id, compName, data) => {
     const w = get().world;
     if (!w) return false;
-    const type = ComponentType.byName(compName);
+    const type = ComponentTypeRegistry.byName(compName);
     if (!type) return false;
     (w.setComponent as (i: EntityId, t: ComponentType<unknown>, d: unknown) => void)(
       id,

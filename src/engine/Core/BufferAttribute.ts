@@ -60,4 +60,31 @@ export class BufferAttribute {
     this.version++;
     return this;
   }
+
+  /**
+   * Set the GL usage hint. Accepts a three.js-style string or a raw GL enum
+   * number. Renderer reads `usage` directly when calling `gl.bufferData`,
+   * so this is the only way to switch between STATIC_DRAW / DYNAMIC_DRAW.
+   */
+  setUsage(usage: 'Static' | 'Dynamic' | 'Stream' | number): this {
+    if (typeof usage === 'number') {
+      this.usage = usage;
+    } else {
+      switch (usage) {
+        case 'Static':  this.usage = 0x88e4; break; // gl.STATIC_DRAW
+        case 'Dynamic': this.usage = 0x88e8; break; // gl.DYNAMIC_DRAW
+        case 'Stream':  this.usage = 0x88e0; break; // gl.STREAM_DRAW
+      }
+    }
+    return this;
+  }
+
+  /**
+   * Mark the attribute dirty. Equivalent to mutating the array directly,
+   * but lets helpers (LineMesh etc.) signal "I just wrote into .array,
+   * please re-upload" without touching version arithmetic themselves.
+   */
+  set needsUpdate(v: boolean) {
+    if (v) this.version++;
+  }
 }

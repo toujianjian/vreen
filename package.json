@@ -14,7 +14,8 @@
     "typecheck": "tsc -b --noEmit",
     "electron:dev": "concurrently -k -n VITE,ELECTRON -c cyan,magenta \"npm:dev\" \"wait-on http://localhost:5173 && cross-env VREEN_DEV=1 electron .\"",
     "electron:build": "npm run build && electron-builder --win --x64",
-    "electron:build:dir": "npm run build && electron-builder --win --x64 --dir"
+    "electron:build:dir": "npm run build && electron-builder --win --x64 --dir",
+    "vreen": "node scripts/vreen-cli.mjs"
   },
   "dependencies": {
     "@fontsource/jetbrains-mono": "^5.2.8",
@@ -23,6 +24,7 @@
     "@react-three/drei": "^9.114.0",
     "@react-three/fiber": "^8.17.10",
     "@react-three/postprocessing": "^2.16.3",
+    "draco3d": "^1.5.7",
     "fflate": "^0.8.3",
     "framer-motion": "^11.11.7",
     "i18next": "^26.3.4",
@@ -44,6 +46,8 @@
     "autoprefixer": "^10.4.20",
     "concurrently": "^9.2.3",
     "cross-env": "^7.0.3",
+    "electron": "^43.0.0",
+    "electron-builder": "^26.15.3",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.13",
     "typescript": "^5.6.2",
@@ -72,9 +76,7 @@
           ]
         }
       ],
-      "artifactName": "${productName}-Portable-${version}.${ext}",
-      "signAndEditExecutable": false,
-      "signDlls": false
+      "artifactName": "${productName}-Portable-${version}.${ext}"
     },
     "portable": {
       "artifactName": "${productName}-Portable-${version}.${ext}"

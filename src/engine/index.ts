@@ -14,6 +14,7 @@ export * from './Materials';
 export * from './Geometries';
 export * from './Loaders';
 export * from './Renderer';
+export * from './Helpers';
 export {
   KeyframeTrack,
   NumberKeyframeTrack,
@@ -27,8 +28,9 @@ export {
   type LoopMode,
   type InterpMode,
   type TrackTarget,
-  type AnimState as AnimStateNode,
+  type AnimMachineState as AnimStateNode,
   type AnimTransition,
 } from './Animation';
 export * from './ECS';
+export { Profiler, type FrameSample, type ProfilerMark, type DrawCallSample } from './Tools/Profiler';
 export { runEcsDemo, runEcsDemoSilent, type EcsDemoSummary } from './ecsDemo';

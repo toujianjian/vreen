@@ -27,13 +27,10 @@ import { CAMERA_PRESET_LIST, CAMERA_PRESETS } from '@/three/camera';
 import { ColorField } from '@/components/viewer/ColorField';
 import { ECSPanel } from '@/components/viewer/ECSPanel';
 import {
-  packVreenPackage,
-  unpackVreenPackage,
+  exportVreenScene,
+  importVreenPackageFile,
   downloadVreenBytes,
-  type VreenScene,
-  type PackAssetInput,
-} from '@/lib/vreenPack';
-import { importVreenPackageFile } from '@/lib/export';
+} from '@/lib/export';
 import { uploadBridge } from '@/lib/uploadBridge';
 import { useNavigate } from 'react-router-dom';
 
@@ -136,32 +133,17 @@ export function Inspector() {
             const ui = useUIStore.getState();
             const modelFile = useViewerStore.getState().currentModelFile;
             try {
-              const scene: VreenScene = {
-                version: '0.2.1' as const,
+              const { bytes, manifest, modelNote, worldNote } = await exportVreenScene({
+                assetName: viewer.assetName || 'project',
                 camera: viewer.camera as unknown as Record<string, unknown>,
                 animation: { speed: viewer.animation.speed },
                 environment: ui.environment as unknown as Record<string, unknown>,
                 postFX: ui.postFX as unknown as Record<string, unknown>,
                 materials: inspector.materials as unknown as Record<string, unknown>,
-              };
-              const assets: PackAssetInput[] = [];
-              if (modelFile) {
-                const buf = new Uint8Array(await modelFile.arrayBuffer());
-                assets.push({ kind: 'model', data: buf, originalName: modelFile.name });
-              }
-              const worldJson = useWorldStore.getState().serialize();
-              const { bytes, manifest } = packVreenPackage({
-                name: viewer.assetName || 'project',
-                assetName: viewer.assetName || 'project',
-                scene,
-                assets,
-                world: worldJson ?? undefined,
+                modelFile,
+                worldJson: useWorldStore.getState().serialize() ?? undefined,
               });
               downloadVreenBytes(bytes, viewer.assetName);
-              const worldNote = worldJson
-                ? ` + world(${worldJson.entities.length})`
-                : '';
-              const modelNote = assets.length > 0 ? ` + model(${assets[0].originalName})` : '';
               useUIStore
                 .getState()
                 .pushLog('OK', `Saved .vreen → ${manifest.version}${modelNote}${worldNote}`);
@@ -196,73 +178,23 @@ export function Inspector() {
               e.target.value = '';
               if (!f) return;
               try {
-                // 嗅探 zip / json：zip 走 0.2.1 unpackVreenPackage, json 走 export.ts 的 0.1.0 legacy。
-                const head = new Uint8Array(await f.slice(0, 4).arrayBuffer());
-                const isZip = head[0] === 0x50 && head[1] === 0x4b && head[2] === 0x03 && head[3] === 0x04;
-                if (isZip) {
-                  const bytes = new Uint8Array(await f.arrayBuffer());
-                  const unpacked = await unpackVreenPackage(bytes);
-                  useViewerStore.setState((s) => ({
-                    camera: { ...s.camera, ...(unpacked.scene.camera as object) },
-                    animation: { ...s.animation, ...unpacked.scene.animation },
-                    assetName: unpacked.manifest.assetName || unpacked.manifest.name,
-                  }));
-                  useInspectorStore.setState({ materials: unpacked.scene.materials as never });
-                  useUIStore.setState({
-                    environment: unpacked.scene.environment as never,
-                    postFX: unpacked.scene.postFX as never,
-                    envCustomFile: null,
-                  });
-                  if (unpacked.manifest.world) {
-                    useWorldStore.getState().deserialize(unpacked.manifest.world);
-                  }
-                  const modelEntry = unpacked.manifest.assets.find((a) => a.kind === 'model');
-                  if (modelEntry) {
-                    const data = unpacked.assets.get(modelEntry.id);
-                    if (data) {
-                      const ext = (modelEntry.originalName ?? 'glb').split('.').pop() ?? 'glb';
-                      const mFile = new File([data as unknown as BlobPart], `embedded.${ext}`, { type: 'application/octet-stream' });
-                      uploadBridge.set(mFile);
-                      useViewerStore.getState().setAssetSource(
-                        { kind: 'upload', uploadId: mFile.name },
-                        unpacked.manifest.assetName,
-                      );
-                      useUIStore
-                        .getState()
-                        .pushLog('OK', `Imported .vreen 0.2.1 → ${unpacked.manifest.assetName} + model`);
-                      navigate('/viewer');
-                      return;
-                    }
-                  }
-                  useUIStore
-                    .getState()
-                    .pushLog('OK', `Imported .vreen 0.2.1 state → ${unpacked.manifest.assetName}`);
+                const { pkg, modelFile } = await importVreenPackageFile(f);
+                if (modelFile) {
+                  uploadBridge.set(modelFile);
+                  useViewerStore.getState().setAssetSource(
+                    { kind: 'upload', uploadId: modelFile.name },
+                    pkg.assetName || modelFile.name,
+                  );
+                  useUIStore.getState().pushLog(
+                    'OK',
+                    `Imported .vreen → ${pkg.assetName || '—'} + model(${modelFile.name})`,
+                  );
+                  navigate('/viewer');
                 } else {
-                  // 0.1.x 兼容路径
-                  const { pkg, modelFile } = await importVreenPackageFile(f);
-                  if (modelFile) {
-                    uploadBridge.set(modelFile);
-                    useViewerStore
-                      .getState()
-                      .setAssetSource(
-                        { kind: 'upload', uploadId: modelFile.name },
-                        modelFile.name,
-                      );
-                    useUIStore
-                      .getState()
-                      .pushLog(
-                        'OK',
-                        `Imported .vreen 0.1.x → ${modelFile.name} + state`,
-                      );
-                    navigate('/viewer');
-                  } else {
-                    useUIStore
-                      .getState()
-                      .pushLog(
-                        'OK',
-                        `Imported .vreen.json 0.1.x state (${pkg.assetName || '—'})`,
-                      );
-                  }
+                  useUIStore.getState().pushLog(
+                    'OK',
+                    `Imported .vreen.json state (${pkg.assetName || '—'})`,
+                  );
                 }
               } catch (err) {
                 const msg = err instanceof Error ? err.message : String(err);

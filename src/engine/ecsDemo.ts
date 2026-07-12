@@ -2,6 +2,7 @@
 // 该函数被 EngineDemoPage 在挂载时调用一次，往 console 打印 5 帧的
 // entity 状态作为 sanity check。生产代码会改成 React state 显示。
 
+import { createLogger, setMinLevel, minLevel } from '@/lib/logger';
 import {
   World,
   MovementSystem,
@@ -25,6 +26,8 @@ import {
   AnimState,
   Lifetime,
 } from '@/engine/ECS';
+
+const log = createLogger('Demo');
 
 export interface EcsDemoSummary {
   entityCount: number;
@@ -79,8 +82,8 @@ export function runEcsDemo(): EcsDemoSummary {
     // 抽样打印
     const t2 = world.getComponent(player, TransformC)!;
     const lt = world.getComponent(particle, LifetimeC);
-    console.log(
-      `[EcsDemo] frame=${world.frame()} player.pos=(${t2.position[0].toFixed(2)}, ${t2.position[1].toFixed(2)}, ${t2.position[2].toFixed(2)}) ` +
+    log.info(
+      `frame=${world.frame()} player.pos=(${t2.position[0].toFixed(2)}, ${t2.position[1].toFixed(2)}, ${t2.position[2].toFixed(2)}) ` +
       `entityCount=${world.entityCount()}` +
       (lt ? ` particle.remaining=${lt.remaining.toFixed(2)}` : ' particle=destroyed'),
     );
@@ -88,11 +91,11 @@ export function runEcsDemo(): EcsDemoSummary {
 
   // 测试 query
   const tagged = world.query(TagC);
-  console.log(`[EcsDemo] query(TagC) → ${tagged.length} entities: ${tagged.map((id) => world.getName(id)).join(', ')}`);
+  log.info(`query(TagC) → ${tagged.length} entities: ${tagged.map((id) => world.getName(id)).join(', ')}`);
 
   // 测试序列化
   const json = world.toJSON();
-  console.log(`[EcsDemo] toJSON() → ${json.entities.length} entities, version ${json.version}`);
+  log.info(`toJSON() → ${json.entities.length} entities, version ${json.version}`);
 
   return {
     entityCount: world.entityCount(),
@@ -103,12 +106,12 @@ export function runEcsDemo(): EcsDemoSummary {
 
 // 静默版：仅跑通流程，不打印日志。生产环境下用。
 export function runEcsDemoSilent(): EcsDemoSummary {
-  const origLog = console.log;
-  console.log = () => {};
+  const origLevel = minLevel;
+  setMinLevel('ERROR');
   try {
     return runEcsDemo();
   } finally {
-    console.log = origLog;
+    setMinLevel(origLevel);
   }
 }
 

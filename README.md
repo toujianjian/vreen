@@ -1,4 +1,4 @@
-<h1 align="center">⚡ VREEN ⚡</h1>
+<h1 align="center"> VREEN！！！ </h1>
 <p align="center">
   🌐 <b>中文</b> · <a href="./english.md">English</a>
 </p>
@@ -19,26 +19,30 @@
 
 ## ✨ 功能特性
 
-| <br /> | <br /> |
-| --- | --- |
-| 🎨 **赛博朋克 HUD** | 霓虹青 / 品红扫描线美学，全键盘友好的检视界面 |
-| 🧊 **多格式加载器** | `GLB` · `GLTF` · `OBJ` · `FBX` · `STL` · `PLY` —— 全部在浏览器端解析 |
-| 📷 **9 种人称视角** | 自由 / 等距 / 前 / 后 / 侧 / 顶 / 第一人称 / 第三人称 / 电影感 |
-| 🎛️ **可调相机镜头** | FOV (15–90°)、距离倍数、目标高度、阻尼、轨道速度 |
-| 🧪 **材质实验室** | 实时编辑基础色 / 金属度 / 粗糙度 / 自发光 / 不透明度 / 线框 |
-| 🌅 **HDRI 环境** | 工作室 / 夕阳 / 仓库 / 夜晚 / 城市 —— 支持曝光与背景模式，也可上传自定义 HDR |
-| ✨ **后处理特效** | Bloom · 色差 · 暗角 · SMAA —— 全部可独立开关 |
-| 📊 **实时场景统计** | FPS、三角面、网格、材质、视角、FOV、动画时间 |
-| 🖼️ **一键截图** | 当前帧保存为 PNG（基于 `preserveDrawingBuffer`） |
-| 📁 **拖拽上传** | 也可点击选择 —— 立即检视，文件不上传服务器 |
-| 🧩 **自研 WebGL2 引擎内核** | Three.js 风格 API 的独立场景图 / 数学库 / PBR 材质 / GPU 骨骼动画，逐步替代外部依赖 |
-| 🧩 **ECS 架构** | Entity-Component-System：Transform / Velocity / PlayerInput / AnimState / MeshRef / SkinnedMeshRef 等 |
-| 🎮 **角色控制** | `WASD` 移动、`Shift` 奔跑、`Space` 跳跃，输入按相机朝向转换到世界空间 |
-| 🎞️ **动画状态机** | Idle / Walk / Run 自动切换，带过渡时间；驱动 ECS 与自研 AnimationMixer |
-| 🧬 **场景图 ↔ ECS 同步** | 加载模型后自动生成 ECS entities，ECS 改动实时同步回 three.js 渲染 |
-| 📦 **.vreen 包格式** | 自包含 zip：模型 + 场景（相机 / 材质 / 环境 / 后处理）+ ECS World JSON，支持 Java 端 POJO 读写 |
-| 🔧 **资产管线** | Loader 抽象 + AssetManager、GLBLoader、TextureLoader、HDRLoader，可扩展 |
-| 🖥️ **桌面便携版** | Electron 打包为单文件 `.exe`，无需安装 |
+| <br />                | <br />                                                                                              |
+| --------------------- | --------------------------------------------------------------------------------------------------- |
+| 🎨 **赛博朋克 HUD**       | 霓虹青 / 品红扫描线美学，全键盘友好的检视界面                                                                            |
+| 🧊 **多格式加载器**         | `GLB` · `GLTF` · `OBJ` · `FBX` · `STL` · `PLY` · `HDR` —— 全部在浏览器端解析 (支持 Draco 压缩)                       |
+| 📷 **9 种人称视角**        | 自由 / 等距 / 前 / 后 / 侧 / 顶 / 第一人称 / 第三人称 / 电影感                                                         |
+| 🎛️ **可调相机镜头**        | FOV (15–90°)、距离倍数、目标高度、阻尼、轨道速度                                                                      |
+| 🧪 **材质实验室**          | 实时编辑基础色 / 金属度 / 粗糙度 / 自发光 / 不透明度 / 线框 + 自研程序化纹理                                                     |
+| 🌅 **HDRI 环境**        | 工作室 / 夕阳 / 仓库 / 夜晚 / 城市 —— 支持曝光与背景模式，也可上传自定义 HDR                                                    |
+| ✨ **后处理特效**           | Bloom · 色差 · 暗角 · SMAA · SSAO —— 全部可独立开关                                                              |
+| 📊 **实时场景统计**         | FPS、三角面、网格、材质、视角、FOV、动画时间                                                                           |
+| 🖼️ **一键截图**          | 当前帧保存为 PNG（基于 `preserveDrawingBuffer`）                                                              |
+| 📁 **拖拽上传**           | 也可点击选择 —— 立即检视，文件不上传服务器                                                                             |
+| 🧩 **自研 WebGL2 引擎内核** | 独立场景图 / 数学库 / PBR 材质 / GPU 骨骼动画 / IBL / 阴影,已打包为独立 npm 包 `@vreen/engine`                              |
+| 🧬 **ECS 架构**         | World / ComponentType / System,内置 Transform / Velocity / PlayerInput / AnimState / MeshRef / SkinnedMeshRef / Rigidbody / Collider / Particle 等组件 |
+| 🎮 **角色控制**           | `WASD` 移动、`Shift` 奔跑、`Space` 跳跃，输入按相机朝向转换到世界空间                                                      |
+| 🎞️ **动画状态机**         | Idle / Walk / Run 自动切换，带过渡时间；驱动 ECS 与自研 AnimationMixer                                              |
+| 🧬 **场景图 ↔ ECS 同步**   | 加载模型后自动生成 ECS entities，ECS 改动实时同步回 three.js 渲染                                                      |
+| ⚙️ **物理模拟**            | 自研 fixed-step semi-implicit Euler + 冲量响应,支持 AABB / Sphere / Capsule collider,CPU 粒子系统,24 物体 demo  |
+| 🔬 **物理调试器**          | 青色 collider 框、黄色 contact normal/tangent/bitangent/depth、品红 velocity 矢量,3 通道独立开关                              |
+| 🧠 **实体关系图**          | 实体 + 组件依赖可视化,带搜索 / 筛选 / 选中高亮                                                                        |
+| 📈 **性能分析器**          | 120 帧环形缓冲,CPU / GPU / System 时序三视图,FrameChart + 折叠式 ProfilerHUD                                            |
+| 🖥️ **桌面便携版**         | Electron 打包为单文件 `.exe`，无需安装                                                                         |
+| 📦 **.vreen 包格式**     | 自包含 zip:模型 + 场景 + ECS World JSON,支持增量 `.vreen-delta`,Java POJO / Kotlin / C# / C++ 多语言 SDK                       |
+| 🛠️ **CLI 工具**         | `npm run vreen` 一行打包 / 解包 / 验证 `.vreen`                                                              |
 
 ***
 
@@ -76,28 +80,55 @@ npm run electron:build
 
 ```
 vreen/
-├── src/
+├── src/                    # Vite 主应用
 │   ├── components/
-│   │   ├── home/          # 主页（Hero、Gallery、Uploader、TerminalLog、Footer）
-│   │   ├── viewer/        # 3D 检视器（Stage、SceneContents、Outliner、Inspector、Toolbar、StatusBar、ECSPanel）
-│   │   ├── three/         # 迷你 Canvas 辅助（BackgroundScene、PresetPreview）
-│   │   └── hud/           # 可复用 HUD 组件（HudPanel、TopBar）
-│   ├── engine/            # 自研 WebGL2 引擎内核（Core / Math / Animation / ECS / Loaders / Renderer / Controls / Lights / Cameras / Materials）
-│   ├── pages/             # 路由级页面（HomePage、ViewerPage、EngineDemoPage）
-│   ├── stores/            # Zustand 状态库（viewer、inspector、ui、world）
-│   ├── three/             # three.js 桥接：相机机位、加载器、生成器、归一化、threeToCustomAnim
-│   ├── lib/               # 通用工具与格式（cn、format、presets、screenshot、uploadBridge、vreenPack、vreenManifest、roundtripDemo）
-│   ├── types/             # 共享 TypeScript 类型
-│   ├── styles/            # Tailwind 入口 + 自定义 CSS（HUD、扫描线、本地字体）
-│   ├── App.tsx            # 路由外壳
-│   └── main.tsx           # React 根组件
-├── electron/              # Electron 主进程 / preload / 启动页
-├── public/                # 静态资源
-├── index.html             # Vite 入口
-├── tailwind.config.js     # 自定义霓虹主题配置
-├── postcss.config.js      # PostCSS 配置
-├── tsconfig.*.json        # TypeScript 项目引用
-└── vite.config.ts         # Vite + 手动分块 + woff 清理插件
+│   │   ├── home/           # 主页 (Hero / Gallery / Uploader / TerminalLog / Footer)
+│   │   ├── viewer/         # 3D 检视器 (Stage / SceneContents / Outliner / Inspector / Toolbar / StatusBar / ECSPanel / EntityGraph / FrameChart / ProfilerHUD / VreenInspectorPanel)
+│   │   ├── three/          # 迷你 Canvas 辅助 (BackgroundScene / PresetPreview / SafeEnvironment)
+│   │   └── hud/            # 可复用 HUD 组件 (HudPanel / TopBar)
+│   ├── engine/             # 自研 WebGL2 引擎内核 (镜像到 packages/engine/src)
+│   │   ├── Core/           # Object3D / Scene / Mesh / Group / Bone / Skeleton / BufferGeometry / BufferAttribute
+│   │   ├── Math/           # Vector3 / Quaternion / Matrix4
+│   │   ├── Cameras/        # Camera / PerspectiveCamera / OrthographicCamera
+│   │   ├── Controls/       # OrbitControls
+│   │   ├── Lights/         # Light / AmbientLight / DirectionalLight
+│   │   ├── Geometries/     # Box / Sphere / Plane / Cylinder / Cone
+│   │   ├── Materials/      # StandardMaterial (PBR) / ShaderMaterial / ShaderChunks
+│   │   ├── Renderer/       # WebGL2Renderer / ShaderProgram
+│   │   ├── Loaders/        # GLB / OBJ / Texture / HDR / Draco / AssetManager
+│   │   ├── Animation/      # AnimationClip / AnimationAction / AnimationMixer / AnimationStateMachine / Humanoid / KeyframeTrack
+│   │   ├── ECS/            # World / ComponentType / Components / Systems / PhysicsComponents / PhysicsSystems
+│   │   ├── Physics/        # PhysicsDemo
+│   │   ├── Helpers/        # GridHelper / LineHelper / PhysicsDebugRenderer
+│   │   ├── Tools/          # Profiler
+│   │   └── logger.ts       # 内置集中式日志
+│   ├── pages/              # 路由级页面 (HomePage / ViewerPage / EngineDemoPage)
+│   ├── stores/             # Zustand 状态库 (viewer / inspector / ui / world / profiler)
+│   ├── three/              # three.js 桥接 (camera / loaders / generators / normalize / threeToCustomAnim / convertCustomToThree / proceduralTextures)
+│   ├── lib/                # 通用工具 (logger / presets / screenshot / uploadBridge / vreenPack / vreenManifest / vreenDiff / vreenValidate / vreenRegistry / roundtripDemo / export)
+│   ├── types/              # 共享 TypeScript 类型
+│   ├── styles/             # Tailwind 入口 + 自定义 CSS
+│   ├── i18n/               # zh / en 国际化
+│   ├── App.tsx             # 路由外壳
+│   └── main.tsx            # React 根组件
+├── packages/               # 多语言 SDK 生态
+│   ├── engine/             # @vreen/engine: 自研引擎独立 npm 包 (含 examples / README)
+│   ├── registry/           # .vreen 包注册表 schema + 示例
+│   ├── unity-package/      # Unity 编辑器插件 (C#)
+│   ├── unreal-plugin/      # Unreal 引擎插件 (C++)
+│   └── vreen-core/         # Kotlin/Java 构建期工具 (Maven)
+├── sdks/
+│   └── java/               # Java POJO SDK for .vreen (Gradle + Maven)
+├── docs/
+│   └── format/             # .vreen 格式规范 (v0.2.1)
+├── scripts/                # vreen-cli.mjs / rewrite-engine-imports.cjs
+├── electron/               # Electron 主进程 / preload / 启动页
+├── public/                 # 静态资源
+├── index.html              # Vite 入口
+├── tailwind.config.js
+├── postcss.config.js
+├── tsconfig.*.json
+└── vite.config.ts
 ```
 
 ***
@@ -127,15 +158,15 @@ vreen/
 
 #### 人称视角（顶部工具栏）
 
-| 按钮 | 模式 | 说明 |
-| --- | --- | --- |
-| **FREE** | 自由轨道 | 用户控制，无约束 |
-| **ISO** | 等距视角 | 45° 角 —— 检视默认首选 |
-| **FRONT / BACK / SIDE** | 轴向 | 锁定到平面，便于技术审阅 |
-| **TOP** | 顶视 | 自上而下，极角受限 |
-| **1ST** | 第一人称 | 眼高 POV 看向模型 |
-| **3RD** | 第三人称 | 模型后上方，FOV 略大 |
-| **CINE** | 电影感 | 自动环绕，不接受输入（由 `cinematicSpeed` 驱动） |
+| 按钮                      | 模式   | 说明                                |
+| ----------------------- | ---- | --------------------------------- |
+| **FREE**                | 自由轨道 | 用户控制，无约束                          |
+| **ISO**                 | 等距视角 | 45° 角 —— 检视默认首选                   |
+| **FRONT / BACK / SIDE** | 轴向   | 锁定到平面，便于技术审阅                      |
+| **TOP**                 | 顶视   | 自上而下，极角受限                         |
+| **1ST**                 | 第一人称 | 眼高 POV 看向模型                       |
+| **3RD**                 | 第三人称 | 模型后上方，FOV 略大                      |
+| **CINE**                | 电影感  | 自动环绕，不接受输入（由 `cinematicSpeed` 驱动） |
 
 #### 键鼠操作
 
@@ -178,7 +209,8 @@ vreen/
 - **React 18 + TypeScript 5** —— 全链路严格类型
 - **Vite 5** —— 亚秒级热更新，手动分块
 - **Three.js r169** + **@react-three/fiber** + **@react-three/drei** —— 当前 viewer 渲染后端（逐步被自研引擎替代）
-- **自研 WebGL2 引擎** —— 场景图、数学库、PBR 材质、GPU 骨骼动画、GLB/Texture/HDRI 加载器
+- **自研 WebGL2 引擎 `@vreen/engine`** —— 场景图 / 数学库 / PBR / IBL / 阴影 / SSAO / GPU 骨骼动画 / 状态机 / 物理 / 调试
+- **draco3d** —— 浏览器端 Draco 网格解码
 - **@react-three/postprocessing** —— 现代后处理管线
 - **Zustand** —— 极简、易用的状态管理（无 Redux 样板）
 - **Tailwind CSS 3** —— 原子化 + 自定义 HUD 主题
@@ -188,28 +220,39 @@ vreen/
 - **Electron + electron-builder** —— Windows 便携桌面包
 - **fflate** —— 浏览器端 zip 打包 / 解包（.vreen 容器）
 
+### 多语言 SDK
+
+| 语言 / 平台       | 路径 / 包名                            | 用途                                    |
+| ------------ | ----------------------------------- | ------------------------------------- |
+| TypeScript   | `packages/engine/` (`@vreen/engine`) | 自研引擎独立 npm 包，可被其他项目复用                  |
+| Java POJO    | `sdks/java/`                        | `.vreen` 包读写（Gradle + Maven）            |
+| Kotlin       | `packages/vreen-core/`              | `.vreen` 构建期工具 (Maven)                   |
+| C# / Unity   | `packages/unity-package/`           | Unity 编辑器导出 `.vreen` 插件                 |
+| C++ / Unreal | `packages/unreal-plugin/`           | Unreal Engine 插件                     |
+
 ***
 
 ## ⚙️ 命令脚本
 
-| 脚本 | 作用 |
-| --- | --- |
-| `npm run dev` | 启动 Vite 开发服务器，带 HMR |
-| `npm run build` | TypeScript 构建 + Vite 生产打包 |
-| `npm run preview` | 本地预览构建产物 `dist/` |
-| `npm run typecheck` | `tsc -b --noEmit` 严格类型检查 |
-| `npm run electron:dev` | 并行启动 Vite + Electron 调试 |
-| `npm run electron:build` | 构建生产包 + 打包 Windows 便携 exe |
-| `npm run electron:build:dir` | 仅生成未打包的 win-unpacked 目录 |
+| 脚本                           | 作用                                                          |
+| ---------------------------- | ----------------------------------------------------------- |
+| `npm run dev`                | 启动 Vite 开发服务器，带 HMR                                         |
+| `npm run build`              | TypeScript 构建 + Vite 生产打包                                     |
+| `npm run preview`            | 本地预览构建产物 `dist/`                                            |
+| `npm run typecheck`          | `tsc -b --noEmit` 严格类型检查                                    |
+| `npm run electron:dev`       | 并行启动 Vite + Electron 调试                                     |
+| `npm run electron:build`     | 构建生产包 + 打包 Windows 便携 exe                                   |
+| `npm run electron:build:dir` | 仅生成未打包的 win-unpacked 目录                                     |
+| `npm run vreen`              | `.vreen` 包 CLI(打包 / 解包 / 验证 / diff)                         |
 
 ***
 
 ## 🗺️ 路线图
 
-- [x] 多格式加载器（GLB / GLTF / OBJ / FBX / STL / PLY）
+- [x] 多格式加载器（GLB / GLTF / OBJ / FBX / STL / PLY / HDR）
 - [x] 9 种人称相机系统，全部可调
 - [x] 材质实验室，实时更新
-- [x] 后处理管线（Bloom、色差、暗角、SMAA）
+- [x] 后处理管线（Bloom、色差、暗角、SMAA、SSAO）
 - [x] 程序化预设画廊
 - [x] 一键 PNG 截图
 - [x] 赛博朋克 HUD 主题
@@ -218,17 +261,25 @@ vreen/
 - [x] 真实场景树（从 `THREE.Object3D` 构建）
 - [x] HDRI 上传 + 自定义环境贴图
 - [x] 项目导出（`.vreen` 包 = 模型 + 相机 + 材质 + 灯光预设 + ECS World）
-- [x] 自研 WebGL2 引擎内核（SceneGraph / Math / PBR / Skinning / Animation）
+- [x] 自研 WebGL2 引擎内核（SceneGraph / Math / PBR / IBL / Skinning / Animation / SSAO）
+- [x] `@vreen/engine` 独立 npm 包
 - [x] ECS 架构与常用组件 / 系统
+- [x] 物理模拟（Rigidbody / Collider / Particle / PhysicsSystem / CollisionSystem）
+- [x] 物理调试器（collider / contact / velocity 三通道）
 - [x] 角色动画状态机（Idle / Walk / Run）
 - [x] WASD + Shift + Space 角色控制
 - [x] 场景图 ↔ ECS 双向同步
+- [x] 实体关系图（EntityGraph）
+- [x] 性能分析器（Profiler + FrameChart + ProfilerHUD）
+- [x] `.vreen` 多语言 SDK（TypeScript / Java POJO / Kotlin / C# Unity / C++ Unreal）
+- [x] `npm run vreen` CLI
+- [x] `.vreen-delta` 增量包
 - [x] Windows 便携桌面版
 - [ ] viewer 主渲染切换为自研 WebGL2 管线
-- [ ] GLTF Draco / Meshopt 压缩
+- [ ] GLTF Meshopt 压缩
 - [ ] VR / WebXR 模式
 - [ ] 多资源对比视图
-- [ ] Java 构建期工具（生成 .vreen 包）
+- [ ] `.vreen` 云端包仓库
 
 ***
 
@@ -266,7 +317,7 @@ npm run electron:build
 
 ## 🤝 参与贡献
 
-欢迎提 Issue 和 PR。较大的改动前请先开 Issue 讨论。
+欢迎提 Issue 和 PR。较大的改动前请先开 Issue 讨论！！！。
 
 ```bash
 git checkout -b feat/your-feature
@@ -285,7 +336,7 @@ git push origin feat/your-feature
 
 ## 💌 致谢
 
-- Three.js example loaders（GLTF / OBJ / FBX / STL / PLY） —— MIT
+- Three.js example loaders（GLTF / OBJ / FBX / STL / PLY）给我们提供灵感和参考 —— MIT
 - @react-three 生态 —— MIT
 - Lucide Icons —— ISC
 - 本地字体：Orbitron、JetBrains Mono、Noto Sans SC（通过 fontsource）

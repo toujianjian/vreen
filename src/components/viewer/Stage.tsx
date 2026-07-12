@@ -40,9 +40,11 @@ export function Stage() {
   const useCustomRenderer = useViewerStore((s) => s.useCustomRenderer);
   const assetSource = useViewerStore((s) => s.assetSource);
 
-  // 自定义渲染器当前仅支持上传的 .glb；其他情况自动 fallback 到 three.js
+  // 自定义渲染器:upload(.glb) 与 preset(6 个程序化模型)都支持。
+  // 其他来源(未来 obj/fbx 等)自动 fallback 到 three.js。
   const canUseCustom =
-    useCustomRenderer && assetSource?.kind === 'upload';
+    useCustomRenderer &&
+    (assetSource?.kind === 'upload' || assetSource?.kind === 'preset');
 
   return (
     <div className="relative w-full h-full">
@@ -162,9 +164,7 @@ export function Stage() {
       </Canvas>
       )}
 
-      {/* Subtle scanline overlay for cyberpunk feel */}
-      <div className="pointer-events-none absolute inset-0 bg-scanlines opacity-30 mix-blend-overlay" />
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_45%,rgba(5,7,13,0.55)_100%)]" />
+      {/* 纯黑背景 — 无扫描线 / 渐变覆盖层 */}
     </div>
   );
 }
@@ -177,10 +177,10 @@ function SceneEnvironment() {
   }, [scene, environment.backgroundColor]);
   return (
     <>
-      <ambientLight intensity={0.18} />
+      <ambientLight intensity={0.55} />
       <directionalLight
         position={[4, 6, 3]}
-        intensity={1.2}
+        intensity={2.0}
         castShadow
         // 2048² is a good fidelity/perf balance; the frustum is now wide
         // enough to cover the entire ground plane (10×10) plus a margin so

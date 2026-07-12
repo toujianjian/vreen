@@ -13,7 +13,15 @@ import { useViewerStore } from '@/stores/viewerStore';
 import { useInspectorStore } from '@/stores/inspectorStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useWorldStore } from '@/stores/worldStore';
-import { unpackVreenPackage } from './vreenPack';
+import {
+  unpackVreenPackage,
+  packVreenPackage,
+  downloadVreenBytes,
+  type VreenScene,
+  type PackAssetInput,
+  type VreenManifest,
+  type VreenWorldJson,
+} from './vreenPack';
 
 export const VREEN_PACKAGE_VERSION = '0.1.0' as const;
 
@@ -156,3 +164,57 @@ export async function importVreenPackageFile(file: File): Promise<VreenImportRes
   const pkg = applyVreenPackage(parsed);
   return { pkg, modelFile: null };
 }
+
+export interface ExportVreenSceneInput {
+  assetName: string;
+  camera: Record<string, unknown>;
+  animation: { speed: number };
+  environment: Record<string, unknown>;
+  postFX: Record<string, unknown>;
+  materials: Record<string, unknown>;
+  modelFile?: File | null;
+  worldJson?: unknown;
+}
+
+export interface ExportVreenSceneResult {
+  bytes: Uint8Array;
+  manifest: VreenManifest;
+  modelNote: string;
+  worldNote: string;
+}
+
+export async function exportVreenScene(input: ExportVreenSceneInput): Promise<ExportVreenSceneResult> {
+  const scene: VreenScene = {
+    version: '0.2.1' as const,
+    camera: input.camera as VreenScene['camera'],
+    animation: input.animation,
+    environment: input.environment as VreenScene['environment'],
+    postFX: input.postFX as VreenScene['postFX'],
+    materials: input.materials as VreenScene['materials'],
+  };
+
+  const assets: PackAssetInput[] = [];
+  if (input.modelFile) {
+    const buf = new Uint8Array(await input.modelFile.arrayBuffer());
+    assets.push({ kind: 'model', data: buf, originalName: input.modelFile.name });
+  }
+
+  const { bytes, manifest } = packVreenPackage({
+    name: input.assetName || 'project',
+    assetName: input.assetName || 'project',
+    scene,
+    assets,
+    world: input.worldJson as VreenWorldJson | undefined,
+  });
+
+  const worldNote = input.worldJson
+    ? ` + world(${(input.worldJson as any).entities?.length || 0})`
+    : '';
+  const modelNote = assets.length > 0
+    ? ` + model(${assets[0].originalName})`
+    : '';
+
+  return { bytes, manifest, modelNote, worldNote };
+}
+
+export { downloadVreenBytes };

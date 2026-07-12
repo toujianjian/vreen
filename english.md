@@ -1,8 +1,9 @@
-<h1 align="center">⚡ VREEN ⚡</h1>
+<h1 align="center"> VREEN！！！</h1>
 
 <p align="center">
   🌐 <a href="./README.md">中文</a> · <b>English</b>
 </p>
+
 
 > A next-generation inspection platform for indie game development and 3D content production.
 > Custom WebGL2 engine core · ECS-driven · Character / animation / asset pipeline in one place · Browser + desktop dual deployment.
@@ -21,23 +22,27 @@
 | | |
 |---|---|
 | 🎨 **Cyberpunk HUD** | Neon cyan / magenta scanline aesthetic with a fully keyboard-friendly inspector |
-| 🧊 **Multi-format loader** | `GLB` · `GLTF` · `OBJ` · `FBX` · `STL` · `PLY` — all parsed client-side |
+| 🧊 **Multi-format loader** | `GLB` · `GLTF` · `OBJ` · `FBX` · `STL` · `PLY` · `HDR` — all parsed client-side (with Draco compression) |
 | 📷 **9 point-of-view modes** | Free / Iso / Front / Back / Side / Top / First-Person / Third-Person / Cinematic |
 | 🎛️ **Tunable camera lens** | FOV (15–90°), distance multiplier, target height, damping, orbit speed |
-| 🧪 **Material lab** | Live edit base color / metalness / roughness / emissive / opacity / wireframe |
+| 🧪 **Material lab** | Live edit base color / metalness / roughness / emissive / opacity / wireframe + procedural textures |
 | 🌅 **HDRI environments** | Studio / Sunset / Warehouse / Night / City — exposure + background mode, plus custom HDR upload |
-| ✨ **Post-processing** | Bloom · Chromatic Aberration · Vignette · SMAA — all individually toggleable |
+| ✨ **Post-processing** | Bloom · Chromatic Aberration · Vignette · SMAA · SSAO — all individually toggleable |
 | 📊 **Real-time scene stats** | FPS, triangles, meshes, materials, POV, FOV, animation time |
 | 🖼️ **One-click screenshot** | Saves current frame as PNG (via `preserveDrawingBuffer`) |
 | 📁 **Drag-and-drop upload** | Click-to-pick also supported — inspected instantly, never uploaded to a server |
-| 🧩 **Custom WebGL2 engine core** | Three.js-style API with independent scene graph / math library / PBR materials / GPU skinning, gradually replacing external dependencies |
-| 🧩 **ECS architecture** | Entity-Component-System: Transform / Velocity / PlayerInput / AnimState / MeshRef / SkinnedMeshRef and more |
+| 🧩 **Custom WebGL2 engine core** | Independent scene graph / math / PBR / IBL / shadow / GPU skinning, packaged as the standalone npm package `@vreen/engine` |
+| 🧬 **ECS architecture** | World / ComponentType / System, with built-in Transform / Velocity / PlayerInput / AnimState / MeshRef / SkinnedMeshRef / Rigidbody / Collider / Particle and more |
 | 🎮 **Character control** | `WASD` movement, `Shift` run, `Space` jump — input rotated by current camera heading |
 | 🎞️ **Animation state machine** | Idle / Walk / Run automatic switching with transition timing; drives ECS and custom AnimationMixer |
 | 🧬 **Scene graph ↔ ECS sync** | Auto-generates ECS entities on model load; ECS changes sync back to three.js rendering in real time |
-| 📦 **.vreen package format** | Self-contained zip: model + scene (camera / materials / env / postFX) + ECS World JSON, Java-friendly POJO serialization |
-| 🔧 **Asset pipeline** | Loader abstraction + AssetManager, GLBLoader, TextureLoader, HDRLoader — extensible |
+| ⚙️ **Physics simulation** | Self-implemented fixed-step semi-implicit Euler + impulse response, AABB / Sphere / Capsule colliders, CPU particle system, 24-body demo |
+| 🔬 **Physics debugger** | Cyan collider wireframe, yellow contact normal/tangent/bitangent/depth, magenta velocity vectors — 3 channels individually toggleable |
+| 🧠 **Entity relationship graph** | Entity + component dependency visualization with search / filter / selection highlight |
+| 📈 **Profiler** | 120-frame ring buffer, CPU / GPU / System timing three-pane view, FrameChart + collapsible ProfilerHUD |
 | 🖥️ **Desktop portable build** | Electron single-file `.exe`, no install required |
+| 📦 **.vreen package format** | Self-contained zip: model + scene + ECS World JSON, supports `.vreen-delta` incremental updates, multi-language SDK (Java POJO / Kotlin / C# / C++) |
+| 🛠️ **CLI tool** | `npm run vreen` one-liner pack / unpack / validate `.vreen` |
 
 ---
 
@@ -74,28 +79,55 @@ npm run electron:build
 
 ```
 vreen/
-├── src/
+├── src/                    # Vite main app
 │   ├── components/
-│   │   ├── home/          # Homepage (Hero, Gallery, Uploader, TerminalLog, Footer)
-│   │   ├── viewer/        # 3D inspector (Stage, SceneContents, Outliner, Inspector, Toolbar, StatusBar, ECSPanel)
-│   │   ├── three/         # Mini-canvas helpers (BackgroundScene, PresetPreview)
-│   │   └── hud/           # Reusable HUD components (HudPanel, TopBar)
-│   ├── engine/            # Custom WebGL2 engine core (Core / Math / Animation / ECS / Loaders / Renderer / Controls / Lights / Cameras / Materials)
-│   ├── pages/             # Routed pages (HomePage, ViewerPage, EngineDemoPage)
-│   ├── stores/            # Zustand stores (viewer, inspector, ui, world)
-│   ├── three/             # three.js bridge: camera rig, loaders, generators, normalization, threeToCustomAnim
-│   ├── lib/               # Utilities and formats (cn, format, presets, screenshot, uploadBridge, vreenPack, vreenManifest, roundtripDemo)
-│   ├── types/             # Shared TypeScript types
-│   ├── styles/            # Tailwind entry + custom CSS (HUD, scanlines, local fonts)
-│   ├── App.tsx            # Router shell
-│   └── main.tsx           # React root
-├── electron/              # Electron main process / preload / splash
-├── public/                # Static assets
-├── index.html             # Vite entry
-├── tailwind.config.js     # Custom neon theme
-├── postcss.config.js      # PostCSS config
-├── tsconfig.*.json        # TypeScript project references
-└── vite.config.ts         # Vite + manual chunks + woff-drop plugin
+│   │   ├── home/           # Homepage (Hero / Gallery / Uploader / TerminalLog / Footer)
+│   │   ├── viewer/         # 3D inspector (Stage / SceneContents / Outliner / Inspector / Toolbar / StatusBar / ECSPanel / EntityGraph / FrameChart / ProfilerHUD / VreenInspectorPanel)
+│   │   ├── three/          # Mini-canvas helpers (BackgroundScene / PresetPreview / SafeEnvironment)
+│   │   └── hud/            # Reusable HUD components (HudPanel / TopBar)
+│   ├── engine/             # Custom WebGL2 engine core (mirrored to packages/engine/src)
+│   │   ├── Core/           # Object3D / Scene / Mesh / Group / Bone / Skeleton / BufferGeometry / BufferAttribute
+│   │   ├── Math/           # Vector3 / Quaternion / Matrix4
+│   │   ├── Cameras/        # Camera / PerspectiveCamera / OrthographicCamera
+│   │   ├── Controls/       # OrbitControls
+│   │   ├── Lights/         # Light / AmbientLight / DirectionalLight
+│   │   ├── Geometries/     # Box / Sphere / Plane / Cylinder / Cone
+│   │   ├── Materials/      # StandardMaterial (PBR) / ShaderMaterial / ShaderChunks
+│   │   ├── Renderer/       # WebGL2Renderer / ShaderProgram
+│   │   ├── Loaders/        # GLB / OBJ / Texture / HDR / Draco / AssetManager
+│   │   ├── Animation/      # AnimationClip / AnimationAction / AnimationMixer / AnimationStateMachine / Humanoid / KeyframeTrack
+│   │   ├── ECS/            # World / ComponentType / Components / Systems / PhysicsComponents / PhysicsSystems
+│   │   ├── Physics/        # PhysicsDemo
+│   │   ├── Helpers/        # GridHelper / LineHelper / PhysicsDebugRenderer
+│   │   ├── Tools/          # Profiler
+│   │   └── logger.ts       # Built-in centralized logger
+│   ├── pages/              # Routed pages (HomePage / ViewerPage / EngineDemoPage)
+│   ├── stores/             # Zustand stores (viewer / inspector / ui / world / profiler)
+│   ├── three/              # three.js bridge (camera / loaders / generators / normalize / threeToCustomAnim / convertCustomToThree / proceduralTextures)
+│   ├── lib/                # Utilities (logger / presets / screenshot / uploadBridge / vreenPack / vreenManifest / vreenDiff / vreenValidate / vreenRegistry / roundtripDemo / export)
+│   ├── types/              # Shared TypeScript types
+│   ├── styles/             # Tailwind entry + custom CSS
+│   ├── i18n/               # zh / en locales
+│   ├── App.tsx             # Router shell
+│   └── main.tsx            # React root
+├── packages/               # Multi-language SDK ecosystem
+│   ├── engine/             # @vreen/engine: standalone npm package of the custom engine (with examples / README)
+│   ├── registry/           # .vreen package registry schema + samples
+│   ├── unity-package/      # Unity editor plugin (C#)
+│   ├── unreal-plugin/      # Unreal Engine plugin (C++)
+│   └── vreen-core/         # Kotlin/Java build-time tool (Maven)
+├── sdks/
+│   └── java/               # Java POJO SDK for .vreen (Gradle + Maven)
+├── docs/
+│   └── format/             # .vreen format spec (v0.2.1)
+├── scripts/                # vreen-cli.mjs / rewrite-engine-imports.cjs
+├── electron/               # Electron main process / preload / splash
+├── public/                 # Static assets
+├── index.html              # Vite entry
+├── tailwind.config.js
+├── postcss.config.js
+├── tsconfig.*.json
+└── vite.config.ts
 ```
 
 ---

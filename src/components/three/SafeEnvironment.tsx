@@ -2,8 +2,11 @@
 // raw.githubusercontent.com, which is often blocked in mainland China.
 // Wraps the loader in an ErrorBoundary so any unexpected failure gracefully
 // degrades to basic scene lighting instead of crashing the Canvas.
+import { createLogger } from '@/lib/logger';
 import { Component, type ReactNode, Suspense } from 'react';
 import { Environment } from '@react-three/drei';
+
+const log = createLogger('Env');
 
 /** Mapping from our EnvironmentPreset to local HDRI file paths.
  *  Files downloaded from drei-assets and placed under public/hdri/. */
@@ -38,8 +41,7 @@ class EnvErrorBoundary extends Component<{ children: ReactNode }, State> {
   }
 
   componentDidCatch(error: Error) {
-    // eslint-disable-next-line no-console
-    console.warn('[VREEN] HDRI load failed, using fallback lighting:', error.message.slice(0, 80));
+    log.warn('HDRI load failed, using fallback lighting:', error.message.slice(0, 80));
   }
 
   render() {

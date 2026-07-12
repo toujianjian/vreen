@@ -1,0 +1,9 @@
+# Build outputs
+classes/
+*.class
+
+# Local verification tools (downloaded jars + demo outputs)
+tools/jars/
+tools/classes/
+tools/*.vreen
+tools/demo-*.json

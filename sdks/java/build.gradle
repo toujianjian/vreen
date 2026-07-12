@@ -1,0 +1,35 @@
+// VREEN Java SDK — Gradle build file.
+//
+// Mirrors the vreen web app's `src/lib/vreenPack.ts` (TypeScript) for
+// build-time / server-side tooling. Targets Java 17+, depends on Jackson 2.16
+// for JSON and uses java.util.zip for archive handling (no extra deps).
+
+plugins {
+    java
+    `java-library`
+}
+
+group = "io.vreen"
+version = "0.1.0"
+
+repositories {
+    mavenCentral()
+}
+
+java {
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(17))
+    }
+}
+
+dependencies {
+    // JSON parsing / generation
+    api("com.fasterxml.jackson.core:jackson-databind:2.16.1")
+
+    // Testing
+    testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
+}
+
+tasks.test {
+    useJUnitPlatform()
+}

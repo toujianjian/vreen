@@ -6,6 +6,9 @@
 
 import { System, World } from './World';
 import { TransformC, VelocityC, SkinnedMeshRefC, AnimStateC, LifetimeC, PlayerInputC } from './Components';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('ECS.Systems');
 
 // ── MovementSystem ──────────────────────────────────────────────────
 /** priority 默认 0 (100)。处理 Transform + Velocity：position += v * dt；
@@ -121,6 +124,9 @@ export class LifetimeSystem extends System {
       lt.remaining -= dt;
       if (lt.remaining <= 0) toKill.push(id);
     });
-    for (const id of toKill) world.destroyEntity(id);
+    if (toKill.length > 0) {
+      log.info(`expired ${toKill.length} entities: [${toKill.map((i) => '0x' + i.toString(16)).join(', ')}]`);
+      for (const id of toKill) world.destroyEntity(id);
+    }
   }
 }

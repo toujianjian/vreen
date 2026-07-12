@@ -22,7 +22,11 @@ import { detectFormat } from '@/lib/format';
 import { extractGeometryStats } from '@/three/extractGeometryStats';
 import { AnimationMixer as CustomAnimationMixer } from '@/engine/Animation';
 import { convertThreeClips } from '@/three/threeToCustomAnim';
+import { convertToThreeObject, isCustomObject3D } from '@/three/convertCustomToThree';
+import { createLogger } from '@/lib/logger';
 import type { Object3D as CustomObject3D } from '@/engine/Core/Object3D';
+
+const log = createLogger('Scene');
 import { Velocity, VelocityC } from '@/engine/ECS';
 
 export function SceneContents() {
@@ -97,7 +101,10 @@ export function SceneContents() {
           }
           setLoadProgress(0.4);
           await new Promise((r) => setTimeout(r, 60));
-          root = GENERATORS[preset.generator]() as unknown as THREE.Object3D;
+          const customGenRoot = GENERATORS[preset.generator]();
+          root = isCustomObject3D(customGenRoot)
+            ? convertToThreeObject(customGenRoot)
+            : customGenRoot as unknown as THREE.Object3D;
           assetName = preset.name;
           setLoadProgress(0.9);
         } else {
@@ -467,8 +474,7 @@ function buildPlaceholder(label: string): THREE.Object3D {
   inner.position.y = 0.85;
   g.add(inner);
   // Console log label
-  // eslint-disable-next-line no-console
-  console.info(`[VREEN] placeholder rendered for: ${label.replace(/\n/g, ' / ')}`);
+  log.info(`placeholder rendered for: ${label.replace(/\n/g, ' / ')}`);
   return g;
 }
 

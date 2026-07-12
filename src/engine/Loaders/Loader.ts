@@ -8,6 +8,10 @@
 //   - 通用进度 / 取消通过 LoaderContext 传递，跨 Loader 共享。
 //   - 不绑定 DOM（不监听 fetch 之外的事件），纯函数 + Promise。
 
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('Loader');
+
 /** 资产源：URL 字符串 / URL / File / Blob / ArrayBuffer / Uint8Array。 */
 export type AssetSource = string | URL | File | Blob | ArrayBuffer | Uint8Array;
 
@@ -67,27 +71,44 @@ export async function fetchAsArrayBuffer(
   else if (source instanceof URL) url = source.toString();
   else throw new TypeError('fetchAsArrayBuffer: source must be a URL string');
 
+  const t0 = performance.now();
+  log.info(`fetch start: ${url}`);
   const resp = await fetch(url, { signal });
-  if (!resp.ok) throw new Error(`fetch ${url} failed: ${resp.status} ${resp.statusText}`);
-
+  if (!resp.ok) {
+    log.error(`fetch failed: ${url} → ${resp.status} ${resp.statusText}`);
+    throw new Error(`fetch ${url} failed: ${resp.status} ${resp.statusText}`);
+  }
   const total = Number(resp.headers.get('content-length') || 0);
+  log.debug(`fetch response: ${resp.status} ${resp.statusText}, ` +
+    `content-length=${total || '?'} (${total ? (total / 1024).toFixed(1) + ' KB' : 'unknown'})`);
+
   if (!resp.body || !onProgress || total === 0) {
-    return resp.arrayBuffer();
+    const buf = await resp.arrayBuffer();
+    log.info(`fetch done (no streaming): ${url} → ${(buf.byteLength / 1024).toFixed(1)} KB in ${(performance.now() - t0).toFixed(1)}ms`);
+    return buf;
   }
   // 流式读取以便上报进度
   const reader = resp.body.getReader();
   const chunks: Uint8Array[] = [];
   let loaded = 0;
+  let lastReported = 0;
   while (true) {
     const { value, done } = await reader.read();
     if (done) break;
     chunks.push(value);
     loaded += value.byteLength;
     onProgress({ loaded, total, ratio: loaded / total });
+    // 每 25% 上报一次进度日志,避免刷屏
+    const pct = Math.floor((loaded / total) * 4);
+    if (pct > lastReported) {
+      lastReported = pct;
+      log.debug(`fetch progress: ${url} ${Math.round((loaded / total) * 100)}% (${(loaded / 1024).toFixed(1)}/${(total / 1024).toFixed(1)} KB)`);
+    }
   }
   const out = new Uint8Array(loaded);
   let off = 0;
   for (const c of chunks) { out.set(c, off); off += c.byteLength; }
+  log.info(`fetch done: ${url} → ${(out.byteLength / 1024).toFixed(1)} KB in ${(performance.now() - t0).toFixed(1)}ms`);
   return out.buffer;
 }
 
