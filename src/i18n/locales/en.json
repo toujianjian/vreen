@@ -142,12 +142,42 @@
     "pause": "PAUSE",
     "speed": "SPEED",
     "project": "PROJECT",
+    "buttons": {
+      "custom": "CUSTOM",
+      "three": "THREE",
+      "physics": "PHYSICS",
+      "physicsDebug": "PHYS-DBG",
+      "profiler": "PROFILER",
+      "tuner": "TUNER"
+    },
+    "projectMenu": {
+      "title": "PROJECT",
+      "saveVreen": "SAVE .VREEN",
+      "saveVreenHint": "state + embedded model (zip)",
+      "saveVreenNoModel": "model missing — choose JSON",
+      "saveJson": "SAVE .VREEN.JSON",
+      "saveJsonHint": "state only, small file",
+      "loadVreen": "LOAD .VREEN",
+      "loadVreenHint": "apply saved state (or restore bundle)",
+      "model": "model",
+      "noModel": "no embedded model"
+    },
     "logs": {
       "paused": "Animation paused",
       "resumed": "Animation resumed",
       "capturing": "Capturing frame...",
       "saved": "Screenshot saved to downloads",
-      "failed": "Capture failed: {msg}"
+      "failed": "Capture failed: {msg}",
+      "switchedThree": "Switched to three.js renderer",
+      "switchedCustom": "Switched to custom WebGL2 renderer",
+      "physicsOn": "Physics demo: ON (24 boxes + particle emitter)",
+      "physicsOff": "Physics demo: OFF",
+      "physicsDebugOn": "Physics debug viz: ON (collider/contact/velocity)",
+      "physicsDebugOff": "Physics debug viz: OFF",
+      "profilerOn": "Profiler: ON (CPU/GPU/System timing)",
+      "profilerOff": "Profiler: OFF",
+      "tunerOn": "Tuner: ON (live param editor for generator presets)",
+      "tunerOff": "Tuner: OFF"
     }
   },
   "profiler": {
@@ -303,6 +333,9 @@
       "first": "POV",
       "third": "POV",
       "cine": "PATH"
+    },
+    "freeCamera": {
+      "hint": "WASD: move · Shift: sprint · Q/E: up/down"
     },
     "hdri": "HDRI Preset",
     "exposure": "Exposure",

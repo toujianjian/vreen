@@ -4,7 +4,7 @@
 //
 // packVreenPackage  -> Uint8Array (zip bytes)
 // unpackVreenPackage -> { manifest, scene, state, assets: Map<id, Uint8Array> }
-//
+//哈哈哈
 // 与 lib/export.ts 的关系：
 //   - 旧的 0.1.x 容器 (project.json + model.<ext>) 仍可被 unpackVreenPackage
 //     识别，结果会把内容归一化到新结构 (manifest 0.2.0 + scene 0.2.0)。

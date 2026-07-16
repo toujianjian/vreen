@@ -24,6 +24,7 @@ import { useUIStore } from '@/stores/uiStore';
 import { useViewerStore } from '@/stores/viewerStore';
 import { SceneContents } from './SceneContents';
 import { CustomStage } from './CustomStage';
+import { FreeCameraController } from './FreeCameraController';
 import { SafeEnvironment } from '@/components/three/SafeEnvironment';
 import type { EnvironmentPreset } from '@/types';
 import {
@@ -124,6 +125,7 @@ export function Stage() {
         <CameraRig />
         <CinematicOrbiter />
         <CameraYawTracker />
+        <FreeCameraController />
 
         <OrbitControls
           makeDefault

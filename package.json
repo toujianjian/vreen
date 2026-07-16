@@ -84,5 +84,17 @@
     "portable": {
       "artifactName": "${productName}-Portable-${version}.${ext}"
     }
-  }
+  },
+  "directories": {
+    "doc": "docs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/toujianjian/vreen.git"
+  },
+  "keywords": [],
+  "bugs": {
+    "url": "https://github.com/toujianjian/vreen/issues"
+  },
+  "homepage": "https://github.com/toujianjian/vreen#readme"
 }

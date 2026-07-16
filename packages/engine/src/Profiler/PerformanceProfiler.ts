@@ -113,6 +113,7 @@ export class PerformanceProfiler {
     buffersBytes: 0,
     programs: 0,
   };
+  private _lastRecordDuration: number = 0;
 
   private _recording: boolean = false;
   private _recordedFrames: PerformanceReport['details']['frames'] = [];
@@ -226,12 +227,12 @@ export class PerformanceProfiler {
     const totalTime = timings.reduce((sum, t) => sum + t.duration, 0);
     const activeSystems = timings.filter((t) => t.enabled).length;
 
-    return { timings, totalTime, activeSystems };
+    return { timings: [...timings], totalTime, activeSystems };
   }
 
-  getStats(): PerformanceStats {
+  getStats(): FPSStats & { renderer: RendererStats; memory: MemoryStats; systems: SystemStats; timestamp: number } {
     return {
-      fps: this.getFPSStats(),
+      ...this.getFPSStats(),
       renderer: this.getRendererStats(),
       memory: this.getMemoryStats(),
       systems: this.getSystemStats(),

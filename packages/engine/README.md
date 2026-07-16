@@ -17,12 +17,17 @@ and a built-in logger (no dependency on the web app's logger).
 ## Install
 
 ```sh
-# from local file (for development in the vreen monorepo)
-npm install file:../packages/engine
+# from GitHub repository (requires GitHub SSH key configured)
+npm install github:vreen/vreen/packages/engine
 
-# or once published to a registry
-npm install @vreen/engine
+# or via SSH (requires SSH key added to GitHub account)
+npm install git+ssh://git@github.com:vreen/vreen.git#master
+
+# from local file (for development in the vreen monorepo, recommended for now)
+npm install file:../packages/engine
 ```
+
+> **Note**: GitHub SSH installation requires your SSH public key to be added to your GitHub account. See https://github.com/settings/keys to add your key. Currently, local file installation is the most reliable method.
 
 ## Build
 

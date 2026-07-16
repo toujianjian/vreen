@@ -142,12 +142,42 @@
     "pause": "暂停",
     "speed": "速度",
     "project": "项目",
+    "buttons": {
+      "custom": "自定义引擎",
+      "three": "Three.js",
+      "physics": "物理演示",
+      "physicsDebug": "物理调试",
+      "profiler": "性能分析",
+      "tuner": "参数调节"
+    },
+    "projectMenu": {
+      "title": "项目",
+      "saveVreen": "保存 .VREEN",
+      "saveVreenHint": "状态 + 嵌入模型 (zip)",
+      "saveVreenNoModel": "模型缺失 — 请选择 JSON",
+      "saveJson": "保存 .VREEN.JSON",
+      "saveJsonHint": "仅保存状态，文件较小",
+      "loadVreen": "加载 .VREEN",
+      "loadVreenHint": "应用保存的状态 (或恢复捆绑包)",
+      "model": "模型",
+      "noModel": "无嵌入模型"
+    },
     "logs": {
       "paused": "动画已暂停",
       "resumed": "动画已恢复",
       "capturing": "正在采集中…",
       "saved": "截图已保存到下载目录",
-      "failed": "采集失败: {msg}"
+      "failed": "采集失败: {msg}",
+      "switchedThree": "切换到 Three.js 渲染器",
+      "switchedCustom": "切换到自定义 WebGL2 渲染器",
+      "physicsOn": "物理演示: 开启 (24 个盒子 + 粒子发射器)",
+      "physicsOff": "物理演示: 关闭",
+      "physicsDebugOn": "物理调试可视化: 开启 (碰撞体/接触/速度)",
+      "physicsDebugOff": "物理调试可视化: 关闭",
+      "profilerOn": "性能分析器: 开启 (CPU/GPU/系统计时)",
+      "profilerOff": "性能分析器: 关闭",
+      "tunerOn": "参数调节器: 开启 (生成器预设实时编辑)",
+      "tunerOff": "参数调节器: 关闭"
     }
   },
   "profiler": {
@@ -303,6 +333,9 @@
       "first": "POV",
       "third": "POV",
       "cine": "PATH"
+    },
+    "freeCamera": {
+      "hint": "WASD: 移动 · Shift: 加速 · Q/E: 升降"
     },
     "hdri": "HDRI 预设",
     "exposure": "曝光",

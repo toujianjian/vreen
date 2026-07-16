@@ -253,41 +253,41 @@ export function ViewerToolbar() {
               onClick={(e) => e.stopPropagation()}
             >
               <div className="px-3 py-2 border-b border-neon-cyan/10">
-                <div className="hud-label">PROJECT</div>
-                <div className="text-[10px] text-mist font-mono mt-0.5">
-                  {modelFile ? 'model: ' + modelFile.name : 'no embedded model'}
+                  <div className="hud-label">{t('toolbar.projectMenu.title')}</div>
+                  <div className="text-[10px] text-mist font-mono mt-0.5">
+                    {modelFile ? t('toolbar.projectMenu.model') + ': ' + modelFile.name : t('toolbar.projectMenu.noModel')}
+                  </div>
                 </div>
-              </div>
-              <button
-                onClick={() => exportProject('vreen')}
-                className="w-full text-left px-3 py-2 hover:bg-neon-cyan/10 transition-colors"
-              >
-                <div className="font-mono text-[11px] text-neon-cyan">SAVE .VREEN</div>
-                <div className="text-[10px] text-mist font-mono">
-                  {modelFile ? 'state + embedded model (zip)' : 'model missing — choose JSON'}
-                </div>
-              </button>
-              <button
-                onClick={() => exportProject('json')}
-                className="w-full text-left px-3 py-2 hover:bg-neon-cyan/10 transition-colors"
-              >
-                <div className="font-mono text-[11px] text-haze">SAVE .VREEN.JSON</div>
-                <div className="text-[10px] text-mist font-mono">state only, small file</div>
-              </button>
-              <div className="my-1 border-t border-neon-cyan/10" />
-              <button
-                onClick={() => {
-                  setProjMenuOpen(false);
-                  projFileInputRef.current?.click();
-                }}
-                className="w-full text-left px-3 py-2 hover:bg-neon-cyan/10 transition-colors flex items-center gap-2"
-              >
-                <Upload className="w-3 h-3 text-neon-cyan" />
-                <div>
-                  <div className="font-mono text-[11px] text-neon-cyan">LOAD .VREEN</div>
-                  <div className="text-[10px] text-mist font-mono">apply saved state (or restore bundle)</div>
-                </div>
-              </button>
+                <button
+                  onClick={() => exportProject('vreen')}
+                  className="w-full text-left px-3 py-2 hover:bg-neon-cyan/10 transition-colors"
+                >
+                  <div className="font-mono text-[11px] text-neon-cyan">{t('toolbar.projectMenu.saveVreen')}</div>
+                  <div className="text-[10px] text-mist font-mono">
+                    {modelFile ? t('toolbar.projectMenu.saveVreenHint') : t('toolbar.projectMenu.saveVreenNoModel')}
+                  </div>
+                </button>
+                <button
+                  onClick={() => exportProject('json')}
+                  className="w-full text-left px-3 py-2 hover:bg-neon-cyan/10 transition-colors"
+                >
+                  <div className="font-mono text-[11px] text-haze">{t('toolbar.projectMenu.saveJson')}</div>
+                  <div className="text-[10px] text-mist font-mono">{t('toolbar.projectMenu.saveJsonHint')}</div>
+                </button>
+                <div className="my-1 border-t border-neon-cyan/10" />
+                <button
+                  onClick={() => {
+                    setProjMenuOpen(false);
+                    projFileInputRef.current?.click();
+                  }}
+                  className="w-full text-left px-3 py-2 hover:bg-neon-cyan/10 transition-colors flex items-center gap-2"
+                >
+                  <Upload className="w-3 h-3 text-neon-cyan" />
+                  <div>
+                    <div className="font-mono text-[11px] text-neon-cyan">{t('toolbar.projectMenu.loadVreen')}</div>
+                    <div className="text-[10px] text-mist font-mono">{t('toolbar.projectMenu.loadVreenHint')}</div>
+                  </div>
+                </button>
               <input
                 ref={projFileInputRef}
                 type="file"
@@ -369,61 +369,61 @@ export function ViewerToolbar() {
         <button
           onClick={() => {
             toggleCustomRenderer();
-            pushLog('INFO', useCustomRenderer ? 'Switched to three.js renderer' : 'Switched to custom WebGL2 renderer');
+            pushLog('INFO', useCustomRenderer ? t('toolbar.logs.switchedThree') : t('toolbar.logs.switchedCustom'));
           }}
           className={cn('hud-btn', useCustomRenderer && 'bg-neon-cyan/15 text-neon-cyan')}
-          title="Toggle custom WebGL2 engine"
+          title={t('toolbar.buttons.custom')}
         >
           <Cpu className="w-3.5 h-3.5" />
-          <span className="hidden md:inline">{useCustomRenderer ? 'CUSTOM' : 'THREE'}</span>
+          <span className="hidden md:inline">{useCustomRenderer ? t('toolbar.buttons.custom') : t('toolbar.buttons.three')}</span>
         </button>
 
         <button
           onClick={() => {
             togglePhysicsDemo();
-            pushLog('INFO', !physicsDemo ? 'Physics demo: ON (24 boxes + particle emitter)' : 'Physics demo: OFF');
+            pushLog('INFO', !physicsDemo ? t('toolbar.logs.physicsOn') : t('toolbar.logs.physicsOff'));
           }}
           className={cn('hud-btn', physicsDemo && 'bg-neon-magenta/15 text-neon-magenta')}
-          title="Toggle physics demo (ECS Rigidbody / Collider / Particles)"
+          title={t('toolbar.buttons.physics')}
         >
           <Atom className="w-3.5 h-3.5" />
-          <span className="hidden md:inline">PHYSICS</span>
+          <span className="hidden md:inline">{t('toolbar.buttons.physics')}</span>
         </button>
 
         <button
           onClick={() => {
             togglePhysicsDebug();
-            pushLog('INFO', !physicsDebug ? 'Physics debug viz: ON (collider/contact/velocity)' : 'Physics debug viz: OFF');
+            pushLog('INFO', !physicsDebug ? t('toolbar.logs.physicsDebugOn') : t('toolbar.logs.physicsDebugOff'));
           }}
           className={cn('hud-btn', physicsDebug && 'bg-neon-amber/15 text-neon-amber')}
-          title="Toggle physics debug visualization (collider wireframes / contact normals / velocity vectors)"
+          title={t('toolbar.buttons.physicsDebug')}
         >
           <CircleDot className="w-3.5 h-3.5" />
-          <span className="hidden md:inline">PHYS-DBG</span>
+          <span className="hidden md:inline">{t('toolbar.buttons.physicsDebug')}</span>
         </button>
 
         <button
           onClick={() => {
             toggleProfiler();
-            pushLog('INFO', !profilerEnabled ? 'Profiler: ON (CPU/GPU/System timing)' : 'Profiler: OFF');
+            pushLog('INFO', !profilerEnabled ? t('toolbar.logs.profilerOn') : t('toolbar.logs.profilerOff'));
           }}
           className={cn('hud-btn', profilerEnabled && 'bg-neon-cyan/15 text-neon-cyan')}
-          title="Toggle performance profiler HUD"
+          title={t('toolbar.buttons.profiler')}
         >
           <Activity className="w-3.5 h-3.5" />
-          <span className="hidden md:inline">PROFILER</span>
+          <span className="hidden md:inline">{t('toolbar.buttons.profiler')}</span>
         </button>
 
         <button
           onClick={() => {
             toggleTuner();
-            pushLog('INFO', !showTuner ? 'Tuner: ON (live param editor for generator presets)' : 'Tuner: OFF');
+            pushLog('INFO', !showTuner ? t('toolbar.logs.tunerOn') : t('toolbar.logs.tunerOff'));
           }}
           className={cn('hud-btn', showTuner && 'bg-neon-amber/15 text-neon-amber')}
-          title="Toggle generator param tuner (M2 — mech/crystal/tree/ship/creature/totem)"
+          title={t('toolbar.buttons.tuner')}
         >
           <Sliders className="w-3.5 h-3.5" />
-          <span className="hidden md:inline">TUNER</span>
+          <span className="hidden md:inline">{t('toolbar.buttons.tuner')}</span>
         </button>
 
         <button
