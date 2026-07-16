@@ -14,21 +14,23 @@ interface PresetPreviewProps {
   className?: string;
   rotate?: boolean;
   exposure?: number;
+  /** Optional param overrides — when provided, the generator is invoked with these. */
+  params?: Readonly<Record<string, unknown>>;
 }
 
-function PreviewMesh({ generator }: { generator: keyof typeof GENERATORS }) {
+function PreviewMesh({ generator, params }: { generator: keyof typeof GENERATORS; params?: Readonly<Record<string, unknown>> }) {
   const group = useMemo(() => {
-    const g = GENERATORS[generator]();
+    const g = GENERATORS[generator](params ? { ...params } : undefined);
     // 自研 engine 对象→ THREE.js 对象,否则 three.js 不渲染
     const threeRoot = isCustomObject3D(g) ? convertToThreeObject(g) : g as unknown as THREE.Object3D;
     normalizeObject(threeRoot, { targetSize: 1.6, sitOnGround: true });
     return threeRoot;
-  }, [generator]);
+  }, [generator, params]);
 
   return <primitive object={group} />;
 }
 
-export function PresetPreview({ generator, className, rotate = true, exposure = 1.0 }: PresetPreviewProps) {
+export function PresetPreview({ generator, className, rotate = true, exposure = 1.0, params }: PresetPreviewProps) {
   return (
     <div className={className}>
       <Canvas
@@ -47,7 +49,7 @@ export function PresetPreview({ generator, className, rotate = true, exposure = 
           shadow-mapSize-height={512}
         />
         <Suspense fallback={null}>
-          <PreviewMesh generator={generator} />
+          <PreviewMesh generator={generator} params={params} />
           <SafeEnvironment preset="city" environmentIntensity={0.55 * exposure} />
         </Suspense>
         <ContactShadows position={[0, 0, 0]} opacity={0.55} scale={4} blur={2.4} far={2.5} />

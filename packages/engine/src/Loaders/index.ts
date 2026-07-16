@@ -22,3 +22,9 @@ export type { AssetManagerOptions } from './AssetManager';
 export { TextureLoader } from './TextureLoader';
 export { HDRLoader, type LoadedHDR } from './HDRLoader';
 export { GLBLoader, parseGLB, type LoadedGLB } from './GLBLoader';
+export {
+  getDracoModule,
+  decodeDraco,
+  type DecodedMesh,
+  type DracoAttributeSpec,
+} from './DracoDecoder';

@@ -7,7 +7,7 @@ import { useViewerStore } from '@/stores/viewerStore';
 import { useWorldStore } from '@/stores/worldStore';
 import { useUIStore } from '@/stores/uiStore';
 import { uploadBridge } from '@/lib/uploadBridge';
-import { GENERATORS } from '@/three/generators';
+import { GENERATORS, GeneratorName } from '@/three/generators';
 import { Mesh as EngineMesh } from '@/engine/Core/Mesh';
 import { PhysicsDebugRenderer } from '@/engine/Helpers/PhysicsDebugRenderer';
 import {
@@ -25,6 +25,7 @@ import {
   GLBLoader,
   AnimationMixer,
   Profiler,
+  HDRLoader,
 } from '@/engine';
 import { createGridMesh } from '@/engine/Helpers/GridHelper';
 import { Velocity, VelocityC, PlayerInput, PlayerInputC, World as ECSWorld } from '@/engine/ECS';
@@ -45,13 +46,21 @@ import { ProfilerHUD } from './ProfilerHUD';
 
 const log = createLogger('CustomStage');
 
+const LOCAL_HDRI: Record<string, string> = {
+  studio: '/hdri/studio_small_03_1k.hdr',
+  sunset: '/hdri/venice_sunset_1k.hdr',
+  warehouse: '/hdri/empty_warehouse_01_1k.hdr',
+  night: '/hdri/dikhololo_night_1k.hdr',
+  city: '/hdri/potsdamer_platz_1k.hdr',
+};
+
 interface CustomStageStats {
   fps: number;
   draws: number;
   tris: number;
 }
 
-export function CustomStage() {
+export function CustomStage({ onError }: { onError?: () => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   /** 暴露给外部 effect:renderer / camera / scene / controls / ground / grid。 */
@@ -80,6 +89,12 @@ export function CustomStage() {
   const togglePhysicsDemo = useViewerStore((s) => s.togglePhysicsDemo);
   const physicsDebug = useViewerStore((s) => s.physicsDebug);
   const profilerEnabled = useViewerStore((s) => s.profilerEnabled);
+
+  useEffect(() => {
+    if (error && onError) {
+      onError();
+    }
+  }, [error, onError]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -134,12 +149,28 @@ export function CustomStage() {
     // 背景纯黑：WebGL2Renderer 不读 scene.background,只读 clearColor,这里省略
     log.debug('scene created (background: pure black via clearColor)');
 
-    const dir = new DirectionalLight(0xfff2d9, 1.0, { x: 4, y: 8, z: 5 });
+    // ── HDRI IBL 环境贴图 ────────────────────────────────────────────────
+    const hdriPath = LOCAL_HDRI[environment.preset];
+    if (hdriPath) {
+      const hdriLoader = new HDRLoader();
+      hdriLoader.load(hdriPath).then((hdriResult) => {
+        log.info(`HDRI loaded: ${hdriPath} (${hdriResult.width}x${hdriResult.height})`);
+        scene.background = { color: '#000000', envMap: hdriResult.texture };
+      }).catch((e) => {
+        log.warn(`HDRI load failed for ${hdriPath}:`, e);
+      });
+    }
+
+    const dir = new DirectionalLight(0xfff2d9, 2.0, { x: 4, y: 6, z: 3 });
     dir.castShadow = true;
-    const amb = new AmbientLight(0x2e3852, 0.9);
+    const dir2 = new DirectionalLight(0xff2bd6, 0.45, { x: -4, y: 3, z: -2 });
+    const dir3 = new DirectionalLight(0x00f0ff, 0.25, { x: 0, y: -2, z: 4 });
+    const amb = new AmbientLight(0xffffff, 0.55);
     scene.add(dir);
+    scene.add(dir2);
+    scene.add(dir3);
     scene.add(amb);
-    log.debug(`lights: dir=0xfff2d9*1.0 from (4,8,5) [shadow=${dir.castShadow}], ambient=0x2e3852*0.9`);
+    log.debug(`lights: dir=0xfff2d9*2.0 from (4,6,3) [shadow=${dir.castShadow}], dir2=0xff2bd6*0.45 from (-4,3,-2), dir3=0x00f0ff*0.25 from (0,-2,4), ambient=0xffffff*0.55`);
 
     const ground = new Mesh(
       new PlaneGeometry(20, 20),
@@ -349,7 +380,7 @@ export function CustomStage() {
           }
           attachRoot(result.root);
         } else if (assetSource.kind === 'preset') {
-          const presetId = assetSource.presetId;
+          const presetId = assetSource.presetId as GeneratorName;
           const gen = GENERATORS[presetId];
           if (!gen) {
             throw new Error(`Unknown preset id: ${presetId}`);
@@ -524,6 +555,23 @@ export function CustomStage() {
     if (!r) return;
     applyEnvironment(r, environment);
   }, [environment]);
+
+  useEffect(() => {
+    const scene = stageRef.current.scene;
+    if (!scene) return;
+    const hdriPath = LOCAL_HDRI[environment.preset];
+    if (!hdriPath) {
+      scene.background = { color: '#000000' };
+      return;
+    }
+    const hdriLoader = new HDRLoader();
+    hdriLoader.load(hdriPath).then((result) => {
+      log.info(`HDRI updated: ${hdriPath}`);
+      scene.background = { color: '#000000', envMap: result.texture };
+    }).catch((e) => {
+      log.warn(`HDRI reload failed for ${hdriPath}:`, e);
+    });
+  }, [environment.preset]);
 
   useEffect(() => {
     const ground = stageRef.current.ground;

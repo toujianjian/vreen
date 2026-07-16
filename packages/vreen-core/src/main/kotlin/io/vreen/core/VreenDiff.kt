@@ -1,5 +1,8 @@
 package io.vreen.core
 
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.module.kotlin.readValue
+import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import io.vreen.core.model.*
 import java.time.Instant
 
@@ -124,7 +127,8 @@ object VreenDiff {
         val entries = unzipAll(deltaBytes)
         val deltaJson = entries["delta.json"]
             ?: throw VreenFormatError("not a valid .vreen-delta: missing delta.json")
-        val doc = com.fasterxml.jackson.databind.ObjectMapper().readValue(
+        val mapper = com.fasterxml.jackson.databind.ObjectMapper().registerKotlinModule()
+        val doc = mapper.readValue(
             deltaJson,
             DeltaDoc::class.java,
         )
@@ -137,7 +141,6 @@ object VreenDiff {
             ?: throw VreenFormatError("delta missing scene.json")
         val headWorldJson = entries["world.json"]
 
-        val mapper = com.fasterxml.jackson.databind.ObjectMapper().registerKotlinModule()
         val headManifest = mapper.readValue(headManifestJson, VreenManifest::class.java)
         val headScene = mapper.readValue(headSceneJson, VreenScene::class.java)
         val headWorld = headWorldJson?.let { mapper.readValue(it, VreenWorldJson::class.java) }
@@ -189,6 +192,7 @@ object VreenDiff {
     }
 
     // helpers
+    @Suppress("UNUSED_PARAMETER")
     private fun sceneSize(s: VreenScene) = 256L // approx
     private fun worldSize(w: VreenWorldJson) = 256L + w.entities.size * 64L
     private fun sceneEquals(a: VreenScene, b: VreenScene) = a == b
@@ -210,8 +214,11 @@ object VreenDiff {
         val version: String,
         val type: String,
         val assets: List<AssetDiffDoc>,
+        val baseExportedAt: String? = null,
         val headExportedAt: String,
+        val baseAssetName: String? = null,
         val headAssetName: String,
+        val basePrimaryModelId: String? = null,
         val headPrimaryModelId: String?,
         val sceneChanged: Boolean,
         val worldChanged: Boolean,

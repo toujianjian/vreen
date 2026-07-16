@@ -6,6 +6,7 @@
 // - Particle 组件保持轻量;实际 GPU instancing 在 ParticleSystem 里
 
 import { ComponentType } from './ComponentType';
+import type { Mesh } from '../Core/Mesh';
 
 /** Collider shape 枚举。 */
 export type ColliderShape = 'aabb' | 'sphere' | 'capsule';
@@ -146,3 +147,70 @@ export class PhysicsDebug {
   velocityScale: number = 0.5;
 }
 export const PhysicsDebugC = new ComponentType<PhysicsDebug>('PhysicsDebug');
+
+/** 布料粒子:CPU 端位置/速度。 */
+export class ClothParticle {
+  position: [number, number, number] = [0, 0, 0];
+  prevPosition: [number, number, number] = [0, 0, 0];
+  pinned: boolean = false;
+  mass: number = 1.0;
+  /** 外力(每帧叠加,求解后清零)。 */
+  force: [number, number, number] = [0, 0, 0];
+}
+
+/** 布料组件:挂在一个 entity 上,持有所有粒子和弹簧约束。 */
+export class Cloth {
+  /** 粒子网格。 */
+  particles: ClothParticle[] = [];
+  /** 网格宽度(粒子数)。 */
+  width: number = 0;
+  /** 网格高度(粒子数)。 */
+  height: number = 0;
+  /** 粒子间距(米)。 */
+  spacing: number = 0.1;
+  /** 结构弹簧刚度(拉伸/压缩)。 */
+  structuralStiffness: number = 1.0;
+  /** 剪切弹簧刚度(对角线)。 */
+  shearStiffness: number = 0.5;
+  /** 弯曲弹簧刚度(隔一个粒子)。 */
+  bendingStiffness: number = 0.2;
+  /** 阻尼系数 0..1。 */
+  damping: number = 0.05;
+  /** 重力缩放。 */
+  gravityScale: number = 1.0;
+  /** 每帧迭代次数(约束求解)。 */
+  iterations: number = 8;
+  /** 是否启用自碰撞。 */
+  selfCollision: boolean = true;
+  /** 自碰撞半径。 */
+  collisionRadius: number = 0.08;
+  /** 布料材质引用(用于渲染)。 */
+  mesh: Mesh | null = null;
+
+  /** 创建网格粒子。 */
+  createGrid(width: number, height: number, spacing: number): void {
+    this.width = width;
+    this.height = height;
+    this.spacing = spacing;
+    this.particles = [];
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const p = new ClothParticle();
+        p.position = [
+          (x - (width - 1) * 0.5) * spacing,
+          (height - 1 - y) * spacing * 0.5,
+          0,
+        ];
+        p.prevPosition = [...p.position] as [number, number, number];
+        p.pinned = y === height - 1;
+        this.particles.push(p);
+      }
+    }
+  }
+
+  getParticle(x: number, y: number): ClothParticle | undefined {
+    if (x < 0 || x >= this.width || y < 0 || y >= this.height) return undefined;
+    return this.particles[y * this.width + x];
+  }
+}
+export const ClothC = new ComponentType<Cloth>('Cloth');

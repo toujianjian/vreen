@@ -17,7 +17,7 @@ import {
   SMAA,
 } from '@react-three/postprocessing';
 import { BlendFunction, KernelSize } from 'postprocessing';
-import { Suspense, useEffect, useRef } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useUIStore } from '@/stores/uiStore';
@@ -40,16 +40,21 @@ export function Stage() {
   const useCustomRenderer = useViewerStore((s) => s.useCustomRenderer);
   const assetSource = useViewerStore((s) => s.assetSource);
 
-  // 自定义渲染器:upload(.glb) 与 preset(6 个程序化模型)都支持。
-  // 其他来源(未来 obj/fbx 等)自动 fallback 到 three.js。
+  const [customRendererFailed, setCustomRendererFailed] = useState(false);
+
+  useEffect(() => {
+    setCustomRendererFailed(false);
+  }, [assetSource]);
+
   const canUseCustom =
     useCustomRenderer &&
+    !customRendererFailed &&
     (assetSource?.kind === 'upload' || assetSource?.kind === 'preset');
 
   return (
     <div className="relative w-full h-full">
       {canUseCustom ? (
-        <CustomStage />
+        <CustomStage onError={() => setCustomRendererFailed(true)} />
       ) : (
         <Canvas
         shadows

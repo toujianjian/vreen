@@ -1,0 +1,19 @@
+#!/usr/bin/env sh
+# vreen-core Maven wrapper (POSIX).
+# Downloads Apache Maven 3.9.16 on first run to ./.mvn/wrapper/maven-dist,
+# then invokes `mvn` with the requested args. Idempotent and offline-friendly
+# after the first download.
+set -e
+HERE="$(cd "$(dirname "$0")" && pwd)"
+DIST="$HERE/.mvn/wrapper/maven-dist"
+MAVEN_VERSION=3.9.16
+if [ ! -x "$DIST/apache-maven-$MAVEN_VERSION/bin/mvn" ]; then
+  mkdir -p "$DIST"
+  TMP="$(mktemp -d)"
+  echo "Downloading Apache Maven $MAVEN_VERSION…"
+  curl -fsSL -o "$TMP/maven.zip" \
+    "https://dlcdn.apache.org/maven/maven-3/$MAVEN_VERSION/binaries/apache-maven-$MAVEN_VERSION-bin.zip"
+  unzip -q "$TMP/maven.zip" -d "$DIST"
+  rm -rf "$TMP"
+fi
+exec "$DIST/apache-maven-$MAVEN_VERSION/bin/mvn" "$@"

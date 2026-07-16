@@ -12,6 +12,7 @@ precision highp float;
 layout(location = 0) in vec3 a_position;
 layout(location = 1) in vec3 a_normal;
 layout(location = 2) in vec2 a_uv;
+layout(location = 3) in vec4 a_tangent;
 #ifdef USE_SKINNING
 layout(location = 5) in vec4 a_skinIndex;   // bone indices (as float, int-cast in shader)
 layout(location = 6) in vec4 a_skinWeight; // bone weights (sum to 1)
@@ -29,10 +30,13 @@ uniform mat4 u_boneMatrices[64];
 out vec3 v_worldPos;
 out vec3 v_worldNormal;
 out vec2 v_uv;
+out vec3 v_worldTangent;
+out vec3 v_worldBitangent;
 
 void main() {
   vec3 pos = a_position;
   vec3 nrm = a_normal;
+  vec3 tan = a_tangent.xyz;
 
 #ifdef USE_SKINNING
   // Linear blend skinning — up to 4 bones per vertex.
@@ -44,17 +48,22 @@ void main() {
   // Normals: skin matrix's upper-left 3x3, then bindMatrixInverse.
   mat3 skinN = mat3(skin);
   vec3 skinnedN = normalize(skinN * nrm);
+  vec3 skinnedT = normalize(skinN * tan);
 
   vec4 localPos = u_bindMatrixInverse * skinned;
   vec3 localNrm = mat3(u_bindMatrixInverse) * skinnedN;
+  vec3 localTan = mat3(u_bindMatrixInverse) * skinnedT;
 #else
   vec4 localPos = vec4(pos, 1.0);
   vec3 localNrm = nrm;
+  vec3 localTan = tan;
 #endif
 
   vec4 worldPos = u_model * localPos;
   v_worldPos = worldPos.xyz;
   v_worldNormal = normalize(u_normalMatrix * localNrm);
+  v_worldTangent = normalize(u_normalMatrix * localTan);
+  v_worldBitangent = cross(v_worldNormal, v_worldTangent) * a_tangent.w;
   v_uv = a_uv;
   gl_Position = u_projection * u_view * worldPos;
 }
@@ -69,6 +78,8 @@ precision highp float;
 in vec3 v_worldPos;
 in vec3 v_worldNormal;
 in vec2 v_uv;
+in vec3 v_worldTangent;
+in vec3 v_worldBitangent;
 
 out vec4 outColor;
 
@@ -84,6 +95,10 @@ uniform sampler2D u_baseColorMap;
 uniform int       u_baseColorMapEnabled;
 uniform sampler2D u_metallicRoughnessMap;
 uniform int       u_metallicRoughnessMapEnabled;
+uniform sampler2D u_normalMap;
+uniform int       u_normalMapEnabled;
+uniform sampler2D u_emissiveMap;
+uniform int       u_emissiveMapEnabled;
 
 uniform vec3  u_lightDir;     // direction the light points TOWARD (world space)
 uniform vec3  u_lightColor;
@@ -192,6 +207,15 @@ void main() {
   vec3 V = normalize(u_cameraPos - v_worldPos);
   vec3 L = normalize(-u_lightDir);
   vec3 H = normalize(V + L);
+
+  if (u_normalMapEnabled == 1) {
+    vec3 T = normalize(v_worldTangent);
+    vec3 B = normalize(v_worldBitangent);
+    mat3 TBN = mat3(T, B, N);
+    vec3 normalMapVal = texture(u_normalMap, v_uv).rgb * 2.0 - 1.0;
+    N = normalize(TBN * normalMapVal);
+  }
+
   float NoL = max(dot(N, L), 0.0);
   float NoV = max(dot(N, V), 0.0);
   float NoH = max(dot(N, H), 0.0);
@@ -201,6 +225,7 @@ void main() {
   vec3 baseColor = u_baseColor;
   float metallic = u_metallic;
   float roughness = u_roughness;
+  vec3 emissive = u_emissive;
 
   if (u_baseColorMapEnabled == 1) {
     baseColor *= texture(u_baseColorMap, v_uv).rgb;
@@ -210,6 +235,9 @@ void main() {
     vec4 mr = texture(u_metallicRoughnessMap, v_uv);
     metallic *= mr.b;
     roughness *= mr.g;
+  }
+  if (u_emissiveMapEnabled == 1) {
+    emissive *= texture(u_emissiveMap, v_uv).rgb;
   }
   a = max(roughness * roughness, 0.0025);
   vec3 f0 = mix(vec3(0.04), baseColor, metallic);
@@ -233,7 +261,7 @@ void main() {
 
   float ao = u_ssaoEnabled == 1 ? texture(u_ssaoMap, gl_FragCoord.xy / u_shadowMapSize).r : 1.0;
 
-  vec3 color = ambient * ao + ibl * ao + lighting * shadow + u_emissive * u_emissiveIntensity;
+  vec3 color = ambient * ao + ibl * ao + lighting * shadow + emissive * u_emissiveIntensity;
 
   color = color / (color + vec3(1.0));
 

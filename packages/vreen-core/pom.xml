@@ -9,6 +9,26 @@
 
     <name>vreen-core</name>
     <description>Language-neutral core for the .vreen package format. See https://vreen.dev</description>
+    <url>https://github.com/vreen/vreen/tree/main/packages/vreen-core</url>
+    <licenses>
+        <license>
+            <name>Apache-2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+    <developers>
+        <developer>
+            <id>vreen</id>
+            <name>VREEN</name>
+            <url>https://vreen.dev</url>
+        </developer>
+    </developers>
+    <scm>
+        <connection>scm:git:git://github.com/vreen/vreen.git</connection>
+        <developerConnection>scm:git:ssh://github.com/vreen/vreen.git</developerConnection>
+        <url>https://github.com/vreen/vreen/tree/main/packages/vreen-core</url>
+    </scm>
 
     <properties>
         <maven.compiler.source>17</maven.compiler.source>

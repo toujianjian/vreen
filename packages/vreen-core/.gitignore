@@ -1,0 +1,5 @@
+# Maven build output
+target/
+
+# Maven wrapper distribution (downloaded on first mvnw run)
+.mvn/wrapper/maven-dist/

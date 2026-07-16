@@ -110,7 +110,7 @@ export interface PresetAsset {
   tag: string;
   format: ModelFormat;
   /** Procedural generator function — we don't ship binary assets; we generate. */
-  generator: 'mech' | 'crystal' | 'tree' | 'ship' | 'creature' | 'totem';
+  generator: 'mech' | 'crystal' | 'tree' | 'ship' | 'creature' | 'totem' | 'composite';
   description: string;
   polyCount: number;
 }

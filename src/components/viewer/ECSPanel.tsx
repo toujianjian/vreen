@@ -38,6 +38,7 @@ import {
 import { cn } from '@/lib/cn';
 import { Activity } from 'lucide-react';
 import { EntityGraph } from './EntityGraph';
+import { SystemTimingChart } from './SystemTimingChart';
 
 export function ECSPanel() {
   const { t } = useTranslation();
@@ -57,6 +58,7 @@ export function ECSPanel() {
   const [diffExpanded, setDiffExpanded] = useState<{ added: boolean; removed: boolean; modified: boolean }>({
     added: false, removed: false, modified: false,
   });
+  const [timingHistory, setTimingHistory] = useState<SystemTiming[][]>([]);
   // useViewerStore 必须提前调,否则 world 从 null→非 null 时 hook 顺序会变
   const useCustomRenderer = useViewerStore((s) => s.useCustomRenderer);
 
@@ -207,6 +209,21 @@ export function ECSPanel() {
         </div>
         <SystemTimingList systems={systems} timings={systemTimings} />
       </div>
+
+      {/* 60-帧 system 时序历史(stacked bar) */}
+      {world && timingHistory.length > 0 && (
+        <div>
+          <div className="hud-label mb-1 flex items-center gap-1.5">
+            <Activity className="w-3 h-3" />
+            <span>TIMING HISTORY · {timingHistory.length} frames</span>
+          </div>
+          <SystemTimingChart
+            history={timingHistory}
+            currentFrame={world.frame()}
+            height={64}
+          />
+        </div>
+      )}
 
       {/* Entity list */}
       <div>

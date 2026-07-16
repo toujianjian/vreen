@@ -19,7 +19,7 @@ import { BoxGeometry } from '../Geometries';
 import { Mesh } from '../Core/Mesh';
 import { StandardMaterial } from '../Materials/StandardMaterial';
 import { Scene } from '../Core/Scene';
-import { PhysicsSystem, CollisionSystem, ParticleSystem, PhysicsDebugSystem } from '../ECS/PhysicsSystems';
+import { PhysicsSystem, CollisionSystem, ParticleSystem, PhysicsDebugSystem, ClothSystem } from '../ECS/PhysicsSystems';
 import { createLogger } from '../logger';
 
 const log = createLogger('PhysicsDemo');
@@ -33,6 +33,7 @@ export function installPhysicsSystems(world: World): void {
     world.addSystem(new CollisionSystem());
     world.addSystem(new ParticleSystem());
     world.addSystem(new PhysicsDebugSystem());
+    world.addSystem(new ClothSystem());
     log.info('physics systems installed');
   }
 }

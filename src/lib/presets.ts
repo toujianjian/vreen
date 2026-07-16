@@ -58,6 +58,15 @@ export const PRESETS: PresetAsset[] = [
     description: 'Ancient ceremonial relic with emissive glyph channels.',
     polyCount: 9400,
   },
+  {
+    id: 'composite-hybrid',
+    name: 'HYBRID // FORGE-7',
+    tag: 'COMPOSITE',
+    format: 'glb',
+    generator: 'composite',
+    description: 'Procedural part-mixing chassis. Body / top / accent slots swappable from the 6 archetypes.',
+    polyCount: 16200,
+  },
 ];
 
 export function getPresetById(id: string): PresetAsset | undefined {

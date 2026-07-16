@@ -2,7 +2,7 @@
   "name": "io.vreen.unity",
   "version": "0.2.1",
   "displayName": "VREEN Unity",
-  "description": "Load, validate, and diff .vreen packages in Unity. Pure C#, no external dependencies.",
+  "description": "Load, validate, export, and diff .vreen packages in Unity. Pure C#, no external dependencies.",
   "unity": "2021.3",
   "documentation": "https://vreen.dev/docs/format/",
   "keywords": ["vreen", "3d", "package", "gltf", "scene"],

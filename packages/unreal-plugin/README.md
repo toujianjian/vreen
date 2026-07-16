@@ -56,6 +56,27 @@ if (Primary && Unpacked.Assets.Contains(Primary->Id))
 | `FVreenModel` | Data structs (USTRUCT) |
 | `FVreenZip` | Minimal ZIP writer/reader (stored mode) |
 | `FVreenJson` | JSON encode/decode (UE5 `FJsonObjectConverter` based) |
+| `FVreenExporter` *(Editor module)* | Walks the active editor world, writes a `.vreen`. See [§14 of the format spec](../../docs/format/vreen-format-spec.md#14-cross-engine-plugins-v02x). |
+
+### Editor — export the active level
+
+From C++ (Editor build):
+
+```cpp
+#include "VreenExporter.h"
+
+FVreenExporterOptions Opts;
+Opts.Name = TEXT("MyLevel");
+Opts.bIncludeWorld = true;
+FVreenExportReport Report = FVreenExporter::ExportActiveLevel(
+    FPaths::Combine(FPaths::ProjectDir(), TEXT("Exports/MyLevel")),
+    Opts);
+if (!Report.bOk) { UE_LOG(LogTemp, Error, TEXT("export failed: %s"), *Report.Error); }
+```
+
+The exporter is a separate `VreenEditor` module (loaded at `PostEngineInit`); it depends on `UnrealEd`, `EditorScriptingUtilities`, and `AssetRegistry`.
+
+
 
 ## Known Limitations
 

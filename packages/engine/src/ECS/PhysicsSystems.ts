@@ -15,6 +15,7 @@ import {
   ParticleC, ParticleEmitterC, PhysicsDebugC,
   Particle, Rigidbody, Collider, PhysicsConfig,
   type ParticleEmitter, type PhysicsDebug,
+  ClothC, Cloth,
 } from './PhysicsComponents';
 import { createLogger } from '../logger';
 
@@ -129,6 +130,12 @@ export class PhysicsSystem extends System {
       // 6) 清力
       rb.force[0] = rb.force[1] = rb.force[2] = 0;
       rb.torque[0] = rb.torque[1] = rb.torque[2] = 0;
+      // 7) 同步到 scene node (渲染桥接)
+      const node = world.getSceneNode(id);
+      if (node) {
+        node.position.set(t.position[0], t.position[1], t.position[2]);
+        node.rotation.set(t.rotation[0], t.rotation[1], t.rotation[2], t.rotation[3]);
+      }
     });
   }
 
@@ -407,19 +414,196 @@ export class ParticleSystem extends System {
 export class PhysicsDebugSystem extends System {
   constructor() { super('PhysicsDebugSystem', 190); }
   override update(world: World, _dt: number): void {
-    world.queryWith(PhysicsDebugC, (_id, dbg) => {
-      const arr = CollisionSystem.contacts;
-      dbg.contactCount = Math.min(arr.length, 64);
-      for (let i = 0; i < dbg.contactCount; i++) {
-        const c = arr[i];
-        dbg.contactPoints[i * 7 + 0] = c.x;
-        dbg.contactPoints[i * 7 + 1] = c.y;
-        dbg.contactPoints[i * 7 + 2] = c.z;
-        dbg.contactPoints[i * 7 + 3] = c.nx;
-        dbg.contactPoints[i * 7 + 4] = c.ny;
-        dbg.contactPoints[i * 7 + 5] = c.nz;
-        dbg.contactPoints[i * 7 + 6] = c.depth;
+    (world.queryWith as (t: typeof PhysicsDebugC, fn: (id: number, dbg: PhysicsDebug) => void) => void)(
+      PhysicsDebugC,
+      (_id, dbg) => {
+        const arr = CollisionSystem.contacts;
+        dbg.contactCount = Math.min(arr.length, 64);
+        for (let i = 0; i < dbg.contactCount; i++) {
+          const c = arr[i];
+          dbg.contactPoints[i * 7 + 0] = c.x;
+          dbg.contactPoints[i * 7 + 1] = c.y;
+          dbg.contactPoints[i * 7 + 2] = c.z;
+          dbg.contactPoints[i * 7 + 3] = c.nx;
+          dbg.contactPoints[i * 7 + 4] = c.ny;
+          dbg.contactPoints[i * 7 + 5] = c.nz;
+          dbg.contactPoints[i * 7 + 6] = c.depth;
+        }
+      },
+    );
+  }
+}
+
+// ── ClothSystem: 布料模拟 ──────────────────────────────────────────
+
+export class ClothSystem extends System {
+  constructor() { super('ClothSystem', 170); }
+
+  override update(world: World, dt: number): void {
+    let g: [number, number, number] = [0, -9.81, 0];
+    world.queryWith(PhysicsConfigC, (_id, c) => { g = c.gravity; });
+
+    world.queryWith(ClothC, (_id, cloth) => {
+      const [gx, gy, gz] = g;
+      const dtSq = dt * dt;
+
+      for (const p of cloth.particles) {
+        if (p.pinned) continue;
+        const ax = p.force[0] / p.mass + gx * cloth.gravityScale;
+        const ay = p.force[1] / p.mass + gy * cloth.gravityScale;
+        const az = p.force[2] / p.mass + gz * cloth.gravityScale;
+
+        const tmp = [...p.position] as [number, number, number];
+        p.position[0] = p.position[0] * 2 - p.prevPosition[0] + ax * dtSq;
+        p.position[1] = p.position[1] * 2 - p.prevPosition[1] + ay * dtSq;
+        p.position[2] = p.position[2] * 2 - p.prevPosition[2] + az * dtSq;
+
+        const damp = 1 - cloth.damping;
+        p.position[0] = p.prevPosition[0] + (p.position[0] - p.prevPosition[0]) * damp;
+        p.position[1] = p.prevPosition[1] + (p.position[1] - p.prevPosition[1]) * damp;
+        p.position[2] = p.prevPosition[2] + (p.position[2] - p.prevPosition[2]) * damp;
+
+        p.prevPosition = tmp;
+        p.force[0] = p.force[1] = p.force[2] = 0;
       }
+
+      for (let iter = 0; iter < cloth.iterations; iter++) {
+        this.solveConstraints(cloth);
+      }
+
+      if (cloth.selfCollision) {
+        this.solveSelfCollision(cloth);
+      }
+
+      this.syncMesh(cloth);
     });
+  }
+
+  private solveConstraints(cloth: Cloth): void {
+    const spacing = cloth.spacing;
+
+    for (let y = 0; y < cloth.height; y++) {
+      for (let x = 0; x < cloth.width; x++) {
+        const i = y * cloth.width + x;
+        const p = cloth.particles[i];
+
+        if (x < cloth.width - 1) {
+          const right = cloth.particles[i + 1];
+          this.solveSpring(p, right, spacing, cloth.structuralStiffness);
+        }
+        if (y < cloth.height - 1) {
+          const down = cloth.particles[i + cloth.width];
+          this.solveSpring(p, down, spacing, cloth.structuralStiffness);
+        }
+        if (x < cloth.width - 1 && y < cloth.height - 1) {
+          const diag = cloth.particles[i + cloth.width + 1];
+          this.solveSpring(p, diag, spacing * Math.SQRT2, cloth.shearStiffness);
+        }
+        if (x > 0 && y < cloth.height - 1) {
+          const diag = cloth.particles[i + cloth.width - 1];
+          this.solveSpring(p, diag, spacing * Math.SQRT2, cloth.shearStiffness);
+        }
+        if (x < cloth.width - 2) {
+          const twoRight = cloth.particles[i + 2];
+          this.solveSpring(p, twoRight, spacing * 2, cloth.bendingStiffness);
+        }
+        if (y < cloth.height - 2) {
+          const twoDown = cloth.particles[i + cloth.width * 2];
+          this.solveSpring(p, twoDown, spacing * 2, cloth.bendingStiffness);
+        }
+      }
+    }
+  }
+
+  private solveSpring(
+    p1: { position: [number, number, number]; pinned: boolean },
+    p2: { position: [number, number, number]; pinned: boolean },
+    restLen: number,
+    stiffness: number,
+  ): void {
+    const dx = p2.position[0] - p1.position[0];
+    const dy = p2.position[1] - p1.position[1];
+    const dz = p2.position[2] - p1.position[2];
+    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-6;
+    const diff = (dist - restLen) / dist;
+
+    const k = stiffness;
+    const correctionX = dx * diff * k;
+    const correctionY = dy * diff * k;
+    const correctionZ = dz * diff * k;
+
+    if (!p1.pinned && !p2.pinned) {
+      p1.position[0] += correctionX * 0.5;
+      p1.position[1] += correctionY * 0.5;
+      p1.position[2] += correctionZ * 0.5;
+      p2.position[0] -= correctionX * 0.5;
+      p2.position[1] -= correctionY * 0.5;
+      p2.position[2] -= correctionZ * 0.5;
+    } else if (!p1.pinned) {
+      p1.position[0] += correctionX;
+      p1.position[1] += correctionY;
+      p1.position[2] += correctionZ;
+    } else if (!p2.pinned) {
+      p2.position[0] -= correctionX;
+      p2.position[1] -= correctionY;
+      p2.position[2] -= correctionZ;
+    }
+  }
+
+  private solveSelfCollision(cloth: Cloth): void {
+    const radius = cloth.collisionRadius;
+    const rSq = radius * radius;
+
+    for (let i = 0; i < cloth.particles.length; i++) {
+      const p1 = cloth.particles[i];
+      if (p1.pinned) continue;
+
+      for (let j = i + 1; j < cloth.particles.length; j++) {
+        const p2 = cloth.particles[j];
+        if (p2.pinned) continue;
+
+        const dx = p2.position[0] - p1.position[0];
+        const dy = p2.position[1] - p1.position[1];
+        const dz = p2.position[2] - p1.position[2];
+        const distSq = dx * dx + dy * dy + dz * dz;
+
+        if (distSq < rSq && distSq > 0) {
+          const dist = Math.sqrt(distSq);
+          const nx = dx / dist;
+          const ny = dy / dist;
+          const nz = dz / dist;
+          const overlap = radius - dist;
+
+          p1.position[0] -= nx * overlap * 0.5;
+          p1.position[1] -= ny * overlap * 0.5;
+          p1.position[2] -= nz * overlap * 0.5;
+          p2.position[0] += nx * overlap * 0.5;
+          p2.position[1] += ny * overlap * 0.5;
+          p2.position[2] += nz * overlap * 0.5;
+        }
+      }
+    }
+  }
+
+  private syncMesh(cloth: Cloth): void {
+    const mesh = cloth.mesh;
+    if (!mesh || !mesh.geometry) return;
+
+    const posAttr = mesh.geometry.getAttribute('position');
+    if (!posAttr) return;
+
+    const positions = posAttr.array as Float32Array;
+    for (let y = 0; y < cloth.height; y++) {
+      for (let x = 0; x < cloth.width; x++) {
+        const p = cloth.getParticle(x, y);
+        if (!p) continue;
+
+        const i = y * cloth.width + x;
+        positions[i * 3 + 0] = p.position[0];
+        positions[i * 3 + 1] = p.position[1];
+        positions[i * 3 + 2] = p.position[2];
+      }
+    }
+    posAttr.needsUpdate = true;
   }
 }

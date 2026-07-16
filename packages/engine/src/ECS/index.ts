@@ -50,6 +50,7 @@ export {
   Particle, ParticleC,
   ParticleEmitter, ParticleEmitterC,
   PhysicsDebug, PhysicsDebugC,
+  Cloth, ClothC,
   type ColliderShape,
 } from './PhysicsComponents';
 export {
@@ -57,4 +58,5 @@ export {
   CollisionSystem,
   ParticleSystem,
   PhysicsDebugSystem,
+  ClothSystem,
 } from './PhysicsSystems';

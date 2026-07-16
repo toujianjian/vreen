@@ -38,7 +38,8 @@ const SEG_PER_CAPSULE = 32;
 /** 把 Transform + Collider 展开成线段(写入 verts 的 [x1,y1,z1, x2,y2,z2, ...])。 */
 function appendColliderSegments(
   t: Transform, c: Collider,
-  verts: number[], segBudget: { left: number },
+  segBudget: { left: number },
+  verts: number[],
 ): void {
   if (segBudget.left <= 0) return;
   const [px, py, pz] = t.position;
@@ -185,13 +186,16 @@ export class PhysicsDebugRenderer {
     let showContacts = true;
     let showVelocities = true;
     let velocityScale = 0.5;
-    // 直接遍历 component store,显式声明类型,绕开 queryWith 泛型推导
-    // 的 TS 行为差异。
-    const dbgStore = (world as unknown as { _components: Map<number, Map<number, PhysicsDebug>> })._components.get(PhysicsDebugC.id);
     let dbg: PhysicsDebug | null = null;
-    if (dbgStore) {
-      for (const v of dbgStore.values()) { dbg = v; break; }
-    }
+    const queryOne = <T>(t: { id: number; name: string }): T | null => {
+      let out: T | null = null;
+      // 绕过 queryWith 的泛型推断问题:这里知道回调收到的就是 T。
+      (world.queryWith as (tt: typeof t, fn: (id: number, d: unknown) => void) => void)(t, (_id, d) => {
+        out = d as T;
+      });
+      return out;
+    };
+    dbg = queryOne<PhysicsDebug>(PhysicsDebugC);
     if (dbg) {
       showColliders = dbg.showColliders;
       showContacts = dbg.showContacts;
@@ -207,17 +211,20 @@ export class PhysicsDebugRenderer {
       const tmp: number[] = [];
       let usedSegs = 0;
       const segCap = MAX_COLLIDERS * 24;
-      world.queryWith(ColliderC, (id, c) => {
-        const t = world.getComponent(id, TransformC) as Transform | null;
-        if (!t) return;
-        const subBudget = { left: segCap - usedSegs };
-        const before = tmp.length;
-        appendColliderSegments(t, c, tmp, subBudget);
-        usedSegs += (tmp.length - before) / 6;
-        if (usedSegs >= segCap) {
-          // 满了,但仍计数
-        }
-      });
+      (world.queryWith as (t: typeof ColliderC, fn: (id: number, c: Collider) => void) => void)(
+        ColliderC,
+        (id, c: Collider) => {
+          const t = world.getComponent(id, TransformC) as Transform | null;
+          if (!t) return;
+          const subBudget = { left: segCap - usedSegs };
+          const before = tmp.length;
+          appendColliderSegments(t, c, subBudget, tmp);
+          usedSegs += (tmp.length - before) / 6;
+          if (usedSegs >= segCap) {
+            // 满了,但仍计数
+          }
+        },
+      );
       this._colliderBuf.set(tmp);
       colliderCount = tmp.length / 6;
     }

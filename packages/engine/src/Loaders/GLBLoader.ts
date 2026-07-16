@@ -7,11 +7,11 @@
 //   ✅ Mesh.primitives: POSITION / NORMAL / TANGENT / TEXCOORD_0 / COLOR_0
 //   ✅ 索引 (UNSIGNED_SHORT / UNSIGNED_INT)
 //   ✅ PBR: pbrMetallicRoughness.baseColorFactor / metallicFactor / roughnessFactor
+//   ✅ PBR: baseColorTexture / metallicRoughnessTexture
 //   ✅ Skin: joints[] + inverseBindMatrices → SkinnedMesh
 //   ✅ Animation: translation/rotation/scale 通道 → KeyframeTrack
 //   ❌ Morph targets
 //   ❌ Sparse accessors
-//   ⚠️ baseColorTexture: 跳过（TextureLoader 留作下一轮）
 //   ⚠️ matrix 节点变换: 解析为 TRS（平移+旋转+缩放分别归一化）
 //
 // API:
@@ -29,6 +29,8 @@ import { Object3D } from '../Core/Object3D';
 import { BufferGeometry } from '../Core/BufferGeometry';
 import { BufferAttribute } from '../Core/BufferAttribute';
 import { StandardMaterial } from '../Materials/StandardMaterial';
+import { Texture } from '../Core/Texture';
+import { TextureLoader } from './TextureLoader';
 import {
   AnimationClip,
   QuaternionKeyframeTrack,
@@ -181,6 +183,8 @@ interface GltfJson {
   materials?: GltfMaterial[];
   skins?: GltfSkin[];
   animations?: GltfAnimation[];
+  images?: GltfImage[];
+  textures?: GltfTexture[];
   extensionsUsed?: string[];
   extensionsRequired?: string[];
 }
@@ -251,8 +255,23 @@ interface GltfMaterial {
     baseColorTexture?: { index: number };
     metallicFactor?: number;
     roughnessFactor?: number;
+    metallicRoughnessTexture?: { index: number };
   };
+  normalTexture?: { index: number };
+  emissiveFactor?: [number, number, number];
+  emissiveTexture?: { index: number };
   doubleSided?: boolean;
+}
+
+interface GltfImage {
+  uri?: string;
+  bufferView?: number;
+  mimeType?: string;
+}
+
+interface GltfTexture {
+  source: number;
+  sampler?: number;
 }
 
 interface GltfSkin {
@@ -337,13 +356,34 @@ async function buildFromGltf(json: GltfJson, bin: Uint8Array | null): Promise<Lo
   const materialsJson = json.materials ?? [];
   const skinsJson = json.skins ?? [];
   const animsJson = json.animations ?? [];
+  const imagesJson = json.images ?? [];
+  const texturesJson = json.textures ?? [];
 
   log.debug(`build: ${nodesJson.length} nodes, ${meshesJson.length} meshes, ` +
-    `${materialsJson.length} materials, ${skinsJson.length} skins, ${animsJson.length} anims`);
+    `${materialsJson.length} materials, ${skinsJson.length} skins, ${animsJson.length} anims, ` +
+    `${imagesJson.length} images, ${texturesJson.length} textures`);
 
-  // 1) 材质
+  // 1) 加载纹理
+  const tTex0 = performance.now();
+  const textures: Texture[] = await Promise.all(
+    imagesJson.map(async (img, i) => {
+      try {
+        const tex = await loadGltfImage(img, bin, bufViews);
+        tex.name = `Texture_${i}`;
+        return tex;
+      } catch (e) {
+        log.warn(`Failed to load image ${i}: ${(e as Error).message}`);
+        return new Texture(`Texture_${i}`);
+      }
+    })
+  );
+  if (imagesJson.length > 0) {
+    log.debug(`loaded ${textures.length} textures in ${(performance.now() - tTex0).toFixed(1)}ms`);
+  }
+
+  // 2) 材质
   const tMat0 = performance.now();
-  const materials: StandardMaterial[] = materialsJson.map((m) => gtfMaterialToStd(m));
+  const materials: StandardMaterial[] = materialsJson.map((m, i) => gtfMaterialToStd(m, texturesJson, textures, i));
   if (materialsJson.length > 0) {
     log.debug(`built ${materials.length} materials in ${(performance.now() - tMat0).toFixed(1)}ms`);
   }
@@ -614,8 +654,30 @@ function gtfItemSizeFor(prim: GltfPrimitive, semantic: string, accType: GltfAcce
   return 3;
 }
 
+// ── Image/Texture loading ────────────────────────────────────────────
+async function loadGltfImage(img: GltfImage, bin: Uint8Array | null, bufViews: GltfBufferView[]): Promise<Texture> {
+  if (img.uri) {
+    const texLoader = new TextureLoader();
+    if (img.uri.startsWith('data:')) {
+      const base64Data = img.uri.split(',')[1];
+      const buf = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+      return await texLoader.load(buf);
+    }
+    return await texLoader.load(img.uri);
+  }
+  if (img.bufferView !== undefined && bin) {
+    const view = bufViews[img.bufferView];
+    if (!view) throw new Error(`GLBLoader: image bufferView ${img.bufferView} missing`);
+    const base = view.byteOffset ?? 0;
+    const bytes = new Uint8Array(bin.buffer, bin.byteOffset + base, view.byteLength);
+    const texLoader = new TextureLoader();
+    return await texLoader.load(bytes);
+  }
+  throw new Error('GLBLoader: image has no uri or bufferView');
+}
+
 // ── Material ────────────────────────────────────────────────────────
-function gtfMaterialToStd(m: GltfMaterial): StandardMaterial {
+function gtfMaterialToStd(m: GltfMaterial, texturesJson: GltfTexture[], textures: Texture[], matIdx: number): StandardMaterial {
   const std = new StandardMaterial();
   if (m.name) std.userData['__mtlName'] = m.name;
   const pbr = m.pbrMetallicRoughness ?? {};
@@ -626,7 +688,55 @@ function gtfMaterialToStd(m: GltfMaterial): StandardMaterial {
   }
   std.metallic = pbr.metallicFactor ?? 1;
   std.roughness = pbr.roughnessFactor ?? 1;
-  // baseColorTexture: skip for now (Texture integration is a follow-up)
+
+  if (pbr.baseColorTexture?.index !== undefined) {
+    const texDef = texturesJson[pbr.baseColorTexture.index];
+    if (texDef) {
+      const tex = textures[texDef.source];
+      if (tex) {
+        std.map = tex;
+        log.debug(`material ${matIdx}: baseColorTexture -> Texture_${texDef.source}`);
+      }
+    }
+  }
+
+  if (pbr.metallicRoughnessTexture?.index !== undefined) {
+    const texDef = texturesJson[pbr.metallicRoughnessTexture.index];
+    if (texDef) {
+      const tex = textures[texDef.source];
+      if (tex) {
+        std.metallicRoughnessMap = tex;
+        log.debug(`material ${matIdx}: metallicRoughnessTexture -> Texture_${texDef.source}`);
+      }
+    }
+  }
+
+  if (m.normalTexture?.index !== undefined) {
+    const texDef = texturesJson[m.normalTexture.index];
+    if (texDef) {
+      const tex = textures[texDef.source];
+      if (tex) {
+        std.normalMap = tex;
+        log.debug(`material ${matIdx}: normalTexture -> Texture_${texDef.source}`);
+      }
+    }
+  }
+
+  if (m.emissiveFactor) {
+    std.emissive = { r: m.emissiveFactor[0], g: m.emissiveFactor[1], b: m.emissiveFactor[2] };
+  }
+
+  if (m.emissiveTexture?.index !== undefined) {
+    const texDef = texturesJson[m.emissiveTexture.index];
+    if (texDef) {
+      const tex = textures[texDef.source];
+      if (tex) {
+        std.emissiveMap = tex;
+        log.debug(`material ${matIdx}: emissiveTexture -> Texture_${texDef.source}`);
+      }
+    }
+  }
+
   return std;
 }
 

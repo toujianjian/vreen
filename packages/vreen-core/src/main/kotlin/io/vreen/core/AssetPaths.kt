@@ -7,6 +7,7 @@ import io.vreen.core.model.*
  * Mirrors defaultAssetPath() in src/lib/vreenPack.ts.
  */
 object AssetPaths {
+    @Suppress("UNUSED_PARAMETER")
     fun defaultPath(kind: AssetKind, originalName: String, id: String): String {
         val safeName = sanitizeFilename(originalName)
         return when (kind) {

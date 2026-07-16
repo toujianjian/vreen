@@ -16,13 +16,24 @@
     "README.md"
   ],
   "sideEffects": false,
+
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build:types": "tsc -p tsconfig.json",
+    "build:bundle": "esbuild src/index.ts --bundle --format=esm --target=es2022 --outfile=dist/index.js --platform=browser --sourcemap --external:draco3d",
+    "build": "npm run build:types && npm run build:bundle",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "watch": "tsc -p tsconfig.json --watch"
   },
   "engines": {
     "node": ">=18"
+  },
+  "peerDependencies": {
+    "draco3d": "^1.5.7"
+  },
+  "peerDependenciesMeta": {
+    "draco3d": {
+      "optional": true
+    }
   },
   "keywords": [
     "webgl2",

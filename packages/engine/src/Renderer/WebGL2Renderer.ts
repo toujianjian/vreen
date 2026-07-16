@@ -80,11 +80,22 @@ export interface RendererStats {
   programs: number;
   /** 当前帧按 mesh name 拆解的 draw call 明细。key = mesh.name。 */
   drawCallBreakdown: Record<string, DrawCallEntry>;
+  /** GPU 时间统计(毫秒)。 */
+  gpuTime: {
+    mainPass: number;
+    shadowPass: number;
+    ssaoPass: number;
+    postPass: number;
+    total: number;
+  };
 }
 
 export class WebGL2Renderer {
   readonly canvas: HTMLCanvasElement;
   readonly gl: WebGL2RenderingContext;
+  private _timerQueryExt: WebGL2RenderingContext['EXT_disjoint_timer_query'] | null = null;
+  private _timerQueries: { start: WebGLQuery | null; end: WebGLQuery | null; target: keyof RendererStats['gpuTime'] }[] = [];
+  private _gpuTimeAccum: Partial<RendererStats['gpuTime']> = {};
 
   /** Background clear color. Pure black default. */
   clearColor: { r: number; g: number; b: number; a: number } = { r: 0, g: 0, b: 0, a: 1 };
@@ -184,6 +195,71 @@ export class WebGL2Renderer {
     gl.cullFace(gl.BACK);
     gl.frontFace(gl.CCW);
     log.debug('GL state defaults set: DEPTH_TEST, CULL_FACE back, CCW front');
+
+    this._timerQueryExt = gl.getExtension('EXT_disjoint_timer_query');
+    if (this._timerQueryExt) {
+      log.info('GPU timer query extension enabled (EXT_disjoint_timer_query)');
+    } else {
+      log.warn('GPU timer query not supported — gpuTime stats will be zero');
+    }
+  }
+
+  private _beginGPUTimer(target: keyof RendererStats['gpuTime']): void {
+    if (!this._timerQueryExt) return;
+    const gl = this.gl;
+    const ext = this._timerQueryExt;
+    const start = gl.createQuery()!;
+    const end = gl.createQuery()!;
+    this._timerQueries.push({ start, end, target });
+    ext.beginQueryEXT(ext.TIME_ELAPSED_EXT, start);
+  }
+
+  private _endGPUTimer(): void {
+    if (!this._timerQueryExt) return;
+    const ext = this._timerQueryExt;
+    const last = this._timerQueries[this._timerQueries.length - 1];
+    if (last) {
+      ext.endQueryEXT(ext.TIME_ELAPSED_EXT);
+      ext.beginQueryEXT(ext.TIME_ELAPSED_EXT, last.end);
+      ext.endQueryEXT(ext.TIME_ELAPSED_EXT);
+    }
+  }
+
+  private _resolveGPUTimers(): void {
+    if (!this._timerQueryExt) {
+      this.stats.gpuTime = { mainPass: 0, shadowPass: 0, ssaoPass: 0, postPass: 0, total: 0 };
+      return;
+    }
+
+    const gl = this.gl;
+    const ext = this._timerQueryExt;
+    let total = 0;
+    const results: Partial<RendererStats['gpuTime']> = {};
+
+    for (const q of this._timerQueries) {
+      if (!q.start || !q.end) continue;
+      const available = gl.getQueryParameter(q.end, gl.QUERY_RESULT_AVAILABLE);
+      if (!available) continue;
+      const disjoint = gl.getParameter(ext.GPU_DISJOINT_EXT);
+      if (disjoint) continue;
+      const startVal = gl.getQueryParameter(q.start, gl.QUERY_RESULT);
+      const endVal = gl.getQueryParameter(q.end, gl.QUERY_RESULT);
+      const ns = endVal - startVal;
+      const ms = ns / 1_000_000;
+      results[q.target] = (results[q.target] || 0) + ms;
+      total += ms;
+      gl.deleteQuery(q.start);
+      gl.deleteQuery(q.end);
+    }
+
+    this._timerQueries = [];
+    this.stats.gpuTime = {
+      mainPass: results.mainPass || 0,
+      shadowPass: results.shadowPass || 0,
+      ssaoPass: results.ssaoPass || 0,
+      postPass: results.postPass || 0,
+      total,
+    };
   }
 
   resize(width: number, height: number): void {
@@ -246,9 +322,15 @@ export class WebGL2Renderer {
     // 1. Shadow pass — for every castShadow light
     const lights = this._collectLights(scene);
     const castShadowLights = lights.filter((l) => l instanceof DirectionalLight && l.castShadow);
+    if (castShadowLights.length > 0) {
+      this._beginGPUTimer('shadowPass');
+    }
     for (const light of castShadowLights) {
       this._renderShadowPass(scene, light as DirectionalLight);
       this.stats.shadowPasses++;
+    }
+    if (castShadowLights.length > 0) {
+      this._endGPUTimer();
     }
 
     const aspect = this.canvas.width / Math.max(1, this.canvas.height);
@@ -266,11 +348,14 @@ export class WebGL2Renderer {
     // 2. SSAO pass — depth + normal buffer, then AO calculation
     let ssaoTexture: WebGLTexture | null = null;
     if (this.ssaoEnabled) {
+      this._beginGPUTimer('ssaoPass');
       this._renderSSAOPass(scene, camera);
+      this._endGPUTimer();
       ssaoTexture = this.ssaoResources?.ssaoTexture ?? null;
     }
 
     // 3. Main pass
+    this._beginGPUTimer('mainPass');
     if (this.postProcessingEnabled) {
       const postRes = this._getPostProcessingResources();
       this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, postRes.mainFbo);
@@ -292,11 +377,16 @@ export class WebGL2Renderer {
       }
       this._drawMesh(mesh, scene, camera, dirLight, ambient, ssaoTexture);
     });
+    this._endGPUTimer();
 
     // 4. Post-processing pass
     if (this.postProcessingEnabled) {
+      this._beginGPUTimer('postPass');
       this._renderPostProcessingPass(camera);
+      this._endGPUTimer();
     }
+
+    this._resolveGPUTimers();
 
     // 每 120 帧 (~2s@60fps) 摘要一次，避免控制台刷屏
     this.stats.programs = this.programCache.size;
@@ -754,6 +844,32 @@ export class WebGL2Renderer {
       }
     } else {
       program.setUniform1i('u_metallicRoughnessMapEnabled', 0);
+    }
+    if (mat.normalMap) {
+      const tex = this._ensureStandardTexture(mat.normalMap, /* srgb */ false);
+      if (tex) {
+        gl.activeTexture(gl.TEXTURE5);
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        program.setUniformSampler('u_normalMap', 5);
+        program.setUniform1i('u_normalMapEnabled', 1);
+      } else {
+        program.setUniform1i('u_normalMapEnabled', 0);
+      }
+    } else {
+      program.setUniform1i('u_normalMapEnabled', 0);
+    }
+    if (mat.emissiveMap) {
+      const tex = this._ensureStandardTexture(mat.emissiveMap, /* srgb */ true);
+      if (tex) {
+        gl.activeTexture(gl.TEXTURE6);
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        program.setUniformSampler('u_emissiveMap', 6);
+        program.setUniform1i('u_emissiveMapEnabled', 1);
+      } else {
+        program.setUniform1i('u_emissiveMapEnabled', 0);
+      }
+    } else {
+      program.setUniform1i('u_emissiveMapEnabled', 0);
     }
 
     if (dirLight) {

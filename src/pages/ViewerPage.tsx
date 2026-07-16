@@ -9,6 +9,7 @@ import { VreenInspectorPanel } from '@/components/viewer/VreenInspectorPanel';
 import { ViewerToolbar } from '@/components/viewer/ViewerToolbar';
 import { ViewerStatusBar } from '@/components/viewer/ViewerStatusBar';
 import { Timeline } from '@/components/viewer/Timeline';
+import { TunerPanel } from '@/components/viewer/TunerPanel';
 import { useViewerStore } from '@/stores/viewerStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useWorldStore } from '@/stores/worldStore';
@@ -85,6 +86,8 @@ export function ViewerPage() {
             <CornerMarkers />
             <ScanOverlay />
           </div>
+          {/* Param tuner overlay (M2) — fixed position inside Stage */}
+          <TunerPanel />
         </main>
         <aside className="hidden lg:flex flex-col border-l border-neon-magenta/15 min-h-0">
           <Inspector />

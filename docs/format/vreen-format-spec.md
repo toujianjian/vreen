@@ -401,3 +401,90 @@ npm run vreen -- validate demo.vreen
 - **v0.4.0:** Streaming format — header + chunked payload for large worlds (>1 GB).
 
 See [ROADMAP.md](./ROADMAP.md) for details.
+
+---
+
+## 14. Cross-Engine Plugins (v0.2.x)
+
+The `.vreen` format is engine-agnostic. The reference SDKs are:
+
+| Language | Path | Notes |
+|---|---|---|
+| TypeScript / Web | `src/lib/vreenPack.ts` | Browser + Node (fflate for zip) |
+| Java (Kotlin) | `packages/vreen-core/src/main/kotlin/io/vreen/core/` | POJO model, used by build-time tools |
+| C# (Unity) | `packages/unity-package/` | `Editor/VreenExporter.cs` ships a scene walker |
+| C++ (Unreal) | `packages/unreal-plugin/` | `Source/VreenEditor/VreenExporter.cpp` ships a level walker |
+
+### 14.1 Export contract
+
+A conforming engine-side exporter MUST produce a `.vreen` package that:
+
+1. **Discovers the active scene/level** at export time and gathers:
+   - **Models** — every renderable mesh actor in the active scene, serialized into one or more model assets. Two encodings are allowed:
+     - `glb` — binary glTF 2.0 GLB (`magic PK\x03\x04` for the embedded JSON+BIN pair, OR a `glb` header `0x46546C67`).
+     - `vmesh` — VREEN's own JSON mesh container (see §14.2). Used when GLB encoding is impractical (e.g. UE runtime can't import export modules).
+   - **Textures** — PNG (preferred) or JPEG for diffuse / normal / metallic-roughness. Exporter MUST write `meta` with `{ width, height, format }`.
+   - **HDRI** — if a skybox is bound, the underlying HDR file is added as an `hdri` asset.
+   - **Audio** — if AudioSource/AudioComponent references OGG/WAV, included as `audio` assets.
+2. **Captures scene state**:
+   - `scene.camera` — current main camera transform + projection params.
+   - `scene.environment` — ambient color, fog, skybox preset, exposure.
+   - `scene.postFX` — bloom, vignette, SSAO, chromatic aberration state.
+   - `scene.materials` — flat map of asset-id → PBR parameters `{ baseColor, metallic, roughness, emissive, opacity }`.
+3. **Embeds the ECS world** (when present) by walking the engine's actor/component table and producing a deterministic `VreenWorldJson`.
+4. **Sets `generator`** to `"<engine> <version> <exporter_version>"` (e.g. `unity 2021.3 vreen-unity 0.3.0`).
+5. **Writes a single file** (the .vreen archive) to a user-chosen path.
+
+### 14.2 `vmesh` — JSON mesh format (alternative to GLB)
+
+When an exporter cannot produce GLB (e.g. headless build server, UE Editor without a third-party GLTF plugin), it MAY write a `vmesh` JSON document into a `model`-kinded asset. The reader recognizes the format by:
+
+- `assets[].kind == "model"` AND
+- `assets[].meta.format == "vmesh"` AND
+- the asset's bytes start with `{` (valid JSON).
+
+Schema:
+
+```json
+{
+  "version": "1.0.0",
+  "name": "MechTorso",
+  "meshes": [
+    {
+      "name": "torso",
+      "vertices": [x0, y0, z0, x1, y1, z1, ...],
+      "normals":  [nx0, ny0, nz0, ...],
+      "uvs":      [u0, v0, u1, v1, ...],
+      "indices":  [i0, i1, i2, i3, i4, i5, ...],
+      "materialRef": "mat-torso-001"
+    }
+  ],
+  "materials": {
+    "mat-torso-001": {
+      "baseColor": "#3a455a",
+      "metallic": 0.85,
+      "roughness": 0.32,
+      "emissive": "#000000",
+      "emissiveIntensity": 0.0,
+      "doubleSided": false
+    }
+  }
+}
+```
+
+**Constraints:**
+
+- `vertices` / `normals` / `uvs` arrays MUST have length divisible by 3 (positions, normals) or 2 (uvs).
+- `indices` MUST be unsigned 32-bit and triangle-list (divisible by 3, every triple is one triangle).
+- `materials` keys are referenced by `materialRef` (the same id appears in `scene.materials`).
+- Textures are NOT embedded in the `vmesh`; instead the exporter must add them as separate `texture`-kinded assets and the runtime reader will resolve `materials[].baseColorTexture` by id (forward-compat field, may be empty in v0.2.1).
+
+### 14.3 Round-trip guarantee
+
+A `.vreen` file exported by Unity/Unreal MUST be readable by all four SDKs without data loss for:
+- camera + environment + postFX state
+- material parameters (PBR)
+- world ECS entities (position/rotation/scale + components)
+- asset bytes (sha256 verified)
+
+Geometry lossiness is allowed only in the `vmesh` path (e.g. bone weights, blend shapes are out of scope for v0.2.x; document any deviations in the exporter's `generator` string).

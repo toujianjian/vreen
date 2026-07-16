@@ -1,6 +1,5 @@
 package io.vreen.core
 
-import io.vreen.core.model.*
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 
@@ -26,10 +25,11 @@ class VreenPackTest {
 
         val unpacked = Vreen.unpack(pack.bytes)
         assertEquals(2, unpacked.manifest.assets.size)
-        assertEquals(modelBytes.size, unpacked.assets.size + 0) // sanity
+        assertEquals(2, unpacked.assets.size, "all declared assets should have bytes")
         val modelEntry = unpacked.manifest.assets.first { it.kind == AssetKind.MODEL }
         val modelData = unpacked.assets[modelEntry.id]
         assertNotNull(modelData)
+        assertEquals(modelBytes.size, modelData!!.size, "model byte count should match")
         assertArrayEquals(modelBytes, modelData)
     }
 
@@ -94,16 +94,16 @@ class VreenPackTest {
         val base = Vreen.pack(Vreen.PackInput(
             name = "v1", assetName = "x",
             assets = listOf(
-                Vreen.AssetInput(kind = AssetKind.MODEL, data = "a".toByteArray(), originalName = "m"),
-                Vreen.AssetInput(kind = AssetKind.TEXTURE, data = "t1".toByteArray(), originalName = "t1"),
+                Vreen.AssetInput(id = "model-a", kind = AssetKind.MODEL, data = "a".toByteArray(), originalName = "m"),
+                Vreen.AssetInput(id = "tex-t1", kind = AssetKind.TEXTURE, data = "t1".toByteArray(), originalName = "t1"),
             ),
         ))
         val head = Vreen.pack(Vreen.PackInput(
             name = "v2", assetName = "x",
             assets = listOf(
-                Vreen.AssetInput(kind = AssetKind.MODEL, data = "a".toByteArray(), originalName = "m"),
-                Vreen.AssetInput(kind = AssetKind.TEXTURE, data = "t1".toByteArray(), originalName = "t1"),
-                Vreen.AssetInput(kind = AssetKind.TEXTURE, data = "t2-new".toByteArray(), originalName = "t2"),
+                Vreen.AssetInput(id = "model-a", kind = AssetKind.MODEL, data = "a".toByteArray(), originalName = "m"),
+                Vreen.AssetInput(id = "tex-t1", kind = AssetKind.TEXTURE, data = "t1".toByteArray(), originalName = "t1"),
+                Vreen.AssetInput(id = "tex-t2", kind = AssetKind.TEXTURE, data = "t2-new".toByteArray(), originalName = "t2"),
             ),
         ))
         val diff = VreenDiff.diff(Vreen.unpack(base.bytes), Vreen.unpack(head.bytes))

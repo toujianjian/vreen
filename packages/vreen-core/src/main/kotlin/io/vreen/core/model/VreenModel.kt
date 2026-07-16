@@ -1,5 +1,7 @@
 package io.vreen.core
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties
+
 /** Format version constants. Mirrors src/lib/vreenManifest.ts. */
 object Versions {
     const val CURRENT = "0.2.1"
@@ -43,6 +45,7 @@ data class VreenAssetEntry(
 }
 
 /** Top-level manifest. */
+@JsonIgnoreProperties(ignoreUnknown = true)
 data class VreenManifest(
     val version: String = Versions.CURRENT,
     val exportedAt: String,

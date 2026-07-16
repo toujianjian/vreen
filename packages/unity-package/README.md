@@ -30,6 +30,25 @@ Or via git URL:
 
 `VREEN → Open Package…` menu item. Pick a `.vreen` file to see manifest, assets, and validation report.
 
+### Editor — export the active scene
+
+`VREEN → Export Active Scene to .vreen…` menu item. The exporter walks the active scene's root GameObjects, captures meshes (as `vmesh` JSON per §14.2 of the format spec), textures (PNG via `ImageConversion.EncodeToPNG`), PBR materials, audio, and the ECS world, and writes a `.vreen` next to the `.unity` file (or to a user-chosen path). Use `VREEN → Open Export Window` for fine-grained options.
+
+The exporter API is also callable from build pipelines / batch scripts:
+
+```csharp
+using Vreen.EditorTools;
+
+var report = VreenExporter.ExportActiveScene(new VreenExporter.Options
+{
+    name = "MyScene",
+    assetName = "robot",
+    includeWorld = true,
+    useSceneDirectory = false, // require explicit path via SaveFilePanel
+});
+if (!report.ok) Debug.LogError(report.error);
+```
+
 ### Runtime — load and instantiate the primary model
 
 ```csharp
@@ -81,7 +100,10 @@ System.IO.File.WriteAllBytes("out.vreen", manifest.bytes);
 | `VreenLoader` | `Pack`, `Unpack`, `Validate`, `Sha256Hex` |
 | `VreenModel` | Data classes (`VreenManifest`, `VreenScene`, `VreenWorldJson`, `VreenAssetEntry`, etc.) |
 | `VreenJson` | JSON encode/decode helpers (Newtonsoft-free) |
-| `VreenEditorWindow` | Unity Editor inspector window |
+| `VreenVmesh` | VREEN mesh (vmesh) JSON encoder for the §14.2 model format |
+| `VreenEditorWindow` | Unity Editor inspector window (open + validate .vreen) |
+| `VreenExporter` | Editor-only scene walker that produces a .vreen |
+| `VreenExporterWindow` | Editor window with export options and a "Export" button |
 
 ## Dependencies
 

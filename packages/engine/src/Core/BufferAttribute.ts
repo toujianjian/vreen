@@ -30,15 +30,6 @@ export class BufferAttribute {
     this.usage = usage;
   }
 
-  /** Hint string → gl usage constant. Currently the renderer always full-uploads
-   *  via gl.bufferData, so this is a hint only — but it lets callers follow
-   *  three.js's API. */
-  setUsage(_hint: 'Static' | 'Dynamic' | 'Stream'): this { return this; }
-  /** Flag the renderer to re-upload on next draw. Currently the renderer
-   *  always re-uploads dynamic-position attributes, so the flag is a no-op. */
-  set needsUpdate(_v: boolean) { /* noop; renderer always re-uploads */ }
-  get needsUpdate(): boolean { return false; }
-
   get x(): number { return this.array[0]; }
   set x(v: number) { this.array[0] = v; this.version++; }
   get y(): number { return this.array[1]; }
@@ -68,5 +59,32 @@ export class BufferAttribute {
     this.count = Math.floor(this.array.length / this.itemSize);
     this.version++;
     return this;
+  }
+
+  /**
+   * Set the GL usage hint. Accepts a three.js-style string or a raw GL enum
+   * number. Renderer reads `usage` directly when calling `gl.bufferData`,
+   * so this is the only way to switch between STATIC_DRAW / DYNAMIC_DRAW.
+   */
+  setUsage(usage: 'Static' | 'Dynamic' | 'Stream' | number): this {
+    if (typeof usage === 'number') {
+      this.usage = usage;
+    } else {
+      switch (usage) {
+        case 'Static':  this.usage = 0x88e4; break; // gl.STATIC_DRAW
+        case 'Dynamic': this.usage = 0x88e8; break; // gl.DYNAMIC_DRAW
+        case 'Stream':  this.usage = 0x88e0; break; // gl.STREAM_DRAW
+      }
+    }
+    return this;
+  }
+
+  /**
+   * Mark the attribute dirty. Equivalent to mutating the array directly,
+   * but lets helpers (LineMesh etc.) signal "I just wrote into .array,
+   * please re-upload" without touching version arithmetic themselves.
+   */
+  set needsUpdate(v: boolean) {
+    if (v) this.version++;
   }
 }

@@ -14,6 +14,7 @@ import {
   Upload,
   Cpu,
   Activity,
+  Sliders,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useEffect, useRef, useState } from 'react';
@@ -68,6 +69,8 @@ export function ViewerToolbar() {
   const togglePhysicsDebug = useViewerStore((s) => s.togglePhysicsDebug);
   const profilerEnabled = useViewerStore((s) => s.profilerEnabled);
   const toggleProfiler = useViewerStore((s) => s.toggleProfiler);
+  const showTuner = useViewerStore((s) => s.showTuner);
+  const toggleTuner = useViewerStore((s) => s.toggleTuner);
   // 用 selector 订阅,避免 getState 闭包捕到旧值
   const modelFile = useViewerStore((s) => s.currentModelFile);
   const pushLog = useUIStore((s) => s.pushLog);
@@ -409,6 +412,18 @@ export function ViewerToolbar() {
         >
           <Activity className="w-3.5 h-3.5" />
           <span className="hidden md:inline">PROFILER</span>
+        </button>
+
+        <button
+          onClick={() => {
+            toggleTuner();
+            pushLog('INFO', !showTuner ? 'Tuner: ON (live param editor for generator presets)' : 'Tuner: OFF');
+          }}
+          className={cn('hud-btn', showTuner && 'bg-neon-amber/15 text-neon-amber')}
+          title="Toggle generator param tuner (M2 — mech/crystal/tree/ship/creature/totem)"
+        >
+          <Sliders className="w-3.5 h-3.5" />
+          <span className="hidden md:inline">TUNER</span>
         </button>
 
         <button

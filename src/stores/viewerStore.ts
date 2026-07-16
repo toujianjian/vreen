@@ -39,6 +39,8 @@ interface ViewerState {
   physicsDebug: boolean;
   /** Profiler HUD 显示开关(CustomStage 内置)。 */
   profilerEnabled: boolean;
+  /** Tuner 面板显示开关。 */
+  showTuner: boolean;
 
   // Actions
   setAssetSource: (source: AssetSource | null, name?: string) => void;
@@ -60,6 +62,7 @@ interface ViewerState {
   togglePhysicsDemo: () => void;
   togglePhysicsDebug: () => void;
   toggleProfiler: () => void;
+  toggleTuner: () => void;
   reset: () => void;
 }
 
@@ -103,6 +106,7 @@ export const useViewerStore = create<ViewerState>((set) => ({
   physicsDemo: false,
   physicsDebug: true,
   profilerEnabled: false,
+  showTuner: false,
 
   setAssetSource: (source, name) =>
     set(() => ({
@@ -144,6 +148,7 @@ export const useViewerStore = create<ViewerState>((set) => ({
   togglePhysicsDemo: () => set((s) => ({ physicsDemo: !s.physicsDemo })),
   togglePhysicsDebug: () => set((s) => ({ physicsDebug: !s.physicsDebug })),
   toggleProfiler: () => set((s) => ({ profilerEnabled: !s.profilerEnabled })),
+  toggleTuner: () => set((s) => ({ showTuner: !s.showTuner })),
   reset: () =>
     set({
       assetSource: null,
