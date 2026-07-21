@@ -135,8 +135,8 @@ export function parseGLB(buf: ArrayBuffer): { json: GltfJson; bin: Uint8Array | 
     throw new Error(`GLBLoader: first chunk must be JSON (got 0x${jType.toString(16)})`);
   }
   const jBytes = new Uint8Array(buf, off + 8, jLen);
-  // JSON 不带 padding
-  const jsonText = new TextDecoder('utf-8').decode(jBytes);
+  // JSON 不带 padding — trim trailing null bytes some exporters add
+  const jsonText = new TextDecoder('utf-8').decode(jBytes).replace(/\0+$/, '');
   let json: GltfJson;
   try {
     json = JSON.parse(jsonText);
