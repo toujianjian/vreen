@@ -73,7 +73,8 @@ export class HDRLoader implements Loader<LoadedHDR> {
 }
 
 // ── 解析 ────────────────────────────────────────────────────────────
-function parseRGBE(buf: Uint8Array): { header: HDRHeader; pixels: Uint8Array } {
+/** @internal Exported for testing */
+export function parseRGBE(buf: Uint8Array): { header: HDRHeader; pixels: Uint8Array } {
   // 头：以 "\n" 分隔的多行 KEY=VALUE；首行必须是 "#?RADIANCE" 或 "#?RGBE"
   if (buf.length < 12) throw new Error('HDRLoader: file too small');
   const text = new TextDecoder('ascii').decode(buf.slice(0, Math.min(2048, buf.length)));
@@ -132,7 +133,8 @@ function parseRGBE(buf: Uint8Array): { header: HDRHeader; pixels: Uint8Array } {
   };
 }
 
-function decodeRGBE(src: Uint8Array, dst: Float32Array, w: number, h: number, expMul: number): void {
+/** @internal Exported for testing */
+export function decodeRGBE(src: Uint8Array, dst: Float32Array, w: number, h: number, expMul: number): void {
   // Radiance .hdr scanline 排列：
   //   - 旧格式（未压缩）：每行 w*4 字节 RGBE 原始数据
   //   - 新格式（RLE）：每行先 4 字节标记 [2, 2, hi, lo]，width=hi*256+lo
