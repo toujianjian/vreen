@@ -12,6 +12,9 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "engine:sync": "node scripts/sync-engine-package.mjs",
     "engine:build": "cd packages/engine && npm run build",
     "engine:typecheck": "cd packages/engine && npm run typecheck",
@@ -47,6 +50,7 @@
     "@types/react-dom": "^18.3.0",
     "@types/three": "^0.169.0",
     "@vitejs/plugin-react": "^4.3.2",
+    "@vitest/coverage-v8": "^4.1.10",
     "autoprefixer": "^10.4.20",
     "concurrently": "^9.2.3",
     "cross-env": "^7.0.3",
@@ -56,6 +60,7 @@
     "tailwindcss": "^3.4.13",
     "typescript": "^5.6.2",
     "vite": "^5.4.8",
+    "vitest": "^4.1.10",
     "wait-on": "^8.0.5"
   },
   "build": {

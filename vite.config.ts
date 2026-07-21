@@ -2,6 +2,9 @@ import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath, URL } from 'node:url';
 
+// Vitest type reference (merged with vite config)
+/// <reference types="vitest" />
+
 /**
  * Strip `.woff` (legacy) font assets from the build — every browser we
  * target supports `.woff2`, and woff files are ~30% larger. This is the
@@ -75,6 +78,16 @@ export default defineConfig({
           post: ['@react-three/postprocessing', 'postprocessing'],
         },
       },
+    },
+  },
+  // Vitest shares this config — test files in src/engine/Math, src/engine/ECS, etc.
+  test: {
+    globals: true,
+    environment: 'node',
+    include: ['src/**/*.test.ts'],
+    coverage: {
+      provider: 'v8',
+      include: ['src/engine/**'],
     },
   },
 });
