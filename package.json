@@ -27,6 +27,7 @@
     "@react-three/drei": "^9.114.0",
     "@react-three/fiber": "^8.17.10",
     "@react-three/postprocessing": "^2.16.3",
+    "blockly": "^13.1.1",
     "draco3d": "^1.5.7",
     "fflate": "^0.8.3",
     "framer-motion": "^11.11.7",
@@ -84,9 +85,6 @@
     "portable": {
       "artifactName": "${productName}-Portable-${version}.${ext}"
     }
-  },
-  "directories": {
-    "doc": "docs"
   },
   "repository": {
     "type": "git",

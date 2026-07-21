@@ -10,6 +10,7 @@ import { ViewerToolbar } from '@/components/viewer/ViewerToolbar';
 import { ViewerStatusBar } from '@/components/viewer/ViewerStatusBar';
 import { Timeline } from '@/components/viewer/Timeline';
 import { TunerPanel } from '@/components/viewer/TunerPanel';
+import { BlocklyPanel } from '@/components/viewer/BlocklyPanel';
 import { useViewerStore } from '@/stores/viewerStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useWorldStore } from '@/stores/worldStore';
@@ -22,6 +23,7 @@ export function ViewerPage() {
   const setAssetSource = useViewerStore((s) => s.setAssetSource);
   const pushLog = useUIStore((s) => s.pushLog);
   const cameraYaw = useViewerStore((s) => s.camera.yaw);
+  const showBlockly = useViewerStore((s) => s.showBlockly);
   const world = useWorldStore((s) => s.world);
 
   // Resolve route param to an asset source on mount
@@ -79,15 +81,32 @@ export function ViewerPage() {
         <aside className="hidden lg:flex flex-col border-r border-neon-cyan/10 min-h-0">
           <Outliner />
         </aside>
-        <main className="relative min-h-0">
-          <Stage />
-          {/* HUD overlay corners */}
-          <div className="pointer-events-none absolute inset-0 z-10">
-            <CornerMarkers />
-            <ScanOverlay />
-          </div>
-          {/* Param tuner overlay (M2) — fixed position inside Stage */}
-          <TunerPanel />
+        <main className="relative min-h-0 flex flex-col">
+          {/* If Blockly panel is open, split the view vertically */}
+          {showBlockly ? (
+            <div className="flex-1 grid grid-rows-[1fr_280px] min-h-0">
+              <div className="relative min-h-0">
+                <Stage />
+                <div className="pointer-events-none absolute inset-0 z-10">
+                  <CornerMarkers />
+                  <ScanOverlay />
+                </div>
+                <TunerPanel />
+              </div>
+              <div className="min-h-0 border-t border-neon-magenta/20">
+                <BlocklyPanel />
+              </div>
+            </div>
+          ) : (
+            <>
+              <Stage />
+              <div className="pointer-events-none absolute inset-0 z-10">
+                <CornerMarkers />
+                <ScanOverlay />
+              </div>
+              <TunerPanel />
+            </>
+          )}
         </main>
         <aside className="hidden lg:flex flex-col border-l border-neon-magenta/15 min-h-0">
           <Inspector />

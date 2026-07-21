@@ -60,7 +60,8 @@ interface PostProcessingResources {
   bloomTexture2: WebGLTexture;
   finalFbo: WebGLFramebuffer;
   finalTexture: WebGLTexture;
-  size: number;
+  width: number;
+  height: number;
 }
 
 /** 单 mesh 的 draw call 贡献(用 mesh.name 当 key)。 */
@@ -115,6 +116,9 @@ export class WebGL2Renderer {
   private programCache: Map<string, ShaderProgram> = new Map();
   private meshCache: WeakMap<BufferGeometry, MeshResources> = new WeakMap();
   private shadowCache: WeakMap<DirectionalLight, ShadowResources> = new WeakMap();
+  /** Tracks all allocated ShadowResources so dispose() can free them
+   *  (WeakMap has no iterator). Entries are removed when resized/replaced. */
+  private _shadowResourcesSet: Set<ShadowResources> = new Set();
   private ssaoResources: SSAOResources | null = null;
   private postResources: PostProcessingResources | null = null;
 
@@ -274,7 +278,7 @@ export class WebGL2Renderer {
     if (this.postProcessingEnabled) {
       const postRes = this._getPostProcessingResources();
       this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, postRes.mainFbo);
-      this.gl.viewport(0, 0, postRes.size, postRes.size);
+      this.gl.viewport(0, 0, postRes.width, postRes.height);
       this.gl.clearColor(this.clearColor.r, this.clearColor.g, this.clearColor.b, this.clearColor.a);
       this.gl.clear(this.gl.COLOR_BUFFER_BIT | this.gl.DEPTH_BUFFER_BIT);
     } else {
@@ -483,6 +487,7 @@ export class WebGL2Renderer {
       viewProjection: new Matrix4(), target: new Vector3(),
     };
     this.shadowCache.set(light, res);
+    this._shadowResourcesSet.add(res);
     log.info(`shadow FBO created: ${light.shadowMapSize}x${light.shadowMapSize} ` +
       `(${light.shadowNear}-${light.shadowFar}, half=${light.shadowHalfSize})`);
     return res;
@@ -1130,7 +1135,7 @@ export class WebGL2Renderer {
 
     if (this.bloomEnabled) {
       gl.bindFramebuffer(gl.FRAMEBUFFER, res.bloomFbo1);
-      gl.viewport(0, 0, res.size, res.size);
+      gl.viewport(0, 0, res.width, res.height);
       gl.clear(gl.COLOR_BUFFER_BIT);
 
       const extractProg = this.getProgram('bloom-extract', POST_VERT, BLOOM_EXTRACT_FRAG);
@@ -1143,7 +1148,7 @@ export class WebGL2Renderer {
       gl.drawArrays(gl.TRIANGLES, 0, 6);
 
       gl.bindFramebuffer(gl.FRAMEBUFFER, res.bloomFbo2);
-      gl.viewport(0, 0, res.size, res.size);
+      gl.viewport(0, 0, res.width, res.height);
       gl.clear(gl.COLOR_BUFFER_BIT);
 
       const blurProg = this.getProgram('bloom-blur', POST_VERT, BLOOM_BLUR_FRAG);
@@ -1153,12 +1158,12 @@ export class WebGL2Renderer {
       blurProg.setUniformSampler('u_colorMap', 0);
       blurProg.setUniform2f('u_blurDir', 1.0, 0.0);
       blurProg.setUniform1f('u_blurStrength', 2.0);
-      blurProg.setUniform2f('u_screenSize', res.size, res.size);
+      blurProg.setUniform2f('u_screenSize', res.width, res.height);
       gl.bindVertexArray(this._getFullscreenQuad());
       gl.drawArrays(gl.TRIANGLES, 0, 6);
 
       gl.bindFramebuffer(gl.FRAMEBUFFER, res.bloomFbo1);
-      gl.viewport(0, 0, res.size, res.size);
+      gl.viewport(0, 0, res.width, res.height);
       gl.clear(gl.COLOR_BUFFER_BIT);
 
       blurProg.use();
@@ -1167,13 +1172,13 @@ export class WebGL2Renderer {
       blurProg.setUniformSampler('u_colorMap', 0);
       blurProg.setUniform2f('u_blurDir', 0.0, 1.0);
       blurProg.setUniform1f('u_blurStrength', 2.0);
-      blurProg.setUniform2f('u_screenSize', res.size, res.size);
+      blurProg.setUniform2f('u_screenSize', res.width, res.height);
       gl.bindVertexArray(this._getFullscreenQuad());
       gl.drawArrays(gl.TRIANGLES, 0, 6);
     }
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, res.finalFbo);
-    gl.viewport(0, 0, res.size, res.size);
+    gl.viewport(0, 0, res.width, res.height);
     gl.clear(gl.COLOR_BUFFER_BIT);
 
     let currentTexture = res.mainTexture;
@@ -1190,7 +1195,7 @@ export class WebGL2Renderer {
       currentTexture = res.finalTexture;
 
       gl.bindFramebuffer(gl.FRAMEBUFFER, res.mainFbo);
-      gl.viewport(0, 0, res.size, res.size);
+      gl.viewport(0, 0, res.width, res.height);
       gl.clear(gl.COLOR_BUFFER_BIT);
 
       gl.activeTexture(gl.TEXTURE0);
@@ -1233,9 +1238,10 @@ export class WebGL2Renderer {
 
   private _getPostProcessingResources(): PostProcessingResources {
     const gl = this.gl;
-    const targetSize = this.canvas.width;
+    const targetW = this.canvas.width;
+    const targetH = this.canvas.height;
 
-    if (this.postResources && this.postResources.size === targetSize) {
+    if (this.postResources && this.postResources.width === targetW && this.postResources.height === targetH) {
       return this.postResources;
     }
 
@@ -1253,7 +1259,7 @@ export class WebGL2Renderer {
     const createTexture = (): WebGLTexture => {
       const tex = gl.createTexture()!;
       gl.bindTexture(gl.TEXTURE_2D, tex);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, targetSize, this.canvas.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, targetW, targetH, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -1286,10 +1292,11 @@ export class WebGL2Renderer {
       bloomFbo1, bloomTexture1: bloomTex1,
       bloomFbo2, bloomTexture2: bloomTex2,
       finalFbo, finalTexture: finalTex,
-      size: targetSize,
+      width: targetW,
+      height: targetH,
     };
 
-    log.info(`Post-processing FBOs created: ${targetSize}x${this.canvas.height}`);
+    log.info(`Post-processing FBOs created: ${targetW}x${targetH}`);
     return this.postResources;
   }
 
@@ -1300,14 +1307,12 @@ export class WebGL2Renderer {
     this.programCache.clear();
 
     let shadowCount = 0;
-    const cache = this.shadowCache as unknown as {
-      forEach(cb: (res: ShadowResources) => void): void;
-    };
-    cache.forEach((res) => {
+    for (const res of this._shadowResourcesSet) {
       gl.deleteFramebuffer(res.fbo);
       gl.deleteTexture(res.texture);
       shadowCount++;
-    });
+    }
+    this._shadowResourcesSet.clear();
     this.shadowCache = new WeakMap();
 
     if (this.ssaoResources) {

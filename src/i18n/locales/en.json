@@ -133,7 +133,11 @@
       "k1": "VREEN kernel v0.1.0 boot sequence initiated...",
       "k2": "Shader pipeline online. 3D context verified.",
       "k3": "Asset index loaded. 6 preset archetypes ready.",
-      "k4": "Awaiting operator input."
+      "k4": "Renderer initialized: WebGL2 + custom pipeline.",
+      "k5": "HDRI environment maps loaded: 5 presets.",
+      "k6": "ECS world created. Physics system online.",
+      "k7": "Blockly scripting engine initialized.",
+      "k8": "All subsystems nominal. Ready."
     }
   },
   "toolbar": {

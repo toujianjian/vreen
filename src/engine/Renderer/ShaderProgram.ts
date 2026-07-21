@@ -17,8 +17,8 @@ export class ShaderProgram {
     defines: string[] = [],
   ) {
     this.gl = gl;
-    const vert = compileShader(gl, gl.VERTEX_SHADER, prependDefines(defines) + vertSrc);
-    const frag = compileShader(gl, gl.FRAGMENT_SHADER, prependDefines(defines) + fragSrc);
+    const vert = compileShader(gl, gl.VERTEX_SHADER, injectDefines(vertSrc, defines));
+    const frag = compileShader(gl, gl.FRAGMENT_SHADER, injectDefines(fragSrc, defines));
     const prog = gl.createProgram();
     if (!prog) throw new Error('createProgram() returned null');
     gl.attachShader(prog, vert);
@@ -50,7 +50,7 @@ export class ShaderProgram {
   setUniform1i(name: string, v: number): void {
     const loc = this.uniforms.get(name);
     if (loc === undefined) return;
-    this.gl.uniform1f(loc, v); // treat bool/int as 1f — fine for sampler-fake
+    this.gl.uniform1i(loc, v);
   }
   setUniform2f(name: string, x: number, y: number): void {
     const loc = this.uniforms.get(name);
@@ -132,8 +132,18 @@ function compileShader(
   return sh;
 }
 
-/** Convert a list of #define names into a single #define block. */
-function prependDefines(defines: string[]): string {
-  if (defines.length === 0) return '';
-  return '#define ' + defines.join('\n#define ') + '\n';
+/**
+ * Inject #define directives into shader source. GLSL requires `#version`
+ * to be the first non-comment statement, so defines must be inserted
+ * AFTER the `#version` line (not prepended).
+ */
+function injectDefines(src: string, defines: string[]): string {
+  if (defines.length === 0) return src;
+  const defineBlock = '#define ' + defines.join('\n#define ') + '\n';
+  // Match an optional leading `#version ...` line (with or without newline).
+  const versionMatch = src.match(/^(\s*#version[^\n]*\n)/);
+  if (versionMatch) {
+    return versionMatch[1] + defineBlock + src.slice(versionMatch[1].length);
+  }
+  return defineBlock + src;
 }

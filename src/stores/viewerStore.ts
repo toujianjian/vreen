@@ -41,6 +41,8 @@ interface ViewerState {
   profilerEnabled: boolean;
   /** Tuner 面板显示开关。 */
   showTuner: boolean;
+  /** Blockly 可视化脚本面板显示开关。 */
+  showBlockly: boolean;
 
   // Actions
   setAssetSource: (source: AssetSource | null, name?: string) => void;
@@ -63,6 +65,7 @@ interface ViewerState {
   togglePhysicsDebug: () => void;
   toggleProfiler: () => void;
   toggleTuner: () => void;
+  toggleBlockly: () => void;
   reset: () => void;
 }
 
@@ -107,6 +110,7 @@ export const useViewerStore = create<ViewerState>((set) => ({
   physicsDebug: true,
   profilerEnabled: false,
   showTuner: false,
+  showBlockly: false,
 
   setAssetSource: (source, name) =>
     set(() => ({
@@ -149,6 +153,7 @@ export const useViewerStore = create<ViewerState>((set) => ({
   togglePhysicsDebug: () => set((s) => ({ physicsDebug: !s.physicsDebug })),
   toggleProfiler: () => set((s) => ({ profilerEnabled: !s.profilerEnabled })),
   toggleTuner: () => set((s) => ({ showTuner: !s.showTuner })),
+  toggleBlockly: () => set((s) => ({ showBlockly: !s.showBlockly })),
   reset: () =>
     set({
       assetSource: null,

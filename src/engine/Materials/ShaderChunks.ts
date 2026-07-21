@@ -131,7 +131,8 @@ float fresnelSchlick(float cosTheta, float F0) {
 `;
 
 /** 标准顶点/片段壳 — 自研引擎约定。 */
-export const STANDARD_VERTEX_HEADER = /* glsl */ `precision highp float;
+export const STANDARD_VERTEX_HEADER = /* glsl */ `#version 300 es
+precision highp float;
 layout(location = 0) in vec3 a_position;
 layout(location = 1) in vec3 a_normal;
 layout(location = 2) in vec2 a_uv;
@@ -144,7 +145,8 @@ out vec3 v_worldNormal;
 out vec2 v_uv;
 `;
 
-export const STANDARD_FRAGMENT_HEADER = /* glsl */ `precision highp float;
+export const STANDARD_FRAGMENT_HEADER = /* glsl */ `#version 300 es
+precision highp float;
 in vec3 v_worldPos;
 in vec3 v_worldNormal;
 in vec2 v_uv;

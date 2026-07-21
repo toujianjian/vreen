@@ -133,29 +133,35 @@ function parseRGBE(buf: Uint8Array): { header: HDRHeader; pixels: Uint8Array } {
 }
 
 function decodeRGBE(src: Uint8Array, dst: Float32Array, w: number, h: number, expMul: number): void {
-  // RGBE scanline 排列：每行 w 像素 = 4w 字节；如果 RLE 标志位有效，按
-  // RLE 解码，否则按原始数据。
+  // Radiance .hdr scanline 排列：
+  //   - 旧格式（未压缩）：每行 w*4 字节 RGBE 原始数据
+  //   - 新格式（RLE）：每行先 4 字节标记 [2, 2, hi, lo]，width=hi*256+lo
+  //     然后对 4 个通道（R, G, B, E）分别 RLE 编码，每通道解码出 w 个字节
+  // RLE 通道编码：
+  //   code = src[pos++]
+  //   if code > 128: run_len = code - 128, value = src[pos++], 重复 run_len 次
+  //   else: raw_len = code, 读取 raw_len 个 bytes 原始数据
+  // Note: do NOT pre-check src.length against w*h*4 — RLE-compressed
+  // scanlines are smaller than raw. Out-of-range reads are caught below.
   const scanSize = w * 4;
-  if (src.length < scanSize * h) {
-    throw new Error(`HDRLoader: pixel data truncated (${src.length} < ${scanSize * h})`);
-  }
-  const out = dst; // length = w*h*4
+  const out = dst;
   let off = 0;
   for (let y = 0; y < h; y++) {
-    // 检测 RLE 标志：第一行首像素的 R 值。
-    // RLE 行：4 字节 [0x02, 0x02, hi, lo]（hi*256+lo = scanline 长度）
+    if (off + 4 > src.length) {
+      throw new Error(`HDRLoader: pixel data truncated at scanline ${y} (offset ${off})`);
+    }
+    // 检测 RLE 标志：[2, 2, hi, lo] 且 hi 的最高位为 0（width < 32768）
     if (src[off] === 2 && src[off + 1] === 2 && (src[off + 2] & 0x80) === 0) {
-      // RLE 行
       const expected = ((src[off + 2] as number) << 8) | src[off + 3];
       if (expected !== w) {
-        // 异常，回退按原始处理
+        // 宽度不匹配，按原始数据回退处理
         decodeRawScanline(src.subarray(off, off + scanSize), out, y, w, expMul);
+        off += scanSize;
       } else {
-        decodeRLEScanline(src, off + 4, out, y, w, expMul);
+        off = decodeRLEScanlinePerChannel(src, off + 4, out, y, w, expMul);
       }
-      off += 4 + expected * 4;
     } else {
-      // 原始行
+      // 旧格式（未压缩）：w*4 字节原始 RGBE
       decodeRawScanline(src.subarray(off, off + scanSize), out, y, w, expMul);
       off += scanSize;
     }
@@ -169,26 +175,63 @@ function decodeRawScanline(row: Uint8Array, out: Float32Array, y: number, w: num
   }
 }
 
-function decodeRLEScanline(src: Uint8Array, start: number, out: Float32Array, y: number, w: number, expMul: number): void {
+/**
+ * Per-channel RLE 解码：4 个通道（R, G, B, E）分别 RLE 编码，每通道 w 个字节。
+ * Returns new offset in `src` after consuming this scanline.
+ */
+function decodeRLEScanlinePerChannel(
+  src: Uint8Array,
+  start: number,
+  out: Float32Array,
+  y: number,
+  w: number,
+  expMul: number,
+): number {
   let pos = start;
-  let x = 0;
-  while (x < w) {
-    const r = src[pos], g = src[pos + 1], b = src[pos + 2], e = src[pos + 3];
-    pos += 4;
-    if (r === 1 && g === 1 && b === 1) {
-      // RLE run: count = e
-      const count = Math.min(e, w - x);
-      for (let k = 0; k < count; k++) {
-        const o = pos + k * 4;
-        writePixel(out, (y * w + x + k) * 4, src[o], src[o + 1], src[o + 2], src[o + 3], expMul);
+  // 先解码到 planar 缓冲：channelData[x*4 + c]
+  const channelData = new Uint8Array(w * 4);
+
+  for (let c = 0; c < 4; c++) {
+    let x = 0;
+    while (x < w) {
+      if (pos >= src.length) {
+        throw new Error(`HDRLoader: RLE scanline ${y} channel ${c} truncated at pixel ${x}`);
       }
-      pos += count * 4;
-      x += count;
-    } else {
-      writePixel(out, (y * w + x) * 4, r, g, b, e, expMul);
-      x++;
+      const code = src[pos++];
+      if (code > 128) {
+        // RLE run: 重复单个值
+        const runLen = code - 128;
+        if (pos >= src.length) {
+          throw new Error(`HDRLoader: RLE scanline ${y} channel ${c} run value missing`);
+        }
+        const value = src[pos++];
+        const end = Math.min(runLen, w - x);
+        for (let k = 0; k < end; k++, x++) {
+          channelData[x * 4 + c] = value;
+        }
+      } else if (code > 0) {
+        // Raw copy: 读取 code 个原始字节
+        const rawLen = Math.min(code, w - x);
+        for (let k = 0; k < rawLen; k++, x++) {
+          if (pos >= src.length) {
+            throw new Error(`HDRLoader: RLE scanline ${y} channel ${c} raw truncated`);
+          }
+          channelData[x * 4 + c] = src[pos++];
+        }
+      } else {
+        // code === 0：非法，但容忍性跳过
+        break;
+      }
     }
   }
+
+  // 写入到输出 Float32Array
+  for (let x = 0; x < w; x++) {
+    const o = x * 4;
+    writePixel(out, (y * w + x) * 4,
+      channelData[o], channelData[o + 1], channelData[o + 2], channelData[o + 3], expMul);
+  }
+  return pos;
 }
 
 /** RGBE → 线性 RGB float。E=0 → (0,0,0)。 */

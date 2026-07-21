@@ -15,6 +15,7 @@ import {
   Cpu,
   Activity,
   Sliders,
+  Puzzle,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useEffect, useRef, useState } from 'react';
@@ -71,6 +72,8 @@ export function ViewerToolbar() {
   const toggleProfiler = useViewerStore((s) => s.toggleProfiler);
   const showTuner = useViewerStore((s) => s.showTuner);
   const toggleTuner = useViewerStore((s) => s.toggleTuner);
+  const showBlockly = useViewerStore((s) => s.showBlockly);
+  const toggleBlockly = useViewerStore((s) => s.toggleBlockly);
   // 用 selector 订阅,避免 getState 闭包捕到旧值
   const modelFile = useViewerStore((s) => s.currentModelFile);
   const pushLog = useUIStore((s) => s.pushLog);
@@ -412,6 +415,18 @@ export function ViewerToolbar() {
         >
           <Activity className="w-3.5 h-3.5" />
           <span className="hidden md:inline">{t('toolbar.buttons.profiler')}</span>
+        </button>
+
+        <button
+          onClick={() => {
+            toggleBlockly();
+            pushLog('INFO', !showBlockly ? 'Script panel opened' : 'Script panel closed');
+          }}
+          className={cn('hud-btn', showBlockly && 'bg-neon-magenta/15 text-neon-magenta')}
+          title="Blockly Script"
+        >
+          <Puzzle className="w-3.5 h-3.5" />
+          <span className="hidden md:inline">Script</span>
         </button>
 
         <button

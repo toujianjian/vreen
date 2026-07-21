@@ -54,7 +54,11 @@ export const useUIStore = create<UIState>((set) => ({
     { id: 0, ts: '00:00:00', level: 'INFO', text: 'VREEN kernel v0.1.0 boot sequence initiated...', textKey: 'terminal.boot.k1' },
     { id: 1, ts: '00:00:01', level: 'OK', text: 'Shader pipeline online. 3D context verified.', textKey: 'terminal.boot.k2' },
     { id: 2, ts: '00:00:02', level: 'OK', text: 'Asset index loaded. 6 preset archetypes ready.', textKey: 'terminal.boot.k3' },
-    { id: 3, ts: '00:00:03', level: 'INFO', text: 'Awaiting operator input.', textKey: 'terminal.boot.k4' },
+    { id: 3, ts: '00:00:03', level: 'INFO', text: 'Renderer initialized: WebGL2 + custom pipeline.', textKey: 'terminal.boot.k4' },
+    { id: 4, ts: '00:00:04', level: 'OK', text: 'HDRI environment maps loaded: 5 presets.', textKey: 'terminal.boot.k5' },
+    { id: 5, ts: '00:00:05', level: 'OK', text: 'ECS world created. Physics system online.', textKey: 'terminal.boot.k6' },
+    { id: 6, ts: '00:00:06', level: 'INFO', text: 'Blockly scripting engine initialized.', textKey: 'terminal.boot.k7' },
+    { id: 7, ts: '00:00:07', level: 'OK', text: 'All subsystems nominal. Ready.', textKey: 'terminal.boot.k8' },
   ],
 
   setEnvironment: (patch) => set((s) => ({ environment: { ...s.environment, ...patch } })),

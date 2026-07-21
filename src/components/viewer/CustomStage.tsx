@@ -8,6 +8,7 @@ import { useWorldStore } from '@/stores/worldStore';
 import { useUIStore } from '@/stores/uiStore';
 import { uploadBridge } from '@/lib/uploadBridge';
 import { GENERATORS, GeneratorName } from '@/three/generators';
+import { getPresetById } from '@/lib/presets';
 import { Mesh as EngineMesh } from '@/engine/Core/Mesh';
 import { PhysicsDebugRenderer } from '@/engine/Helpers/PhysicsDebugRenderer';
 import {
@@ -258,6 +259,7 @@ export function CustomStage({ onError }: { onError?: () => void }) {
     let lastTs = performance.now();
     let frames = 0;
     let fpsAcc = 0;
+    let firstFrameLogged = false;
 
     // ── Profiler 装配(随 stage 生命周期) ────────────────────────────
     const profiler = new Profiler({ ringSize: 60 });
@@ -275,13 +277,25 @@ export function CustomStage({ onError }: { onError?: () => void }) {
     };
 
     const resize = () => {
-      const w = Math.max(1, container.clientWidth);
-      const h = Math.max(1, container.clientHeight);
+      // 容器布局未完成时 clientWidth/Height 可能为 0；用 canvas 自身
+      // 的 client 尺寸作为后备，避免 canvas 保持默认 300x150。
+      let w = Math.max(1, container.clientWidth);
+      let h = Math.max(1, container.clientHeight);
+      if (w < 2 && h < 2) {
+        w = Math.max(1, canvas.clientWidth);
+        h = Math.max(1, canvas.clientHeight);
+      }
+      if (w < 2 && h < 2) {
+        // 布局还没好，下个帧再试
+        requestAnimationFrame(resize);
+        return;
+      }
       renderer.resize(w, h);
     };
     resize();
     const ro = new ResizeObserver(resize);
     ro.observe(container);
+    ro.observe(canvas);
 
     // ── 加载资产 (upload / preset) ────────────────────────────────
     const attachRoot = (loadedRoot: Group): void => {
@@ -380,16 +394,20 @@ export function CustomStage({ onError }: { onError?: () => void }) {
           }
           attachRoot(result.root);
         } else if (assetSource.kind === 'preset') {
-          const presetId = assetSource.presetId as GeneratorName;
-          const gen = GENERATORS[presetId];
+          const preset = getPresetById(assetSource.presetId);
+          if (!preset) {
+            throw new Error(`Unknown preset id: ${assetSource.presetId}`);
+          }
+          const generatorName = preset.generator as GeneratorName;
+          const gen = GENERATORS[generatorName];
           if (!gen) {
-            throw new Error(`Unknown preset id: ${presetId}`);
+            throw new Error(`Unknown generator: ${generatorName} (preset ${preset.id})`);
           }
           if (cancelled) return;
           const tGen0 = performance.now();
           const presetRoot = gen();
           namePresetMeshes(presetRoot);
-          log.info(`preset "${presetId}" generated in ${(performance.now() - tGen0).toFixed(1)}ms ` +
+          log.info(`preset "${preset.id}" (generator ${generatorName}) generated in ${(performance.now() - tGen0).toFixed(1)}ms ` +
             `(${presetRoot.children.length} top-level children, ` +
             `${countGeometries(presetRoot)} meshes)`);
           if (cancelled) {
@@ -411,6 +429,10 @@ export function CustomStage({ onError }: { onError?: () => void }) {
 
     const tick = (ts: number) => {
       if (stop) return;
+      if (!firstFrameLogged) {
+        firstFrameLogged = true;
+        log.info(`tick first frame: ts=${ts}, root=${root ? 'attached' : 'null'}, scene.children=${scene.children.length}`);
+      }
       const dt = Math.min(0.05, (ts - lastTs) / 1000);
       lastTs = ts;
 
@@ -459,7 +481,14 @@ export function CustomStage({ onError }: { onError?: () => void }) {
 
       // GPU 计时:render mark 走 GPU query (ext 不可用时内部静默)
       profiler.mark('render', { gpu: { gl: renderer.gl } });
-      renderer.render(scene, camera);
+      try {
+        renderer.render(scene, camera);
+      } catch (e) {
+        log.error(`render() threw: ${(e as Error).message}`, e);
+        // 不再 schedule raf,避免刷屏
+        stop = true;
+        return;
+      }
       profiler.markEnd('render', { gpu: { gl: renderer.gl } });
 
       // 异步读 GPU query 结果(非阻塞,可能下一帧才填上)
@@ -486,6 +515,7 @@ export function CustomStage({ onError }: { onError?: () => void }) {
 
       raf = requestAnimationFrame(tick);
     };
+    log.info(`starting render loop: assetSource=${JSON.stringify(assetSource)}`);
     raf = requestAnimationFrame(tick);
 
     return () => {
@@ -686,7 +716,7 @@ function applyPostFX(r: WebGL2Renderer, p: PostFXState): void {
 
 /** Environment:clearColor 跟环境预设一致。 */
 function applyEnvironment(r: WebGL2Renderer, e: EnvironmentState): void {
-  // 简化为根据 preset 名挑色
+  // 简化为根据 preset 名挑色（值域 0..1）
   const map: Record<string, [number, number, number]> = {
     midnight: [0.02, 0.025, 0.05],
     dawn: [0.18, 0.12, 0.15],
@@ -694,11 +724,10 @@ function applyEnvironment(r: WebGL2Renderer, e: EnvironmentState): void {
     void: [0, 0, 0],
   };
   const rgb = map[e.preset] ?? map.midnight;
-  // 0..255
   r.clearColor = {
-    r: rgb[0] * 0.18,
-    g: rgb[1] * 0.18,
-    b: rgb[2] * 0.18,
+    r: rgb[0],
+    g: rgb[1],
+    b: rgb[2],
     a: 1,
   };
   r.environmentPreset = e.preset;

@@ -98,6 +98,22 @@ export class Vector3 {
     return dx * dx + dy * dy + dz * dz;
   }
 
+  /** Linear interpolation: this = this + (v - this) * alpha. */
+  lerp(v: Vector3, alpha: number): this {
+    this.x += (v.x - this.x) * alpha;
+    this.y += (v.y - this.y) * alpha;
+    this.z += (v.z - this.z) * alpha;
+    return this;
+  }
+
+  /** Sets this = a + (b - a) * alpha. Mirrors three.js Vector3.lerpVectors. */
+  lerpVectors(a: Vector3, b: Vector3, alpha: number): this {
+    this.x = a.x + (b.x - a.x) * alpha;
+    this.y = a.y + (b.y - a.y) * alpha;
+    this.z = a.z + (b.z - a.z) * alpha;
+    return this;
+  }
+
   /** Plain-object form for JSON serialization (round-trip with Java). */
   toArray(): [number, number, number] {
     return [this.x, this.y, this.z];
