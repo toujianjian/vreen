@@ -21,7 +21,8 @@
     "electron:dev": "concurrently -k -n VITE,ELECTRON -c cyan,magenta \"npm:dev\" \"wait-on http://localhost:5173 && cross-env VREEN_DEV=1 electron .\"",
     "electron:build": "npm run build && electron-builder --win --x64",
     "electron:build:dir": "npm run build && electron-builder --win --x64 --dir",
-    "vreen": "node scripts/vreen-cli.mjs"
+    "vreen": "node scripts/vreen-cli.mjs",
+    "prepare": "husky"
   },
   "dependencies": {
     "@fontsource/jetbrains-mono": "^5.2.8",
@@ -56,6 +57,8 @@
     "cross-env": "^7.0.3",
     "electron": "^43.0.0",
     "electron-builder": "^26.15.3",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.1.0",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.13",
     "typescript": "^5.6.2",
@@ -96,6 +99,11 @@
     "url": "git+https://github.com/toujianjian/vreen.git"
   },
   "keywords": [],
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "tsc -b --noEmit"
+    ]
+  },
   "bugs": {
     "url": "https://github.com/toujianjian/vreen/issues"
   },
