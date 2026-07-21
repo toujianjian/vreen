@@ -37,10 +37,8 @@ import * as THREE from 'three';
 import { ShaderMaterial as SM } from '@/engine/Materials/ShaderMaterial';
 import {
   HOLOGRAM_GLSL,
-  SIMPLEX_NOISE_GLSL,
   STANDARD_VERTEX_HEADER,
   STANDARD_FRAGMENT_HEADER,
-  resolveIncludes,
 } from '@/engine/Materials/ShaderChunks';
 import { useProfilerStore } from '@/stores/profilerStore';
 import { ProfilerHUD } from './ProfilerHUD';
@@ -229,7 +227,6 @@ export function CustomStage({ onError }: { onError?: () => void }) {
         u_fresnelPower: 2.2,
       },
     });
-    void SIMPLEX_NOISE_GLSL; void resolveIncludes;
     const toyGeom = new PlaneGeometry(1.4, 1.4);
     const toyMesh = new Mesh(toyGeom, shaderToy);
     toyMesh.position.set(0, 0.7, 0);

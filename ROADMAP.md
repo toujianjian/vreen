@@ -253,6 +253,108 @@ Phase 0 (1-3天) → Phase 1 (2-4周) → 然后看情况选 Phase 2 或 Phase 3
 
 ---
 
+## 八、Three.js 对标优化专题
+
+> 以下来自 2026-07-21 引擎代码审计，对标 Three.js 架构，逐层分析差距并给出可执行任务。
+
+### 8.1 渲染器抽象（Phase 2 前置）
+
+当前 `WebGL2Renderer` 是具体类，无抽象接口。Three.js 的 `WebGLRenderer` / `WebGPURenderer` 通过 `Renderer` 接口可插拔。
+
+**当前问题**：
+```ts
+// render() 直接用了具体类型，Scene 也是具体类
+render(scene: Scene, camera: Camera): void
+scene.traverse((obj) => { ... })
+```
+
+**优化方向**：
+```ts
+interface Renderer {
+  render(scene: Scene, camera: Camera): void
+  resize(w: number, h: number): void
+  readonly canvas: HTMLCanvasElement
+}
+```
+→ Phase 2.1.1 已规划，估计 2h，是所有后续渲染优化的前置条件。
+
+### 8.2 渲染管线性能优化（最大性能收益）
+
+当前 `render()` 里有两个 O(n²) 问题：
+
+**a) 场景遍历无剔除** (Phase 2.2.1)
+```ts
+scene.traverse((obj) => {
+  if (!(mesh instanceof Mesh)) return;
+  this._drawMesh(mesh, ...); // 每帧全量遍历，所有 Mesh 都画
+});
+```
+`Object3D.frustumCulled: boolean` 属性已存在但从未使用。Three.js 的 Frustum Culling 默认开启，能剔除视锥体外的所有物体。
+
+**b) 光源收集每次全量遍历**
+```ts
+private _collectLights(scene: Scene) {
+  scene.traverse((obj) => { ... }); // 每帧全量遍历！
+}
+```
+应缓存：检查 scene 版本号或维护 Light 列表，仅变化时重扫。
+
+**c) Shadow Pass 重复遍历** — shadow pass 遍历一次、主 pass 又遍历一次。
+
+**建议**：先加 Frustum Culling（~3h），大场景渲染性能收益最明显。
+
+### 8.3 材质系统深度
+
+| Three.js | VREEN 当前 | 差距 |
+|---|---|---|
+| 材质继承树 `Material → MeshStandardMaterial → MeshPhysicalMaterial` | `Material` 接口 + `StandardMaterial` 类 | 层次太浅，无物理扩展点 |
+| `onBeforeCompile()` 允许外部注入 shader chunk | 无 | 无法自定义渲染效果 |
+| `Material.dispose()` 自动清理 GPU 资源 | `StandardMaterial` 无 dispose | 可能内存泄漏 |
+| `NodeMaterial` 节点图自动生成 shader | GLSL 字符串硬编码 | 最大短板 |
+
+当前 `getProgramFor()` 只有 2 个 shader 变体（普通/skinning），所有 StandardMaterial 共用同一 shader 靠 uniform 区分。这在小规模场景够用；大规模场景需要按 material 属性组合自动生成 shader key（Three.js 做法）。
+
+**优先做**：Phase 3.3 材质图积木（节点图→GLSL 生成）
+
+### 8.4 内存/GC 优化
+
+当前代码存在帧分配抖动：
+
+```ts
+// Object3D.ts — lookAt 每次都 new 对象
+lookAt(x, y, z) {
+  const m = new Matrix4(); // ← 每帧分配
+  // ...
+}
+```
+
+`WebGL2Renderer` 内已有 `_tmpVec` 等 scratch 对象复用，但 `Object3D` 和其他工具方法没有。
+
+**优化清单**：
+- `Object3D.lookAt()` 复用 scratch Matrix4
+- `traverse()` 提供迭代器模式而非每帧回调 closure
+- `scene.traverse()` 中的 `instanceof Mesh` 检查可缓存
+- 所有 `new Vector3()` / `new Matrix4()` 在工具方法中改用 scratch pool
+
+### 8.5 优化优先级总结
+
+```
+当前引擎瓶颈（从大到小）                对应 Phase
+─────────────────────────────────────
+1. 无 Frustum Culling → 全量场景绘制       2.2.1 (3h)
+2. 光源遍历 O(n²) 每帧                    新增 (1h)
+3. Renderer 无抽象接口 → 无法插拔后端     2.1.1 (2h)
+4. 材质 shader 变体太少 → GPU 利用率不足   3.3 (4h)
+5. 帧分配抖动 (new Matrix4 per lookAt)     新增 (1h)
+6. 无 InstancedMesh → 批量渲染缺失         2.2.2 (3h)
+7. Shadow Pass 重复遍历 Scene             新增 (1h)
+```
+
+> **注意**：以上所有渲染优化必须等 Phase 1 测试框架就位后才能安全实施。
+> 没有测试保护，改 render() 或材质系统很可能引入不易察觉的视觉回归。
+
+---
+
 ## 七、长期愿景
 
 ```

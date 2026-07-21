@@ -144,38 +144,48 @@ export class Matrix4 {
   getInverse(m: Matrix4): this {
     const a = m.elements;
     const e = this.elements;
-    // Co-factor expansion (4x4). We unroll the inner 3x3 determinants.
-    const n11 = a[0], n21 = a[1], n31 = a[2], n41 = a[3];
-    const n12 = a[4], n22 = a[5], n32 = a[6], n42 = a[7];
-    const n13 = a[8], n23 = a[9], n33 = a[10], n43 = a[11];
-    const n14 = a[12], n24 = a[13], n34 = a[14], n44 = a[15];
 
-    const t11 = n23 * n34 * n42 - n24 * n33 * n42 + n24 * n32 * n43 - n22 * n34 * n43 - n23 * n32 * n44 + n22 * n33 * n44;
-    const t12 = n14 * n33 * n42 - n13 * n34 * n42 - n14 * n32 * n43 + n12 * n34 * n43 + n13 * n32 * n44 - n12 * n33 * n44;
-    const t13 = n13 * n24 * n42 - n14 * n23 * n42 + n14 * n22 * n43 - n12 * n24 * n43 - n13 * n22 * n44 + n12 * n23 * n44;
-    const t14 = n14 * n23 * n32 - n13 * n24 * n32 - n14 * n22 * n33 + n12 * n24 * n33 + n13 * n22 * n34 - n12 * n23 * n34;
+    const a00 = a[0],  a01 = a[1],  a02 = a[2],  a03 = a[3];
+    const a10 = a[4],  a11 = a[5],  a12 = a[6],  a13 = a[7];
+    const a20 = a[8],  a21 = a[9],  a22 = a[10], a23 = a[11];
+    const a30 = a[12], a31 = a[13], a32 = a[14], a33 = a[15];
 
-    const det = n11 * t11 + n21 * t12 + n31 * t13 + n41 * t14;
+    // Co-factor expansion — standard 4x4 inverse, same pattern as three.js.
+    const b00 = a00 * a11 - a01 * a10;
+    const b01 = a00 * a12 - a02 * a10;
+    const b02 = a00 * a13 - a03 * a10;
+    const b03 = a01 * a12 - a02 * a11;
+    const b04 = a01 * a13 - a03 * a11;
+    const b05 = a02 * a13 - a03 * a12;
+    const b06 = a20 * a31 - a21 * a30;
+    const b07 = a20 * a32 - a22 * a30;
+    const b08 = a20 * a33 - a23 * a30;
+    const b09 = a21 * a32 - a22 * a31;
+    const b10 = a21 * a33 - a23 * a31;
+    const b11 = a22 * a33 - a23 * a32;
+
+    const det = b00 * b11 - b01 * b10 + b02 * b09 + b03 * b08 - b04 * b07 + b05 * b06;
     if (det === 0) {
       return this.identity();
     }
     const id = 1 / det;
-    e[0]  = t11 * id;
-    e[4]  = (n24 * n33 * n41 - n23 * n34 * n41 - n24 * n31 * n43 + n21 * n34 * n43 + n23 * n31 * n44 - n21 * n33 * n44) * id;
-    e[8]  = (n22 * n34 * n41 - n24 * n32 * n41 + n24 * n31 * n42 - n21 * n34 * n42 - n22 * n31 * n44 + n21 * n32 * n44) * id;
-    e[12] = (n23 * n32 * n41 - n22 * n33 * n41 - n23 * n31 * n42 + n21 * n33 * n42 + n22 * n31 * n43 - n21 * n32 * n43) * id;
-    e[1]  = t12 * id;
-    e[5]  = (n13 * n34 * n41 - n14 * n33 * n41 + n14 * n31 * n43 - n11 * n34 * n43 - n13 * n31 * n44 + n11 * n33 * n44) * id;
-    e[9]  = (n14 * n32 * n41 - n12 * n34 * n41 - n14 * n31 * n42 + n11 * n34 * n42 + n12 * n31 * n44 - n11 * n32 * n44) * id;
-    e[13] = (n12 * n33 * n41 - n13 * n32 * n41 + n13 * n31 * n42 - n11 * n33 * n42 - n12 * n31 * n43 + n11 * n32 * n43) * id;
-    e[2]  = t13 * id;
-    e[6]  = (n14 * n23 * n41 - n13 * n24 * n41 - n14 * n21 * n43 + n11 * n24 * n43 + n13 * n21 * n44 - n11 * n23 * n44) * id;
-    e[10] = (n12 * n24 * n41 - n14 * n22 * n41 + n14 * n21 * n42 - n11 * n24 * n42 - n12 * n21 * n44 + n11 * n22 * n44) * id;
-    e[14] = (n13 * n22 * n41 - n12 * n23 * n41 - n13 * n21 * n42 + n11 * n23 * n42 + n12 * n21 * n43 - n11 * n22 * n43) * id;
-    e[3]  = t14 * id;
-    e[7]  = (n13 * n24 * n31 - n14 * n23 * n31 + n14 * n21 * n33 - n11 * n24 * n33 - n13 * n21 * n34 + n11 * n23 * n34) * id;
-    e[11] = (n14 * n22 * n31 - n12 * n24 * n31 - n14 * n21 * n32 + n11 * n24 * n32 + n12 * n21 * n34 - n11 * n22 * n34) * id;
-    e[15] = (n12 * n23 * n31 - n13 * n22 * n31 + n13 * n21 * n32 - n11 * n23 * n32 - n12 * n21 * n33 + n11 * n22 * n33) * id;
+
+    e[0]  = ( a11 * b11 - a12 * b10 + a13 * b09) * id;
+    e[1]  = (-a01 * b11 + a02 * b10 - a03 * b09) * id;
+    e[2]  = ( a31 * b05 - a32 * b04 + a33 * b03) * id;
+    e[3]  = (-a21 * b05 + a22 * b04 - a23 * b03) * id;
+    e[4]  = (-a10 * b11 + a12 * b08 - a13 * b07) * id;
+    e[5]  = ( a00 * b11 - a02 * b08 + a03 * b07) * id;
+    e[6]  = (-a30 * b05 + a32 * b02 - a33 * b01) * id;
+    e[7]  = ( a20 * b05 - a22 * b02 + a23 * b01) * id;
+    e[8]  = ( a10 * b10 - a11 * b08 + a13 * b06) * id;
+    e[9]  = (-a00 * b10 + a01 * b08 - a03 * b06) * id;
+    e[10] = ( a30 * b04 - a31 * b02 + a33 * b00) * id;
+    e[11] = (-a20 * b04 + a21 * b02 - a23 * b00) * id;
+    e[12] = (-a10 * b09 + a11 * b07 - a12 * b06) * id;
+    e[13] = ( a00 * b09 - a01 * b07 + a02 * b06) * id;
+    e[14] = (-a30 * b03 + a31 * b01 - a32 * b00) * id;
+    e[15] = ( a20 * b03 - a21 * b01 + a22 * b00) * id;
     return this;
   }
 
