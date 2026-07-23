@@ -1,30 +1,45 @@
-// i18n bootstrap — Chinese first, English fallback, localStorage persistence.
+// i18n bootstrap — English default, fallback en, localStorage persistence.
 import { createLogger } from '@/lib/logger';
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import zh from './locales/zh.json';
 import en from './locales/en.json';
+import ja from './locales/ja.json';
+import ko from './locales/ko.json';
+import es from './locales/es.json';
 
 const log = createLogger('i18n');
 
 const STORAGE_KEY = 'vreen.lang';
 
-// 1) Determine initial language: localStorage > navigator > 'zh' (default).
-function detectInitialLang(): 'zh' | 'en' {
+export type AppLang = 'en' | 'zh' | 'ja' | 'ko' | 'es';
+const SUPPORTED: AppLang[] = ['en', 'zh', 'ja', 'ko', 'es'];
+
+function isAppLang(v: unknown): v is AppLang {
+  return typeof v === 'string' && (SUPPORTED as string[]).includes(v);
+}
+
+// 1) Determine initial language: localStorage > navigator > 'en' (default).
+function detectInitialLang(): AppLang {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved === 'zh' || saved === 'en') return saved;
+    if (isAppLang(saved)) return saved;
   } catch {
     /* localStorage may be unavailable (e.g. Electron with strict cookie policy) */
   }
-  const nav = (typeof navigator !== 'undefined' ? navigator.language : 'zh-CN') || 'zh-CN';
-  return nav.toLowerCase().startsWith('zh') ? 'zh' : 'en';
+  const nav = (typeof navigator !== 'undefined' ? navigator.language : 'en') || 'en';
+  const lower = nav.toLowerCase();
+  if (lower.startsWith('zh')) return 'zh';
+  if (lower.startsWith('ja')) return 'ja';
+  if (lower.startsWith('ko')) return 'ko';
+  if (lower.startsWith('es')) return 'es';
+  return 'en';
 }
 
-// 2) Build the set of keys present in zh.json. We treat zh.json as the source of truth
-//    for the "must-have" set: when running in Chinese, we never want a bare key to be
-//    shown, so we synthesize a Chinese fallback for any missing entry.
-const missingInZh = new Set<string>();
+// 2) Build the set of keys present in en.json (source of truth for the "must-have" set).
+//    We surface a list of keys missing in any of the non-English locales so missing
+//    translations are easy to spot in dev.
+const missingPerLocale = new Map<string, string[]>();
 function flattenKeys(obj: Record<string, unknown>, prefix = ''): string[] {
   const out: string[] = [];
   for (const k in obj) {
@@ -38,22 +53,35 @@ function flattenKeys(obj: Record<string, unknown>, prefix = ''): string[] {
   }
   return out;
 }
-const zhKeys = new Set(flattenKeys(zh as unknown as Record<string, unknown>));
 const enKeys = new Set(flattenKeys(en as unknown as Record<string, unknown>));
-for (const k of enKeys) {
-  if (!zhKeys.has(k)) missingInZh.add(k);
+function diffAgainstEn(name: string, data: unknown) {
+  const keys = new Set(flattenKeys(data as Record<string, unknown>));
+  const missing: string[] = [];
+  for (const k of enKeys) {
+    if (!keys.has(k)) missing.push(k);
+  }
+  if (missing.length) missingPerLocale.set(name, missing);
 }
+diffAgainstEn('zh', zh);
+diffAgainstEn('ja', ja);
+diffAgainstEn('ko', ko);
+diffAgainstEn('es', es);
 if (typeof window !== 'undefined') {
-  (window as unknown as { __VREEN_I18N_MISSING__?: string[] }).__VREEN_I18N_MISSING__ = Array.from(missingInZh);
+  (window as unknown as { __VREEN_I18N_MISSING__?: Record<string, string[]> }).__VREEN_I18N_MISSING__ =
+    Object.fromEntries(missingPerLocale);
 }
 
 void i18n.use(initReactI18next).init({
   resources: {
-    zh: { translation: zh },
     en: { translation: en },
+    zh: { translation: zh },
+    ja: { translation: ja },
+    ko: { translation: ko },
+    es: { translation: es },
   },
   lng: detectInitialLang(),
-  fallbackLng: ['zh', 'en'],
+  fallbackLng: 'en',
+  supportedLngs: SUPPORTED,
   // Always return a string so we never render a bare key in the UI.
   parseMissingKeyHandler: (key) => {
     // Use the last segment as a friendly human-readable label.
@@ -71,7 +99,7 @@ void i18n.use(initReactI18next).init({
   },
 });
 
-export function setLanguage(lang: 'zh' | 'en') {
+export function setLanguage(lang: AppLang) {
   void i18n.changeLanguage(lang);
   try {
     localStorage.setItem(STORAGE_KEY, lang);
@@ -80,9 +108,21 @@ export function setLanguage(lang: 'zh' | 'en') {
   }
 }
 
-export function getLanguage(): 'zh' | 'en' {
-  return (i18n.language?.startsWith('zh') ? 'zh' : 'en') as 'zh' | 'en';
+export function getLanguage(): AppLang {
+  const lng = i18n.language;
+  if (isAppLang(lng)) return lng;
+  // Fall back to prefix match (e.g. "en-US" → "en").
+  if (typeof lng === 'string') {
+    const lower = lng.toLowerCase();
+    for (const candidate of SUPPORTED) {
+      if (lower.startsWith(candidate)) return candidate;
+    }
+  }
+  return 'en';
+}
+
+export function listLanguages(): AppLang[] {
+  return [...SUPPORTED];
 }
 
 export default i18n;
-

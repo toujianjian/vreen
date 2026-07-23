@@ -1,4 +1,4 @@
-// Light — base for ambient / directional / point / spot.
+// Light — 所有光源的抽象基类。
 // 自研 Light 继承 Object3D 这样可以 scene.add()、访问 userData、matrixWorld
 // 跟 Mesh/Group 在一个 scene graph 里统一遍历（WebGL2Renderer 通过 children
 // 自动发现灯光，不需要单独维护 lightList）。
@@ -9,10 +9,13 @@
 
 import { Object3D } from '../Core/Object3D';
 
+/** RGB 颜色（线性 0..1 分量）。 */
+export type RGBColor = { r: number; g: number; b: number };
+
 export abstract class Light extends Object3D {
   override readonly type: string = 'Light';
   isLight: boolean = true;
-  color: { r: number; g: number; b: number };
+  color: RGBColor;
   intensity: number;
 
   constructor(color: number | string = 0xffffff, intensity = 1) {
@@ -22,37 +25,11 @@ export abstract class Light extends Object3D {
   }
 }
 
-/** Ambient light — uniform color, no spatial falloff. */
-export class AmbientLight extends Light {
-  override readonly type: string = 'AmbientLight';
-}
-
-/** Directional light — parallel rays (sun). */
-export class DirectionalLight extends Light {
-  override readonly type: string = 'DirectionalLight';
-  /** Direction light TRAVELS in. Three.js convention. */
-  direction: { x: number; y: number; z: number };
-
-  // Shadow parameters
-  castShadow: boolean = false;
-  shadowMapSize: number = 1024;
-  /** Orthographic frustum half-extents (left/right/top/bottom in light space). */
-  shadowHalfSize: number = 4;
-  shadowNear: number = 0.1;
-  shadowFar: number = 50;
-  shadowBias: number = 0.001;
-
-  constructor(
-    color: number | string = 0xffffff,
-    intensity = 1,
-    direction: { x: number; y: number; z: number } = { x: 0, y: -1, z: 0 },
-  ) {
-    super(color, intensity);
-    this.direction = direction;
-  }
-}
-
-function parseColor(c: number | string): { r: number; g: number; b: number } {
+/**
+ * 将数字（0xRRGGBB）或 CSS hex 字符串解析为线性 RGB 分量。
+ * 同时支持 3 位简写（#abc）与 6 位（#aabbcc）形式。
+ */
+export function parseColor(c: number | string): RGBColor {
   if (typeof c === 'number') {
     return { r: ((c >> 16) & 0xff) / 255, g: ((c >> 8) & 0xff) / 255, b: (c & 0xff) / 255 };
   }

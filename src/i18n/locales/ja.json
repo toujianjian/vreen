@@ -1,0 +1,396 @@
+{
+  "app": {
+    "name": "VREEN",
+    "tagline": "3D ディスプレイシステム",
+    "systemLabel": "3D ディスプレイシステム",
+    "description": "インディーゲーム開発者、3Dアーティスト、テクニカルアーティストのためのホログラフィックワークベンチ。アセット検査、マテリアル編集、アニメーション再生、ライティング調整、キャプチャまでブラウザ内で完結。ローカルソフトウェアは不要です。",
+    "supports": "GLB · GLTF · OBJ · FBX · STL · PLY に対応",
+    "shortDescription": "インディーゲーム開発者と3Dアーティストのためのホログラフィック3Dディスプレイシステム。純クライアント、オープンソース。"
+  },
+  "nav": {
+    "home": "ホーム",
+    "viewer": "ビューアー",
+    "language": "言語",
+    "english": "English",
+    "chinese": "中文"
+  },
+  "topbar": {
+    "runtime": "実行中",
+    "idle": "待機",
+    "gpuOk": "GPU 正常",
+    "linkStable": "リンク安定",
+    "version": "v0.1.0"
+  },
+  "hero": {
+    "launch": "検査器を起動",
+    "browse": "アセット一覧",
+    "kernel": "カーネル",
+    "kernelValue": "VREEN-0.1.0",
+    "mode": "モード",
+    "modeValue": "インタラクティブ",
+    "pipeline": "パイプライン",
+    "pipelineValue": "PBR · IBL · ポストFX",
+    "feature": {
+      "formats": "フォーマット",
+      "formatsSub": "GLB/GLTF/OBJ/FBX/STL/PLY",
+      "pbr": "PBR",
+      "pbrSub": "メタル · ラフネス · エミッシブ",
+      "fps": "FPS ターゲット",
+      "fpsSub": "デスクトップ向け",
+      "capture": "4K",
+      "captureSub": "PNG 書き出し"
+    },
+    "readout": {
+      "title": "システム読み取り",
+      "tag": "ランタイム",
+      "upline": "アップリンク",
+      "online": "オンライン",
+      "gpu": "GPU 負荷",
+      "vram": "VRAM",
+      "draw": "ドロー",
+      "session": "セッション 0xA1F3 · チャネル 04 · ノード VREEN-LOCAL",
+      "unit": {
+        "calls": "コール"
+      },
+      "lines": {
+        "assetIndex": "ASSET_INDEX",
+        "assetIndexVal": "アーキタイプ 6 件ロード済み",
+        "environment": "環境",
+        "environmentVal": "IBL // city プリセット",
+        "postfx": "ポストFX",
+        "postfxVal": "ブルーム · クロマ · ビネット",
+        "camera": "カメラ",
+        "cameraVal": "iso-30° / ダンパー",
+        "renderer": "レンダラー",
+        "rendererVal": "WebGL2 · PBR"
+      }
+    }
+  },
+  "uploader": {
+    "title": "アセットをアップロード",
+    "tag": "取り込み",
+    "subtitle": "ドラッグまたはクリック — GLB / GLTF / OBJ / FBX / STL / PLY 全対応",
+    "drop": "ここにファイルをドロップ",
+    "or": "または",
+    "browse": "クリックして選択",
+    "ready": "準備完了",
+    "vreenReady": "プロジェクト準備完了 (状態を適用済み)",
+    "vreenHint": ".vreen プロジェクトパッケージも対応 (状態のみ — 元モデルを併せて読み込んでください)",
+    "openProject": "検査器を開く",
+    "submit": "検査器を起動",
+    "invalid": "未対応のファイル形式",
+    "parsed": "アセットを解析",
+    "empty": "— ファイル未選択 —",
+    "maxSize": "最大 200MB",
+    "errors": {
+      "unsupported": "未対応の形式: {name}",
+      "tooLarge": "ファイルが大きすぎます (>{size}): {name}",
+      "vreenInvalid": ".vreen パッケージの解析に失敗 ({name}): {msg}"
+    },
+    "logs": {
+      "rejected": "ファイルを拒否: {name} (未知の拡張子)",
+      "exceeds": "サイズ上限を超過 (>{size}): {name}",
+      "parsed": "{name} を {format} として解析 ({size})",
+      "init": "{name} の検査器を初期化中…",
+      "vreenImported": "プロジェクト {name} をインポート → {asset} に適用",
+      "vreenFailed": "プロジェクト {name} のインポート失敗: {msg}"
+    }
+  },
+  "gallery": {
+    "section": "セクション 02 / アセット索引",
+    "title": "プリセット・アーキタイプ",
+    "subtitle": "アセットカードをクリックすると検査器に読み込まれます。全モデルはプロシージャル生成で、マテリアル・アニメーション・ライティングを調整可能。",
+    "assetsCount": "{count} アセット",
+    "online": "オンライン",
+    "loading": "読み込み中…",
+    "inspect": "検査",
+    "idleLoop": "アイドルループ",
+    "tris": "三角面"
+  },
+  "presets": {
+    "title": "プロシージャル・プリセット",
+    "subtitle": "Three.js がリアルタイム生成 — 外部アセット不要"
+  },
+  "terminal": {
+    "title": "ランタイムログ",
+    "tag": "標準出力",
+    "kernelLog": "カーネルログ",
+    "systemSpecs": "システムスペック",
+    "specs": {
+      "renderer": "レンダラー",
+      "rendererVal": "WebGL2 / PBR",
+      "formats": "形式",
+      "formatsVal": "6 / 6 OK",
+      "hdri": "HDRI プリセット",
+      "hdriVal": "studio · sunset · city",
+      "postfx": "ポストFX",
+      "postfxVal": "3 / 5 オン",
+      "license": "ライセンス",
+      "licenseVal": "MIT"
+    },
+    "press": "// <cyan>[ 検査器を起動 ]</cyan> を押してランタイムへ",
+    "boot": {
+      "k1": "VREEN カーネル v0.1.0 起動シーケンス開始…",
+      "k2": "シェーダーパイプライン稼働。3D コンテキスト検証済み。",
+      "k3": "アセット索引を読み込み。プリセット・アーキタイプ 6 件が就緒。",
+      "k4": "レンダラー初期化完了: WebGL2 + カスタムパイプライン。",
+      "k5": "HDRI 環境マップ読み込み完了: プリセット 5 件。",
+      "k6": "ECS ワールド生成完了。物理システム稼働。",
+      "k7": "Blockly スクリプトエンジン初期化完了。",
+      "k8": "全サブシステム正常。準備完了。"
+    }
+  },
+  "toolbar": {
+    "exit": "終了",
+    "play": "再生",
+    "pause": "一時停止",
+    "speed": "速度",
+    "project": "プロジェクト",
+    "buttons": {
+      "custom": "カスタム",
+      "three": "THREE",
+      "physics": "物理",
+      "physicsDebug": "物理DBG",
+      "profiler": "プロファイラ",
+      "tuner": "チューナー"
+    },
+    "projectMenu": {
+      "title": "プロジェクト",
+      "saveVreen": ".VREEN を保存",
+      "saveVreenHint": "状態 + モデル同梱 (zip)",
+      "saveVreenNoModel": "モデル不在 — JSON を選択",
+      "saveJson": ".VREEN.JSON を保存",
+      "saveJsonHint": "状態のみ、小サイズ",
+      "loadVreen": ".VREEN を読込",
+      "loadVreenHint": "保存状態を適用 (またはバンドルを復元)",
+      "model": "モデル",
+      "noModel": "同梱モデルなし"
+    },
+    "logs": {
+      "paused": "アニメーションを一時停止",
+      "resumed": "アニメーションを再開",
+      "capturing": "フレームをキャプチャ中…",
+      "saved": "スクリーンショットをダウンロードに保存",
+      "failed": "キャプチャ失敗: {msg}",
+      "switchedThree": "Three.js レンダラーに切替",
+      "switchedCustom": "カスタム WebGL2 レンダラーに切替",
+      "physicsOn": "物理デモ: オン (ボックス 24 個 + パーティクルエミッタ)",
+      "physicsOff": "物理デモ: オフ",
+      "physicsDebugOn": "物理デバッグ可視化: オン (コライダ/接触/速度)",
+      "physicsDebugOff": "物理デバッグ可視化: オフ",
+      "profilerOn": "プロファイラ: オン (CPU/GPU/システム計時)",
+      "profilerOff": "プロファイラ: オフ",
+      "tunerOn": "チューナー: オン (ジェネレータのライブ編集)",
+      "tunerOff": "チューナー: オフ"
+    }
+  },
+  "profiler": {
+    "title": "PROFILER",
+    "show": "Profiler を表示",
+    "hide": "Profiler を隠す",
+    "expand": "展開",
+    "collapse": "折りたたみ",
+    "idle": "フレーム待機中…",
+    "noData": "データなし",
+    "noSystems": "このフレームで実行された System はありません",
+    "tab": {
+      "cpu": "CPU",
+      "gpu": "GPU",
+      "system": "システム",
+      "draws": "ドロー"
+    },
+    "cpuTotal": "CPU 合計",
+    "fps": "FPS",
+    "drawCalls": "ドローコール",
+    "tris": "三角面",
+    "marks": "マーク",
+    "gpuTotal": "GPU 合計",
+    "gpuNa": "GPU 計時は利用不可 (EXT_disjoint_timer_query_webgl2 が無効)",
+    "gpuNaHint": "Chrome: chrome://flags/#enable-webgl-developer-extensions を有効化、または GPU 加速環境に切替。",
+    "systems": "ECS Systems",
+    "history": "フレーム計時履歴",
+    "noDraws": "このフレームにドローコール内訳なし",
+    "topDraws": "上位ドローコール貢献"
+  },
+  "statusbar": {
+    "streaming": "ストリーミング中",
+    "time": "T",
+    "env": "環境",
+    "exp": "露出"
+  },
+  "scene": {
+    "stageLive": "STAGE // 実況",
+    "placeholderLabel": "アップロード済みアセット\n{name}",
+    "placeholderLog": "[VREEN] プレースホルダ描画: {label}",
+    "booted": "プリセット \"{name}\" を起動 ({tris} 三角面)",
+    "loadingPreset": "プリセット {id} を検査器に読み込み中…"
+  },
+  "outliner": {
+    "defaultRoot": "シーン",
+    "nodes": {
+      "armature": "アーマチュア",
+      "body": "ボディメッシュ",
+      "joints": "関節",
+      "head": "頭部",
+      "armL": "腕.L",
+      "armR": "腕.R",
+      "materials": "マテリアル",
+      "lightRig": "ライトリグ",
+      "keyLight": "キーライト",
+      "fillLight": "フィルライト"
+    }
+  },
+  "nodeKind": {
+    "Group": "グループ",
+    "Mesh": "メッシュ",
+    "Bone": "ボーン",
+    "Light": "ライト",
+    "Camera": "カメラ",
+    "Other": "その他"
+  },
+  "footer": {
+    "tagline": "インディーゲーム開発者と3Dアーティストのためのホログラフィック3Dディスプレイシステム。純クライアント、オープンソース。",
+    "capabilities": "機能",
+    "capMulti": "マルチフォーマット取り込み",
+    "capPbr": "リアルタイム PBR",
+    "capUi": "検査級 UI",
+    "supported": "対応形式",
+    "links": "リンク",
+    "copyright": "VREEN © 2026 // ホログラフィック 3D ディスプレイシステム",
+    "buildTag": "v0.1.0 // ビルド 2607-A1F3"
+  },
+  "viewer": {
+    "loading": "読み込み中",
+    "ready": "準備完了",
+    "noAsset": "アセットなし",
+    "capture": "キャプチャ",
+    "capturing": "キャプチャ中…",
+    "autoRotate": "自動回転",
+    "wireframe": "ワイヤーフレーム",
+    "ground": "地面",
+    "pov": "視点",
+    "fov": "視野角",
+    "fps": "FPS",
+    "tris": "三角面",
+    "meshes": "メッシュ",
+    "materials": "マテリアル",
+    "animations": "アニメ",
+    "outliner": "アウトライナ",
+    "outlinerTag": "シーンツリー",
+    "search": "ノードを絞り込み…",
+    "noMatch": "一致するノードなし",
+    "inspector": "インスペクタ",
+    "inspectorTag": "プロパティ",
+    "selected": "選択中",
+    "noMaterials": "— マテリアルなし —",
+    "materialLab": "マテリアルラボ",
+    "environment": "環境",
+    "postFX": "ポストFX",
+    "displayFlags": "表示フラグ",
+    "camera": "カメラ",
+    "cameraTag": "POV",
+    "cameraEditor": {
+      "povPreset": "視点プリセット",
+      "lens": "レンズ",
+      "distance": "距離",
+      "targetHeight": "ターゲット高さ",
+      "cinematic": "シネマティックパス",
+      "orbitSpeed": "オービット速度",
+      "controls": "操作",
+      "damping": "ダンピング",
+      "autoRotate": "自動回転速度",
+      "freeOrbit": "フリーオービット入力",
+      "open": "展開",
+      "closed": "格納",
+      "on": "オン",
+      "off": "オフ"
+    },
+    "preset": {
+      "free": "FREE",
+      "iso": "ISO",
+      "front": "FRONT",
+      "back": "BACK",
+      "side": "SIDE",
+      "top": "TOP",
+      "first": "1ST",
+      "third": "3RD",
+      "cine": "CINE"
+    },
+    "presetDesc": {
+      "free": "完全フリーオービット。デフォルトの作業カメラ。",
+      "iso": "クラシック 45° 等角投影。シルエット確認に最適。",
+      "front": "正面ポートレート視点。",
+      "back": "背面視点。キャラ背面の検査に便利。",
+      "side": "側面 (左) プロファイル。",
+      "top": "トップダウンのプラン視点。",
+      "first": "一人称: 視点高度でモデルを直視。",
+      "third": "三人称: モデル後方やや上。",
+      "cine": "自動オービットのシネマティックパス。入力不要。"
+    },
+    "presetTag": {
+      "free": "ORBIT",
+      "iso": "GAME",
+      "front": "AXIS",
+      "back": "AXIS",
+      "side": "AXIS",
+      "top": "PLAN",
+      "first": "POV",
+      "third": "POV",
+      "cine": "PATH"
+    },
+    "freeCamera": {
+      "hint": "WASD: 移動 · Shift: 加速 · Q/E: 昇降"
+    },
+    "hdri": "HDRI プリセット",
+    "exposure": "露出",
+    "background": "背景",
+    "bgEnv": "環境マップ",
+    "bgSolid": "純色",
+    "bgTransparent": "透明",
+    "engineDemo": {
+      "title": "ENGINE DEMO"
+    },
+    "customHdri": "カスタム HDRI",
+    "uploadHdri": ".hdr / .exr をアップロード",
+    "replaceHdri": "ファイルを差し替え",
+    "resetHdri": "プリセットにリセット",
+    "exportProject": "プロジェクト書き出し (状態)",
+    "exportBundle": "プロジェクト書き出し (モデル同梱)",
+    "exportJsonHint": "シーン状態のみ (.vreen.json) — モデルは含まれません",
+    "exportBundleHint": "シーン状態 + モデルを .vreen zip に同梱 — 自己完結・共有可",
+    "importProject": "プロジェクトを取り込み (.vreen)",
+    "bloom": "ブルーム",
+    "bloomIntensity": "ブルーム強度",
+    "chromatic": "色収差",
+    "vignette": "ビネット",
+    "ssao": "SSAO",
+    "reset": "リセット",
+    "field": {
+      "baseColor": "ベースカラー",
+      "metalness": "メタル度",
+      "roughness": "ラフネス",
+      "emissive": "エミッシブ",
+      "emissiveIntensity": "エミッシブ強度",
+      "normalScale": "法線スケール",
+      "opacity": "不透明度",
+      "wireframe": "ワイヤーフレーム"
+    }
+  },
+  "vreen": {
+    "inspector": {
+      "title": "Vreen インスペクタ",
+      "tab": {
+        "validate": "検証",
+        "diff": "差分",
+        "delta": "差分パック"
+      },
+      "pickFile": ".vreen ファイルを選択",
+      "verbose": "詳細",
+      "assets": "アセット ({{n}})",
+      "assetDiffs": "アセット差分 ({{n}})",
+      "diffRun": "差分を実行",
+      "deltaMake": ".vreen-delta を作成・ダウンロード",
+      "deltaApply": "適用してダウンロード"
+    }
+  }
+}

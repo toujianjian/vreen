@@ -7,15 +7,19 @@
 import { Camera } from '../Cameras/Camera';
 import { BufferGeometry } from '../Core/BufferGeometry';
 import { Mesh } from '../Core/Mesh';
+import { InstancedMesh } from '../Core/InstancedMesh';
+import { LOD } from '../Core/LOD';
 import { Object3D } from '../Core/Object3D';
 import { Scene } from '../Core/Scene';
 import { SkinnedMesh } from '../Core/SkinnedMesh';
 import { Matrix4, Vector3 } from '../Math';
-import { AmbientLight, DirectionalLight } from '../Lights/Light';
+import { AmbientLight, DirectionalLight } from '../Lights';
 import { StandardMaterial, STANDARD_FRAGMENT_SRC, STANDARD_VERTEX_SRC } from '../Materials/StandardMaterial';
 import { ShaderMaterial as ShaderMaterialCls } from '../Materials/ShaderMaterial';
 import { SHADOW_FRAG, SHADOW_VERT, DEPTH_NORMAL_VERT, DEPTH_NORMAL_FRAG, SSAO_VERT, SSAO_FRAG, POST_VERT, BLOOM_EXTRACT_FRAG, BLOOM_BLUR_FRAG, CHROMATIC_ABERRATION_FRAG, VIGNETTE_FRAG, FINAL_COMPOSE_FRAG } from '../Materials/shaders';
 import { ShaderProgram } from './ShaderProgram';
+import type { Renderer } from './Renderer';
+import { Frustum } from '../Math/Frustum';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('Renderer');
@@ -83,7 +87,7 @@ export interface RendererStats {
   drawCallBreakdown: Record<string, DrawCallEntry>;
 }
 
-export class WebGL2Renderer {
+export class WebGL2Renderer implements Renderer {
   readonly canvas: HTMLCanvasElement;
   readonly gl: WebGL2RenderingContext;
 
@@ -113,6 +117,10 @@ export class WebGL2Renderer {
   /** 0..2,>1 提亮。 */
   environmentExposure: number = 1.0;
 
+  /** Frustum culling 开关(Phase 2.2.1)。开启后视锥体外的 mesh 被跳过。
+   *  Helper mesh(网格/接触点/速度箭头)永远不受 culling 影响。 */
+  frustumCullingEnabled: boolean = true;
+
   private programCache: Map<string, ShaderProgram> = new Map();
   private meshCache: WeakMap<BufferGeometry, MeshResources> = new WeakMap();
   private shadowCache: WeakMap<DirectionalLight, ShadowResources> = new WeakMap();
@@ -130,6 +138,8 @@ export class WebGL2Renderer {
   private _lightVP = new Matrix4();
   private _normalMat3 = new Float32Array(9);
   private _tmpVec = new Vector3();
+  /** InstancedMesh 渲染时用作 u_model 的 identity scratch。 */
+  private _identityMat = new Matrix4();
   private _sceneCenter = new Vector3();
   private _sceneHalfSize = 1;
   private _sceneBoundsValid = false;
@@ -231,6 +241,12 @@ export class WebGL2Renderer {
 
   // ── public render entry ─────────────────────────────────────────────
   private _renderCount = 0;
+  /** 复用的视锥体实例(每帧 setFromViewProjectionMatrix 覆写,避免 GC)。 */
+  private _frustum = new Frustum();
+  /** 复用的世界空间球心 scratch(避免每 mesh new Vector3)。 */
+  private _cullCenter = new Vector3();
+  /** 本帧被 culling 跳过的 mesh 计数(统计/HUD 用)。 */
+  private _culledCount = 0;
   render(scene: Scene, camera: Camera): void {
     const t0 = performance.now();
     this._renderCount++;
@@ -285,13 +301,33 @@ export class WebGL2Renderer {
       this.clear();
     }
 
+    // 每帧更新视锥体(用于 frustum culling)。viewProjection = projection * view。
+    // view = camera.matrixWorldInverse;camera.updateMatrixWorld 已在帧首同步。
+    this._culledCount = 0;
+    if (this.frustumCullingEnabled) {
+      const vp = new Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+      this._frustum.setFromViewProjectionMatrix(vp);
+    }
+
     scene.traverse((obj) => {
+      // LOD 节点:按相机距离切换可见级别(自动驱动,无需应用层手动 update)。
+      if (obj instanceof LOD) {
+        obj.update(camera);
+        return; // LOD 本身不可绘制,其子级 Mesh 会被 traverse 单独处理
+      }
       const mesh = obj as Mesh;
       if (!(mesh instanceof Mesh)) return;
       if (!mesh.visible) return;
-      // 旁路:Helper 类 mesh(Grid / ContactShadows)走专用 path。
+      // 旁路:Helper 类 mesh(Grid / ContactShadows)走专用 path,且永远不 cull。
       if ((mesh.userData as { __helper?: string })?.__helper) {
         this._drawHelper(mesh, camera);
+        return;
+      }
+      // Frustum culling:用世界空间 bounding sphere 测试视锥体。
+      // InstancedMesh 跳过(实例散布在空间,单一 bounding sphere 不适用;
+      // per-instance culling 会破坏单 draw call 优势,留作后续优化)。
+      if (this.frustumCullingEnabled && !(mesh instanceof InstancedMesh) && !this._meshInFrustum(mesh)) {
+        this._culledCount++;
         return;
       }
       this._drawMesh(mesh, scene, camera, dirLight, ambient, ssaoTexture);
@@ -310,8 +346,30 @@ export class WebGL2Renderer {
         `draws=${this.stats.drawCalls}, tris=${Math.round(this.stats.triangles)}, ` +
         `shadow=${this.stats.shadowPasses}, programs=${this.stats.programs}, ` +
         `lights=${lights.length} (shadow=${castShadowLights.length}), ` +
-        `dt=${dt.toFixed(2)}ms`);
+        `culled=${this._culledCount}, dt=${dt.toFixed(2)}ms`);
     }
+  }
+
+  /** Frustum culling 测试:取 mesh 的世界空间 bounding sphere 与视锥体求交。
+   *  无 bounding sphere 的 geometry(尚未 computeBoundingSphere)自动计算并缓存。
+   *  半径按世界 scale 的最大轴保守放大。 */
+  private _meshInFrustum(mesh: Mesh): boolean {
+    const geo = mesh.geometry;
+    if (!geo) return true; // 无 geometry → 保守渲染
+    if (!geo.boundingSphere) geo.computeBoundingSphere();
+    const bs = geo.boundingSphere;
+    if (!bs) return true; // 计算失败(空 geometry)→ 保守渲染
+
+    // 世界空间球心 = local center × matrixWorld
+    this._cullCenter.copy(bs.center).applyMatrix4(mesh.matrixWorld);
+
+    // 保守世界半径 = local radius × max(scale)。
+    // 用 max 轴向 scale 是 conservative 近似(非均匀缩放下偏大,但保证不误剔除)。
+    const s = mesh.scale;
+    const maxScale = Math.max(Math.abs(s.x), Math.abs(s.y), Math.abs(s.z));
+    const worldRadius = bs.radius * maxScale;
+
+    return this._frustum.intersectsSphere(this._cullCenter, worldRadius);
   }
 
   // ── private ─────────────────────────────────────────────────────────
@@ -371,11 +429,11 @@ export class WebGL2Renderer {
       .copy(this._sceneCenter)
       .add({ x: -dir.x * this._sceneHalfSize, y: -dir.y * this._sceneHalfSize, z: -dir.z * this._sceneHalfSize } as Vector3);
     this._lightView.makeLookAt(lightPos, this._sceneCenter, { x: 0, y: 1, z: 0 });
-    const half = light.shadowHalfSize;
+    const half = light.shadow.cameraHalfSize;
     // Orthographic projection:
     const e = this._lightProj.elements;
-    e[0] = 1 / half; e[5] = 1 / half; e[10] = -2 / (light.shadowFar - light.shadowNear);
-    e[12] = 0; e[13] = 0; e[14] = -(light.shadowFar + light.shadowNear) / (light.shadowFar - light.shadowNear);
+    e[0] = 1 / half; e[5] = 1 / half; e[10] = -2 / (light.shadow.cameraFar - light.shadow.cameraNear);
+    e[12] = 0; e[13] = 0; e[14] = -(light.shadow.cameraFar + light.shadow.cameraNear) / (light.shadow.cameraFar - light.shadow.cameraNear);
     e[1] = e[2] = e[3] = e[4] = e[6] = e[7] = e[8] = e[9] = e[11] = 0;
     e[15] = 1;
 
@@ -390,9 +448,13 @@ export class WebGL2Renderer {
 
     // Collect all meshes first; we have to compile both shadow variants
     // (skin / no-skin) and bind the right one per draw.
+    // InstancedMesh 暂不参与 shadow pass(需 USE_INSTANCING shadow shader 变体,
+    // v1 未实现;若放行会所有实例重叠在 mesh.matrixWorld 处产生错误阴影)。
     const collect = (obj: Object3D, out: Mesh[]) => {
       const m = obj as Mesh;
-      if (m instanceof Mesh) {
+      if (m instanceof InstancedMesh) {
+        // skip — instanced shadow casting 是后续工作
+      } else if (m instanceof Mesh) {
         if (m.visible && m.castShadow) out.push(m);
       } else {
         for (const c of obj.children) collect(c, out);
@@ -453,12 +515,12 @@ export class WebGL2Renderer {
   private _getShadowResources(light: DirectionalLight): ShadowResources {
     const gl = this.gl;
     const cached = this.shadowCache.get(light);
-    if (cached && cached.size === light.shadowMapSize) return cached;
+    if (cached && cached.size === light.shadow.mapSize) return cached;
 
     if (cached) {
       gl.deleteFramebuffer(cached.fbo);
       gl.deleteTexture(cached.texture);
-      log.warn(`shadow FBO resized: ${cached.size} → ${light.shadowMapSize}`);
+      log.warn(`shadow FBO resized: ${cached.size} → ${light.shadow.mapSize}`);
     }
 
     const tex = gl.createTexture();
@@ -466,7 +528,7 @@ export class WebGL2Renderer {
     gl.bindTexture(gl.TEXTURE_2D, tex);
     gl.texImage2D(
       gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT24,
-      light.shadowMapSize, light.shadowMapSize, 0,
+      light.shadow.mapSize, light.shadow.mapSize, 0,
       gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, null,
     );
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
@@ -483,13 +545,13 @@ export class WebGL2Renderer {
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
     const res: ShadowResources = {
-      fbo, texture: tex, size: light.shadowMapSize,
+      fbo, texture: tex, size: light.shadow.mapSize,
       viewProjection: new Matrix4(), target: new Vector3(),
     };
     this.shadowCache.set(light, res);
     this._shadowResourcesSet.add(res);
-    log.info(`shadow FBO created: ${light.shadowMapSize}x${light.shadowMapSize} ` +
-      `(${light.shadowNear}-${light.shadowFar}, half=${light.shadowHalfSize})`);
+    log.info(`shadow FBO created: ${light.shadow.mapSize}x${light.shadow.mapSize} ` +
+      `(${light.shadow.cameraNear}-${light.shadow.cameraFar}, half=${light.shadow.cameraHalfSize})`);
     return res;
   }
 
@@ -583,6 +645,11 @@ export class WebGL2Renderer {
     ambient: AmbientLight | undefined,
     ssaoTexture: WebGLTexture | null = null,
   ): void {
+    // InstancedMesh 走专用 path(USE_INSTANCING shader + instanced draw)。
+    if (mesh instanceof InstancedMesh) {
+      this._drawInstancedMesh(mesh, scene, camera, dirLight, ambient, ssaoTexture);
+      return;
+    }
     const gl = this.gl;
     const geom = mesh.geometry;
     if (!geom || !geom.attributes.position) return;
@@ -652,7 +719,123 @@ export class WebGL2Renderer {
     this.stats.drawCalls++;
   }
 
-  /** 编译并缓存用户 ShaderMaterial 对应的 ShaderProgram。 */
+  // ── InstancedMesh 渲染 path (Phase 2.2.2) ───────────────────────
+  /** 每个 InstancedMesh 的专用 VAO + 实例缓冲。不复用 geometry VAO
+   *  以免 instance attribute 污染共享 VAO 状态。 */
+  private _instancedCache: WeakMap<InstancedMesh, {
+    vao: WebGLVertexArrayObject;
+    instanceBuf: WebGLBuffer;
+    /** 已绑定到该 VAO 的 base geometry(变更时重建)。 */
+    boundGeom: BufferGeometry | null;
+    /** 上次上传的 instanceMatrixVersion(变更时重传)。 */
+    version: number;
+  }> = new WeakMap();
+
+  private _drawInstancedMesh(
+    mesh: InstancedMesh,
+    scene: Scene,
+    camera: Camera,
+    dirLight: DirectionalLight | undefined,
+    ambient: AmbientLight | undefined,
+    ssaoTexture: WebGLTexture | null,
+  ): void {
+    const gl = this.gl;
+    const geom = mesh.geometry;
+    if (!geom || !geom.attributes.position) return;
+    const mat = (Array.isArray(mesh.material) ? mesh.material[0] : mesh.material) as StandardMaterial | ShaderMaterialCls | undefined;
+    if (!mat) return;
+    if (mat instanceof ShaderMaterialCls) {
+      // 用户自定义 shader 的 instancing 支持暂未实现(需 shader 自身声明 a_instanceMatrix)。
+      // 退化为逐实例绘制:用 base _drawMesh 不行(它是私有且签名不同),这里直接跳过并警告。
+      log.warn('InstancedMesh with ShaderMaterial not supported yet; skipping.');
+      return;
+    }
+
+    // 确保 base geometry 的 VBO/索引缓冲已创建(复用 meshCache)。
+    const baseRes = this._getMeshResources(geom);
+    if (!baseRes) return;
+
+    let entry = this._instancedCache.get(mesh);
+    const geomChanged = !entry || entry.boundGeom !== geom;
+    const dataChanged = !entry || entry.version !== mesh.instanceMatrixVersion;
+    if (!entry) {
+      const vao = gl.createVertexArray();
+      const instanceBuf = gl.createBuffer();
+      if (!vao || !instanceBuf) { log.warn('InstancedMesh VAO/buffer alloc failed'); return; }
+      entry = { vao, instanceBuf, boundGeom: null, version: -1 };
+      this._instancedCache.set(mesh, entry);
+    }
+
+    // 重建 VAO 绑定(geometry 变更或首次)。
+    if (geomChanged) {
+      gl.bindVertexArray(entry.vao);
+      // 复用 base geometry 的 VBO:position@0, normal@1, uv@2。
+      const layoutFor: Record<string, number> = { position: 0, normal: 1, uv: 2, color: 3, tangent: 4 };
+      for (const [name, bufEntry] of baseRes.buffers) {
+        const loc = layoutFor[name];
+        if (loc === undefined) continue;
+        gl.bindBuffer(gl.ARRAY_BUFFER, bufEntry.buf);
+        gl.enableVertexAttribArray(loc);
+        gl.vertexAttribPointer(loc, bufEntry.itemSize, gl.FLOAT, false, 0, 0);
+      }
+      // 索引缓冲复用 base 的。
+      if (baseRes.index) {
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, baseRes.index.buf);
+      }
+      // 实例矩阵:4 列 vec4 @ locations 7,8,9,10,divisor=1。
+      gl.bindBuffer(gl.ARRAY_BUFFER, entry.instanceBuf);
+      const stride = 16 * 4; // 16 floats × 4 bytes
+      for (let c = 0; c < 4; c++) {
+        const loc = 7 + c;
+        gl.enableVertexAttribArray(loc);
+        gl.vertexAttribPointer(loc, 4, gl.FLOAT, false, stride, c * 16);
+        gl.vertexAttribDivisor(loc, 1);
+      }
+      entry.boundGeom = geom;
+    }
+
+    // 重传实例数据(version 变更或首次)。
+    if (dataChanged) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, entry.instanceBuf);
+      gl.bufferData(gl.ARRAY_BUFFER, mesh.instanceMatrix.subarray(0, mesh.count * 16), gl.DYNAMIC_DRAW);
+      entry.version = mesh.instanceMatrixVersion;
+    }
+
+    // 程序:USE_INSTANCING 变体。
+    const program = this.getProgram('standard-instanced', STANDARD_VERTEX_SRC, STANDARD_FRAGMENT_SRC, ['USE_INSTANCING']);
+    if (!mat.program) mat.program = program;
+    program.use();
+
+    // u_model = identity(实例变换来自 a_instanceMatrix)。
+    this._identityMat.identity();
+    program.setUniformMatrix4fv('u_model', this._identityMat.elements);
+    program.setUniformMatrix4fv('u_view', camera.matrixWorldInverse.elements);
+    program.setUniformMatrix4fv('u_projection', camera.projectionMatrix.elements);
+    // normalMatrix 设 identity(实例法线在 shader 内用 mat3(instanceMatrix) 算)。
+    this._normalMat3.set([1, 0, 0, 0, 1, 0, 0, 0, 1]);
+    program.setUniformMatrix3fv('u_normalMatrix', this._normalMat3);
+
+    this._applyStandardMeshUniforms(program, mesh, camera, dirLight, ambient, scene, ssaoTexture, mat as StandardMaterial);
+
+    gl.bindVertexArray(entry.vao);
+    const instanceCount = mesh.count;
+    if (baseRes.index) {
+      gl.drawElementsInstanced(
+        gl.TRIANGLES,
+        baseRes.index.count,
+        baseRes.index.is32 ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT,
+        0,
+        instanceCount,
+      );
+      this.stats.triangles += (baseRes.index.count / 3) * instanceCount;
+      this._recordDrawCall(mesh, 'main', (baseRes.index.count / 3) * instanceCount);
+    } else {
+      gl.drawArraysInstanced(gl.TRIANGLES, 0, baseRes.vertexCount, instanceCount);
+      this.stats.triangles += (baseRes.vertexCount / 3) * instanceCount;
+      this._recordDrawCall(mesh, 'main', (baseRes.vertexCount / 3) * instanceCount);
+    }
+    this.stats.drawCalls++;
+  }
   private _userShaderCache: Map<string, ShaderProgram> = new Map();
   private _getOrCompileUserShaderProgram(mat: ShaderMaterialCls): ShaderProgram {
     if (mat.program) return mat.program;
@@ -802,7 +985,7 @@ export class WebGL2Renderer {
         gl.bindTexture(gl.TEXTURE_2D, res.texture);
         program.setUniformSampler('u_shadowMap', 0);
         program.setUniformMatrix4fv('u_lightVP', res.viewProjection.elements);
-        program.setUniform1f('u_shadowBias', dirLight.shadowBias);
+        program.setUniform1f('u_shadowBias', dirLight.shadow.bias);
         program.setUniform2f('u_shadowMapSize', res.size, res.size);
         program.setUniform1i('u_shadowEnabled', mat.receiveShadow ? 1 : 0);
       } else {
@@ -1082,6 +1265,12 @@ export class WebGL2Renderer {
     if (texture.glTexture && texture.glVersion === texture.version) {
       return texture.glTexture;
     }
+
+    // Phase 4.1: KTX2 上传路径(compressed 或 uncompressed per-mip levels)
+    if (texture.compressedLevels !== null && texture.compressedLevels.length > 0) {
+      return this._uploadKtx2Levels(texture);
+    }
+
     const img = texture.image;
     if (!img) return null;
 
@@ -1129,7 +1318,101 @@ export class WebGL2Renderer {
     return tex;
   }
 
-  private _renderPostProcessingPass(camera: Camera): void {
+  /**
+   * Phase 4.1: 上传 KTX2 解析后的 per-mip levels。
+   *
+   * 走两条路径:
+   *  - formatHint !== null(uncompressed):gl.texImage2D(per-level)
+   *  - formatHint === null(compressed):gl.compressedTexImage2D(per-level)
+   *
+   * KTX2 自带 mipmap,默认不调用 gl.generateMipmap。
+   * 不支持 cube/array(已在 KTX2Loader 拒绝)。
+   */
+  private _uploadKtx2Levels(
+    texture: import('../Core/Texture').Texture,
+  ): WebGLTexture | null {
+    const gl = this.gl;
+    const levels = texture.compressedLevels;
+    if (!levels || levels.length === 0) return null;
+
+    let tex = texture.glTexture || gl.createTexture();
+    if (!tex) return null;
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+
+    const internalMap: Record<string, number> = {
+      'RGBA8': gl.RGBA8,
+      'SRGB8_ALPHA8': gl.SRGB8_ALPHA8,
+      'R8': gl.R8,
+      'RG8': gl.RG8,
+    };
+    const formatMap: Record<string, number> = {
+      'RGBA': gl.RGBA,
+      'RED': gl.RED,
+      'RG': gl.RG,
+    };
+    const typeMap: Record<string, number> = {
+      'UNSIGNED_BYTE': gl.UNSIGNED_BYTE,
+    };
+
+    // KTX2 数据是 top-down,不 flip
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+
+    for (const lv of levels) {
+      if (lv.formatHint !== null && lv.typeHint !== null) {
+        // Uncompressed level: texImage2D per mip
+        const internalFormat = internalMap[lv.internalFormatHint] ?? gl.RGBA8;
+        const fmt = formatMap[lv.formatHint] ?? gl.RGBA;
+        const type = typeMap[lv.typeHint] ?? gl.UNSIGNED_BYTE;
+        gl.texImage2D(
+          gl.TEXTURE_2D, lv.level, internalFormat,
+          lv.width, lv.height, 0,
+          fmt, type, lv.data,
+        );
+      } else {
+        // Compressed level: compressedTexImage2D
+        // 内部格式由 transcoder 决定,通过 internalFormatHint 传入 GL enum 数字
+        // 当 internalFormatHint === 'COMPRESSED_BASIS' 时,transcoder 应该
+        // 已经在 data 上附加 .glInternalFormat;但当前 CompressedMipmapLevel
+        // 没有该字段,留作 Phase 4.1.1 扩展。这里直接跳过 + warn。
+        // 实际生产中,Basis transcoder 应返回非 'COMPRESSED_BASIS' 的具体格式。
+        // 临时降级:把 'COMPRESSED_BASIS' 视为 RGBA8 fallback。
+        // (这会让纹理无法正确渲染,但避免崩溃。)
+        // 见 ROADMAP Phase 4.1 后续:接入 basis_transcoder 后会替换此分支。
+        // eslint-disable-next-line no-console
+        console.warn(
+          '[WebGL2Renderer] KTX2 compressed level has no formatHint; ' +
+          'Basis transcoder not wired. Skipping level', lv.level,
+        );
+      }
+    }
+
+    const filterMap: Record<string, number> = {
+      'linear': gl.LINEAR,
+      'nearest': gl.NEAREST,
+      'linear-mipmap-linear': gl.LINEAR_MIPMAP_LINEAR,
+      'linear-mipmap-nearest': gl.LINEAR_MIPMAP_NEAREST,
+    };
+    gl.texParameteri(
+      gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER,
+      filterMap[texture.minFilter] ?? gl.LINEAR,
+    );
+    gl.texParameteri(
+      gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER,
+      filterMap[texture.magFilter] ?? gl.LINEAR,
+    );
+    const wrapMap: Record<string, number> = {
+      'repeat': gl.REPEAT, 'clamp': gl.CLAMP_TO_EDGE, 'mirror': gl.MIRRORED_REPEAT,
+    };
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrapMap[texture.wrapS] ?? gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wrapMap[texture.wrapT] ?? gl.REPEAT);
+    // KTX2 自带 mipmap,不调用 generateMipmap
+
+    texture.glTexture = tex;
+    texture.glVersion = texture.version;
+    return tex;
+  }
+
+  private _renderPostProcessingPass(_camera: Camera): void {
     const gl = this.gl;
     const res = this._getPostProcessingResources();
 

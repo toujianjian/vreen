@@ -1,9 +1,21 @@
-// Language switcher — toggles between Chinese (default) and English.
+// Language switcher — selects among supported languages (default: English).
 // Persists choice to localStorage; subscribes to i18n for live updates.
 import { useTranslation } from 'react-i18next';
 import { Languages } from 'lucide-react';
-import { getLanguage, setLanguage } from '@/i18n';
+import { AppLang, getLanguage, setLanguage } from '@/i18n';
 import { cn } from '@/lib/cn';
+
+// Short display labels for each supported language, tuned for the compact HUD style.
+const LANG_LABELS: Record<AppLang, string> = {
+  en: 'EN',
+  zh: '中',
+  ja: '日',
+  ko: '한',
+  es: 'ES',
+};
+
+// Order shown in the switcher. English first (matches the default language).
+const LANG_ORDER: AppLang[] = ['en', 'zh', 'ja', 'ko', 'es'];
 
 export function LangSwitcher({ className }: { className?: string }) {
   const { t } = useTranslation();
@@ -22,29 +34,22 @@ export function LangSwitcher({ className }: { className?: string }) {
       <span className="px-2 py-1 text-mist border-r border-neon-cyan/15">
         <Languages className="w-3 h-3 inline-block align-middle" />
       </span>
-      <button
-        type="button"
-        onClick={() => setLanguage('zh')}
-        className={cn(
-          'px-2.5 py-1 transition-colors',
-          current === 'zh' ? 'text-neon-cyan text-glow-soft' : 'text-mist hover:text-haze',
-        )}
-        aria-pressed={current === 'zh'}
-      >
-        中
-      </button>
-      <span className="text-mist/40">·</span>
-      <button
-        type="button"
-        onClick={() => setLanguage('en')}
-        className={cn(
-          'px-2.5 py-1 transition-colors',
-          current === 'en' ? 'text-neon-cyan text-glow-soft' : 'text-mist hover:text-haze',
-        )}
-        aria-pressed={current === 'en'}
-      >
-        EN
-      </button>
+      {LANG_ORDER.map((lang, i) => (
+        <span key={lang} className="inline-flex items-center">
+          {i > 0 && <span className="text-mist/40">·</span>}
+          <button
+            type="button"
+            onClick={() => setLanguage(lang)}
+            className={cn(
+              'px-2 py-1 transition-colors',
+              current === lang ? 'text-neon-cyan text-glow-soft' : 'text-mist hover:text-haze',
+            )}
+            aria-pressed={current === lang}
+          >
+            {LANG_LABELS[lang]}
+          </button>
+        </span>
+      ))}
     </div>
   );
 }

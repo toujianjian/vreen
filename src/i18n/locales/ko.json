@@ -1,0 +1,396 @@
+{
+  "app": {
+    "name": "VREEN",
+    "tagline": "3D 디스플레이 시스템",
+    "systemLabel": "3D 디스플레이 시스템",
+    "description": "인디 게임 개발자, 3D 아티스트, 테크니컬 아티스트를 위한 홀로그래픽 워크벤치. 에셋 검사, 머티리얼 편집, 애니메이션 재생, 라이팅 조정, 캡처까지 브라우저 안에서 완결됩니다. 로컬 소프트웨어 불필요.",
+    "supports": "GLB · GLTF · OBJ · FBX · STL · PLY 지원",
+    "shortDescription": "인디 게임 개발자와 3D 아티스트를 위한 홀로그래픽 3D 디스플레이 시스템. 순 클라이언트, 오픈소스."
+  },
+  "nav": {
+    "home": "홈",
+    "viewer": "뷰어",
+    "language": "언어",
+    "english": "English",
+    "chinese": "中文"
+  },
+  "topbar": {
+    "runtime": "실행 중",
+    "idle": "대기",
+    "gpuOk": "GPU 정상",
+    "linkStable": "링크 안정",
+    "version": "v0.1.0"
+  },
+  "hero": {
+    "launch": "검사기 실행",
+    "browse": "에셋 둘러보기",
+    "kernel": "커널",
+    "kernelValue": "VREEN-0.1.0",
+    "mode": "모드",
+    "modeValue": "인터랙티브",
+    "pipeline": "파이프라인",
+    "pipelineValue": "PBR · IBL · 포스트FX",
+    "feature": {
+      "formats": "포맷",
+      "formatsSub": "GLB/GLTF/OBJ/FBX/STL/PLY",
+      "pbr": "PBR",
+      "pbrSub": "메탈 · 리프니스 · 이미시브",
+      "fps": "FPS 타깃",
+      "fpsSub": "데스크톱용",
+      "capture": "4K",
+      "captureSub": "PNG 내보내기"
+    },
+    "readout": {
+      "title": "시스템 리드아웃",
+      "tag": "런타임",
+      "upline": "업링크",
+      "online": "온라인",
+      "gpu": "GPU 부하",
+      "vram": "VRAM",
+      "draw": "드로우",
+      "session": "세션 0xA1F3 · 채널 04 · 노드 VREEN-LOCAL",
+      "unit": {
+        "calls": "콜"
+      },
+      "lines": {
+        "assetIndex": "ASSET_INDEX",
+        "assetIndexVal": "아키타입 6개 로드됨",
+        "environment": "환경",
+        "environmentVal": "IBL // city 프리셋",
+        "postfx": "포스트FX",
+        "postfxVal": "블룸 · 크로마 · 비네트",
+        "camera": "카메라",
+        "cameraVal": "iso-30° / 댐핑",
+        "renderer": "렌더러",
+        "rendererVal": "WebGL2 · PBR"
+      }
+    }
+  },
+  "uploader": {
+    "title": "에셋 업로드",
+    "tag": "수집",
+    "subtitle": "드래그 또는 클릭 — GLB / GLTF / OBJ / FBX / STL / PLY 전체 지원",
+    "drop": "여기에 파일을 드롭",
+    "or": "또는",
+    "browse": "클릭하여 선택",
+    "ready": "준비됨",
+    "vreenReady": "프로젝트 준비 완료 (상태 적용됨)",
+    "vreenHint": ".vreen 프로젝트 패키지도 지원 (상태만 — 원본 모델을 함께 로드하세요)",
+    "openProject": "검사기 열기",
+    "submit": "검사기 실행",
+    "invalid": "인식할 수 없는 파일 형식",
+    "parsed": "에셋 파싱됨",
+    "empty": "— 파일 미선택 —",
+    "maxSize": "최대 200MB",
+    "errors": {
+      "unsupported": "지원하지 않는 형식: {name}",
+      "tooLarge": "파일이 너무 큼 (>{size}): {name}",
+      "vreenInvalid": ".vreen 패키지 파싱 실패 ({name}): {msg}"
+    },
+    "logs": {
+      "rejected": "파일 거부됨: {name} (알 수 없는 확장자)",
+      "exceeds": "크기 상한 초과 (>{size}): {name}",
+      "parsed": "{name} 을(를) {format} (으)로 파싱 ({size})",
+      "init": "{name} 의 검사기 초기화 중…",
+      "vreenImported": "프로젝트 {name} 가져옴 → {asset} 에 적용",
+      "vreenFailed": "프로젝트 {name} 가져오기 실패: {msg}"
+    }
+  },
+  "gallery": {
+    "section": "섹션 02 / 에셋 색인",
+    "title": "프리셋 아키타입",
+    "subtitle": "에셋 카드를 클릭하면 검사기에 로드됩니다. 모든 모델은 절차적 생성되며, 머티리얼·애니메이션·라이팅을 조정할 수 있습니다.",
+    "assetsCount": "{count} 에셋",
+    "online": "온라인",
+    "loading": "로드 중…",
+    "inspect": "검사",
+    "idleLoop": "아이들 루프",
+    "tris": "삼각면"
+  },
+  "presets": {
+    "title": "절차적 프리셋",
+    "subtitle": "Three.js 가 실시간 생성 — 외부 에셋 불필요"
+  },
+  "terminal": {
+    "title": "런타임 로그",
+    "tag": "표준 출력",
+    "kernelLog": "커널 로그",
+    "systemSpecs": "시스템 사양",
+    "specs": {
+      "renderer": "렌더러",
+      "rendererVal": "WebGL2 / PBR",
+      "formats": "포맷",
+      "formatsVal": "6 / 6 OK",
+      "hdri": "HDRI 프리셋",
+      "hdriVal": "studio · sunset · city",
+      "postfx": "포스트FX",
+      "postfxVal": "3 / 5 켜짐",
+      "license": "라이선스",
+      "licenseVal": "MIT"
+    },
+    "press": "// <cyan>[ 검사기 실행 ]</cyan> 을 눌러 런타임으로 진입",
+    "boot": {
+      "k1": "VREEN 커널 v0.1.0 부팅 시퀀스 시작…",
+      "k2": "셰이더 파이프라인 가동. 3D 컨텍스트 검증 완료.",
+      "k3": "에셋 색인 로드 완료. 프리셋 아키타입 6개 준비됨.",
+      "k4": "렌더러 초기화 완료: WebGL2 + 커스텀 파이프라인.",
+      "k5": "HDRI 환경 맵 로드 완료: 프리셋 5개.",
+      "k6": "ECS 월드 생성 완료. 물리 시스템 가동.",
+      "k7": "Blockly 스크립트 엔진 초기화 완료.",
+      "k8": "모든 서브시스템 정상. 준비 완료."
+    }
+  },
+  "toolbar": {
+    "exit": "종료",
+    "play": "재생",
+    "pause": "일시정지",
+    "speed": "속도",
+    "project": "프로젝트",
+    "buttons": {
+      "custom": "커스텀",
+      "three": "THREE",
+      "physics": "물리",
+      "physicsDebug": "물리DBG",
+      "profiler": "프로파일러",
+      "tuner": "튜너"
+    },
+    "projectMenu": {
+      "title": "프로젝트",
+      "saveVreen": ".VREEN 저장",
+      "saveVreenHint": "상태 + 모델 포함 (zip)",
+      "saveVreenNoModel": "모델 없음 — JSON 선택",
+      "saveJson": ".VREEN.JSON 저장",
+      "saveJsonHint": "상태만, 작은 파일",
+      "loadVreen": ".VREEN 로드",
+      "loadVreenHint": "저장 상태 적용 (또는 번들 복원)",
+      "model": "모델",
+      "noModel": "포함된 모델 없음"
+    },
+    "logs": {
+      "paused": "애니메이션 일시정지됨",
+      "resumed": "애니메이션 재개됨",
+      "capturing": "프레임 캡처 중…",
+      "saved": "스크린샷이 다운로드에 저장됨",
+      "failed": "캡처 실패: {msg}",
+      "switchedThree": "Three.js 렌더러로 전환",
+      "switchedCustom": "커스텀 WebGL2 렌더러로 전환",
+      "physicsOn": "물리 데모: 켜짐 (박스 24개 + 파티클 이미터)",
+      "physicsOff": "물리 데모: 꺼짐",
+      "physicsDebugOn": "물리 디버그 시각화: 켜짐 (콜라이더/접촉/속도)",
+      "physicsDebugOff": "물리 디버그 시각화: 꺼짐",
+      "profilerOn": "프로파일러: 켜짐 (CPU/GPU/시스템 타이밍)",
+      "profilerOff": "프로파일러: 꺼짐",
+      "tunerOn": "튜너: 켜짐 (제너레이터 라이브 편집)",
+      "tunerOff": "튜너: 꺼짐"
+    }
+  },
+  "profiler": {
+    "title": "PROFILER",
+    "show": "Profiler 표시",
+    "hide": "Profiler 숨기기",
+    "expand": "펼치기",
+    "collapse": "접기",
+    "idle": "프레임 대기 중…",
+    "noData": "데이터 없음",
+    "noSystems": "이번 프레임에 실행된 System 이 없습니다",
+    "tab": {
+      "cpu": "CPU",
+      "gpu": "GPU",
+      "system": "시스템",
+      "draws": "드로우"
+    },
+    "cpuTotal": "CPU 합계",
+    "fps": "FPS",
+    "drawCalls": "드로우 콜",
+    "tris": "삼각면",
+    "marks": "마크",
+    "gpuTotal": "GPU 합계",
+    "gpuNa": "GPU 타이밍 사용 불가 (EXT_disjoint_timer_query_webgl2 비활성화)",
+    "gpuNaHint": "Chrome: chrome://flags/#enable-webgl-developer-extensions 활성화, 또는 GPU 가속 환경으로 전환.",
+    "systems": "ECS Systems",
+    "history": "프레임 타이밍 기록",
+    "noDraws": "이번 프레임에 드로우 콜 내역 없음",
+    "topDraws": "상위 드로우 콜 기여"
+  },
+  "statusbar": {
+    "streaming": "스트리밍 중",
+    "time": "T",
+    "env": "환경",
+    "exp": "노출"
+  },
+  "scene": {
+    "stageLive": "STAGE // 라이브",
+    "placeholderLabel": "업로드된 에셋\n{name}",
+    "placeholderLog": "[VREEN] 플레이스홀더 렌더: {label}",
+    "booted": "프리셋 \"{name}\" 부팅 ({tris} 삼각면)",
+    "loadingPreset": "프리셋 {id} 을(를) 검사기에 로드 중…"
+  },
+  "outliner": {
+    "defaultRoot": "씬",
+    "nodes": {
+      "armature": "아마추어",
+      "body": "바디 메시",
+      "joints": "관절",
+      "head": "머리",
+      "armL": "팔.L",
+      "armR": "팔.R",
+      "materials": "머티리얼",
+      "lightRig": "라이트 리그",
+      "keyLight": "키 라이트",
+      "fillLight": "필 라이트"
+    }
+  },
+  "nodeKind": {
+    "Group": "그룹",
+    "Mesh": "메시",
+    "Bone": "본",
+    "Light": "라이트",
+    "Camera": "카메라",
+    "Other": "기타"
+  },
+  "footer": {
+    "tagline": "인디 게임 개발자와 3D 아티스트를 위한 홀로그래픽 3D 디스플레이 시스템. 순 클라이언트, 오픈소스.",
+    "capabilities": "기능",
+    "capMulti": "다중 포맷 가져오기",
+    "capPbr": "실시간 PBR",
+    "capUi": "검사급 UI",
+    "supported": "지원 포맷",
+    "links": "링크",
+    "copyright": "VREEN © 2026 // 홀로그래픽 3D 디스플레이 시스템",
+    "buildTag": "v0.1.0 // 빌드 2607-A1F3"
+  },
+  "viewer": {
+    "loading": "로드 중",
+    "ready": "준비됨",
+    "noAsset": "에셋 없음",
+    "capture": "캡처",
+    "capturing": "캡처 중…",
+    "autoRotate": "자동 회전",
+    "wireframe": "와이어프레임",
+    "ground": "바닥",
+    "pov": "시점",
+    "fov": "시야각",
+    "fps": "FPS",
+    "tris": "삼각면",
+    "meshes": "메시",
+    "materials": "머티리얼",
+    "animations": "애니메이션",
+    "outliner": "아웃라이너",
+    "outlinerTag": "씬 트리",
+    "search": "노드 필터…",
+    "noMatch": "일치하는 노드 없음",
+    "inspector": "인스펙터",
+    "inspectorTag": "속성",
+    "selected": "선택됨",
+    "noMaterials": "— 머티리얼 없음 —",
+    "materialLab": "머티리얼 랩",
+    "environment": "환경",
+    "postFX": "포스트 FX",
+    "displayFlags": "표시 플래그",
+    "camera": "카메라",
+    "cameraTag": "POV",
+    "cameraEditor": {
+      "povPreset": "시점 프리셋",
+      "lens": "렌즈",
+      "distance": "거리",
+      "targetHeight": "타깃 높이",
+      "cinematic": "시네마틱 패스",
+      "orbitSpeed": "오빗 속도",
+      "controls": "조작",
+      "damping": "댐핑",
+      "autoRotate": "자동 회전 속도",
+      "freeOrbit": "자유 오빗 입력",
+      "open": "펼침",
+      "closed": "접힘",
+      "on": "켜짐",
+      "off": "꺼짐"
+    },
+    "preset": {
+      "free": "FREE",
+      "iso": "ISO",
+      "front": "FRONT",
+      "back": "BACK",
+      "side": "SIDE",
+      "top": "TOP",
+      "first": "1ST",
+      "third": "3RD",
+      "cine": "CINE"
+    },
+    "presetDesc": {
+      "free": "완전 자유 오빗. 기본 작업 카메라.",
+      "iso": "클래식 45° 등각 투영. 실루엣 검사에 적합.",
+      "front": "정면 인물 시점.",
+      "back": "후면 시점. 캐릭터 후면 검사에 유용.",
+      "side": "측면 (좌) 프로필.",
+      "top": "탑다운 플랜 시점.",
+      "first": "1인칭: 시선 높이에서 모델을 직시.",
+      "third": "3인칭: 모델 후방 약간 위.",
+      "cine": "자동 오빗 시네마틱 패스. 입력 불필요."
+    },
+    "presetTag": {
+      "free": "ORBIT",
+      "iso": "GAME",
+      "front": "AXIS",
+      "back": "AXIS",
+      "side": "AXIS",
+      "top": "PLAN",
+      "first": "POV",
+      "third": "POV",
+      "cine": "PATH"
+    },
+    "freeCamera": {
+      "hint": "WASD: 이동 · Shift: 가속 · Q/E: 승강"
+    },
+    "hdri": "HDRI 프리셋",
+    "exposure": "노출",
+    "background": "배경",
+    "bgEnv": "환경맵",
+    "bgSolid": "단색",
+    "bgTransparent": "투명",
+    "engineDemo": {
+      "title": "ENGINE DEMO"
+    },
+    "customHdri": "커스텀 HDRI",
+    "uploadHdri": ".hdr / .exr 업로드",
+    "replaceHdri": "파일 교체",
+    "resetHdri": "프리셋으로 리셋",
+    "exportProject": "프로젝트 내보내기 (상태)",
+    "exportBundle": "프로젝트 내보내기 (모델 포함)",
+    "exportJsonHint": "씬 상태만 (.vreen.json) — 모델은 포함되지 않음",
+    "exportBundleHint": "씬 상태 + 모델을 .vreen zip 으로 패키지 — 자체 포함, 공유 가능",
+    "importProject": "프로젝트 가져오기 (.vreen)",
+    "bloom": "블룸",
+    "bloomIntensity": "블룸 강도",
+    "chromatic": "색수차",
+    "vignette": "비네트",
+    "ssao": "SSAO",
+    "reset": "리셋",
+    "field": {
+      "baseColor": "베이스 컬러",
+      "metalness": "메탈도",
+      "roughness": "리프니스",
+      "emissive": "이미시브",
+      "emissiveIntensity": "이미시브 강도",
+      "normalScale": "노멀 스케일",
+      "opacity": "불투명도",
+      "wireframe": "와이어프레임"
+    }
+  },
+  "vreen": {
+    "inspector": {
+      "title": "Vreen 인스펙터",
+      "tab": {
+        "validate": "검증",
+        "diff": "차이",
+        "delta": "델타 팩"
+      },
+      "pickFile": ".vreen 파일 선택",
+      "verbose": "상세",
+      "assets": "에셋 ({{n}})",
+      "assetDiffs": "에셋 차이 ({{n}})",
+      "diffRun": "차이 실행",
+      "deltaMake": ".vreen-delta 생성 및 다운로드",
+      "deltaApply": "적용 후 다운로드"
+    }
+  }
+}

@@ -1,0 +1,396 @@
+{
+  "app": {
+    "name": "VREEN",
+    "tagline": "SISTEMA DE VISUALIZACIÓN 3D",
+    "systemLabel": "SISTEMA DE VISUALIZACIÓN 3D",
+    "description": "Una mesa de trabajo holográfica para desarrolladores de juegos indie, artistas 3D y artistas técnicos. Inspecciona assets, edita materiales, reproduce animaciones, ajusta la iluminación y captura, todo en el navegador. No requiere software local.",
+    "supports": "SOPORTA GLB · GLTF · OBJ · FBX · STL · PLY",
+    "shortDescription": "Un sistema holográfico de visualización 3D para desarrolladores de juegos indie y artistas 3D. Solo cliente. Código abierto."
+  },
+  "nav": {
+    "home": "Inicio",
+    "viewer": "Visor",
+    "language": "Idioma",
+    "english": "English",
+    "chinese": "中文"
+  },
+  "topbar": {
+    "runtime": "EN EJECUCIÓN",
+    "idle": "INACTIVO",
+    "gpuOk": "GPU OK",
+    "linkStable": "ENLACE ESTABLE",
+    "version": "v0.1.0"
+  },
+  "hero": {
+    "launch": "Lanzar inspector",
+    "browse": "Explorar assets",
+    "kernel": "KERNEL",
+    "kernelValue": "VREEN-0.1.0",
+    "mode": "MODO",
+    "modeValue": "INTERACTIVO",
+    "pipeline": "PIPELINE",
+    "pipelineValue": "PBR · IBL · POSTFX",
+    "feature": {
+      "formats": "FORMATOS",
+      "formatsSub": "GLB/GLTF/OBJ/FBX/STL/PLY",
+      "pbr": "PBR",
+      "pbrSub": "METAL · RUGOSIDAD · EMISIVO",
+      "fps": "OBJETIVO FPS",
+      "fpsSub": "PENSADO PARA ESCRITORIO",
+      "capture": "4K",
+      "captureSub": "EXPORT PNG"
+    },
+    "readout": {
+      "title": "LECTURA DEL SISTEMA",
+      "tag": "RUNTIME",
+      "upline": "UPLINK",
+      "online": "EN LÍNEA",
+      "gpu": "CARGA GPU",
+      "vram": "VRAM",
+      "draw": "DRAW",
+      "session": "SESIÓN 0xA1F3 · CANAL 04 · NODO VREEN-LOCAL",
+      "unit": {
+        "calls": "LLAMADAS"
+      },
+      "lines": {
+        "assetIndex": "ASSET_INDEX",
+        "assetIndexVal": "6 arquetipos cargados",
+        "environment": "ENTORNO",
+        "environmentVal": "IBL // preset city",
+        "postfx": "POSTFX",
+        "postfxVal": "BLOOM · CROMA · VIÑETA",
+        "camera": "CÁMARA",
+        "cameraVal": "iso-30° / amortiguada",
+        "renderer": "RENDERER",
+        "rendererVal": "WebGL2 · PBR"
+      }
+    }
+  },
+  "uploader": {
+    "title": "Sube tu asset",
+    "tag": "INGESTA",
+    "subtitle": "Suelta o haz clic — GLB / GLTF / OBJ / FBX / STL / PLY todos soportados",
+    "drop": "Suelta un archivo aquí",
+    "or": "o",
+    "browse": "haz clic para explorar",
+    "ready": "LISTO",
+    "vreenReady": "Proyecto listo (estado aplicado)",
+    "vreenHint": "También acepta paquetes de proyecto .vreen (solo estado — carga el modelo original aparte)",
+    "openProject": "Abrir inspector",
+    "submit": "Lanzar inspector",
+    "invalid": "Formato de archivo no reconocido",
+    "parsed": "ASSET PARSEADO",
+    "empty": "— sin archivo seleccionado —",
+    "maxSize": "máx 200MB",
+    "errors": {
+      "unsupported": "Formato no soportado: {name}",
+      "tooLarge": "Archivo demasiado grande (>{size}): {name}",
+      "vreenInvalid": "El paquete .vreen no se pudo parsear ({name}): {msg}"
+    },
+    "logs": {
+      "rejected": "Archivo rechazado: {name} (extensión desconocida)",
+      "exceeds": "El archivo supera el límite de tamaño (>{size}): {name}",
+      "parsed": "Parseado {name} como {format} ({size})",
+      "init": "Inicializando inspector para {name}...",
+      "vreenImported": "Proyecto {name} importado → aplicado a {asset}",
+      "vreenFailed": "Importación del proyecto {name} fallida: {msg}"
+    }
+  },
+  "gallery": {
+    "section": "SECCIÓN 02 / ÍNDICE DE ASSETS",
+    "title": "ARQUETIPOS PREDETERMINADOS",
+    "subtitle": "Haz clic en cualquier tarjeta de asset para cargarla en el inspector. Todos los modelos son generados proceduralmente y se pueden ajustar en materiales, animación e iluminación.",
+    "assetsCount": "{count} ASSETS",
+    "online": "EN LÍNEA",
+    "loading": "Cargando...",
+    "inspect": "INSPECCIONAR",
+    "idleLoop": "BUCE INACTIVO",
+    "tris": "TRIS"
+  },
+  "presets": {
+    "title": "Presets procedurales",
+    "subtitle": "Generados en vivo por Three.js — sin assets externos"
+  },
+  "terminal": {
+    "title": "Log de runtime",
+    "tag": "STDOUT",
+    "kernelLog": "LOG DEL KERNEL",
+    "systemSpecs": "ESPECIFICACIONES DEL SISTEMA",
+    "specs": {
+      "renderer": "Renderizador",
+      "rendererVal": "WebGL2 / PBR",
+      "formats": "Formatos",
+      "formatsVal": "6 / 6 OK",
+      "hdri": "Presets HDRI",
+      "hdriVal": "studio · sunset · city",
+      "postfx": "PostFX",
+      "postfxVal": "3 / 5 ACTIVOS",
+      "license": "Licencia",
+      "licenseVal": "MIT"
+    },
+    "press": "// pulsa <cyan>[ LANZAR INSPECTOR ]</cyan> para entrar al runtime",
+    "boot": {
+      "k1": "Secuencia de arranque del kernel VREEN v0.1.0 iniciada...",
+      "k2": "Pipeline de shaders en línea. Contexto 3D verificado.",
+      "k3": "Índice de assets cargado. 6 arquetipos preset listos.",
+      "k4": "Renderizador inicializado: WebGL2 + pipeline personalizado.",
+      "k5": "Mapas de entorno HDRI cargados: 5 presets.",
+      "k6": "Mundo ECS creado. Sistema de física en línea.",
+      "k7": "Motor de scripting Blockly inicializado.",
+      "k8": "Todos los subsistemas nominales. Listo."
+    }
+  },
+  "toolbar": {
+    "exit": "SALIR",
+    "play": "REPRODUCIR",
+    "pause": "PAUSAR",
+    "speed": "VELOCIDAD",
+    "project": "PROYECTO",
+    "buttons": {
+      "custom": "CUSTOM",
+      "three": "THREE",
+      "physics": "FÍSICA",
+      "physicsDebug": "FIS-DBG",
+      "profiler": "PROFILER",
+      "tuner": "TUNER"
+    },
+    "projectMenu": {
+      "title": "PROYECTO",
+      "saveVreen": "GUARDAR .VREEN",
+      "saveVreenHint": "estado + modelo embebido (zip)",
+      "saveVreenNoModel": "falta modelo — elige JSON",
+      "saveJson": "GUARDAR .VREEN.JSON",
+      "saveJsonHint": "solo estado, archivo pequeño",
+      "loadVreen": "CARGAR .VREEN",
+      "loadVreenHint": "aplicar estado guardado (o restaurar bundle)",
+      "model": "modelo",
+      "noModel": "sin modelo embebido"
+    },
+    "logs": {
+      "paused": "Animación pausada",
+      "resumed": "Animación reanudada",
+      "capturing": "Capturando frame...",
+      "saved": "Captura guardada en descargas",
+      "failed": "Captura fallida: {msg}",
+      "switchedThree": "Cambiado al renderizador three.js",
+      "switchedCustom": "Cambiado al renderizador WebGL2 personalizado",
+      "physicsOn": "Demo de física: ON (24 cajas + emisor de partículas)",
+      "physicsOff": "Demo de física: OFF",
+      "physicsDebugOn": "Viz de debug de física: ON (collider/contacto/velocidad)",
+      "physicsDebugOff": "Viz de debug de física: OFF",
+      "profilerOn": "Profiler: ON (timing de CPU/GPU/Sistema)",
+      "profilerOff": "Profiler: OFF",
+      "tunerOn": "Tuner: ON (editor en vivo de presets del generador)",
+      "tunerOff": "Tuner: OFF"
+    }
+  },
+  "profiler": {
+    "title": "PROFILER",
+    "show": "Mostrar Profiler",
+    "hide": "Ocultar Profiler",
+    "expand": "expandir",
+    "collapse": "colapsar",
+    "idle": "esperando frame…",
+    "noData": "sin datos",
+    "noSystems": "ningún system se ejecutó en este frame",
+    "tab": {
+      "cpu": "CPU",
+      "gpu": "GPU",
+      "system": "SISTEMA",
+      "draws": "DRAW"
+    },
+    "cpuTotal": "CPU total",
+    "fps": "FPS",
+    "drawCalls": "Draw Calls",
+    "tris": "Triángulos",
+    "marks": "marcas",
+    "gpuTotal": "GPU total",
+    "gpuNa": "Timing de GPU no disponible (EXT_disjoint_timer_query_webgl2 deshabilitado)",
+    "gpuNaHint": "Chrome: habilita chrome://flags/#enable-webgl-developer-extensions, o cambia a un entorno con aceleración por hardware.",
+    "systems": "ECS Systems",
+    "history": "historial de timing por frame",
+    "noDraws": "sin desglose de draw calls para este frame",
+    "topDraws": "principales contribuyentes de draw calls"
+  },
+  "statusbar": {
+    "streaming": "STREAMING",
+    "time": "T",
+    "env": "ENV",
+    "exp": "EXP"
+  },
+  "scene": {
+    "stageLive": "STAGE // EN VIVO",
+    "placeholderLabel": "ASSET SUBIDO\n{name}",
+    "placeholderLog": "[VREEN] placeholder renderizado para: {label}",
+    "booted": "Preset \"{name}\" arrancado ({tris} tris)",
+    "loadingPreset": "Cargando preset {id} en el inspector..."
+  },
+  "outliner": {
+    "defaultRoot": "Escena",
+    "nodes": {
+      "armature": "Armature",
+      "body": "Mesh de cuerpo",
+      "joints": "Articulaciones",
+      "head": "Cabeza",
+      "armL": "Brazo.L",
+      "armR": "Brazo.R",
+      "materials": "Materiales",
+      "lightRig": "Rig de luces",
+      "keyLight": "Luz clave",
+      "fillLight": "Luz de relleno"
+    }
+  },
+  "nodeKind": {
+    "Group": "Grupo",
+    "Mesh": "Malla",
+    "Bone": "Hueso",
+    "Light": "Luz",
+    "Camera": "Cámara",
+    "Other": "Otro"
+  },
+  "footer": {
+    "tagline": "Un sistema holográfico de visualización 3D para desarrolladores de juegos indie y artistas 3D. Solo cliente. Código abierto.",
+    "capabilities": "CAPACIDADES",
+    "capMulti": "Importación multi-formato",
+    "capPbr": "PBR en tiempo real",
+    "capUi": "UI de grado inspector",
+    "supported": "SOPORTADO",
+    "links": "ENLACES",
+    "copyright": "VREEN © 2026 // SISTEMA DE VISUALIZACIÓN 3D HOLOGRÁFICO",
+    "buildTag": "v0.1.0 // BUILD 2607-A1F3"
+  },
+  "viewer": {
+    "loading": "CARGANDO",
+    "ready": "LISTO",
+    "noAsset": "SIN ASSET",
+    "capture": "CAPTURA",
+    "capturing": "CAPTURANDO…",
+    "autoRotate": "Auto rotar",
+    "wireframe": "Wireframe",
+    "ground": "Suelo",
+    "pov": "POV",
+    "fov": "FOV",
+    "fps": "FPS",
+    "tris": "Tris",
+    "meshes": "Mallas",
+    "materials": "Materiales",
+    "animations": "Anims",
+    "outliner": "OUTLINER",
+    "outlinerTag": "ÁRBOL DE ESCENA",
+    "search": "filtrar nodos...",
+    "noMatch": "sin nodos coincidentes",
+    "inspector": "INSPECTOR",
+    "inspectorTag": "PROPIEDADES",
+    "selected": "SELECCIONADO",
+    "noMaterials": "— sin materiales —",
+    "materialLab": "Lab de materiales",
+    "environment": "Entorno",
+    "postFX": "Post FX",
+    "displayFlags": "Flags de visualización",
+    "camera": "Cámara",
+    "cameraTag": "POV",
+    "cameraEditor": {
+      "povPreset": "Preset POV",
+      "lens": "Lente",
+      "distance": "Distancia",
+      "targetHeight": "Altura objetivo",
+      "cinematic": "Ruta cinemática",
+      "orbitSpeed": "Velocidad de órbita",
+      "controls": "Controles",
+      "damping": "Amortiguación",
+      "autoRotate": "Velocidad de auto-rotación",
+      "freeOrbit": "Entrada de órbita libre",
+      "open": "ABIERTO",
+      "closed": "CERRADO",
+      "on": "ON",
+      "off": "OFF"
+    },
+    "preset": {
+      "free": "FREE",
+      "iso": "ISO",
+      "front": "FRONT",
+      "back": "BACK",
+      "side": "SIDE",
+      "top": "TOP",
+      "first": "1ST",
+      "third": "3RD",
+      "cine": "CINE"
+    },
+    "presetDesc": {
+      "free": "Órbita libre total. Cámara de trabajo por defecto.",
+      "iso": "Isométrica clásica a 45°. Ideal para inspeccionar siluetas.",
+      "front": "Vista frontal de retrato.",
+      "back": "Vista trasera. Útil para inspección de espalda del personaje.",
+      "side": "Perfil lateral (izquierdo).",
+      "top": "Vista en planta superior.",
+      "first": "Primera persona: a la altura de los ojos, mirando al modelo.",
+      "third": "Tercera persona: detrás y ligeramente arriba del modelo.",
+      "cine": "Ruta cinemática con órbita automática. Sin entrada del usuario."
+    },
+    "presetTag": {
+      "free": "ORBIT",
+      "iso": "GAME",
+      "front": "AXIS",
+      "back": "AXIS",
+      "side": "AXIS",
+      "top": "PLAN",
+      "first": "POV",
+      "third": "POV",
+      "cine": "PATH"
+    },
+    "freeCamera": {
+      "hint": "WASD: mover · Shift: sprint · Q/E: subir/bajar"
+    },
+    "hdri": "Preset HDRI",
+    "exposure": "Exposición",
+    "background": "Fondo",
+    "bgEnv": "ENVMAP",
+    "bgSolid": "SÓLIDO",
+    "bgTransparent": "TRANSPARENTE",
+    "engineDemo": {
+      "title": "ENGINE DEMO"
+    },
+    "customHdri": "HDRI personalizado",
+    "uploadHdri": "Subir .hdr / .exr",
+    "replaceHdri": "Reemplazar archivo",
+    "resetHdri": "Restablecer a preset",
+    "exportProject": "Exportar proyecto (estado)",
+    "exportBundle": "Exportar proyecto (con modelo)",
+    "exportJsonHint": "Solo estado de escena (.vreen.json) — el modelo NO se incluye",
+    "exportBundleHint": "Estado de escena + modelo embebido como zip .vreen — autocontenido, compartible",
+    "importProject": "Importar proyecto (.vreen)",
+    "bloom": "Bloom",
+    "bloomIntensity": "Intensidad de Bloom",
+    "chromatic": "Aberración cromática",
+    "vignette": "Viñeta",
+    "ssao": "SSAO",
+    "reset": "Restablecer",
+    "field": {
+      "baseColor": "Color base",
+      "metalness": "Metalicidad",
+      "roughness": "Rugosidad",
+      "emissive": "Emisivo",
+      "emissiveIntensity": "Intensidad emisiva",
+      "normalScale": "Escala de normal",
+      "opacity": "Opacidad",
+      "wireframe": "Wireframe"
+    }
+  },
+  "vreen": {
+    "inspector": {
+      "title": "Inspector de Vreen",
+      "tab": {
+        "validate": "Validar",
+        "diff": "Diff",
+        "delta": "Delta"
+      },
+      "pickFile": "Elegir un archivo .vreen",
+      "verbose": "Verbose",
+      "assets": "Assets ({{n}})",
+      "assetDiffs": "Diffs de assets ({{n}})",
+      "diffRun": "Ejecutar diff",
+      "deltaMake": "Construir y descargar .vreen-delta",
+      "deltaApply": "Aplicar y descargar"
+    }
+  }
+}
