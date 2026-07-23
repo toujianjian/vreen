@@ -2,7 +2,7 @@
 // shaders in `shaders.ts`. Holds a reference to a program the renderer
 // compiled; the renderer owns the cache.
 
-import type { Material } from '../Core/Material';
+import type { Material, ShaderObject } from '../Core/Material';
 import { Texture } from '../Core/Texture';
 import { ShaderProgram } from '../Renderer/ShaderProgram';
 import { PBR_FRAG, PBR_VERT } from './shaders';
@@ -49,6 +49,14 @@ export class StandardMaterial implements Material {
     const m = new StandardMaterial();
     m.baseColor = hexToRgb(hex);
     return m;
+  }
+
+  onBeforeCompile(_shader: ShaderObject, _renderer?: unknown): void {
+    // 默认 no-op;PhysicalMaterial 或用户可覆盖以注入 PBR 扩展 chunk。
+  }
+
+  customProgramCacheKey(): string {
+    return this.onBeforeCompile.toString();
   }
 }
 

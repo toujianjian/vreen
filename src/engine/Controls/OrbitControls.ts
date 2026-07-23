@@ -23,7 +23,7 @@ import { Vector3 } from '../Math/Vector3';
 import { Camera } from '../Cameras/Camera';
 import * as MathUtils from '../Math/MathUtils';
 
-interface PointerEntry {
+export interface PointerEntry {
   /** PointerEvent.pointerId. */
   id: number;
   /** 该指针起始位置 (px). */
@@ -43,8 +43,6 @@ interface Spherical {
   /** polar angle from world Y axis, radians. 0 = +Y up, π = -Y down. */
   phi: number;
 }
-
-const TWO_PI = Math.PI * 2;
 
 export interface OrbitControlsOptions {
   enableDamping?: boolean;
@@ -94,8 +92,8 @@ export class OrbitControls {
   /** 球坐标目标值 (用户输入希望到达的位置)。 */
   private _sphericalTarget: Spherical = { radius: 5, theta: 0, phi: Math.PI / 2 };
   /** target 偏移累计 (pan)。 */
-  private _panOffset = new Vector3(0, 0, 0);
-  private _panOffsetTarget = new Vector3(0, 0, 0);
+  protected _panOffset = new Vector3(0, 0, 0);
+  protected _panOffsetTarget = new Vector3(0, 0, 0);
   /** 当前缩放比，dolly 累积。1.0 = 初始. */
   private _scale = 1;
   private _scaleTarget = 1;
@@ -330,7 +328,7 @@ export class OrbitControls {
     }
   }
 
-  private _handleSinglePointerMove(e: PointerEntry): void {
+  protected _handleSinglePointerMove(e: PointerEntry): void {
     const dx = e.curX - e.startX;
     const dy = e.curY - e.startY;
     e.startX = e.curX;
@@ -392,7 +390,7 @@ export class OrbitControls {
   }
 
   // ── 输入 → 球坐标 / pan ────────────────────────────────────────────
-  private _rotateByPixels(dx: number, dy: number): void {
+  protected _rotateByPixels(dx: number, dy: number): void {
     const el = this.domElement;
     const h = Math.max(el.clientHeight, 1);
     // 与 three.js OrbitControls 同语义：azimuth 受宽度影响，polar 受高度影响。
@@ -417,7 +415,7 @@ export class OrbitControls {
     }
   }
 
-  private _panByPixels(dx: number, dy: number): void {
+  protected _panByPixels(dx: number, dy: number): void {
     const el = this.domElement;
     const h = Math.max(el.clientHeight, 1);
     // 计算相机右向量和上向量（与 target 视线正交）。

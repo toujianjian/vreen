@@ -16,6 +16,10 @@ layout(location = 2) in vec2 a_uv;
 layout(location = 5) in vec4 a_skinIndex;   // bone indices (as float, int-cast in shader)
 layout(location = 6) in vec4 a_skinWeight; // bone weights (sum to 1)
 #endif
+#ifdef USE_INSTANCING
+// Per-instance model matrix, 4 columns at locations 7..10 (mat4 takes 4 slots).
+layout(location = 7) in mat4 a_instanceMatrix;
+#endif
 
 uniform mat4 u_model;
 uniform mat4 u_view;
@@ -52,9 +56,17 @@ void main() {
   vec3 localNrm = nrm;
 #endif
 
+#ifdef USE_INSTANCING
+  // Instanced: per-instance model matrix replaces u_model.
+  // u_model 仍设为 identity(renderer 保证),实例变换全部由 a_instanceMatrix 提供。
+  // 法线用 mat3(instanceMatrix) 近似(非均匀缩放下不准确,均匀缩放 OK)。
+  vec4 worldPos = a_instanceMatrix * localPos;
+  v_worldNormal = normalize(mat3(a_instanceMatrix) * localNrm);
+#else
   vec4 worldPos = u_model * localPos;
-  v_worldPos = worldPos.xyz;
   v_worldNormal = normalize(u_normalMatrix * localNrm);
+#endif
+  v_worldPos = worldPos.xyz;
   v_uv = a_uv;
   gl_Position = u_projection * u_view * worldPos;
 }
