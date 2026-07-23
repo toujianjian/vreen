@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import { Quaternion } from './Quaternion';
-import { Vector3 } from './Vector3';
 
 describe('Quaternion', () => {
   it('constructs with default identity', () => {

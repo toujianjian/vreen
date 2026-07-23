@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { Vector3 } from './Vector3';
+import { Matrix4 } from './Matrix4';
 
 describe('Vector3', () => {
   it('constructs with defaults', () => {
@@ -219,6 +220,48 @@ describe('Vector3', () => {
     it('formats nicely', () => {
       const v = new Vector3(1.5, 2.5, 3.5);
       expect(v.toString()).toMatch(/Vector3\(1\.500,\s*2\.500,\s*3\.500\)/);
+    });
+  });
+
+  describe('applyMatrix4', () => {
+    it('identity matrix leaves point unchanged', () => {
+      const m = new Matrix4(); // identity
+      const v = new Vector3(1, 2, 3).applyMatrix4(m);
+      expect(v.x).toBeCloseTo(1);
+      expect(v.y).toBeCloseTo(2);
+      expect(v.z).toBeCloseTo(3);
+    });
+
+    it('pure translation moves the point', () => {
+      const m = new Matrix4();
+      m.elements[12] = 10;
+      m.elements[13] = 20;
+      m.elements[14] = 30;
+      const v = new Vector3(1, 2, 3).applyMatrix4(m);
+      expect(v.x).toBeCloseTo(11);
+      expect(v.y).toBeCloseTo(22);
+      expect(v.z).toBeCloseTo(33);
+    });
+
+    it('scale matrix scales the point', () => {
+      const m = new Matrix4();
+      m.elements[0] = 2;  // scale x
+      m.elements[5] = 3;  // scale y
+      m.elements[10] = 4; // scale z
+      const v = new Vector3(1, 1, 1).applyMatrix4(m);
+      expect(v.x).toBeCloseTo(2);
+      expect(v.y).toBeCloseTo(3);
+      expect(v.z).toBeCloseTo(4);
+    });
+
+    it('perspective matrix applies perspective divide', () => {
+      // 简单透视:把 z=-1 的点投影,w = -z = 1,结果不变(近似)
+      const m = new Matrix4();
+      m.makePerspective(Math.PI / 2, 1, 0.1, 100);
+      const v = new Vector3(0, 0, -1).applyMatrix4(m);
+      // 投影后 x,y 应为 0(点在视轴中心),z 在 [-1,1] 范围
+      expect(v.x).toBeCloseTo(0, 5);
+      expect(v.y).toBeCloseTo(0, 5);
     });
   });
 });

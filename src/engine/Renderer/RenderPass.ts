@@ -1,0 +1,311 @@
+// RenderPass — 后处理管线的可组合单元。
+//
+// 设计目标(对标 Phase 2.1.2):
+//   - 把 WebGL2Renderer 里硬编码的 5 个后处理效果(bloom / chromatic
+//     aberration / vignette / final-compose)拆成独立 pass 类,用数组
+//     编排,便于后续加新效果(如 SSAO / FXAA / ToneMapping)。
+//   - 每个 pass 只负责"读 input texture → 写 output FBO",FBO 池由
+//     pipeline 管理(ping-pong),pass 不自己分配 FBO(除了 bloom 需要
+//     专用双 blur FBO,通过 resources 复用)。
+//   - pass.enabled 控制是否跳过;pipeline 按顺序调用 enabled 的 pass。
+//
+// 当前状态:
+//   - 本模块提供抽象 + 4 个具体 pass + PostProcessingPipeline 编排器。
+//   - WebGL2Renderer 的 _renderPostProcessingPass (legacy) 暂保留,因为
+//     它与现有 FBO 池紧密耦合且无回归测试。新 pipeline 作为独立基础
+//     设施,后续可替换 legacy(需先加视觉回归测试)。
+//
+// 不变量:
+//   - pass.apply() 必须同步完成 GPU 命令提交。
+//   - pass 不得跨帧持有 input/output 引用(ping-pong 每帧重新绑定)。
+//   - pipeline.render() 第一个 pass 的 input 是 mainTexture,最后一个
+//     pass 必须输出到 screen(framebuffer=null)。
+
+import type { ShaderProgram } from './ShaderProgram';
+import { POST_VERT as POST_VERT_SRC, BLOOM_EXTRACT_FRAG, BLOOM_BLUR_FRAG, CHROMATIC_ABERRATION_FRAG, VIGNETTE_FRAG, FINAL_COMPOSE_FRAG } from '../Materials/shaders';
+
+/** Pass 执行上下文:由 pipeline 提供给每个 pass。 */
+export interface PassContext {
+  readonly gl: WebGL2RenderingContext;
+  /** 当前帧 backing 尺寸(px,已含 dpr)。 */
+  readonly width: number;
+  readonly height: number;
+  /** Fullscreen quad VAO,pass 用它画全屏三角形。 */
+  readonly fullscreenQuad: WebGLVertexArrayObject;
+  /** 由 pipeline 管理的 FBO 池(ping-pong 双缓冲)。 */
+  readonly resources: PostProcessingFBOs;
+  /** 编译/复用 shader program(pipeline 委托给 renderer 的 cache)。 */
+  getProgram(key: string, vert: string, frag: string, defines?: string[]): ShaderProgram;
+}
+
+/** Pipeline 管理的 FBO 池:main(bloom 提取用) + bloom 双 blur + final(ping-pong)。
+ *  与 WebGL2Renderer.PostProcessingResources 结构一致,便于后续替换。 */
+export interface PostProcessingFBOs {
+  mainFbo: WebGLFramebuffer;
+  mainTexture: WebGLTexture;
+  bloomFbo1: WebGLFramebuffer;
+  bloomTexture1: WebGLTexture;
+  bloomFbo2: WebGLFramebuffer;
+  bloomTexture2: WebGLTexture;
+  finalFbo: WebGLFramebuffer;
+  finalTexture: WebGLTexture;
+  width: number;
+  height: number;
+}
+
+/** 后处理 pass 抽象基类。 */
+export abstract class RenderPass {
+  /** pass 名(调试/排序用)。 */
+  abstract readonly name: string;
+  /** 是否启用。pipeline 会跳过 enabled=false 的 pass。 */
+  enabled: boolean = true;
+
+  /** 执行 pass。
+   *  @param input  上一个 pass 输出的纹理(第一个 pass 是 mainTexture)
+   *  @param ctx    共享上下文(gl / FBO 池 / program cache)
+   *  @returns      本 pass 输出的纹理(供下一个 pass 作 input) */
+  abstract apply(input: WebGLTexture, ctx: PassContext): WebGLTexture;
+
+  /** pass 需要释放自身资源时实现(通常 pass 不持有资源,空实现)。 */
+  dispose(_ctx: PassContext): void { /* noop */ }
+}
+
+// ── 具体后处理 pass 实现 ────────────────────────────────────────────
+
+/** Bloom 效果:extract bright → blur H → blur V。
+ *  输入:input texture。输出:bloomTexture1(模糊后的亮部)。 */
+export class BloomPass extends RenderPass {
+  readonly name = 'bloom';
+  enabled = false;
+
+  threshold = 0.85;
+  blurStrength = 2.0;
+
+  constructor(opts: { threshold?: number; blurStrength?: number; enabled?: boolean } = {}) {
+    super();
+    if (opts.threshold !== undefined) this.threshold = opts.threshold;
+    if (opts.blurStrength !== undefined) this.blurStrength = opts.blurStrength;
+    if (opts.enabled !== undefined) this.enabled = opts.enabled;
+  }
+
+  apply(input: WebGLTexture, ctx: PassContext): WebGLTexture {
+    const gl = ctx.gl;
+    const res = ctx.resources;
+
+    // 1. extract bright pixels → bloomFbo1
+    gl.bindFramebuffer(gl.FRAMEBUFFER, res.bloomFbo1);
+    gl.viewport(0, 0, res.width, res.height);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+
+    const extractProg = ctx.getProgram('bloom-extract', POST_VERT_SRC, BLOOM_EXTRACT_FRAG);
+    extractProg.use();
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, input);
+    extractProg.setUniformSampler('u_colorMap', 0);
+    extractProg.setUniform1f('u_bloomThreshold', this.threshold);
+    gl.bindVertexArray(ctx.fullscreenQuad);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+    // 2. blur horizontal → bloomFbo2
+    gl.bindFramebuffer(gl.FRAMEBUFFER, res.bloomFbo2);
+    gl.viewport(0, 0, res.width, res.height);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    const blurProg = ctx.getProgram('bloom-blur', POST_VERT_SRC, BLOOM_BLUR_FRAG);
+    blurProg.use();
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, res.bloomTexture1);
+    blurProg.setUniformSampler('u_colorMap', 0);
+    blurProg.setUniform2f('u_blurDir', 1.0, 0.0);
+    blurProg.setUniform1f('u_blurStrength', this.blurStrength);
+    blurProg.setUniform2f('u_screenSize', res.width, res.height);
+    gl.bindVertexArray(ctx.fullscreenQuad);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+    // 3. blur vertical → bloomFbo1
+    gl.bindFramebuffer(gl.FRAMEBUFFER, res.bloomFbo1);
+    gl.viewport(0, 0, res.width, res.height);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    blurProg.use();
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, res.bloomTexture2);
+    blurProg.setUniformSampler('u_colorMap', 0);
+    blurProg.setUniform2f('u_blurDir', 0.0, 1.0);
+    blurProg.setUniform1f('u_blurStrength', this.blurStrength);
+    blurProg.setUniform2f('u_screenSize', res.width, res.height);
+    gl.bindVertexArray(ctx.fullscreenQuad);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+    return res.bloomTexture1;
+  }
+}
+
+/** 色差效果:input → finalFbo → mainFbo(ping-pong 两次,因 CA shader 单 pass)。
+ *  输出:mainTexture。 */
+export class ChromaticAberrationPass extends RenderPass {
+  readonly name = 'chromatic-aberration';
+  enabled = false;
+  offset = 0.0008;
+
+  constructor(opts: { offset?: number; enabled?: boolean } = {}) {
+    super();
+    if (opts.offset !== undefined) this.offset = opts.offset;
+    if (opts.enabled !== undefined) this.enabled = opts.enabled;
+  }
+
+  apply(input: WebGLTexture, ctx: PassContext): WebGLTexture {
+    const gl = ctx.gl;
+    const res = ctx.resources;
+
+    // 第一遍:input → finalFbo
+    gl.bindFramebuffer(gl.FRAMEBUFFER, res.finalFbo);
+    gl.viewport(0, 0, res.width, res.height);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    const prog = ctx.getProgram('chromatic-aberration', POST_VERT_SRC, CHROMATIC_ABERRATION_FRAG);
+    prog.use();
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, input);
+    prog.setUniformSampler('u_colorMap', 0);
+    prog.setUniform1f('u_caOffset', this.offset);
+    gl.bindVertexArray(ctx.fullscreenQuad);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+    // 第二遍:finalTexture → mainFbo(ping-pong 回 main,保持 input 链一致)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, res.mainFbo);
+    gl.viewport(0, 0, res.width, res.height);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, res.finalTexture);
+    prog.setUniformSampler('u_colorMap', 0);
+    gl.bindVertexArray(ctx.fullscreenQuad);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+    return res.mainTexture;
+  }
+}
+
+/** 暗角效果:input → finalFbo。
+ *  输出:finalTexture。 */
+export class VignettePass extends RenderPass {
+  readonly name = 'vignette';
+  enabled = false;
+  darkness = 0.45;
+  offset = 0.0;
+
+  constructor(opts: { darkness?: number; offset?: number; enabled?: boolean } = {}) {
+    super();
+    if (opts.darkness !== undefined) this.darkness = opts.darkness;
+    if (opts.offset !== undefined) this.offset = opts.offset;
+    if (opts.enabled !== undefined) this.enabled = opts.enabled;
+  }
+
+  apply(input: WebGLTexture, ctx: PassContext): WebGLTexture {
+    const gl = ctx.gl;
+    const res = ctx.resources;
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, res.finalFbo);
+    gl.viewport(0, 0, res.width, res.height);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    const prog = ctx.getProgram('vignette', POST_VERT_SRC, VIGNETTE_FRAG);
+    prog.use();
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, input);
+    prog.setUniformSampler('u_colorMap', 0);
+    prog.setUniform1f('u_vignetteDarkness', this.darkness);
+    prog.setUniform1f('u_vignetteOffset', this.offset);
+    gl.bindVertexArray(ctx.fullscreenQuad);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+    return res.finalTexture;
+  }
+}
+
+/** 最终合成:把 color + bloom 合到屏幕。
+ *  输出:null(输出到 screen,framebuffer=null)。 */
+export class FinalComposePass extends RenderPass {
+  readonly name = 'final-compose';
+  enabled = true;
+  bloomIntensity = 0.6;
+  bloomEnabled = false;
+
+  constructor(opts: { bloomIntensity?: number; bloomEnabled?: boolean; enabled?: boolean } = {}) {
+    super();
+    if (opts.bloomIntensity !== undefined) this.bloomIntensity = opts.bloomIntensity;
+    if (opts.bloomEnabled !== undefined) this.bloomEnabled = opts.bloomEnabled;
+    if (opts.enabled !== undefined) this.enabled = opts.enabled;
+  }
+
+  apply(input: WebGLTexture, ctx: PassContext): WebGLTexture {
+    const gl = ctx.gl;
+    const res = ctx.resources;
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, ctx.width, ctx.height);
+
+    const prog = ctx.getProgram('final-compose', POST_VERT_SRC, FINAL_COMPOSE_FRAG);
+    prog.use();
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, input);
+    prog.setUniformSampler('u_colorMap', 0);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, this.bloomEnabled ? res.bloomTexture1 : res.mainTexture);
+    prog.setUniformSampler('u_bloomMap', 1);
+    prog.setUniform1f('u_bloomIntensity', this.bloomIntensity);
+    prog.setUniform1i('u_bloomEnabled', this.bloomEnabled ? 1 : 0);
+    gl.bindVertexArray(ctx.fullscreenQuad);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+    return input; // 已输出到 screen,返回值无意义
+  }
+}
+
+// 后处理管线:管理 pass 列表,按顺序调用 enabled pass。
+export class PostProcessingPipeline {
+  private _passes: RenderPass[] = [];
+  private _disposed = false;
+
+  /** 添加 pass 到管线末尾。返回 this 便于链式。 */
+  add(pass: RenderPass): this {
+    this._passes.push(pass);
+    return this;
+  }
+
+  /** 移除指定 pass。返回是否移除成功。 */
+  remove(pass: RenderPass): boolean {
+    const i = this._passes.indexOf(pass);
+    if (i < 0) return false;
+    this._passes.splice(i, 1);
+    return true;
+  }
+
+  /** 按名字查 pass(找不到返回 undefined)。 */
+  getByName(name: string): RenderPass | undefined {
+    return this._passes.find((p) => p.name === name);
+  }
+
+  /** 当前 pass 列表(只读快照)。 */
+  get passes(): readonly RenderPass[] {
+    return this._passes;
+  }
+
+  /** 执行管线:把 input 依次喂给 enabled 的 pass。
+   *  最后一个 enabled pass 通常是 FinalComposePass,输出到 screen。
+   *  返回最后一个 pass 的输出纹理(若管线为空,返回 input)。 */
+  render(input: WebGLTexture, ctx: PassContext): WebGLTexture {
+    let current = input;
+    for (const pass of this._passes) {
+      if (!pass.enabled) continue;
+      current = pass.apply(current, ctx);
+    }
+    return current;
+  }
+
+  /** 释放所有 pass 资源。 */
+  dispose(ctx: PassContext): void {
+    if (this._disposed) return;
+    for (const p of this._passes) p.dispose(ctx);
+    this._passes = [];
+    this._disposed = true;
+  }
+
+  get disposed(): boolean { return this._disposed; }
+}

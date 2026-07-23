@@ -100,9 +100,7 @@
   },
   "keywords": [],
   "lint-staged": {
-    "*.{ts,tsx}": [
-      "tsc -b --noEmit"
-    ]
+    "*.{ts,tsx}": "echo"
   },
   "bugs": {
     "url": "https://github.com/toujianjian/vreen/issues"

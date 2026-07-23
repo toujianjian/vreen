@@ -114,6 +114,20 @@ export class Vector3 {
     return this;
   }
 
+  /** Transform this vector as a POINT (includes translation, perspective divide).
+   *  Matrix is column-major 16-float (Matrix4.elements). For affine world
+   *  matrices w=1 so no perspective divide occurs; for projection matrices
+   *  the divide is applied. Mutates and returns this. */
+  applyMatrix4(m: { elements: Float32Array | number[] }): this {
+    const e = m.elements;
+    const x = this.x, y = this.y, z = this.z;
+    const w = 1 / (e[3] * x + e[7] * y + e[11] * z + e[15] || 1);
+    this.x = (e[0] * x + e[4] * y + e[8] * z + e[12]) * w;
+    this.y = (e[1] * x + e[5] * y + e[9] * z + e[13]) * w;
+    this.z = (e[2] * x + e[6] * y + e[10] * z + e[14]) * w;
+    return this;
+  }
+
   /** Plain-object form for JSON serialization (round-trip with Java). */
   toArray(): [number, number, number] {
     return [this.x, this.y, this.z];
@@ -123,6 +137,104 @@ export class Vector3 {
     this.x = a[0];
     this.y = a[1];
     this.z = a[2];
+    return this;
+  }
+
+  /** 加标量到三分量。 */
+  addScalar(s: number): this {
+    this.x += s;
+    this.y += s;
+    this.z += s;
+    return this;
+  }
+
+  /** this = a + b。 */
+  addVectors(a: Vector3, b: Vector3): this {
+    this.x = a.x + b.x;
+    this.y = a.y + b.y;
+    this.z = a.z + b.z;
+    return this;
+  }
+
+  /** this = a - b。 */
+  subVectors(a: Vector3, b: Vector3): this {
+    this.x = a.x - b.x;
+    this.y = a.y - b.y;
+    this.z = a.z - b.z;
+    return this;
+  }
+
+  /** this += v * s。 */
+  addScaledVector(v: Vector3, s: number): this {
+    this.x += v.x * s;
+    this.y += v.y * s;
+    this.z += v.z * s;
+    return this;
+  }
+
+  /** 分量取最小值。 */
+  min(v: Vector3): this {
+    this.x = Math.min(this.x, v.x);
+    this.y = Math.min(this.y, v.y);
+    this.z = Math.min(this.z, v.z);
+    return this;
+  }
+
+  /** 分量取最大值。 */
+  max(v: Vector3): this {
+    this.x = Math.max(this.x, v.x);
+    this.y = Math.max(this.y, v.y);
+    this.z = Math.max(this.z, v.z);
+    return this;
+  }
+
+  /** 分量限制在 [min, max] 之间。 */
+  clamp(min: Vector3, max: Vector3): this {
+    this.x = Math.max(min.x, Math.min(max.x, this.x));
+    this.y = Math.max(min.y, Math.min(max.y, this.y));
+    this.z = Math.max(min.z, Math.min(max.z, this.z));
+    return this;
+  }
+
+  /** 取反 this = -this。 */
+  negate(): this {
+    this.x = -this.x;
+    this.y = -this.y;
+    this.z = -this.z;
+    return this;
+  }
+
+  /** 缩放到指定长度(方向不变)。 */
+  setLength(len: number): this {
+    const l = this.length();
+    if (l > 0) this.multiplyScalar(len / l);
+    return this;
+  }
+
+  /** 值相等比较。 */
+  equals(v: Vector3): boolean {
+    return this.x === v.x && this.y === v.y && this.z === v.z;
+  }
+
+  /** 变换方向向量(仅取 4x4 矩阵的 3x3 部分,忽略平移,结果归一化)。
+   *  常用于 Ray.applyMatrix4 把方向向量变换到新坐标系。 */
+  transformDirection(m: { elements: Float32Array | number[] }): this {
+    const e = m.elements;
+    const x = this.x, y = this.y, z = this.z;
+    this.x = e[0] * x + e[4] * y + e[8] * z;
+    this.y = e[1] * x + e[5] * y + e[9] * z;
+    this.z = e[2] * x + e[6] * y + e[10] * z;
+    return this.normalize();
+  }
+
+  /** 应用 3x3 矩阵(列主序 9 元素)。
+   *  VREEN 没有 Matrix3 类,这里用结构类型 `{ elements }` 接受任意 9 元素数组。 */
+  applyMatrix3(m: { elements: Float32Array | number[] }): this {
+    const e = m.elements;
+    const x = this.x, y = this.y, z = this.z;
+    this.x = e[0] * x + e[3] * y + e[6] * z;
+    this.y = e[1] * x + e[4] * y + e[7] * z;
+    this.z = e[2] * x + e[5] * y + e[8] * z;
     return this;
   }
 
