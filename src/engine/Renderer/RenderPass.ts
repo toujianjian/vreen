@@ -22,7 +22,29 @@
 //     pass 必须输出到 screen(framebuffer=null)。
 
 import type { ShaderProgram } from './ShaderProgram';
-import { POST_VERT as POST_VERT_SRC, BLOOM_EXTRACT_FRAG, BLOOM_BLUR_FRAG, CHROMATIC_ABERRATION_FRAG, VIGNETTE_FRAG, FINAL_COMPOSE_FRAG } from '../Materials/shaders';
+import {
+  POST_VERT as POST_VERT_SRC,
+  BLOOM_EXTRACT_FRAG,
+  BLOOM_BLUR_FRAG,
+  CHROMATIC_ABERRATION_FRAG,
+  VIGNETTE_FRAG,
+  FINAL_COMPOSE_FRAG,
+  SSAO_POST_FRAG,
+  FXAA_FRAG,
+  TONE_MAPPING_FRAG,
+  GAMMA_CORRECT_FRAG,
+  DOF_FRAG,
+} from '../Materials/shaders';
+
+/** 色调映射模式。 */
+export enum ToneMappingMode {
+  /** 直通,不做色调映射。 */
+  Linear = 0,
+  /** Reinhard 全局色调映射。 */
+  Reinhard = 1,
+  /** ACES Filmic 曲线(默认推荐)。 */
+  ACES = 2,
+}
 
 /** Pass 执行上下文:由 pipeline 提供给每个 pass。 */
 export interface PassContext {
@@ -255,6 +277,196 @@ export class FinalComposePass extends RenderPass {
     gl.drawArrays(gl.TRIANGLES, 0, 6);
 
     return input; // 已输出到 screen,返回值无意义
+  }
+}
+
+// ── 扩展后处理 pass(参考 three.js 后处理效果) ───────────────────────
+
+/** SSAO 简化版:基于邻域亮度对比度的近似遮蔽。
+ *  输入:input texture。输出:finalTexture。
+ *  注:真实 SSAO 需 G-buffer(depth+normal),见 SSAO_FRAG;此处仅
+ *  作 pipeline 兼容的框架占位,效果为边缘暗化。 */
+export class SSAOPass extends RenderPass {
+  readonly name = 'ssao';
+  enabled = false;
+  /** 采样半径(texel 倍数)。 */
+  radius = 1.5;
+  /** 遮蔽强度(0..1+,越大越暗)。 */
+  intensity = 0.6;
+
+  constructor(opts: { radius?: number; intensity?: number; enabled?: boolean } = {}) {
+    super();
+    if (opts.radius !== undefined) this.radius = opts.radius;
+    if (opts.intensity !== undefined) this.intensity = opts.intensity;
+    if (opts.enabled !== undefined) this.enabled = opts.enabled;
+  }
+
+  apply(input: WebGLTexture, ctx: PassContext): WebGLTexture {
+    const gl = ctx.gl;
+    const res = ctx.resources;
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, res.finalFbo);
+    gl.viewport(0, 0, res.width, res.height);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    const prog = ctx.getProgram('ssao-post', POST_VERT_SRC, SSAO_POST_FRAG);
+    prog.use();
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, input);
+    prog.setUniformSampler('u_colorMap', 0);
+    prog.setUniform2f('u_screenSize', res.width, res.height);
+    prog.setUniform1f('u_ssaoRadius', this.radius);
+    prog.setUniform1f('u_ssaoIntensity', this.intensity);
+    gl.bindVertexArray(ctx.fullscreenQuad);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+    return res.finalTexture;
+  }
+}
+
+/** FXAA 抗锯齿:基于亮度梯度的单 pass 边缘检测。
+ *  输入:input texture。输出:finalTexture。 */
+export class FXAAPass extends RenderPass {
+  readonly name = 'fxaa';
+  enabled = false;
+
+  constructor(opts: { enabled?: boolean } = {}) {
+    super();
+    if (opts.enabled !== undefined) this.enabled = opts.enabled;
+  }
+
+  apply(input: WebGLTexture, ctx: PassContext): WebGLTexture {
+    const gl = ctx.gl;
+    const res = ctx.resources;
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, res.finalFbo);
+    gl.viewport(0, 0, res.width, res.height);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    const prog = ctx.getProgram('fxaa', POST_VERT_SRC, FXAA_FRAG);
+    prog.use();
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, input);
+    prog.setUniformSampler('u_colorMap', 0);
+    prog.setUniform2f('u_screenSize', res.width, res.height);
+    gl.bindVertexArray(ctx.fullscreenQuad);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+    return res.finalTexture;
+  }
+}
+
+/** 色调映射:支持 ACES Filmic / Reinhard / Linear。
+ *  输入:input texture。输出:finalTexture。 */
+export class ToneMappingPass extends RenderPass {
+  readonly name = 'tone-mapping';
+  enabled = true;
+  /** 曝光系数(>0,1.0=不调整)。 */
+  exposure = 1.0;
+  /** 色调映射模式。 */
+  mode: ToneMappingMode = ToneMappingMode.ACES;
+
+  constructor(opts: { exposure?: number; mode?: ToneMappingMode; enabled?: boolean } = {}) {
+    super();
+    if (opts.exposure !== undefined) this.exposure = opts.exposure;
+    if (opts.mode !== undefined) this.mode = opts.mode;
+    if (opts.enabled !== undefined) this.enabled = opts.enabled;
+  }
+
+  apply(input: WebGLTexture, ctx: PassContext): WebGLTexture {
+    const gl = ctx.gl;
+    const res = ctx.resources;
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, res.finalFbo);
+    gl.viewport(0, 0, res.width, res.height);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    const prog = ctx.getProgram('tone-mapping', POST_VERT_SRC, TONE_MAPPING_FRAG);
+    prog.use();
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, input);
+    prog.setUniformSampler('u_colorMap', 0);
+    prog.setUniform1f('u_exposure', this.exposure);
+    prog.setUniform1i('u_mode', this.mode);
+    gl.bindVertexArray(ctx.fullscreenQuad);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+    return res.finalTexture;
+  }
+}
+
+/** 伽马校正:线性 → sRGB。
+ *  输入:input texture。输出:finalTexture。 */
+export class GammaCorrectPass extends RenderPass {
+  readonly name = 'gamma-correct';
+  enabled = true;
+  /** 伽马值(默认 2.2)。 */
+  gamma = 2.2;
+
+  constructor(opts: { gamma?: number; enabled?: boolean } = {}) {
+    super();
+    if (opts.gamma !== undefined) this.gamma = opts.gamma;
+    if (opts.enabled !== undefined) this.enabled = opts.enabled;
+  }
+
+  apply(input: WebGLTexture, ctx: PassContext): WebGLTexture {
+    const gl = ctx.gl;
+    const res = ctx.resources;
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, res.finalFbo);
+    gl.viewport(0, 0, res.width, res.height);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    const prog = ctx.getProgram('gamma-correct', POST_VERT_SRC, GAMMA_CORRECT_FRAG);
+    prog.use();
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, input);
+    prog.setUniformSampler('u_colorMap', 0);
+    prog.setUniform1f('u_gamma', this.gamma);
+    gl.bindVertexArray(ctx.fullscreenQuad);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+    return res.finalTexture;
+  }
+}
+
+/** 景深(简化版):基于亮度近似深度的散景模糊。
+ *  输入:input texture。输出:finalTexture。
+ *  注:真实 DOF 需 depth buffer,此处仅作框架占位。 */
+export class DOFPass extends RenderPass {
+  readonly name = 'dof';
+  enabled = false;
+  /** 焦点距离(0..1,基于亮度代理)。 */
+  focusDistance = 0.5;
+  /** 焦点范围(范围内不模糊)。 */
+  focusRange = 0.2;
+  /** 散景圆半径(texel 倍数)。 */
+  bokeh = 4.0;
+
+  constructor(opts: { focusDistance?: number; focusRange?: number; bokeh?: number; enabled?: boolean } = {}) {
+    super();
+    if (opts.focusDistance !== undefined) this.focusDistance = opts.focusDistance;
+    if (opts.focusRange !== undefined) this.focusRange = opts.focusRange;
+    if (opts.bokeh !== undefined) this.bokeh = opts.bokeh;
+    if (opts.enabled !== undefined) this.enabled = opts.enabled;
+  }
+
+  apply(input: WebGLTexture, ctx: PassContext): WebGLTexture {
+    const gl = ctx.gl;
+    const res = ctx.resources;
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, res.finalFbo);
+    gl.viewport(0, 0, res.width, res.height);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    const prog = ctx.getProgram('dof', POST_VERT_SRC, DOF_FRAG);
+    prog.use();
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, input);
+    prog.setUniformSampler('u_colorMap', 0);
+    prog.setUniform2f('u_screenSize', res.width, res.height);
+    prog.setUniform1f('u_focusDistance', this.focusDistance);
+    prog.setUniform1f('u_focusRange', this.focusRange);
+    prog.setUniform1f('u_bokeh', this.bokeh);
+    gl.bindVertexArray(ctx.fullscreenQuad);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+    return res.finalTexture;
   }
 }
 

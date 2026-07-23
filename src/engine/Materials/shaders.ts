@@ -557,3 +557,236 @@ void main() {
   outColor = vec4(color, 1.0);
 }
 `;
+
+// ── 后处理管线扩展 shader ───────────────────────────────────────────
+// 注:已有 SSAO_FRAG 是 G-buffer(depth+normal)版本,供主渲染器使用。
+// 这里新增 SSAO_POST_FRAG 是 post-processing pipeline 兼容的简化版
+// (仅 colorMap 输入),作为框架占位;真实 SSAO 应走 G-buffer 路径。
+
+// SSAO 简化版:仅基于 colorMap 的亮度对比度近似遮蔽(非真实 SSAO,
+// 仅作 pipeline 框架占位)。radius 控制采样半径,intensity 控制暗度。
+export const SSAO_POST_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;
+uniform vec2 u_screenSize;
+uniform float u_ssaoRadius;
+uniform float u_ssaoIntensity;
+
+void main() {
+  vec3 center = texture(u_colorMap, v_uv).rgb;
+  vec2 texel = 1.0 / u_screenSize;
+
+  // 8 邻域采样,统计亮度差异作为简易遮蔽因子
+  float lumCenter = dot(center, vec3(0.2126, 0.7152, 0.0722));
+  float occlusion = 0.0;
+  const int samples = 8;
+  for (int i = 0; i < samples; i++) {
+    float a = float(i) * 0.7853981; // PI/4
+    vec2 off = vec2(cos(a), sin(a)) * u_ssaoRadius * texel;
+    vec3 n = texture(u_colorMap, v_uv + off).rgb;
+    float lumN = dot(n, vec3(0.2126, 0.7152, 0.0722));
+    occlusion += max(0.0, lumN - lumCenter);
+  }
+  occlusion /= float(samples);
+  float ao = 1.0 - u_ssaoIntensity * occlusion;
+  outColor = vec4(center * ao, 1.0);
+}
+`;
+
+// FXAA:简化版快速近似抗锯齿。基于亮度梯度的 4-tap 边缘检测 + 双向混合。
+// 参考 three.js FXAAShader,精简为单 pass 可读版本。
+export const FXAA_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;
+uniform vec2 u_screenSize;
+
+const float EDGE_THRESHOLD = 0.125;
+const float EDGE_THRESHOLD_MIN = 0.0312;
+
+float luminance(vec3 c) {
+  return dot(c, vec3(0.299, 0.587, 0.114));
+}
+
+void main() {
+  vec2 texel = 1.0 / u_screenSize;
+  vec3 m = texture(u_colorMap, v_uv).rgb;
+  vec3 n = texture(u_colorMap, v_uv + vec2(0.0,  texel.y)).rgb;
+  vec3 s = texture(u_colorMap, v_uv + vec2(0.0, -texel.y)).rgb;
+  vec3 w = texture(u_colorMap, v_uv + vec2(-texel.x, 0.0)).rgb;
+  vec3 e = texture(u_colorMap, v_uv + vec2( texel.x, 0.0)).rgb;
+
+  float lM = luminance(m);
+  float lN = luminance(n);
+  float lS = luminance(s);
+  float lW = luminance(w);
+  float lE = luminance(e);
+
+  float lMin = min(min(min(min(lN, lS), lW), lE), lM);
+  float lMax = max(max(max(max(lN, lS), lW), lE), lM);
+  float range = lMax - lMin;
+
+  if (range < max(EDGE_THRESHOLD_MIN, lMax * EDGE_THRESHOLD)) {
+    outColor = vec4(m, 1.0);
+    return;
+  }
+
+  // 简化:取最大梯度方向的 2-tap 混合
+  float blendN = abs(lN - lM);
+  float blendS = abs(lS - lM);
+  float blendW = abs(lW - lM);
+  float blendE = abs(lE - lM);
+
+  bool isHorizontal = (blendN + blendS) > (blendW + blendE);
+  float stepLen = isHorizontal ? texel.y : texel.x;
+  float signDir = isHorizontal
+    ? (blendN > blendS ? 1.0 : -1.0)
+    : (blendE > blendW ? 1.0 : -1.0);
+
+  float lOpp = isHorizontal
+    ? (blendN > blendS ? lS : lN)
+    : (blendE > blendW ? lW : lE);
+  float gradient = isHorizontal
+    ? (blendN > blendS ? blendN : blendS)
+    : (blendE > blendW ? blendE : blendW);
+
+  float edgeLum = (lM + lOpp) * 0.5;
+  float threshold = gradient * 0.25;
+
+  // 沿边缘方向走两步,寻找端点(简化:固定 2 步)
+  vec2 dirOff = isHorizontal
+    ? vec2(0.0, signDir * stepLen)
+    : vec2(signDir * stepLen, 0.0);
+  float lA = luminance(texture(u_colorMap, v_uv + dirOff).rgb);
+  float lB = luminance(texture(u_colorMap, v_uv - dirOff).rgb);
+  bool aEnd = abs(lA - edgeLum) >= threshold;
+  bool bEnd = abs(lB - edgeLum) >= threshold;
+
+  float pDist = aEnd ? 1.0 : 2.0;
+  float nDist = bEnd ? 1.0 : 2.0;
+  float shortest = min(pDist, nDist);
+  float edgeBlend = 0.5 - shortest / (pDist + nDist);
+  edgeBlend = max(0.0, edgeBlend);
+
+  // 子像素混合(简化)
+  float avg = (lN + lS + lW + lE) * 0.25;
+  float subBlend = clamp(abs(avg - lM) / max(range, 1e-5), 0.0, 1.0);
+  subBlend = subBlend * subBlend;
+
+  float finalBlend = max(subBlend, edgeBlend);
+  vec2 sampleOff = isHorizontal
+    ? vec2(0.0, signDir * stepLen * finalBlend)
+    : vec2(signDir * stepLen * finalBlend, 0.0);
+
+  outColor = vec4(texture(u_colorMap, v_uv + sampleOff).rgb, 1.0);
+}
+`;
+
+// 色调映射:支持 ACES Filmic / Reinhard / Linear 三种模式。
+// u_mode: 0=Linear(直通), 1=Reinhard, 2=ACES Filmic
+export const TONE_MAPPING_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;
+uniform float u_exposure;
+uniform int u_mode;
+
+vec3 acesFilmic(vec3 x) {
+  // Narkowicz ACES approximation
+  const float a = 2.51;
+  const float b = 0.03;
+  const float c = 2.43;
+  const float d = 0.59;
+  const float e = 0.14;
+  return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+}
+
+vec3 reinhard(vec3 x) {
+  return x / (x + vec3(1.0));
+}
+
+void main() {
+  vec3 color = texture(u_colorMap, v_uv).rgb * u_exposure;
+  if (u_mode == 2) {
+    color = acesFilmic(color);
+  } else if (u_mode == 1) {
+    color = reinhard(color);
+  }
+  // mode == 0: Linear 直通
+  outColor = vec4(color, 1.0);
+}
+`;
+
+// 伽马校正:线性 → sRGB。u_gamma 默认 2.2。
+export const GAMMA_CORRECT_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;
+uniform float u_gamma;
+
+void main() {
+  vec3 color = texture(u_colorMap, v_uv).rgb;
+  color = pow(max(color, vec3(0.0)), vec3(1.0 / u_gamma));
+  outColor = vec4(color, 1.0);
+}
+`;
+
+// 景深简化版:基于屏幕空间亮度近似深度的圆形散景模糊。
+// 非真实 DOF(需 depth buffer),仅作框架占位。
+// u_focusDistance:归一化焦点距离(0..1,基于亮度近似)
+// u_focusRange:焦点范围(范围外开始模糊)
+// u_bokeh:散景圆半径(texel 倍数)
+export const DOF_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;
+uniform vec2 u_screenSize;
+uniform float u_focusDistance;
+uniform float u_focusRange;
+uniform float u_bokeh;
+
+void main() {
+  vec2 texel = 1.0 / u_screenSize;
+  vec3 center = texture(u_colorMap, v_uv).rgb;
+
+  // 用亮度作为深度代理(简化):亮 → 远,暗 → 近
+  float depthProxy = dot(center, vec3(0.2126, 0.7152, 0.0722));
+  float dist = abs(depthProxy - u_focusDistance);
+  float blur = smoothstep(u_focusRange, u_focusRange * 2.0, dist);
+
+  if (blur < 0.001) {
+    outColor = vec4(center, 1.0);
+    return;
+  }
+
+  // 圆形散景采样(16 tap)
+  vec3 accum = vec3(0.0);
+  float total = 0.0;
+  const int taps = 16;
+  for (int i = 0; i < taps; i++) {
+    float a = float(i) * (6.2831853 / float(taps));
+    float r = (u_bokeh * blur) * texel.x;
+    vec2 off = vec2(cos(a), sin(a)) * r;
+    accum += texture(u_colorMap, v_uv + off).rgb;
+    total += 1.0;
+  }
+  vec3 blurred = accum / total;
+  outColor = vec4(mix(center, blurred, blur), 1.0);
+}
+`;

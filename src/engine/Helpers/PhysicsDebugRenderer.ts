@@ -151,13 +151,11 @@ export class PhysicsDebugRenderer {
     velocityCount: 0, sleepingCount: 0, totalBodies: 0,
   };
 
-  private _renderer: WebGL2Renderer;
   private _colliderBuf = new Float32Array(MAX_COLLIDERS * 24 * 6);
   private _contactBuf = new Float32Array(MAX_CONTACTS * 5 * 6);
   private _velocityBuf = new Float32Array(MAX_VELOCITIES * 1 * 6);
 
   constructor(renderer: WebGL2Renderer) {
-    this._renderer = renderer;
     this.group = new Object3D();
     this.group.name = 'PhysicsDebug';
 
@@ -304,7 +302,7 @@ export class PhysicsDebugRenderer {
     if (showVelocities) {
       const v = this._velocityBuf;
       let wi = 0;
-      world.queryWith2<Transform, Rigidbody>(TransformC, RigidbodyC, (id, t, rb) => {
+      world.queryWith2<Transform, Rigidbody>(TransformC, RigidbodyC, (_id, t, rb) => {
         if (rb.mass <= 0) return; // 静态不画
         totalBodies++;
         if (rb.sleeping) sleepingCount++;
