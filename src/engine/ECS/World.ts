@@ -41,6 +41,7 @@ export const NON_POJO_COMPONENTS: ReadonlySet<string> = new Set([
   'MeshRef',
   'SkinnedMeshRef',
   'AnimState',
+  'Script',
 ]);
 
 const VERSION_BITS = 12;

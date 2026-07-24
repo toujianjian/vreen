@@ -47,6 +47,8 @@ export {
 } from './Animation';
 export * from './ECS';
 export * from './Physics';
+export * from './Events';
+export * from './Scripting';
 // Particles — 高级 CPU 粒子系统。ParticleEmitter 与 ECS 中的同名组件冲突,
 // 这里以 AdvancedParticleEmitter 别名导出。其余类原名导出。
 export {
