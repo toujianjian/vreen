@@ -2,6 +2,8 @@
 // API mirrors three.js for drop-in familiarity, but written from scratch
 // so the engine has zero external runtime dependencies (no three.js).
 
+import type { Quaternion } from './Quaternion';
+
 export class Vector3 {
   x: number;
   y: number;
@@ -235,6 +237,22 @@ export class Vector3 {
     this.x = e[0] * x + e[3] * y + e[6] * z;
     this.y = e[1] * x + e[4] * y + e[7] * z;
     this.z = e[2] * x + e[5] * y + e[8] * z;
+    return this;
+  }
+
+  /** Apply quaternion rotation to this vector (rotate by q). Mutates this.
+   *  Uses the optimized form: v + 2*qw*cross(q.xyz, v) + 2*cross(q.xyz, cross(q.xyz, v)). */
+  applyQuaternion(q: Quaternion): this {
+    const qx = q.x, qy = q.y, qz = q.z, qw = q.w;
+    const x = this.x, y = this.y, z = this.z;
+    // t = 2 * cross(q.xyz, v)
+    const tx = 2 * (qy * z - qz * y);
+    const ty = 2 * (qz * x - qx * z);
+    const tz = 2 * (qx * y - qy * x);
+    // result = v + qw * t + cross(q.xyz, t)
+    this.x = x + qw * tx + (qy * tz - qz * ty);
+    this.y = y + qw * ty + (qz * tx - qx * tz);
+    this.z = z + qw * tz + (qx * ty - qy * tx);
     return this;
   }
 

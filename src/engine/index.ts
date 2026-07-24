@@ -17,6 +17,7 @@ export * from './Audio';
 export * from './Renderer';
 export * from './Helpers';
 export * from './Terrain';
+export * from './Acceleration';
 export {
   KeyframeTrack,
   NumberKeyframeTrack,
@@ -27,11 +28,22 @@ export {
   AnimationMixer,
   AnimationStateMachine,
   buildHumanoid,
+  // IK subsystem
+  IKBone,
+  IKChain,
+  IKSolver,
+  CCDSolver,
+  IKHumanoid,
   type LoopMode,
   type InterpMode,
   type TrackTarget,
   type AnimMachineState as AnimStateNode,
   type AnimTransition,
+  type JointConstraint,
+  type IKChainOptions,
+  type IKSolverOptions,
+  type Side,
+  type HumanoidRestPose,
 } from './Animation';
 export * from './ECS';
 export { Profiler, type FrameSample, type ProfilerMark, type DrawCallSample } from './Tools/Profiler';
