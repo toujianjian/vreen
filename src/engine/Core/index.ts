@@ -1,7 +1,10 @@
 // Core barrel.
 
-export { Object3D } from './Object3D';
+export { Object3D, DirtyFlag } from './Object3D';
 export { Scene } from './Scene';
+export { SceneGraphProcessor, type SceneGraphStats } from './SceneGraphProcessor';
+export { SceneStats, type SceneStatsData } from './SceneStats';
+export { FrustumCuller, type FrustumCullStats } from './FrustumCuller';
 export { BufferAttribute, type AttributeKind } from './BufferAttribute';
 export { BufferGeometry } from './BufferGeometry';
 export { Mesh } from './Mesh';
