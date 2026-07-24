@@ -11,3 +11,8 @@ export { CircleGeometry } from './CircleGeometry';
 export { RingGeometry } from './RingGeometry';
 export { CapsuleGeometry } from './CapsuleGeometry';
 export { TorusKnotGeometry } from './TorusKnotGeometry';
+export { LatheGeometry } from './LatheGeometry';
+export { WireframeGeometry } from './WireframeGeometry';
+export { EdgesGeometry } from './EdgesGeometry';
+export { Shape } from './Shape';
+export { ExtrudeGeometry, type ExtrudeOptions } from './ExtrudeGeometry';

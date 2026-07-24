@@ -13,3 +13,10 @@ export {
   type PassContext,
   type PostProcessingFBOs,
 } from './RenderPass';
+export {
+  ShadowMapManager,
+  type ShadowType,
+  type ShadowMapManagerOptions,
+  isCastShadowLight,
+} from './ShadowMapManager';
+

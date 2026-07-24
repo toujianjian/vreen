@@ -790,3 +790,103 @@ void main() {
   outColor = vec4(mix(center, blurred, blur), 1.0);
 }
 `;
+
+// ── 阴影系统 shader ───────────────────────────────────────────────────
+// 参考 three.js ShaderLib/depth.glsl.js 与 shadow.glsl.js。
+// 与已有 SHADOW_VERT/SHADOW_FRAG 区别:
+//   - 已有 SHADOW_* 是 WebGL2Renderer 内部使用的精简版,只写 gl_FragDepth,
+//     无 varyings,无 packing,不支持自定义 uniform;
+//   - 新增 SHADOW_DEPTH_* 是 ShadowMapManager 使用的完整版本,显式输出
+//     线性化深度到 R 通道(供 PCF 软阴影手动采样),支持 skinning 变体,
+//     与 ShadowMaterial 配合可在主 pass 渲染纯阴影物体;
+//   - PCF_SHADOW_FRAG 是 GLSL chunk,可被 PBR_FRAG 或自定义 shader 注入,
+//     提供 3x3 / 5-tap PCF 软阴影采样函数,基于阴影贴图分辨率调半径。
+
+/** 深度渲染顶点着色器:写入线性深度到 R 通道,供 PCF 软阴影手动采样。
+ *  支持 USE_SKINNING 变体(由 ShadowMapManager 在 SkinnedMesh 上注入)。 */
+export const SHADOW_DEPTH_VERT = /* glsl */ `#version 300 es
+precision highp float;
+
+layout(location = 0) in vec3 a_position;
+#ifdef USE_SKINNING
+layout(location = 5) in vec4 a_skinIndex;
+layout(location = 6) in vec4 a_skinWeight;
+#endif
+
+uniform mat4 u_model;
+uniform mat4 u_lightVP;
+#ifdef USE_SKINNING
+uniform mat4 u_bindMatrixInverse;
+uniform mat4 u_boneMatrices[64];
+#endif
+
+void main() {
+#ifdef USE_SKINNING
+  mat4 skin = u_boneMatrices[int(a_skinIndex.x)] * a_skinWeight.x
+            + u_boneMatrices[int(a_skinIndex.y)] * a_skinWeight.y
+            + u_boneMatrices[int(a_skinIndex.z)] * a_skinWeight.z
+            + u_boneMatrices[int(a_skinIndex.w)] * a_skinWeight.w;
+  vec4 skinned = skin * vec4(a_position, 1.0);
+  vec4 localPos = u_bindMatrixInverse * skinned;
+#else
+  vec4 localPos = vec4(a_position, 1.0);
+#endif
+  gl_Position = u_lightVP * u_model * localPos;
+}
+`;
+
+/** 深度渲染片段着色器:输出 NDC 深度 0..1 到 R 通道。
+ *  使用 gl_FragCoord.z(WebGL2 自动透视投影线性化),避免手算 w 倒数。 */
+export const SHADOW_DEPTH_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+out vec4 outDepth;
+
+void main() {
+  // gl_FragCoord.z 已是 0..1 的窗口空间深度;写入 R 通道供 PCF 手动采样。
+  // 与 DEPTH_COMPONENT24 + UNSIGNED_INT 路径兼容(只需 .r 单通道)。
+  outDepth = vec4(gl_FragCoord.z, gl_FragCoord.z, gl_FragCoord.z, 1.0);
+}
+`;
+
+/** PCF 软阴影采样 chunk:可注入到任意 fragment shader。
+ *  依赖外部 uniform:u_shadowMap / u_lightVP / u_shadowBias / u_shadowMapSize。
+ *  提供 sampleShadowPCF(worldPos) 返回 0..1 可见性因子。
+ *  3x3 共 9 tap(中心 + 8 邻域),半径基于阴影贴图分辨率。 */
+export const PCF_SHADOW_FRAG = /* glsl */ `
+
+// ── PCF 软阴影 chunk(注入 PBR_FRAG 或自定义 shader) ──────────────
+// 依赖外部声明的 uniform(若 shader 未声明会编译失败):
+//   uniform sampler2D u_shadowMap;
+//   uniform mat4      u_lightVP;
+//   uniform float     u_shadowBias;
+//   uniform vec2      u_shadowMapSize;
+//   uniform int       u_shadowEnabled;
+
+float sampleShadowPCF(vec3 worldPos) {
+  if (u_shadowEnabled == 0) return 1.0;
+  vec4 lp = u_lightVP * vec4(worldPos, 1.0);
+  vec3 ndc = lp.xyz / lp.w;
+  if (ndc.x < -1.0 || ndc.x > 1.0 || ndc.y < -1.0 || ndc.y > 1.0 || ndc.z < -1.0 || ndc.z > 1.0) {
+    return 1.0;
+  }
+  vec2 uv = ndc.xy * 0.5 + 0.5;
+  float ref = ndc.z * 0.5 + 0.5 - u_shadowBias;
+  // 半径 = 1.5 texel,软度足够且 cost 低
+  vec2 texel = 1.5 / u_shadowMapSize;
+
+  // 3x3 共 9 tap,手动展开避免循环开销
+  float visible = 0.0;
+  visible += (texture(u_shadowMap, uv + vec2(-texel.x, -texel.y)).r > ref) ? 1.0 : 0.0;
+  visible += (texture(u_shadowMap, uv + vec2( 0.0,      -texel.y)).r > ref) ? 1.0 : 0.0;
+  visible += (texture(u_shadowMap, uv + vec2( texel.x, -texel.y)).r > ref) ? 1.0 : 0.0;
+  visible += (texture(u_shadowMap, uv + vec2(-texel.x,  0.0     )).r > ref) ? 1.0 : 0.0;
+  visible += (texture(u_shadowMap, uv                              ).r > ref) ? 1.0 : 0.0;
+  visible += (texture(u_shadowMap, uv + vec2( texel.x,  0.0     )).r > ref) ? 1.0 : 0.0;
+  visible += (texture(u_shadowMap, uv + vec2(-texel.x,  texel.y)).r > ref) ? 1.0 : 0.0;
+  visible += (texture(u_shadowMap, uv + vec2( 0.0,       texel.y)).r > ref) ? 1.0 : 0.0;
+  visible += (texture(u_shadowMap, uv + vec2( texel.x,  texel.y)).r > ref) ? 1.0 : 0.0;
+  return visible / 9.0;
+}
+`;
+

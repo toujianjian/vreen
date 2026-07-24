@@ -16,6 +16,7 @@ export * from './Loaders';
 export * from './Audio';
 export * from './Renderer';
 export * from './Helpers';
+export * from './Terrain';
 export {
   KeyframeTrack,
   NumberKeyframeTrack,
