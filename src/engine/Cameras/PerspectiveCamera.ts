@@ -6,6 +6,7 @@ import { Camera } from './Camera';
 
 export class PerspectiveCamera extends Camera {
   override readonly type: string = 'PerspectiveCamera';
+  isPerspectiveCamera: boolean = true;
   fov: number;     // degrees
   aspect: number;
   near: number;

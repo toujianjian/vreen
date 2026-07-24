@@ -21,7 +21,6 @@ import {
   PlaneGeometry,
   Scene,
   StandardMaterial,
-  Vector3,
   WebGL2Renderer,
   buildHumanoid,
 } from '@/engine';
@@ -60,7 +59,7 @@ export function EngineDemoPage() {
     camera.lookAt(0, 0.9, 0);
 
     const scene = new Scene();
-    scene.background = { color: '#000000' };
+    scene.background = '#000000';
 
     // 灯
     const dir = new DirectionalLight(0xfff2d9, 1.0, { x: 4, y: 8, z: 5 });

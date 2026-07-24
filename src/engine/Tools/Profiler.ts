@@ -21,6 +21,18 @@
 //   const snap = profiler.snapshot();  // 当前帧聚合数据
 //   const hist = profiler.history();   // 最近 N 帧 ring buffer
 
+/**
+ * EXT_disjoint_timer_query_webgl2 扩展的最小类型描述。
+ * TS DOM lib 未包含此扩展类型,这里声明实际使用的常量字段。
+ * 方法 (createQuery/beginQuery/endQuery/getQueryParameter) 在
+ * WebGL2RenderingContext 主接口上,不在此扩展对象上。
+ */
+interface EXTDisjointTimerQueryWebGL2 {
+  readonly TIME_ELAPSED_EXT: number;
+  readonly GPU_DISJOINT_EXT: number;
+  readonly QUERY_COUNTER_BITS_EXT: number;
+}
+
 export interface ProfilerMark {
   name: string;
   /** CPU 起始时间 (performance.now) */
@@ -116,7 +128,7 @@ export class Profiler {
     };
     if (opts?.gpu) {
       try {
-        const ext = (opts.gpu.gl as any).getExtension('EXT_disjoint_timer_query_webgl2') as any;
+        const ext = opts.gpu.gl.getExtension('EXT_disjoint_timer_query_webgl2') as EXTDisjointTimerQueryWebGL2 | null;
         if (ext) {
           const q1 = opts.gpu.gl.createQuery()!;
           opts.gpu.gl.beginQuery(ext.TIME_ELAPSED_EXT, q1);
@@ -146,7 +158,7 @@ export class Profiler {
     m.endMs = performance.now();
     if (opts?.gpu && m.gpuQueryStart) {
       try {
-        const ext = (opts.gpu.gl as any).getExtension('EXT_disjoint_timer_query_webgl2') as any;
+        const ext = opts.gpu.gl.getExtension('EXT_disjoint_timer_query_webgl2') as EXTDisjointTimerQueryWebGL2 | null;
         if (ext) {
           opts.gpu.gl.endQuery(ext.TIME_ELAPSED_EXT);
           m.gpuQueryEnd = m.gpuQueryStart;
@@ -160,7 +172,7 @@ export class Profiler {
    * 不阻塞 mark 流程;若 query 还没就绪,跳过。
    */
   pollGpuTimers(gl: WebGL2RenderingContext): void {
-    const ext = (gl as any).getExtension('EXT_disjoint_timer_query_webgl2') as any;
+    const ext = gl.getExtension('EXT_disjoint_timer_query_webgl2') as EXTDisjointTimerQueryWebGL2 | null;
     if (!ext) return;
     const samples = this.allOpenAndClosedMarks();
     for (const m of samples) {

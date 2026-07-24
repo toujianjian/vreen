@@ -9,6 +9,7 @@
 import { createLogger } from './logger';
 import type { Group } from '@/engine';
 
+
 const log = createLogger('GenProxy');
 
 interface PendingTask {
@@ -59,6 +60,11 @@ self.addEventListener('message', function(event) {
   }
 });
 `;
+
+
+
+
+
 
 export interface GeneratorProxyOptions {
   /** Worker 池大小。默认 navigator.hardwareConcurrency - 1。 */
@@ -189,3 +195,7 @@ export class GeneratorProxy {
     return this._workers.filter((w) => !(w as unknown as { _busy: boolean })._busy).length;
   }
 }
+
+
+
+//   - 沙箱:Worker 内部没有 DOM/fetch/localStorage,代码的客观环境的三十个好几个及答案很快哈哈哈顶顶顶顶顶顶顶顶顶顶顶顶顶顶顶顶顶顶顶六十四

@@ -14,7 +14,6 @@ import {
   LoaderContext,
   fetchAsArrayBuffer,
   toArrayBuffer,
-  isAbortError,
 } from './Loader';
 
 interface HDRHeader {

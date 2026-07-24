@@ -31,7 +31,6 @@ const MAGENTA = '#ff2bd6';
 const AMBER = '#ffb648';
 const DARK = '#0e1320';
 const STEEL = '#3a455a';
-const BONE = '#c4cad6';
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } {
   const h = hex.replace('#', '');

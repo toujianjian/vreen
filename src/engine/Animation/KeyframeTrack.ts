@@ -71,6 +71,16 @@ export abstract class KeyframeTrack {
 
   /** Apply this track at `time` to its target. */
   abstract apply(time: number): void;
+
+  /** Sample the interpolated value at `time` into `out` (length = valueSize).
+   *  Unlike `apply`, this does NOT write to the target node — it only
+   *  computes the raw interpolated value. Used by BlendSpace1D to blend
+   *  multiple clips before applying. */
+  abstract sample(time: number, out: ArrayLike<number> & { length: number }): void;
+
+  /** Write a raw value array (length = valueSize) to the target node.
+   *  Used by BlendSpace1D after blending two sampled values. */
+  abstract applyValue(value: ArrayLike<number>): void;
 }
 
 /** 跨 three.js / 自研 engine 的 quaternion setter 桥。
@@ -94,16 +104,25 @@ export class NumberKeyframeTrack extends KeyframeTrack {
   }
   override apply(time: number): void {
     if (!this.target) return;
+    this.sample(time, _numTmp);
+    this.applyValue(_numTmp);
+  }
+  override sample(time: number, out: ArrayLike<number> & { length: number }): void {
     const { i0, i1, alpha } = this.findTime(time);
     const v0 = this.values[i0];
     const v1 = this.values[i1];
-    const v = this.interp === 'step' ? v0 : v0 * (1 - alpha) + v1 * alpha;
+    (out as number[])[0] = this.interp === 'step' ? v0 : v0 * (1 - alpha) + v1 * alpha;
+  }
+  override applyValue(value: ArrayLike<number>): void {
+    if (!this.target) return;
+    const v = value[0];
     const { node, property } = this.target;
     if (property === 'rotation.x') node.rotation.x = v;
     else if (property === 'rotation.y') node.rotation.y = v;
     else if (property === 'rotation.z') node.rotation.z = v;
   }
 }
+const _numTmp: number[] = [0];
 
 // ── Vector3 ──────────────────────────────────────────────────────
 export class VectorKeyframeTrack extends KeyframeTrack {
@@ -112,24 +131,33 @@ export class VectorKeyframeTrack extends KeyframeTrack {
   }
   override apply(time: number): void {
     if (!this.target) return;
+    this.sample(time, _vecTmp);
+    this.applyValue(_vecTmp);
+  }
+  override sample(time: number, out: ArrayLike<number> & { length: number }): void {
     const { i0, i1, alpha } = this.findTime(time);
     const o0 = i0 * 3, o1 = i1 * 3;
+    if (this.interp === 'step') {
+      (out as number[])[0] = this.values[o0];
+      (out as number[])[1] = this.values[o0 + 1];
+      (out as number[])[2] = this.values[o0 + 2];
+      return;
+    }
+    (out as number[])[0] = this.values[o0]     * (1 - alpha) + this.values[o1]     * alpha;
+    (out as number[])[1] = this.values[o0 + 1] * (1 - alpha) + this.values[o1 + 1] * alpha;
+    (out as number[])[2] = this.values[o0 + 2] * (1 - alpha) + this.values[o1 + 2] * alpha;
+  }
+  override applyValue(value: ArrayLike<number>): void {
+    if (!this.target) return;
     const v = this.target.node;
     if (this.target.property === 'position') {
-      v.position.set(
-        this.values[o0]     * (1 - alpha) + this.values[o1]     * alpha,
-        this.values[o0 + 1] * (1 - alpha) + this.values[o1 + 1] * alpha,
-        this.values[o0 + 2] * (1 - alpha) + this.values[o1 + 2] * alpha,
-      );
+      v.position.set(value[0], value[1], value[2]);
     } else if (this.target.property === 'scale') {
-      v.scale.set(
-        this.values[o0]     * (1 - alpha) + this.values[o1]     * alpha,
-        this.values[o0 + 1] * (1 - alpha) + this.values[o1 + 1] * alpha,
-        this.values[o0 + 2] * (1 - alpha) + this.values[o1 + 2] * alpha,
-      );
+      v.scale.set(value[0], value[1], value[2]);
     }
   }
 }
+const _vecTmp: number[] = [0, 0, 0];
 
 // ── Quaternion (slerp) ───────────────────────────────────────────
 export class QuaternionKeyframeTrack extends KeyframeTrack {
@@ -138,18 +166,17 @@ export class QuaternionKeyframeTrack extends KeyframeTrack {
   }
   override apply(time: number): void {
     if (!this.target) return;
+    this.sample(time, _quatTmp);
+    this.applyValue(_quatTmp);
+  }
+  override sample(time: number, out: ArrayLike<number> & { length: number }): void {
     const { i0, i1, alpha } = this.findTime(time);
     const o0 = i0 * 4, o1 = i1 * 4;
-    const v = this.target.node as unknown as {
-      quaternion?: { set(x: number, y: number, z: number, w: number): void };
-      rotation: { set(x: number, y: number, z: number, w: number): void };
-    };
-    if (this.target.property !== 'quaternion') return;
     if (this.interp === 'step' || i0 === i1) {
-      setNodeQuat(
-        v,
-        this.values[o0], this.values[o0 + 1], this.values[o0 + 2], this.values[o0 + 3],
-      );
+      (out as number[])[0] = this.values[o0];
+      (out as number[])[1] = this.values[o0 + 1];
+      (out as number[])[2] = this.values[o0 + 2];
+      (out as number[])[3] = this.values[o0 + 3];
       return;
     }
     // Slerp
@@ -167,12 +194,19 @@ export class QuaternionKeyframeTrack extends KeyframeTrack {
     } else {
       s0 = 1 - alpha; s1 = alpha;
     }
-    setNodeQuat(
-      v,
-      s0 * ax + s1 * bxf,
-      s0 * ay + s1 * byf,
-      s0 * az + s1 * bzf,
-      s0 * aw + s1 * bwf,
-    );
+    (out as number[])[0] = s0 * ax + s1 * bxf;
+    (out as number[])[1] = s0 * ay + s1 * byf;
+    (out as number[])[2] = s0 * az + s1 * bzf;
+    (out as number[])[3] = s0 * aw + s1 * bwf;
+  }
+  override applyValue(value: ArrayLike<number>): void {
+    if (!this.target) return;
+    if (this.target.property !== 'quaternion') return;
+    const v = this.target.node as unknown as {
+      quaternion?: { set(x: number, y: number, z: number, w: number): void };
+      rotation: { set(x: number, y: number, z: number, w: number): void };
+    };
+    setNodeQuat(v, value[0], value[1], value[2], value[3]);
   }
 }
+const _quatTmp: number[] = [0, 0, 0, 1];

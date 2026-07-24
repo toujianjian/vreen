@@ -3,8 +3,6 @@ import { Box, Camera, Cpu, Gauge, Layers, Maximize2, Timer } from 'lucide-react'
 import { useTranslation } from 'react-i18next';
 import { useViewerStore } from '@/stores/viewerStore';
 import { useUIStore } from '@/stores/uiStore';
-import { CAMERA_PRESETS } from '@/three/camera';
-
 export function ViewerStatusBar() {
   const { t } = useTranslation();
   const stats = useViewerStore((s) => s.stats);

@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { World, System } from './World';
-import { ComponentType } from './ComponentType';
-import { Transform, TransformC, Velocity, VelocityC, Health, HealthC, Tag, TagC, Lifetime, LifetimeC } from './Components';
+import { Transform, TransformC, Velocity, VelocityC, Health, HealthC, Tag, TagC } from './Components';
 
 describe('ECS World', () => {
   describe('Entity lifecycle', () => {
@@ -166,11 +165,9 @@ describe('ECS World', () => {
       const w = new World();
       const a = w.createEntity('a');
       const b = w.createEntity('b');
-      const c = w.createEntity('c');
       w.setComponent(a, TransformC, new Transform());
       w.setComponent(a, VelocityC, new Velocity());
       w.setComponent(b, TransformC, new Transform());
-      // c has nothing
       const results = w.query(TransformC, VelocityC);
       expect(results).toEqual([a]);
     });
@@ -272,7 +269,7 @@ describe('ECS World', () => {
     it('loadJSON rejects unsupported version', () => {
       const w = new World();
       expect(() => w.loadJSON(
-        { version: '0.0.1', name: 'bad', frame: 0, entities: [] },
+        { version: '0.1.0' as never, name: 'bad', frame: 0, entities: [] },
         {},
       )).toThrow('unsupported version');
     });

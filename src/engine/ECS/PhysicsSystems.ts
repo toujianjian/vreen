@@ -16,9 +16,6 @@ import {
   Particle, Rigidbody, Collider, PhysicsConfig,
   type ParticleEmitter, type PhysicsDebug,
 } from './PhysicsComponents';
-import { createLogger } from '@/lib/logger';
-
-const log = createLogger('ECS.Physics');
 
 // ── 物理内部:Collider 派生 AABB ──────────────────────────────────
 
@@ -93,7 +90,7 @@ export class PhysicsSystem extends System {
   /** 暴露子步算法给 CollisionSystem(碰撞响应需要同 step 内)。 */
   step(world: World, dt: number, cfg: PhysicsConfig): void {
     const [gx, gy, gz] = cfg.gravity;
-    world.queryWith2<Transform, Rigidbody>(TransformC, RigidbodyC, (id, t, rb) => {
+    world.queryWith2<Transform, Rigidbody>(TransformC, RigidbodyC, (_id, t, rb) => {
       if (rb.mass <= 0) { rb.sleeping = true; return; }
       // 1) 累积力 → 加速度
       const ax = rb.force[0] / rb.mass + gx * rb.gravityScale;
@@ -176,10 +173,27 @@ export class CollisionSystem extends System {
   /** 全局 contact 队列(由 PhysicsDebugSystem 读出)。 */
   static contacts: { x: number; y: number; z: number; nx: number; ny: number; nz: number; depth: number }[] = [];
 
+  /** Broadphase 算法:
+   *  - 'brute-force' (默认):O(n²) 双重循环 + 完整 AABB 重叠检查
+   *  - 'sap':Sweep-and-Prune,按 AABB.min.x 排序后内层循环提前 break,
+   *    大幅减少候选对数量。适合 N>200 的场景。 */
+  broadphase: 'brute-force' | 'sap' = 'brute-force';
+
+  /** 上一次 update 的 broadphase 统计(性能调试 / benchmark 用)。 */
+  stats: { broadphaseCandidates: number; narrowphaseChecks: number; sapEarlyExits: number } = {
+    broadphaseCandidates: 0,
+    narrowphaseChecks: 0,
+    sapEarlyExits: 0,
+  };
+
   constructor() { super('CollisionSystem', 160); }
   override update(world: World, dt: number): void {
     CollisionSystem.contacts.length = 0;
     this.bodyList.length = 0;
+    this.stats.broadphaseCandidates = 0;
+    this.stats.narrowphaseChecks = 0;
+    this.stats.sapEarlyExits = 0;
+
     // 1) 收集所有动态 + 静态 collider
     world.queryWith(ColliderC, (id, c) => {
       const t = world.getComponent(id, TransformC) as Transform | null;
@@ -187,17 +201,31 @@ export class CollisionSystem extends System {
       const rb = world.getComponent(id, RigidbodyC) as Rigidbody | null;
       this.bodyList.push({ id, t, rb, c, aabb: worldAABBFromCollider(t, c) });
     });
-    // 2) O(n^2) narrowphase(30 物体以下足够,后期可换 BVH/Octree)
+
+    // 2) Broadphase + narrowphase
     const n = this.bodyList.length;
+    // SAP:按 AABB.min.x 排序,使内层循环可提前 break
+    if (this.broadphase === 'sap' && n > 1) {
+      this.bodyList.sort((a, b) => a.aabb.min[0] - b.aabb.min[0]);
+    }
+    const useSap = this.broadphase === 'sap';
+
     for (let i = 0; i < n; i++) {
       const A = this.bodyList[i];
       for (let j = i + 1; j < n; j++) {
         const B = this.bodyList[j];
+        // SAP 提前退出:B 已经在 A 的 x 范围之外,后续更靠右的 body 更不可能相交
+        if (useSap && B.aabb.min[0] > A.aabb.max[0]) {
+          this.stats.sapEarlyExits++;
+          break;
+        }
+        this.stats.broadphaseCandidates++;
         // 层级过滤
         if ((A.c.layerMask & B.c.layerMask) === 0) continue;
         if (A.c.isStatic && B.c.isStatic) continue;
-        // Broadphase: AABB
+        // 完整 AABB 重叠检查(3 轴)
         if (!aabbOverlap(A.aabb, B.aabb)) continue;
+        this.stats.narrowphaseChecks++;
         // Narrowphase: sphere / AABB
         if (A.c.shape === 'sphere' && B.c.shape === 'sphere') {
           this.resolveSphereSphere(A, B, dt);
@@ -287,7 +315,7 @@ export class CollisionSystem extends System {
   private applyContact(
     A: { id: number; t: Transform; rb: Rigidbody | null; c: Collider },
     B: { id: number; t: Transform; rb: Rigidbody | null; c: Collider },
-    n: [number, number, number], depth: number, dt: number,
+    n: [number, number, number], depth: number, _dt: number,
     cx: number, cy: number, cz: number,
   ): void {
     // 1) 位置修正(Baumgarte)
@@ -342,7 +370,7 @@ export class ParticleSystem extends System {
   override update(world: World, dt: number): void {
     let g: [number, number, number] = [0, -9.81, 0];
     world.queryWith(PhysicsConfigC, (_id, c) => { g = c.gravity; });
-    const [gx, gy, gz] = g;
+    const [_gx, gy, _gz] = g;
     // 1) 已有粒子推进
     world.queryWith(ParticleC, (id, p) => {
       p.age += dt;

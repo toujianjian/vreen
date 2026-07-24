@@ -198,13 +198,11 @@ return build;
 `;
 
   try {
-    // eslint-disable-next-line @typescript-eslint/no-implied-eval, no-new-func
-    const buildFactory = new Function('sandbox', `return ((sandbox) => { ${wrappedCode} })(sandbox);`);
     // 我们不在这里实际调用 — 实际执行需要在 Web Worker 中完成以保证隔离。
     // 这里只做语法验证。
     new Function(wrappedCode);
     log.debug(`script compiled OK: ${script.id}`);
-    return (params?: Record<string, unknown>): Group => {
+    return (_params?: Record<string, unknown>): Group => {
       // Stub: 实际执行在 Worker 中完成;此处只返回空 Group。
       log.warn(`script execution must be done in Worker; returning empty group for ${script.id}`);
       // 真实实现应通过 GeneratorWorker 调用。

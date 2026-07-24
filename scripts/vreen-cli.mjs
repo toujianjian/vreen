@@ -7,6 +7,7 @@
 //   node scripts/vreen-cli.js diff    <base.vreen> <head.vreen>
 //   node scripts/vreen-cli.js delta   <base.vreen> <head.vreen> <out.vreen-delta>
 //   node scripts/vreen-cli.js apply   <base.vreen> <delta.vreen-delta> <out.vreen>
+//   node scripts/vreen-cli.js publish <input.vreen> <out.vreen> [--lods N] [--no-shader-hashes] [--no-mipmaps]
 //   node scripts/vreen-cli.js sha256  <file>
 //
 // 跨平台 Node 16+ ES module。Vite 不参与 — CLI 直接 import src/lib/*。
@@ -33,7 +34,7 @@ async function importLib(name) {
 }
 
 function usage() {
-  process.stderr.write(`vreen-cli — .vreen pack validation / diff / delta / registry utility
+  process.stderr.write(`vreen-cli — .vreen pack validation / diff / delta / publish / registry utility
 
 Usage:
   vreen-cli validate <file.vreen> [--verbose]
@@ -41,6 +42,7 @@ Usage:
   vreen-cli diff    <base.vreen>    <head.vreen>
   vreen-cli delta   <base.vreen>    <head.vreen>  <out.vreen-delta>
   vreen-cli apply   <base.vreen>    <delta.vreen-delta>  <out.vreen>
+  vreen-cli publish <input.vreen>   <out.vreen>  [--lods N] [--no-shader-hashes] [--no-mipmaps]
   vreen-cli sha256  <file>
   vreen-cli registry list   <file.json | url>
   vreen-cli registry resolve <file.json | url> <package-id> [range]
@@ -52,10 +54,16 @@ Subcommand help:
   diff              Show asset/scene/world differences between two packages
   delta             Build a .vreen-delta (incremental) from base to head
   apply             Apply a .vreen-delta to a base, emitting a new .vreen
+  publish           Phase 4.3: pre-compile LOD levels + shader hashes + mipmaps
   sha256            Print hex SHA-256 of a file
   registry list     List all packages in a registry
   registry resolve  Resolve the best version matching a range
   registry fetch    Download the resolved .vreen to a file
+
+Publish options:
+  --lods N          Number of LOD levels to generate (0-3, default 2)
+  --no-shader-hashes  Skip shader hash manifest generation
+  --no-mipmaps      Skip mipmap chain generation for raw RGBA textures
 
 Options:
   -h, --help   Show this help
@@ -71,6 +79,12 @@ function parseArgs(argv) {
     if (a === '-h' || a === '--help') out.flags.help = true;
     else if (a === '-v' || a === '--verbose') out.flags.verbose = true;
     else if (a === '-q' || a === '--quiet') out.flags.quiet = true;
+    else if (a === '--no-shader-hashes') out.flags.noShaderHashes = true;
+    else if (a === '--no-mipmaps') out.flags.noMipmaps = true;
+    else if (a === '--lods') {
+      i++;
+      out.flags.lods = parseInt(argv[i], 10);
+    }
     else out.positional.push(a);
   }
   return out;
@@ -158,6 +172,47 @@ async function cmdSha256(args) {
   process.stdout.write(`${hash}  ${args.positional[0]}  (${st.size} bytes)\n`);
 }
 
+async function cmdPublish(args) {
+  if (args.positional.length < 2) throw new Error('publish: missing input/out');
+  const pack = await importLib('vreenPack');
+  const pub = await importLib('vreenPublish');
+  const u8 = await readBytes(args.positional[0]);
+  const unpacked = await pack.unpackVreenPackage(u8);
+
+  const options = {
+    lods: args.flags.lods ?? 2,
+    shaderHashes: !args.flags.noShaderHashes,
+    mipmaps: !args.flags.noMipmaps,
+  };
+
+  const result = pub.publishVreenPackage(unpacked, options);
+  await writeFile(args.positional[1], Buffer.from(result.bytes));
+
+  const r = result.report;
+  if (!args.flags.quiet) {
+    process.stdout.write(`published ${args.positional[1]} (${result.bytes.byteLength} bytes)\n`);
+    process.stdout.write(`  input:  ${r.inputBytes} bytes\n`);
+    process.stdout.write(`  output: ${r.outputBytes} bytes\n`);
+    process.stdout.write(`  ratio:  ${(r.compressionRatio * 100).toFixed(1)}%\n`);
+    process.stdout.write(`  LOD levels generated: ${r.lodLevels}\n`);
+    process.stdout.write(`  mipmap chains: ${r.mipmapChains}\n`);
+    if (r.shaderHashes) {
+      process.stdout.write(`  shader hashes:\n`);
+      for (const [k, v] of Object.entries(r.shaderHashes)) {
+        process.stdout.write(`    ${k}: ${v}\n`);
+      }
+    }
+    if (args.flags.verbose) {
+      process.stdout.write(`  processed assets:\n`);
+      for (const p of r.processed) {
+        process.stdout.write(`    ${p.id} (${p.kind}): ${p.action} ${p.originalSize}→${p.publishedSize} bytes`);
+        if (p.detail) process.stdout.write(` — ${p.detail}`);
+        process.stdout.write('\n');
+      }
+    }
+  }
+}
+
 async function cmdRegistry(args) {
   // vreen-cli registry <subcommand> <registry.json> [args]
   if (args.positional.length < 2) {
@@ -213,6 +268,7 @@ const COMMANDS = {
   diff: cmdDiff,
   delta: cmdDelta,
   apply: cmdApply,
+  publish: cmdPublish,
   sha256: cmdSha256,
   registry: cmdRegistry,
 };

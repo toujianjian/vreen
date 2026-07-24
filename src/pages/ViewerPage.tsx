@@ -15,7 +15,7 @@ import { useViewerStore } from '@/stores/viewerStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useWorldStore } from '@/stores/worldStore';
 import { getPresetById } from '@/lib/presets';
-import { PlayerInput, PlayerInputC } from '@/engine/ECS';
+import { PlayerInputC } from '@/engine/ECS';
 
 export function ViewerPage() {
   const { assetId } = useParams<{ assetId?: string }>();
@@ -57,7 +57,7 @@ export function ViewerPage() {
     const syncInput = () => {
       if (!world) return;
       // 把 cameraYaw 同步给所有带 PlayerInput 的 entity (root entity)
-      world.queryWith(PlayerInputC, (id, input) => {
+      world.queryWith(PlayerInputC, (_id, input) => {
         input.forward = (keys.has('w') ? 1 : 0) - (keys.has('s') ? 1 : 0);
         input.right = (keys.has('d') ? 1 : 0) - (keys.has('a') ? 1 : 0);
         input.run = keys.has('shift');

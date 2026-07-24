@@ -24,13 +24,9 @@ import {
   AnimStateC,
   VelocityC,
   Health,
-  HealthC,
-  Tag,
-  TagC,
-  Lifetime,
-  LifetimeC,
   PlayerInput,
-  PlayerInputC,
+  Tag,
+  Lifetime,
   AnimationTickSystem,
   MovementSystem,
   AnimStateSystem,
@@ -278,23 +274,23 @@ export const useWorldStore = create<WorldStoreState>((set, get) => ({
         sm.add({ name: 'Walk', clip: walkClip, loop: 'repeat' });
         sm.on({
           from: 'Idle', to: 'Walk',
-          guard: (world, eid) => speed(eid) > 0.1,
+          guard: (_world, eid) => speed(eid) > 0.1,
         });
         sm.on({
           from: 'Walk', to: 'Idle',
-          guard: (world, eid) => speed(eid) < 0.05,
+          guard: (_world, eid) => speed(eid) < 0.05,
         });
       }
       if (haveRun) {
         sm.add({ name: 'Run', clip: runClip, loop: 'repeat' });
         sm.on({
           from: 'Walk', to: 'Run',
-          guard: (world, eid) => speed(eid) > 2.0,
+          guard: (_world, eid) => speed(eid) > 2.0,
           duration: 0.15,
         });
         sm.on({
           from: 'Run', to: 'Walk',
-          guard: (world, eid) => speed(eid) < 1.5,
+          guard: (_world, eid) => speed(eid) < 1.5,
           duration: 0.15,
         });
       }

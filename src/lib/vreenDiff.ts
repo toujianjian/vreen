@@ -61,20 +61,6 @@ export interface PackageDiff {
   savingsRatio: number;
 }
 
-const ASSET_KIND_FROM_PATH: Record<string, VreenAssetEntry['kind']> = {
-  'assets/': 'model',
-  'assets/textures/': 'texture',
-  'assets/hdri/': 'hdri',
-  'assets/audio/': 'audio',
-};
-
-function kindFromPath(p: string): VreenAssetEntry['kind'] {
-  for (const prefix in ASSET_KIND_FROM_PATH) {
-    if (p.startsWith(prefix)) return ASSET_KIND_FROM_PATH[prefix] as VreenAssetEntry['kind'];
-  }
-  return 'model';
-}
-
 function assetEntryToMap(entries: VreenAssetEntry[]): Map<string, VreenAssetEntry> {
   const m = new Map<string, VreenAssetEntry>();
   for (const e of entries) m.set(e.id, e);
@@ -362,6 +348,7 @@ export async function applyVreenDelta(
       assets: newAssets,
       legacy: base.legacy,
       world,
+      scripts: scene.scripts ?? [],
     },
     appliedAdds: adds,
     appliedModifies: mods,

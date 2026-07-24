@@ -27,6 +27,7 @@ import {
   AnimationMixer,
   Profiler,
   HDRLoader,
+  CubeTexture,
 } from '@/engine';
 import { createGridMesh } from '@/engine/Helpers/GridHelper';
 import { Velocity, VelocityC, PlayerInput, PlayerInputC, World as ECSWorld } from '@/engine/ECS';
@@ -154,7 +155,10 @@ export function CustomStage({ onError }: { onError?: () => void }) {
       const hdriLoader = new HDRLoader();
       hdriLoader.load(hdriPath).then((hdriResult) => {
         log.info(`HDRI loaded: ${hdriPath} (${hdriResult.width}x${hdriResult.height})`);
-        scene.background = { color: '#000000', envMap: hdriResult.texture };
+        scene.background = '#000000';
+        // HDRLoader 产出的是 6-face packed Texture,renderer 按立方体贴图上传;
+        // scene.environment 在类型上要求 CubeTexture,这里做一次桥接 cast。
+        scene.environment = hdriResult.texture as unknown as CubeTexture;
       }).catch((e) => {
         log.warn(`HDRI load failed for ${hdriPath}:`, e);
       });
@@ -256,7 +260,6 @@ export function CustomStage({ onError }: { onError?: () => void }) {
     let lastTs = performance.now();
     let frames = 0;
     let fpsAcc = 0;
-    let firstFrameLogged = false;
 
     // ── Profiler 装配(随 stage 生命周期) ────────────────────────────
     const profiler = new Profiler({ ringSize: 60 });
@@ -426,10 +429,6 @@ export function CustomStage({ onError }: { onError?: () => void }) {
 
     const tick = (ts: number) => {
       if (stop) return;
-      if (!firstFrameLogged) {
-        firstFrameLogged = true;
-        log.info(`tick first frame: ts=${ts}, root=${root ? 'attached' : 'null'}, scene.children=${scene.children.length}`);
-      }
       const dt = Math.min(0.05, (ts - lastTs) / 1000);
       lastTs = ts;
 
@@ -588,13 +587,17 @@ export function CustomStage({ onError }: { onError?: () => void }) {
     if (!scene) return;
     const hdriPath = LOCAL_HDRI[environment.preset];
     if (!hdriPath) {
-      scene.background = { color: '#000000' };
+      scene.background = '#000000';
+      scene.environment = null;
       return;
     }
     const hdriLoader = new HDRLoader();
     hdriLoader.load(hdriPath).then((result) => {
       log.info(`HDRI updated: ${hdriPath}`);
-      scene.background = { color: '#000000', envMap: result.texture };
+      scene.background = '#000000';
+      // HDRLoader 产出的是 6-face packed Texture,renderer 按立方体贴图上传;
+      // scene.environment 在类型上要求 CubeTexture,这里做一次桥接 cast。
+      scene.environment = result.texture as unknown as CubeTexture;
     }).catch((e) => {
       log.warn(`HDRI reload failed for ${hdriPath}:`, e);
     });
@@ -711,7 +714,14 @@ function applyPostFX(r: WebGL2Renderer, p: PostFXState): void {
   r.vignetteEnabled = p.vignette;
 }
 
-/** Environment:clearColor 跟环境预设一致。 */
+/** Environment:clearColor 跟环境预设一致。
+ *
+ *  clearColor 值域约定（重要，勿破坏）：
+ *   - RGB 分量必须是线性空间下的 0..1 浮点，**不可再乘任意强度系数**。
+ *   - 历史教训：曾在此处对 dawn 的 [0.18,0.12,0.15] 再 ×0.18 导致画面过暗，
+ *     因为 WebGL2Renderer 已经会按 environmentExposure 自行缩放环境贡献，
+ *     这里重复衰减 = 双重衰减。当前实现直接把预设色原值写入 clearColor。
+ *   - alpha 始终为 1（canvas 不透明）。 */
 function applyEnvironment(r: WebGL2Renderer, e: EnvironmentState): void {
   // 简化为根据 preset 名挑色（值域 0..1）
   const map: Record<string, [number, number, number]> = {

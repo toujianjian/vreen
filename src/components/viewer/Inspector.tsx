@@ -12,9 +12,7 @@ import {
   Lightbulb,
   RotateCcw,
   Sparkles,
-  Sun,
   Upload,
-  X,
 } from 'lucide-react';
 import { HudPanel } from '@/components/hud/HudPanel';
 import { useInspectorStore } from '@/stores/inspectorStore';
@@ -22,7 +20,6 @@ import { useUIStore } from '@/stores/uiStore';
 import { useViewerStore } from '@/stores/viewerStore';
 import { useWorldStore } from '@/stores/worldStore';
 import { cn } from '@/lib/cn';
-import type { EnvironmentPreset } from '@/types';
 import { CAMERA_PRESET_LIST, CAMERA_PRESETS } from '@/three/camera';
 import { ColorField } from '@/components/viewer/ColorField';
 import { ECSPanel } from '@/components/viewer/ECSPanel';

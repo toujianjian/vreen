@@ -58,7 +58,7 @@ export function ECSPanel() {
   const [diffExpanded, setDiffExpanded] = useState<{ added: boolean; removed: boolean; modified: boolean }>({
     added: false, removed: false, modified: false,
   });
-  const [timingHistory, setTimingHistory] = useState<SystemTiming[][]>([]);
+  const [timingHistory] = useState<SystemTiming[][]>([]);
   // useViewerStore 必须提前调,否则 world 从 null→非 null 时 hook 顺序会变
   const useCustomRenderer = useViewerStore((s) => s.useCustomRenderer);
 
@@ -886,13 +886,6 @@ function EditableFields({
       })}
     </div>
   );
-}
-
-function formatFields(data: unknown): { k: string; v: string }[] {
-  if (data == null) return [];
-  if (typeof data !== 'object') return [{ k: 'value', v: String(data) }];
-  const obj = data as Record<string, unknown>;
-  return Object.entries(obj).map(([k, v]) => ({ k, v: formatValue(v) }));
 }
 
 function formatValue(v: unknown): string {

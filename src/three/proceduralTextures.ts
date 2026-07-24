@@ -27,14 +27,6 @@ function colorToStyle(c: THREE.Color): string {
   return `rgb(${(c.r * 255) | 0},${(c.g * 255) | 0},${(c.b * 255) | 0})`;
 }
 
-function noise(ctx: CanvasRenderingContext2D, alpha: number) {
-  const img = ctx.getImageData(0, 0, TEX_SIZE, TEX_SIZE);
-  for (let i = 3; i < img.data.length; i += 4) {
-    img.data[i] = Math.random() * alpha * 255;
-  }
-  ctx.putImageData(img, 0, 0);
-}
-
 // ── 风格工厂 ──────────────────────────────────────────────────────
 
 /** 金属/机械面板纹理: 网格线 + 铆钉 */

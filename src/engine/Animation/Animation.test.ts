@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import { Object3D } from '../Core/Object3D';
 import { AnimationClip } from './AnimationClip';
 import {
-  KeyframeTrack,
   NumberKeyframeTrack,
   VectorKeyframeTrack,
   QuaternionKeyframeTrack,
@@ -51,6 +50,7 @@ describe('KeyframeTrack', () => {
       expect(i0).toBe(0);
       expect(i1).toBe(0);
       expect(alpha).toBe(0);
+      expect(alpha).toBe(0);
     });
 
     it('returns last key when time >= end', () => {
@@ -70,7 +70,7 @@ describe('KeyframeTrack', () => {
 
     it('returns correct indices for single key', () => {
       const t = new NumberKeyframeTrack('x.rotation.x', [1], [5]);
-      const { i0, i1, alpha } = t.findTime(0.5);
+      const { i0, i1 } = t.findTime(0.5);
       expect(i0).toBe(0);
       expect(i1).toBe(0);
     });

@@ -11,8 +11,7 @@ import * as Blockly from 'blockly/core';
 import { javascriptGenerator } from 'blockly/javascript';
 import 'blockly/blocks';
 import * as En from 'blockly/msg/en';
-import { Play, Square, AlertTriangle, Bug } from 'lucide-react';
-import { useTranslation } from 'react-i18next';
+import { Play, Square, AlertTriangle, Bug, Save, FolderOpen } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { useUIStore } from '@/stores/uiStore';
 import {
@@ -21,7 +20,15 @@ import {
   createVREENAPI,
   executeVreenScript,
   setLogCallback,
+  driveVreenTick,
 } from '@/lib/vreenBlockly';
+import {
+  serializeWorkspace,
+  deserializeIntoWorkspace,
+  listSavedScripts,
+  saveScript,
+} from '@/lib/blocklyScriptStore';
+import type { VreenScriptEntry as ScriptEntry } from '@/lib/vreenManifest';
 
 // Load Blockly default messages (required for aria labels, tooltips, etc.)
 Blockly.setLocale(En as unknown as Record<string, string>);
@@ -29,10 +36,11 @@ Blockly.setLocale(En as unknown as Record<string, string>);
 let blocksDefined = false;
 
 export function BlocklyPanel() {
-  const { t } = useTranslation();
   const blocklyRef = useRef<HTMLDivElement>(null);
   const workspaceRef = useRef<Blockly.WorkspaceSvg | null>(null);
   const apiRef = useRef(createVREENAPI());
+  const rafRef = useRef<number | null>(null);
+  const lastTickTimeRef = useRef<number>(0);
   const [running, setRunning] = useState(false);
   const [code, setCode] = useState('');
   const pushLog = useUIStore((s) => s.pushLog);
@@ -41,6 +49,31 @@ export function BlocklyPanel() {
   useEffect(() => {
     setLogCallback((level, text) => pushLog(level, text));
   }, [pushLog]);
+
+  // Tick loop: drive EcsScriptAPI every frame while running
+  const startTickLoop = useCallback(() => {
+    if (rafRef.current !== null) return;
+    lastTickTimeRef.current = performance.now();
+    const loop = (now: number) => {
+      const dt = Math.min(0.1, (now - lastTickTimeRef.current) / 1000);
+      lastTickTimeRef.current = now;
+      driveVreenTick(dt);
+      rafRef.current = requestAnimationFrame(loop);
+    };
+    rafRef.current = requestAnimationFrame(loop);
+  }, []);
+
+  const stopTickLoop = useCallback(() => {
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => stopTickLoop();
+  }, [stopTickLoop]);
 
   // Initialize Blockly workspace
   useEffect(() => {
@@ -120,22 +153,59 @@ export function BlocklyPanel() {
 
   const handleRun = useCallback(async () => {
     if (!code.trim()) return;
+    // Clear previous tick callbacks before re-running
+    apiRef.current.__clearTickCallbacks();
     setRunning(true);
+    startTickLoop();
     await executeVreenScript(code, apiRef.current);
     setRunning(false);
-  }, [code]);
+  }, [code, startTickLoop]);
 
   const handleStop = useCallback(() => {
-    // For now, stop just clears the running state.
-    // Long-running scripts can be aborted via Workspace cleanup.
+    apiRef.current.__clearTickCallbacks();
+    stopTickLoop();
     setRunning(false);
-  }, []);
+  }, [stopTickLoop]);
 
   const handleClearWorkspace = useCallback(() => {
     const ws = workspaceRef.current;
     if (!ws) return;
     ws.clear();
   }, []);
+
+  const handleSaveScript = useCallback(() => {
+    const ws = workspaceRef.current;
+    if (!ws) return;
+    const name = window.prompt('Script name:', `script_${Date.now()}`);
+    if (!name) return;
+    const entry = serializeWorkspace(ws, name);
+    saveScript(entry);
+    pushLog('OK', `Script saved: "${name}"`);
+  }, [pushLog]);
+
+  const [savedScripts, setSavedScripts] = useState<ScriptEntry[]>([]);
+  const [showLoadMenu, setShowLoadMenu] = useState(false);
+
+  const refreshSavedScripts = useCallback(() => {
+    setSavedScripts(listSavedScripts());
+  }, []);
+
+  const handleLoadScript = useCallback((entry: ScriptEntry) => {
+    const ws = workspaceRef.current;
+    if (!ws) return;
+    const ok = deserializeIntoWorkspace(entry, ws);
+    if (ok) {
+      pushLog('OK', `Script loaded: "${entry.name}"`);
+    } else {
+      pushLog('ERR', `Failed to load script: "${entry.name}"`);
+    }
+    setShowLoadMenu(false);
+  }, [pushLog]);
+
+  const handleOpenLoadMenu = useCallback(() => {
+    refreshSavedScripts();
+    setShowLoadMenu((v) => !v);
+  }, [refreshSavedScripts]);
 
   return (
     <div className="flex flex-col h-full bg-space-950">
@@ -171,6 +241,39 @@ export function BlocklyPanel() {
             <Bug className="w-3 h-3" />
             Clear
           </button>
+          <button
+            onClick={handleSaveScript}
+            className="flex items-center gap-1.5 px-2 py-1 font-mono text-[11px] text-mist hover:text-haze transition-colors"
+          >
+            <Save className="w-3 h-3" />
+            Save
+          </button>
+          <div className="relative">
+            <button
+              onClick={handleOpenLoadMenu}
+              className="flex items-center gap-1.5 px-2 py-1 font-mono text-[11px] text-mist hover:text-haze transition-colors"
+            >
+              <FolderOpen className="w-3 h-3" />
+              Load
+            </button>
+            {showLoadMenu && (
+              <div className="absolute top-full left-0 mt-1 min-w-[160px] max-h-[200px] overflow-auto bg-space-900 border border-neon-cyan/30 shadow-lg z-50">
+                {savedScripts.length === 0 ? (
+                  <div className="px-3 py-2 font-mono text-[10px] text-mist">No saved scripts</div>
+                ) : (
+                  savedScripts.map((s) => (
+                    <button
+                      key={s.id}
+                      onClick={() => handleLoadScript(s)}
+                      className="block w-full text-left px-3 py-1.5 font-mono text-[10px] text-haze hover:bg-neon-cyan/10 transition-colors truncate"
+                    >
+                      {s.name}
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
         </div>
         <span className="font-mono text-[9px] tracking-[0.22em] text-mist">BLOCKLY SCRIPT</span>
       </div>

@@ -114,6 +114,13 @@ export class Object3D {
     return null;
   }
 
+  /** 射线检测钩子。基类 Object3D 不可被命中(无几何体),子类(如 Mesh /
+   *  InstancedMesh)覆盖此方法把命中结果 push 进 intersects。
+   *  参数用 unknown 以避免 Core/Raycaster 循环依赖;子类覆盖时收窄到具体类型。 */
+  raycast(_raycaster: unknown, _intersects: unknown[]): void {
+    // no-op
+  }
+
   /**
    * Orient this object so its -Z axis points at the world-space target.
    * Mirrors three.js's `Object3D.lookAt`.

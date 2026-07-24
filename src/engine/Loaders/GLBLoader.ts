@@ -331,7 +331,6 @@ async function buildFromGltf(json: GltfJson, bin: Uint8Array | null): Promise<Lo
   }
 
   const acc = json.accessors ?? [];
-  const bufViews = json.bufferViews ?? [];
   const nodesJson = json.nodes ?? [];
   const meshesJson = json.meshes ?? [];
   const materialsJson = json.materials ?? [];

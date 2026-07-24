@@ -21,6 +21,16 @@ import { Mesh } from './Mesh';
 import { BufferGeometry } from './BufferGeometry';
 import type { Material } from './Material';
 import { Matrix4 } from '../Math/Matrix4';
+import { Ray } from '../Math/Ray';
+import { intersectGeometry, type Raycaster, type Intersection } from './Raycaster';
+
+// InstancedMesh.raycast 复用的临时矩阵/射线(模块级,避免每次拾取分配)
+const _invMeshMatrix = new Matrix4();
+const _meshLocalRay = new Ray();
+const _instMat = new Matrix4();
+const _invInst = new Matrix4();
+const _instLocalRay = new Ray();
+const _worldMatrix = new Matrix4();
 
 export class InstancedMesh extends Mesh {
   override readonly type: string = 'InstancedMesh';
@@ -102,5 +112,37 @@ export class InstancedMesh extends Mesh {
     buf[off + 5] = 1;
     buf[off + 10] = 1;
     buf[off + 15] = 1;
+  }
+
+  /** 射线检测:对每个实例,把射线变到该实例的局部空间(base geometry 空间)
+   *  后做三角形求交。命中结果带 instanceId。
+   *  调用前需保证 matrixWorld 已更新。 */
+  override raycast(raycaster: Raycaster, intersects: Intersection[]): void {
+    const geometry = this.geometry;
+    if (!geometry.attributes.position) return;
+    if (this.count === 0) return;
+
+    if (geometry.boundingSphere === null) geometry.computeBoundingSphere();
+    const bs = geometry.boundingSphere;
+
+    // 世界射线 → mesh 局部空间(instanceMatrix 之后的坐标系)
+    _invMeshMatrix.getInverse(this.matrixWorld);
+    _meshLocalRay.copy(raycaster.ray).applyMatrix4(_invMeshMatrix);
+
+    for (let i = 0; i < this.count; i++) {
+      const off = i * 16;
+      _instMat.elements.set(this.instanceMatrix.subarray(off, off + 16));
+      _invInst.getInverse(_instMat);
+      // mesh 局部 → 实例局部(base geometry 空间)
+      _instLocalRay.copy(_meshLocalRay).applyMatrix4(_invInst);
+
+      // base geometry 包围球在实例局部空间,直接剔除(内联判定避免适配 Sphere 类)
+      if (bs !== null && _instLocalRay.distanceSqToPoint(bs.center) > bs.radius * bs.radius) continue;
+
+      // 该实例的世界矩阵 = matrixWorld * instanceMatrix
+      _worldMatrix.multiplyMatrices(this.matrixWorld, _instMat);
+      const hits = intersectGeometry(this, geometry, _instLocalRay, raycaster, _worldMatrix, i);
+      for (let h = 0; h < hits.length; h++) intersects.push(hits[h]);
+    }
   }
 }

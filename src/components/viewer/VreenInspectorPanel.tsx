@@ -10,7 +10,7 @@
 
 import { useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AlertCircle, CheckCircle2, FileBox, GitCompareArrows, RefreshCw, ShieldCheck, X } from 'lucide-react';
+import { AlertCircle, CheckCircle2, FileBox, GitCompareArrows, RefreshCw, ShieldCheck } from 'lucide-react';
 import { HudPanel } from '@/components/hud/HudPanel';
 import { tryUnpackAnyVreen, type UnpackedVreen } from '@/lib/vreenPack';
 import {

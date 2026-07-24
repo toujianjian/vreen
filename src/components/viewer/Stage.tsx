@@ -4,7 +4,6 @@
 import { Canvas, useFrame } from '@react-three/fiber';
 import {
   ContactShadows,
-  Environment,
   Grid,
   OrbitControls,
   PerspectiveCamera,
@@ -26,7 +25,6 @@ import { SceneContents } from './SceneContents';
 import { CustomStage } from './CustomStage';
 import { FreeCameraController } from './FreeCameraController';
 import { SafeEnvironment } from '@/components/three/SafeEnvironment';
-import type { EnvironmentPreset } from '@/types';
 import {
   CAMERA_PRESETS,
   animateCameraToPreset,

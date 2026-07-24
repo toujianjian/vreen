@@ -22,7 +22,6 @@ function makeHDRBytes(
   const header = new TextEncoder().encode(headerStr);
 
   // RLE scanline data — per-channel RLE
-  const scanlineLen = width * 4;
   const rleData: number[] = [];
   for (let y = 0; y < height; y++) {
     // RLE marker
@@ -176,7 +175,10 @@ describe('HDRLoader', () => {
 
     it('load returns LoadedHDR from File', async () => {
       const buf = makeHDRBytes(1, 1, new Uint8Array([255, 255, 255, 128]));
-      const file = new File([buf], 'test.hdr', { type: 'image/hdr' });
+      // TS 5.7+ types Uint8Array.buffer as ArrayBufferLike (could be SharedArrayBuffer),
+      // which isn't a valid BlobPart. makeHDRBytes returns a fresh Uint8Array backed by
+      // a real ArrayBuffer, so cast is honest here.
+      const file = new File([buf.buffer as ArrayBuffer], 'test.hdr', { type: 'image/hdr' });
       const loader = new HDRLoader();
       const result = await loader.load(file);
       expect(result.width).toBe(1);

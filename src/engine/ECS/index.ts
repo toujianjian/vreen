@@ -25,6 +25,13 @@ export {
   type ComponentRegistry,
 } from './World';
 export {
+  Prefab,
+  type PrefabEntityTemplate,
+  type PrefabJson,
+  type InstantiateOptions,
+} from './Prefab';
+export { QueryBuilder } from './QueryBuilder';
+export {
   Transform, TransformC,
   Velocity, VelocityC,
   MeshRef, MeshRefC,

@@ -20,7 +20,6 @@ export function ProfilerHUD() {
   const { t } = useTranslation();
   const latest = useProfilerStore((s) => s.latest);
   const history = useProfilerStore((s) => s.history);
-  const systemTimings = useProfilerStore((s) => s.systemTimings);
   const [tab, setTab] = useState<Tab>('cpu');
   const [minimized, setMinimized] = useState(false);
   const [visible, setVisible] = useState(true);

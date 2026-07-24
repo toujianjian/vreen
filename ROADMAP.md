@@ -52,7 +52,7 @@ VREEN 不是"另一个 3D 检视器"——检视器只是展示层。核心是 *
 
 ---
 
-## 三、VREEN 当前状态（截至 2026-07-20）
+## 三、VREEN 当前状态（截至 2026-07-21）
 
 ### Git 当前分支
 
@@ -108,14 +108,14 @@ Electron 桌面              ██████░░    便携版可构建
 | # | 任务 | 估计 | 前置 | 产出 |
 |---|------|------|------|------|
 | 1.1.1 | **安装 Vitest + 配置**：`vitest` 与 Vite 共享配置，零额外配置 | 0.5h | — | `npm run test` 可用 |
-| 1.1.2 | **Math 库测试**：Vector3 (add/sub/cross/dot/length/normalize)，Matrix4 (multiply/inverse/transpose)，Quaternion (multiply/slerp/rotateVector) | 2h | 1.1.1 | `src/engine/Math/*.test.ts` |
+| 1.1.2 | **Math 库测试**：Vector3 (add/sub/cross/dot/length/normalize)，Matrix4 (multiply/inverse/transpose/makeLookAt/makePerspective)，Quaternion (multiply/slerp/rotateVector)。注：边界情况多（奇异矩阵、坐标系约定 +Z/-Z），工时上调 | 3h | 1.1.1 | `src/engine/Math/*.test.ts` |
 | 1.1.3 | **ECS 核心测试**：World.createEntity/destroyEntity 生命周期、setComponent/getComponent/removeComponent、query() 正确性、toJSON/loadJSON 往返 | 2h | 1.1.1 | `src/engine/ECS/World.test.ts` |
 | 1.1.4 | **HDRLoader 测试**：用一小段已知正确的 .hdr 二进制数据做解码测试，验证 RGBE→Float32 转换正确性 | 1.5h | 1.1.1 | `src/engine/Loaders/HDRLoader.test.ts` |
 | 1.1.5 | **GLBLoader 测试**：构造最小 GLB 二进制 buffer，验证解析不抛异常 | 1.5h | 1.1.1 | `src/engine/Loaders/GLBLoader.test.ts` |
 | 1.1.6 | **Animation 测试**：AnimationClip 创建、AnimationMixer 播放/暂停/跳转、StateMachine 状态切换 | 2h | 1.1.1 | `src/engine/Animation/*.test.ts` |
 | 1.1.7 | **Physics 测试**：CollisionSystem overlap 检测、冲量响应方向正确性、ParticleSystem 推进 | 2h | 1.1.1 | `src/engine/ECS/PhysicsSystems.test.ts` |
 
-**Phase 1 总计**: ~11.5h（按不定期节奏，约 2-4 周完成）
+**Phase 1 总计**: ~12.5h（按不定期节奏，约 2-4 周完成）
 
 #### 1.2 CI 持续集成
 
@@ -221,6 +221,12 @@ Electron 桌面              ██████░░    便携版可构建
 | `BlocklyPanel.tsx` 的 `handleStop()` 只是设了 running=false，没有真中止能力 | `BlocklyPanel.tsx` | 长脚本无法中断 | Phase 3.2 时一并解决 |
 | 没有错误边界组件 (React ErrorBoundary) | 全局 | 任意组件崩溃 → 白屏 | 可单独作为一个 1h 任务 |
 | 没有 `@vreen/engine` 包的 npm 发布流程 | `packages/engine/` | 只能通过 GitHub 安装 | 等引擎 API 稳定后 |
+| `HDRLoader` RLE 解码虽已改为 per-channel，但仅在 studio_small_03_1k.hdr 上验证过，其他 .hdr 变体（未压缩、混合编码）未覆盖 | `src/engine/Loaders/HDRLoader.ts` | 加载某些 HDR 环境贴图可能仍失败 | Phase 1.1.4 测试时覆盖 |
+| `PostProcessingResources` 曾用 `size×size` 正方形 viewport 导致超出 FBO 高度，已改为 `width×height`，但缺少回归测试 | `src/engine/Renderer/WebGL2Renderer.ts` | 后处理在非正方形画布上可能再次错位 | Phase 1 测试框架就位后加 viewport 回归测试 |
+| `CustomStage.tsx` 中 `applyEnvironment` 曾误将 clearColor 再乘 0.18 导致画面过暗（已修），但 clearColor 值域约定未文档化 | `src/components/viewer/CustomStage.tsx` | 后续改动可能再次引入暗屏 | Phase 0.3 审查时补注释 |
+| React 18 严格模式双 mount 导致渲染循环生命周期复杂（第一次 mount 的 rAF 在 tick 前被 cancel） | `src/components/viewer/CustomStage.tsx` | 开发模式下首次挂载渲染 0 帧，需确认第二次 mount 正常 | 测试框架就位后加 mount/unmount 生命周期测试 |
+| `ShaderProgram.setUniform1i` 曾误用 `uniform1f` 导致所有 draw call 报 GL_INVALID_OPERATION (1282)，已修但缺防护 | `src/engine/Renderer/ShaderProgram.ts` | 类似类型错误可能再次出现 | 加 uniform 类型自检断言 |
+| 临时诊断代码（tick first frame 日志、window.__vreenStage 暴露）部分仍残留在 `CustomStage.tsx` | `src/components/viewer/CustomStage.tsx` | 生产环境暴露内部对象、日志刷屏 | Phase 0.3 审查时清理 |
 
 ---
 
@@ -253,11 +259,11 @@ Phase 0 (1-3天) → Phase 1 (2-4周) → 然后看情况选 Phase 2 或 Phase 3
 
 ---
 
-## 八、Three.js 对标优化专题
+## 七、Three.js 对标优化专题
 
 > 以下来自 2026-07-21 引擎代码审计，对标 Three.js 架构，逐层分析差距并给出可执行任务。
 
-### 8.1 渲染器抽象（Phase 2 前置）
+### 7.1 渲染器抽象（Phase 2 前置）
 
 当前 `WebGL2Renderer` 是具体类，无抽象接口。Three.js 的 `WebGLRenderer` / `WebGPURenderer` 通过 `Renderer` 接口可插拔。
 
@@ -278,7 +284,7 @@ interface Renderer {
 ```
 → Phase 2.1.1 已规划，估计 2h，是所有后续渲染优化的前置条件。
 
-### 8.2 渲染管线性能优化（最大性能收益）
+### 7.2 渲染管线性能优化（最大性能收益）
 
 当前 `render()` 里有两个 O(n²) 问题：
 
@@ -303,7 +309,7 @@ private _collectLights(scene: Scene) {
 
 **建议**：先加 Frustum Culling（~3h），大场景渲染性能收益最明显。
 
-### 8.3 材质系统深度
+### 7.3 材质系统深度
 
 | Three.js | VREEN 当前 | 差距 |
 |---|---|---|
@@ -316,7 +322,7 @@ private _collectLights(scene: Scene) {
 
 **优先做**：Phase 3.3 材质图积木（节点图→GLSL 生成）
 
-### 8.4 内存/GC 优化
+### 7.4 内存/GC 优化
 
 当前代码存在帧分配抖动：
 
@@ -336,7 +342,7 @@ lookAt(x, y, z) {
 - `scene.traverse()` 中的 `instanceof Mesh` 检查可缓存
 - 所有 `new Vector3()` / `new Matrix4()` 在工具方法中改用 scratch pool
 
-### 8.5 优化优先级总结
+### 7.5 优化优先级总结
 
 ```
 当前引擎瓶颈（从大到小）                对应 Phase
@@ -355,7 +361,7 @@ lookAt(x, y, z) {
 
 ---
 
-## 七、长期愿景
+## 八、长期愿景
 
 ```
 Three.js 渲染灵活性  ────┐
@@ -371,5 +377,5 @@ Blockly 零代码脚本     ──┘
 
 ---
 
-*本规划基于 VREEN v0.5.0 代码分析 (2026-07-20)*
+*本规划基于 VREEN v0.5.0 代码分析 (2026-07-21)*
 *参考项目: [Three.js](https://github.com/mrdoob/three.js) · [O3DE](https://github.com/o3de/o3de)*

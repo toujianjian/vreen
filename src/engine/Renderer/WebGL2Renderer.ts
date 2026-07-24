@@ -963,7 +963,7 @@ export class WebGL2Renderer implements Renderer {
       program.setUniform3f('u_ambientGround', 0.05, 0.05, 0.07);
     }
 
-    const envMap = scene.background?.envMap;
+    const envMap = scene.environment;
     if (envMap && envMap.image) {
       const glTex = this._ensureEnvMapTexture(envMap);
       if (glTex) {

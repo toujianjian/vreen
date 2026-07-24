@@ -10,9 +10,6 @@ import type { UnpackedVreen } from './vreenPack';
 import type { VreenManifest, VreenScene, VreenAssetEntry } from './vreenManifest';
 import { validateManifest, validateScene, VreenFormatError } from './vreenManifest';
 
-const log = createLogger('vreenValidate');
-import { createLogger } from '@/lib/logger';
-
 /** SHA-256 hex 字符串,带分桶提升大文件处理。 */
 export async function computeSha256(data: Uint8Array): Promise<string> {
   if (typeof crypto !== 'undefined' && crypto.subtle) {

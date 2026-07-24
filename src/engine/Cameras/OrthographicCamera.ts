@@ -4,6 +4,7 @@ import { Camera } from './Camera';
 
 export class OrthographicCamera extends Camera {
   override readonly type: string = 'OrthographicCamera';
+  isOrthographicCamera: boolean = true;
   left: number;
   right: number;
   top: number;

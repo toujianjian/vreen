@@ -15,6 +15,8 @@ import { computeSha256 } from './vreenValidate';
 
 const log = createLogger('vreenRegistry');
 
+
+
 // ── 类型 ──────────────────────────────────────────────────────────
 
 export interface RegistryVersion {
@@ -129,7 +131,7 @@ function matchesRange(version: string, range: string): boolean {
   }
   if (range.startsWith('~')) {
     const [maj, min] = range.slice(1).split('.').map((p) => parseInt(p, 10));
-    const [v1, v2, v3] = version.split('.').map((p) => parseInt(p, 10));
+    const [v1, v2] = version.split('.').map((p) => parseInt(p, 10));
     return v1 === maj && v2 === min;
   }
   if (range.startsWith('>=')) {

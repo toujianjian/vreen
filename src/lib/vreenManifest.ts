@@ -95,6 +95,22 @@ export interface VreenScene {
   postFX: Record<string, unknown>;
   /** 0.1 兼容：materials 也搬到这里。 */
   materials: Record<string, unknown>;
+  /** Phase 3.5: Blockly 可视化脚本序列化(可选)。 */
+  scripts?: VreenScriptEntry[];
+}
+
+/** Blockly 脚本条目(Phase 3.5)。 */
+export interface VreenScriptEntry {
+  /** 稳定 ID(uuid 形式)。 */
+  id: string;
+  /** 用户可见的脚本名。 */
+  name: string;
+  /** Blockly workspace 序列化 JSON(Blockly.serialization.workspaces.save 的输出)。 */
+  workspace: unknown;
+  /** 可选:生成的 JavaScript 代码(调试/兼容用)。 */
+  generatedCode?: string;
+  /** 创建/更新时间(ISO 字符串)。 */
+  updatedAt: string;
 }
 
 /** state.json —— 0.1 project.json 的别名，保留以保证旧工具能读。 */
@@ -163,6 +179,18 @@ export function validateScene(s: unknown): asserts s is VreenScene {
   if (typeof o.materials !== 'object') throw new VreenFormatError('scene.materials missing');
   if (typeof o.animation !== 'object' || typeof o.animation.speed !== 'number') {
     throw new VreenFormatError('scene.animation.speed missing');
+  }
+  if (o.scripts !== undefined) {
+    if (!Array.isArray(o.scripts)) throw new VreenFormatError('scene.scripts must be an array');
+    for (const sc of o.scripts) {
+      if (typeof sc.id !== 'string') throw new VreenFormatError('script.id must be string');
+      if (typeof sc.name !== 'string') throw new VreenFormatError('script.name must be string');
+      if (sc.workspace === undefined) throw new VreenFormatError('script.workspace missing');
+      if (sc.generatedCode !== undefined && typeof sc.generatedCode !== 'string') {
+        throw new VreenFormatError('script.generatedCode must be string');
+      }
+      if (typeof sc.updatedAt !== 'string') throw new VreenFormatError('script.updatedAt must be string');
+    }
   }
 }
 

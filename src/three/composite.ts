@@ -18,7 +18,7 @@ import {
   StandardMaterial,
   TorusGeometry,
 } from '@/engine';
-import type { ParamSchema, ParamFieldDef } from './generators';
+import type { ParamSchema } from './generators';
 
 // ── palette(与 generators.ts 保持一致) ─────────────────────────
 const CYAN = '#00f0ff';

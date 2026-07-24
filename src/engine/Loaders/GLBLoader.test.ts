@@ -97,7 +97,7 @@ describe('GLBLoader', () => {
       const buf = makeMinimalGLB();
       const result = parseGLB(buf);
       expect(result.json).toBeDefined();
-      expect(result.json.asset.version).toBe('2.0');
+      expect(result.json?.asset?.version).toBe('2.0');
       expect(result.bin).not.toBeNull();
       expect(result.bin!.byteLength).toBe(42);
     });
@@ -166,7 +166,7 @@ describe('GLBLoader', () => {
 
       const result = parseGLB(buf);
       expect(result.bin).toBeNull();
-      expect(result.json.asset.version).toBe('2.0');
+      expect(result.json?.asset?.version).toBe('2.0');
     });
 
     it('parses JSON content correctly', () => {

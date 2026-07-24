@@ -96,7 +96,6 @@ export async function runRoundtripDemo(): Promise<RoundtripReport> {
   const sourceFrame = src.frame();
 
   const sourceJson: WorldJson = src.toJSON();
-  const sourceEntityCount = sourceJson.entities.length;
 
   // ── 2. pack → unpack ──────────────────────────────────────
   const scene = {
@@ -107,7 +106,7 @@ export async function runRoundtripDemo(): Promise<RoundtripReport> {
     postFX: { bloom: true, bloomIntensity: 0.55, chromaticAberration: true, vignette: true, ssao: false },
     materials: {},
   };
-  const { bytes, manifest } = packVreenPackage({
+  const { bytes } = packVreenPackage({
     name: 'roundtrip-test',
     assetName: 'roundtrip-test',
     scene,

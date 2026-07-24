@@ -19,8 +19,11 @@ export class ComponentType<T = unknown> {
   constructor(name: string) {
     this.id = ComponentType._nextId();
     this.name = name;
-    ComponentType._byName().set(name, this as unknown as ComponentType<unknown>);
-    ComponentType._byId().set(this.id, this as unknown as ComponentType<unknown>);
+    // 注:这里用 ComponentType<T>(而非 <unknown>)是为了让类级泛型 T 在类体内被引用,
+    // 避免 noUnusedLocals 报 TS6133。T 是 phantom type,供外部 World.getComponent<T>
+    // 推导返回类型,运行时无影响。结构上 ComponentType<T> 与 ComponentType<unknown> 一致。
+    ComponentType._byName().set(name, this as unknown as ComponentType<T>);
+    ComponentType._byId().set(this.id, this as unknown as ComponentType<T>);
   }
 
   // 全部用 module-scoped 变量,不用 class field,这样:

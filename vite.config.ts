@@ -1,9 +1,6 @@
-import { defineConfig, type Plugin } from 'vite';
+import { defineConfig, type Plugin } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath, URL } from 'node:url';
-
-// Vitest type reference (merged with vite config)
-/// <reference types="vitest" />
 
 /**
  * Strip `.woff` (legacy) font assets from the build — every browser we
@@ -72,10 +69,14 @@ export default defineConfig({
     chunkSizeWarningLimit: 1500,
     rollupOptions: {
       output: {
-        manualChunks: {
-          three: ['three'],
-          r3f: ['@react-three/fiber', '@react-three/drei'],
-          post: ['@react-three/postprocessing', 'postprocessing'],
+        // Function form: vitest/config 的 Rollup 类型仅接受 ManualChunksFunction
+        // (object 形式会触发 TS2769)。按 node_modules 包名分组,顺序:先匹配
+        // @react-three/* 再匹配 three,避免 @react-three 内部依赖 three 被误归。
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return;
+          if (/[\\/]@react-three[\\/](fiber|drei)[\\/]/.test(id)) return 'r3f';
+          if (/[\\/]@react-three[\\/]postprocessing[\\/]/.test(id) || /[\\/]postprocessing[\\/]/.test(id)) return 'post';
+          if (/[\\/]three[\\/]/.test(id) && !/[\\/]@react-three[\\/]/.test(id)) return 'three';
         },
       },
     },

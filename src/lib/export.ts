@@ -44,11 +44,6 @@ export interface VreenImportResult {
   modelFile: File | null;
 }
 
-/** Filename-safe slug. */
-function slugify(s: string): string {
-  return (s || 'project').replace(/\s+/g, '_').replace(/[^A-Za-z0-9_\-.]/g, '').slice(0, 60) || 'project';
-}
-
 /** Detect whether a filename is any flavour of .vreen package. */
 export function isVreenPackageFile(name: string): boolean {
   const lower = name.toLowerCase();
@@ -208,7 +203,7 @@ export async function exportVreenScene(input: ExportVreenSceneInput): Promise<Ex
   });
 
   const worldNote = input.worldJson
-    ? ` + world(${(input.worldJson as any).entities?.length || 0})`
+    ? ` + world(${(input.worldJson as VreenWorldJson | undefined)?.entities?.length || 0})`
     : '';
   const modelNote = assets.length > 0
     ? ` + model(${assets[0].originalName})`

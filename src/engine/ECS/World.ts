@@ -25,6 +25,8 @@ import { createLogger } from '@/lib/logger';
 import { ComponentTypeRegistry } from './ComponentType';
 import type { ComponentType } from './ComponentType';
 export { defineComponentType, ComponentTypeRegistry, type ComponentType } from './ComponentType';
+// QueryBuilder 运行时 import(单向:QueryBuilder.ts 只 type-only import World,无循环)
+import { QueryBuilder } from './QueryBuilder';
 
 const log = createLogger('ECS');
 
@@ -136,6 +138,12 @@ export class World {
   /** 每帧 +1，方便 system 判断本帧数据是否变化。 */
   private _frame: number = 0;
 
+  /** 结构修改计数器:createEntity / destroyEntity / setComponent / removeComponent /
+   *  loadJSON 时 +1。QueryBuilder 用它判断缓存是否失效。 */
+  private _modCount: number = 0;
+  /** 已注册的 QueryBuilder,在销毁时需要被通知失效。 */
+  private _queryBuilders: Set<QueryBuilder> = new Set();
+
   /** 场景根节点（新 entity.sceneNode 会被 add 到这里）。 */
   readonly sceneRoot: Object3D;
 
@@ -156,6 +164,7 @@ export class World {
     this.sceneRoot.add(sceneNode);
     const rec: EntityRecord = { id, name: sceneNode.name, sceneNode, componentSet: new Set() };
     this._records[idx] = rec;
+    this._modCount++;
     log.debug(`createEntity → id=0x${id.toString(16)} (idx=${idx}, ver=${version}), ` +
       `name="${sceneNode.name}", total=${this.entityCount()}`);
     return id;
@@ -180,6 +189,7 @@ export class World {
     this._records[idx] = null;
     this._versions[idx] = (this._versions[idx] ?? 0) + 1;
     this._freeList.push(idx);
+    this._modCount++;
     log.debug(`destroyEntity: id=0x${id.toString(16)} ("${rec.name}"), ` +
       `freed ${compCount} components, total=${this.entityCount()}`);
   }
@@ -354,6 +364,7 @@ export class World {
     const replacing = store.has(id);
     store.set(id, data);
     rec.componentSet.add(type.id);
+    this._modCount++;
     log.debug(`setComponent<${type.name}>: id=0x${id.toString(16)} "${rec.name}" ${replacing ? '(replaced)' : '(new)'}`);
   }
 
@@ -375,6 +386,7 @@ export class World {
     const store = this._components.get(type.id);
     if (!store?.delete(id)) return false;
     rec.componentSet.delete(type.id);
+    this._modCount++;
     return true;
   }
 
@@ -439,7 +451,7 @@ export class World {
     const sb = this._components.get(b.id) as ComponentStore<B> | undefined;
     if (!sa || !sb) return;
     // 用较小集合作驱动
-    const [driver, other, typeOther] = sa.size <= sb.size
+    const [driver, _other, _typeOther] = sa.size <= sb.size
       ? [sa, sb, b] as const
       : [sb, sa, a] as const;
     for (const id of driver.keys()) {
@@ -644,6 +656,30 @@ export class World {
 
     // 还原 frame 计数（不算入已重建的 entity 数量）
     this._frame = json.frame;
+    // loadJSON 内部调用了 createEntity/setComponent,modCount 已经多次 +1,
+    // 这里再 +1 标记"loadJSON 完成"作为统一失效边界。
+    this._modCount++;
+    // 通知所有 QueryBuilder 失效
+    for (const qb of this._queryBuilders) qb.invalidate();
+  }
+
+  // ── QueryBuilder 注册(Phase 2.3.3) ─────────────────────────────
+  /** 当前 modCount(供 QueryBuilder 比较缓存有效性)。 */
+  modCount(): number { return this._modCount; }
+
+  /** 注册一个 QueryBuilder,使其在 World 结构变化时收到失效通知。 */
+  _registerQueryBuilder(qb: QueryBuilder): void {
+    this._queryBuilders.add(qb);
+  }
+
+  /** 解除 QueryBuilder 注册(QueryBuilder.dispose 调用)。 */
+  _unregisterQueryBuilder(qb: QueryBuilder): void {
+    this._queryBuilders.delete(qb);
+  }
+
+  /** 创建一个 QueryBuilder(自动注册到 World,World 结构变化时自动失效)。 */
+  queryBuilder(...types: ComponentType<unknown>[]): QueryBuilder {
+    return new QueryBuilder(this, types);
   }
 
   // ── 内部 ───────────────────────────────────────────────────────

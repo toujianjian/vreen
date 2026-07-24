@@ -24,3 +24,7 @@ export { DepthTexture } from './DepthTexture';
 export type { DepthCompareFunction, DepthTextureOptions } from './DepthTexture';
 export { VideoTexture } from './VideoTexture';
 export type { VideoTextureOptions } from './VideoTexture';
+export { Fog } from './Fog';
+export { FogExp2 } from './FogExp2';
+export { Raycaster, intersectGeometry } from './Raycaster';
+export type { Face, Intersection, RaycasterParameters } from './Raycaster';

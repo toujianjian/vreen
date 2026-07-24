@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { World, System } from './World';
+import { World } from './World';
 import { Transform, TransformC } from './Components';
 import {
   Rigidbody, RigidbodyC,

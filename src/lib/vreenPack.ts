@@ -22,11 +22,12 @@ import {
   validateScene,
   VreenAssetEntry,
   VreenWorldJson,
+  VreenScriptEntry,
   defaultAssetPath,
 } from './vreenManifest';
 import { applyVreenPackage, VreenPackage, VREEN_PACKAGE_VERSION } from './export';
 
-export type { VreenScene, VreenWorldJson, VreenAssetEntry, VreenManifest } from './vreenManifest';
+export type { VreenScene, VreenWorldJson, VreenAssetEntry, VreenManifest, VreenScriptEntry } from './vreenManifest';
 export { VREEN_FORMAT_VERSION } from './vreenManifest';
 
 // ── Pack input ──────────────────────────────────────────────────────
@@ -50,6 +51,9 @@ export interface PackInput {
   primaryModelId?: string | null;
   /** 嵌入的 ECS World (POJO 形式)，由 World.toJSON() 产生。 */
   world?: VreenWorldJson;
+  /** Phase 3.5: Blockly 可视化脚本(可选,会写入 scene.scripts)。
+   *  若同时传了 scene.scripts,则以 input.scripts 为准(覆盖)。 */
+  scripts?: VreenScriptEntry[];
   generator?: string;
 }
 
@@ -76,6 +80,10 @@ function emptyScene(): VreenScene {
 export function packVreenPackage(input: PackInput): PackResult {
   const scene: VreenScene = input.scene
     ?? (input.legacyState ? legacyToScene(input.legacyState) : emptyScene());
+  // Phase 3.5: scripts 注入(覆盖 scene.scripts,若同时传了 input.scripts)。
+  if (input.scripts !== undefined) {
+    scene.scripts = input.scripts;
+  }
   validateScene(scene);
 
   const entries: Record<string, Uint8Array> = {};
@@ -138,6 +146,8 @@ export interface UnpackedVreen {
   legacy: VreenPackage;
   /** 嵌入的 ECS World (toJSON 形式)。旧 0.1.x 包为 null。 */
   world: VreenWorldJson | null;
+  /** Phase 3.5: Blockly 脚本(scene.scripts 的便捷访问)。缺省为 []。 */
+  scripts: VreenScriptEntry[];
 }
 
 export async function unpackVreenPackage(source: ArrayBuffer | Uint8Array): Promise<UnpackedVreen> {
@@ -188,10 +198,11 @@ function parseVreen02(entries: Record<string, Uint8Array>): UnpackedVreen {
     assets,
     legacy: sceneToLegacyState(s, m.assetName),
     world: m.world ?? null,
+    scripts: s.scripts ?? [],
   };
 }
 
-function normalizeLegacyJson(parsed: unknown, fallbackName: string): UnpackedVreen {
+function normalizeLegacyJson(parsed: unknown, _fallbackName: string): UnpackedVreen {
   if (!parsed || typeof parsed !== 'object') {
     throw new VreenFormatError('legacy .vreen is not an object');
   }
@@ -214,7 +225,8 @@ function normalizeLegacyJson(parsed: unknown, fallbackName: string): UnpackedVre
     world: undefined,
     generator: 'VREEN Legacy Upgrader',
   };
-  return { manifest, scene, assets: new Map(), world: null, legacy: pkg };
+  // 0.1.x legacy 不含 Blockly 脚本概念,scripts 为空数组。
+  return { manifest, scene, assets: new Map(), world: null, legacy: pkg, scripts: [] };
 }
 
 function legacyToScene(pkg: VreenPackage): VreenScene {

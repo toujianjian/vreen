@@ -13,6 +13,7 @@ export * from './Lights';
 export * from './Materials';
 export * from './Geometries';
 export * from './Loaders';
+export * from './Audio';
 export * from './Renderer';
 export * from './Helpers';
 export {
