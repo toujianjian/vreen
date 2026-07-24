@@ -154,19 +154,22 @@ vreen/
 │   │   ├── three/              # Mini-canvas helpers (BackgroundScene / PresetPreview / SafeEnvironment)
 │   │   └── hud/                # Reusable HUD widgets (HudPanel / TopBar / LangSwitcher)
 │   ├── engine/                 # Self-developed WebGL2 engine (mirrored to packages/engine/src)
-│   │   ├── Core/               # Scene graph primitives
-│   │   ├── Math/               # Vectors, matrices, quaternions, geometry primitives
+│   │   ├── Core/               # Scene graph primitives + texture family (Cube/Data/DataArray/Depth/Video/Canvas/Compressed) + Source + Fog/FogExp2 + Raycaster
+│   │   ├── Math/               # Vector2/3/4, Matrix3/4, Quaternion, Euler, Color, Box3, Sphere, Plane, Ray, Line3, Triangle, Frustum, MathUtils
 │   │   ├── Cameras/            # Perspective / Orthographic cameras
-│   │   ├── Controls/           # OrbitControls
-│   │   ├── Lights/             # Light types
-│   │   ├── Geometries/         # Procedural primitive geometry
-│   │   ├── Materials/          # PBR / Shader materials and GLSL chunks
-│   │   ├── Renderer/           # WebGL2Renderer, ShaderProgram, RenderPass, Renderer interface
-│   │   ├── Loaders/            # GLB / OBJ / FBX / HDR / KTX2 / Draco / AssetManager
-│   │   ├── Animation/          # Clips, Mixer, StateMachine, BlendSpace1D, Humanoid
-│   │   ├── ECS/                # World, ComponentType, Systems, Physics, Prefab, QueryBuilder
-│   │   ├── Physics/            # PhysicsDemo
-│   │   ├── Helpers/            # GridHelper / LineHelper / PhysicsDebugRenderer
+│   │   ├── Controls/           # Orbit / Fly / PointerLock / Map controls
+│   │   ├── Lights/             # Ambient / Directional / Point / Spot / Hemisphere / RectArea + ShadowMapManager
+│   │   ├── Geometries/         # Box / Sphere / Cylinder / Cone / Torus / Plane / Circle / Ring / Capsule / TorusKnot / Lathe / Extrude / Shape / Wireframe / Edges
+│   │   ├── Materials/          # Standard / Physical / Basic / Phong / Normal / Shadow materials + ShaderMaterial + ShaderChunks + onBeforeCompile
+│   │   ├── Renderer/           # WebGL2Renderer, ShaderProgram, RenderPass, ShadowMapManager + post-FX (SSAO / FXAA / ToneMapping / Gamma / DOF)
+│   │   ├── Loaders/            # GLB / OBJ / FBX / HDR / KTX2 / STL / PLY / TGA / MTL / EXR / Draco / AssetManager
+│   │   ├── Animation/          # Clips, Mixer, StateMachine, BlendSpace1D, Humanoid + IK (FABRIK / CCD / IKHumanoid)
+│   │   ├── ECS/                # World, ComponentType, Systems, Physics, Prefab, QueryBuilder + Constraint subsystem
+│   │   ├── Physics/            # PhysicsDemo + ConstraintSolver
+│   │   ├── Helpers/            # Grid / Grid3D / Axes / Box / Camera / Arrow helpers + PhysicsDebugRenderer
+│   │   ├── Audio/              # AudioListener / PositionalAudio / Audio / AudioLoader / AudioAnalyser
+│   │   ├── Terrain/            # TerrainGeometry / HeightmapGenerator / TerrainSplat / TerrainLayer
+│   │   ├── Acceleration/       # BVH / BVHBuilder / MeshBVH
 │   │   ├── Tools/              # Profiler
 │   │   └── ecsDemo.ts          # ECS demo entry
 │   ├── pages/                  # Route-level pages (HomePage / ViewerPage / EngineDemoPage)
@@ -247,15 +250,19 @@ The scene-graph foundation, modeled after Three.js' object model but implemented
 | Export | Purpose |
 |--------|---------|
 | `Object3D` | Base node — transform (position / rotation / scale), world matrix, `updateWorldMatrix`, `lookAt`, `traverse`, parent / children, `frustumCulled` flag. |
-| `Scene` | Root container for renderable objects and lights. |
+| `Scene` | Root container for renderable objects and lights. Supports `background` (color or `{ envMap }`) and `fog` (`Fog` / `FogExp2`). |
 | `Group` | Non-renderable grouping node. |
 | `Mesh` | Renderable leaf binding a `BufferGeometry` and a `Material`. |
 | `SkinnedMesh` / `Bone` / `Skeleton` | GPU skinning — per-bone matrices uploaded as uniform arrays. |
 | `BufferGeometry` / `BufferAttribute` | Vertex / index buffers with `dispose`, `setUsage`, `needsUpdate` for WebGL resource management. |
 | `Material` | Abstract material interface. |
-| `Texture` | GPU texture wrapper. |
+| `Texture` | GPU texture wrapper with `version`, `needsUpdate`, format / wrap / filter options. |
+| `Texture` family | `CubeTexture` (6-face env maps), `DataTexture` (typed-array backed), `DataArrayTexture` (2D array textures), `DepthTexture` (shadow maps / depth post-FX), `VideoTexture` (HTMLVideoElement frame stream), `CanvasTexture` (HTMLCanvasElement dynamic source with `update()`), `CompressedTexture` (S3TC / ETC / BPTC / PVRTC / ASTC base class with per-mip `{data, width, height}` chain). |
+| `Source` | Texture data-source wrapper — `data` / `width` / `height` / `version` with `needsUpdate()` for renderer re-upload. Decouples pixel source from sampling state. |
 | `InstancedMesh` | Per-instance matrix array rendered via `gl.drawElementsInstanced`. |
 | `LOD` | Multi-level mesh switching based on camera distance. |
+| `Fog` / `FogExp2` | Linear and exponential fog; renderer blends fragment color toward fog color by distance. |
+| `Raycaster` / `intersectGeometry` | Ray-scene intersection with `Face` / `Intersection` results; reusable `RaycasterParameters`. |
 
 ### Math (`src/engine/Math/`)
 
@@ -280,19 +287,37 @@ A complete math library with scratch-object reuse to minimize per-frame allocati
 | `WebGL2Renderer` | Concrete implementation — PBR / IBL / shadow mapping, post-processing pipeline, GLSL `#version 300 es` shaders. |
 | `ShaderProgram` | Program cache, uniform type-safe setters (`setUniform1i` / `setUniformMatrix4fv` etc.), `computeHash` for variant caching. |
 | `RenderPass` | Abstract pass (`apply(input, output)`) for composable post-processing — replaces the previously hard-coded 5-pass chain. |
+| `ShadowMapManager` | Centralized shadow-map FBO / texture lifecycle for cast-shadow lights; per-light depth target reuse and resize policy. |
+| Post-processing passes | `BloomPass`, `ChromaticAberrationPass`, `VignettePass`, `FinalComposePass` (built-in) plus `SSAOPass` (screen-space ambient occlusion), `FXAAPass` (fast approximate anti-aliasing), `ToneMappingPass` (ACES filmic / Reinhard), `GammaCorrectionPass`, `DepthOfFieldPass` (DOF). |
 
 ### Materials (`src/engine/Materials/`)
 
 | Export | Purpose |
 |--------|---------|
 | `StandardMaterial` | PBR material — base color, metallic, roughness, emissive, opacity, wireframe, procedural texture slots. |
-| `ShaderMaterial` | Custom-shader material accepting GLSL strings and a uniform descriptor. |
+| `MeshPhysicalMaterial` | Extended PBR — adds clearcoat, sheen, IOR, transmission, anisotropy for physically accurate dielectric / glass / fabric surfaces. |
+| `MeshBasicMaterial` | Unlit material — flat color / texture, ignores scene lighting. |
+| `MeshPhongMaterial` | Legacy Blinn-Phong — specular highlights for non-PBR pipelines / stylistic looks. |
+| `MeshNormalMaterial` | Debug material — visualize object-space or world-space normals as RGB. |
+| `ShadowMaterial` | Shadow-only material — receives shadow maps without contributing surface color (used for invisible shadow catchers). |
+| `ShaderMaterial` | Custom-shader material accepting GLSL strings and a uniform descriptor. Supports `onBeforeCompile` for injecting GLSL snippets into the built-in shaders without rewriting them. |
 | `ShaderChunks` | Shared vertex / fragment GLSL blocks injected into generated shaders. |
 | `shaders.ts` | Built-in shader source. |
 
 ### Lights (`src/engine/Lights/`)
 
-`Light` base class with `AmbientLight` and `DirectionalLight` (shadow-casting) implementations; the renderer collects lights per-scene with change detection.
+| Export | Purpose |
+|--------|---------|
+| `Light` | Base class. `color`, `intensity`. |
+| `AmbientLight` | Flat ambient term. |
+| `DirectionalLight` | Sun-like; `direction`, `castShadow`, `DirectionalLightShadow` config (map size, bias). |
+| `PointLight` | Radial point light with distance attenuation. |
+| `SpotLight` | Cone with inner / outer angle and penumbra. |
+| `HemisphereLight` | Sky / ground two-color ambient. |
+| `RectAreaLight` | Rectangular area light for IBL-style fill. |
+| `ShadowMapManager` | Renderer-side shadow-map FBO / texture lifecycle (also exported from `Renderer/`). |
+
+The renderer collects lights per-scene via `_collectLights(scene)` with change detection.
 
 ### Cameras (`src/engine/Cameras/`)
 
@@ -307,6 +332,11 @@ A complete math library with scratch-object reuse to minimize per-frame allocati
 | `FBXLoader` | FBX parsing (model + material + animation extraction). |
 | `HDRLoader` | Radiance `.hdr` decoding with **per-channel RLE** RGBE → Float32 conversion; covers compressed, uncompressed, and mixed-encoding scanline variants. |
 | `KTX2Loader` | KTX2 / Basis Universal texture decompression for bandwidth reduction. |
+| `STLLoader` | Stereolithography (STL) mesh import — ASCII and binary variants. |
+| `PLYLoader` | Polygon File Format (PLY) mesh import — ASCII and binary variants. |
+| `TGALoader` | Truevision TGA image import (uncompressed + RLE, color-mapped). |
+| `MTLLoader` | Wavefront MTL material library parser (paired with `OBJLoader`). |
+| `EXRLoader` | OpenEXR float image import for HDR textures and IBL. |
 | `TextureLoader` | Image texture loading. |
 | `DracoDecoder` | `draco3d` wrapper. |
 | `AssetManager` | LRU cache with hit / miss / eviction logging and cache-key truncation. |
@@ -322,6 +352,7 @@ A complete math library with scratch-object reuse to minimize per-frame allocati
 | `BlendSpace1D` | Smooth 1-D animation blending by speed. |
 | `Humanoid` | Humanoid rig definitions. |
 | Animation events | Time-anchored callbacks (e.g. footstep triggers). |
+| IK subsystem | `IKBone`, `IKChain`, `IKSolver` (FABRIK), `CCDSolver` (Cyclic Coordinate Descent), `IKHumanoid` — full biped IK rig with joint constraints and side chaining. |
 
 ### ECS (`src/engine/ECS/`)
 
@@ -347,19 +378,97 @@ Loaded models auto-generate ECS entities; ECS mutations are synchronized back to
 
 ### Controls (`src/engine/Controls/`)
 
-`OrbitControls` — orbit / pan / dolly input handling for the self-developed engine path.
+| Export | Purpose |
+|--------|---------|
+| `OrbitControls` | Orbit / pan / dolly input handling — the default inspector camera. |
+| `FlyControls` | Free-fly camera with roll, no up-vector lock — for level-editor-style navigation. |
+| `PointerLockControls` | First-person pointer-lock camera — for 1st-person / walkthrough modes. |
+| `MapControls` | Top-down map pan / zoom — orthogonal feel with perspective camera. |
 
 ### Geometries (`src/engine/Geometries/`)
 
-Procedural primitives: `BoxGeometry`, `SphereGeometry`, `PlaneGeometry`, `CylinderGeometry`, `ConeGeometry`, `CapsuleGeometry`, `CircleGeometry`, `RingGeometry`, `TorusGeometry`, `TorusKnotGeometry`.
+Procedural primitive geometry generators. Each produces a `BufferGeometry` with position / normal / uv / index attributes.
+
+| Export | Parameters |
+|--------|------------|
+| `BoxGeometry` | width, height, depth, widthSegments, … |
+| `SphereGeometry` | radius, widthSegments, heightSegments, … |
+| `PlaneGeometry` | width, height, widthSegments, heightSegments |
+| `CylinderGeometry` | radiusTop, radiusBottom, height, radialSegments, … |
+| `ConeGeometry` | radius, height, radialSegments, … |
+| `CapsuleGeometry` | radius, length, capSegments, radialSegments |
+| `CircleGeometry` | radius, segments |
+| `RingGeometry` | innerRadius, outerRadius, thetaSegments |
+| `TorusGeometry` | radius, tube, radialSegments, tubularSegments, arc |
+| `TorusKnotGeometry` | radius, tube, tubularSegments, radialSegments, p, q |
+| `LatheGeometry` | points (Vector2[]), segments — revolve a 2D profile around the Y axis. |
+| `ExtrudeGeometry` | shape, depth, bevelEnabled, bevelThickness, … — extrude a 2D `Shape` into 3D. |
+| `Shape` | 2D contour builder (moveTo, lineTo, quadraticCurveTo, bezierCurveTo, absarc, holes) used by `ExtrudeGeometry` / `LatheGeometry`. |
+| `WireframeGeometry` | Edge-only geometry derived from a source `BufferGeometry` — for debug wireframe rendering. |
+| `EdgesGeometry` | Hard-edge-only geometry (crenellation threshold) — for CAD-style edge highlighting. |
+
+`Primitives.ts` re-exports all of the above for convenience.
 
 ### Helpers (`src/engine/Helpers/`)
 
 | Export | Purpose |
 |--------|---------|
 | `GridHelper` | Procedural ground grid. |
+| `GridHelper3D` | 3-axis volumetric grid — full 3D cell visualization, not just ground plane. |
 | `LineHelper` | Dynamic line mesh for collider / velocity / contact visualization. |
+| `AxesHelper` | RGB axis tripod (X red, Y green, Z blue) sized to a unit length. |
+| `BoxHelper` | Bounding-box wireframe from an `Object3D` or `Box3`. |
+| `CameraHelper` | Frustum visualization — draws near / far planes and corners of a `Camera`. |
+| `ArrowHelper` | Direction arrow with origin / direction / length / color, used for normals and force vectors. |
 | `PhysicsDebugRenderer` | Three-channel debug overlay — cyan colliders, yellow contact normals / tangents / bitangents / depths, magenta velocity vectors — each independently toggleable. |
+
+### Audio (`src/engine/Audio/`)
+
+WebAudio-based spatial audio subsystem.
+
+| Export | Purpose |
+|--------|---------|
+| `AudioListener` | Scene-level listener representing the camera / player ears; position and orientation tracked. |
+| `Audio` | Non-positional sound (UI SFX, music) bound to a buffer. |
+| `PositionalAudio` | 3D positional sound with panner-node distance / cone attenuation. |
+| `AudioLoader` | Decode `ArrayBuffer` (mp3 / ogg / wav) into `AudioBuffer`s. |
+| `AudioAnalyser` | FFT analyser for visualization (frequency data, waveform). |
+
+### Terrain (`src/engine/Terrain/`)
+
+Procedural terrain system for outdoor scenes.
+
+| Export | Purpose |
+|--------|---------|
+| `TerrainGeometry` | Height-field mesh — `width × height` quads with per-vertex elevation. |
+| `HeightmapGenerator` | Procedural heightmap generators — fractal noise, ridged, hydraulic erosion. |
+| `TerrainSplat` | Splat-map based texture blending — up to N layers with alpha masks. |
+| `TerrainLayer` | Per-layer metadata (albedo texture, normal texture, tiling, metallic / roughness). |
+
+### Acceleration (`src/engine/Acceleration/`)
+
+Spatial acceleration structures for ray tracing and broad-phase culling.
+
+| Export | Purpose |
+|--------|---------|
+| `BVH` | Bounding Volume Hierarchy — generic axis-aligned primitive. |
+| `BVHBuilder` | SAH-based builder for `BVH` from triangle soups. |
+| `MeshBVH` | Triangle-aware `BVH` over a `BufferGeometry` — used by `Raycaster` for sub-linear ray-mesh intersection. |
+
+### Physics (`src/engine/Physics/`)
+
+`PhysicsDemo` ships a 24-body scene with random boxes and a particle emitter, exercisable from the `PHYSICS` and `PHYS-DBG` toolbar toggles.
+
+Constraint subsystem (in `src/engine/ECS/PhysicsComponents.ts` and `PhysicsSystems.ts`):
+
+| Constraint | Purpose |
+|------------|---------|
+| `BallConstraint` | Ball-and-socket — 3-DOF rotational, 0-DOF translational. |
+| `HingeConstraint` | Hinge — 1-DOF rotational about an axis. |
+| `SliderConstraint` | Slider — 1-DOF translational along an axis. |
+| `FixedConstraint` | Rigid weld — 0-DOF, fully locks two bodies together. |
+| `DistanceConstraint` | Maintains a fixed distance between two anchor points. |
+| `ConstraintSolver` | Iterative sequential-impulse solver that processes all active constraints each fixed step. |
 
 ### Tools (`src/engine/Tools/`)
 
@@ -544,12 +653,19 @@ Unit tests cover the engine foundation:
 | Area | Test files |
 |------|-----------|
 | Math | `Vector2/3/4`, `Matrix3/4`, `Quaternion`, `Euler`, `Box3`, `Sphere`, `Plane`, `Ray`, `Line3`, `Triangle`, `Frustum`, `Color` |
-| Core | `InstancedMesh`, `LOD` |
-| Geometries | `Box`, `Sphere`, `Plane`, `Cylinder`, `Cone`, `Capsule`, `Circle`, `Ring`, `Torus`, `TorusKnot` |
+| Core | `InstancedMesh`, `LOD`, `CubeTexture`, `DataTexture`, `DataArrayTexture`, `DepthTexture`, `VideoTexture`, `CanvasTexture`, `CompressedTexture`, `Source`, `Fog`, `FogExp2`, `Raycaster` |
+| Geometries | `Box`, `Sphere`, `Plane`, `Cylinder`, `Cone`, `Capsule`, `Circle`, `Ring`, `Torus`, `TorusKnot`, `Lathe`, `Extrude`, `Shape`, `Wireframe`, `Edges` |
 | ECS | `World`, `Prefab`, `QueryBuilder`, `Broadphase`, `PhysicsSystems`, `PhysicsBenchmark` |
-| Animation | `Animation`, `AnimationEvents`, `BlendSpace1D` |
-| Loaders | `GLBLoader`, `HDRLoader`, `FBXLoader`, `KTX2Loader`, `AssetManager` |
-| Renderer | `Renderer`, `RenderPass` |
+| Animation | `Animation`, `AnimationEvents`, `BlendSpace1D`, `IKBone`, `IKChain`, `IKSolver`, `CCDSolver` |
+| Loaders | `GLBLoader`, `HDRLoader`, `FBXLoader`, `KTX2Loader`, `STLLoader`, `PLYLoader`, `TGALoader`, `AssetManager` |
+| Renderer | `Renderer`, `RenderPass`, `ShadowMapManager` |
+| Lights | `AmbientLight`, `DirectionalLight`, `PointLight`, `SpotLight`, `HemisphereLight`, `RectAreaLight` |
+| Materials | `MeshBasicMaterial`, `MeshNormalMaterial`, `MeshPhongMaterial`, `MeshPhysicalMaterial`, `ShadowMaterial` |
+| Controls | `FlyControls`, `MapControls`, `PointerLockControls` |
+| Helpers | `AxesHelper`, `BoxHelper`, `CameraHelper`, `ArrowHelper`, `GridHelper3D` |
+| Audio | `Audio`, `AudioAnalyser`, `AudioContext`, `AudioListener`, `AudioLoader`, `PositionalAudio` |
+| Terrain | `TerrainGeometry`, `HeightmapGenerator`, `TerrainLayer`, `TerrainSplat` |
+| Acceleration | `BVH`, `MeshBVH` |
 | Lib | `vreenPack`, `vreenPublish`, `blocklyScriptStore`, `ecsScriptApi` (animsm / material / base), `vreenBlockly.tick` |
 
 Tests live alongside source files as `*.test.ts` and are picked up automatically by Vitest's default glob.

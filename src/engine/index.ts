@@ -46,5 +46,6 @@ export {
   type HumanoidRestPose,
 } from './Animation';
 export * from './ECS';
+export * from './Physics';
 export { Profiler, type FrameSample, type ProfilerMark, type DrawCallSample } from './Tools/Profiler';
 export { runEcsDemo, runEcsDemoSilent, type EcsDemoSummary } from './ecsDemo';

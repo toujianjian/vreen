@@ -31,6 +31,9 @@
    - 4.12 [Geometries](#412-geometries)
    - 4.13 [Helpers & Debug](#413-helpers--debug)
    - 4.14 [Tools (Profiler)](#414-tools-profiler)
+   - 4.15 [Audio](#415-audio)
+   - 4.16 [Terrain](#416-terrain)
+   - 4.17 [Acceleration](#417-acceleration)
 5. [Render Pipeline](#5-render-pipeline)
 6. [ECS Architecture](#6-ecs-architecture)
 7. [Dual-Backend Rendering](#7-dual-backend-rendering)
@@ -145,25 +148,28 @@ against the canonical format spec.
 
 ## 3. Engine Module Map
 
-The engine is organised into 13 top-level directories under
+The engine is organised into 16 top-level directories under
 `src/engine/`. Each directory exports through a barrel `index.ts` and is
 re-exported from the engine root `src/engine/index.ts`.
 
 ```
 src/engine/
-├── Core/         Scene graph primitives (Object3D, Scene, Mesh, …)
+├── Core/         Scene graph primitives (Object3D, Scene, Mesh, …) + texture family + Source + Fog / Raycaster
 ├── Math/         Vectors, matrices, quaternions, geometry primitives
 ├── Cameras/      Perspective / Orthographic cameras
-├── Controls/     OrbitControls
-├── Lights/       Ambient / Directional / Point / Spot / Hemisphere / RectArea
-├── Geometries/   Procedural primitive geometry
-├── Materials/    StandardMaterial, ShaderMaterial, GLSL chunks
-├── Renderer/     Renderer interface, WebGL2Renderer, ShaderProgram, RenderPass
-├── Loaders/      GLB / OBJ / FBX / HDR / KTX2 / Draco / AssetManager
-├── Animation/    Clip, Mixer, StateMachine, BlendSpace1D, Humanoid
-├── ECS/          World, ComponentType, Systems, Physics, Prefab, QueryBuilder
-├── Physics/      PhysicsDemo scene
-├── Helpers/      GridHelper, LineHelper, PhysicsDebugRenderer
+├── Controls/     Orbit / Fly / PointerLock / Map controls
+├── Lights/       Ambient / Directional / Point / Spot / Hemisphere / RectArea + ShadowMapManager
+├── Geometries/   Procedural primitive geometry (15 generators)
+├── Materials/    Standard / Physical / Basic / Phong / Normal / Shadow + ShaderMaterial + GLSL chunks
+├── Renderer/     Renderer interface, WebGL2Renderer, ShaderProgram, RenderPass, ShadowMapManager
+├── Loaders/      GLB / OBJ / FBX / HDR / KTX2 / STL / PLY / TGA / MTL / EXR / Draco / AssetManager
+├── Animation/    Clip, Mixer, StateMachine, BlendSpace1D, Humanoid + IK (FABRIK / CCD)
+├── ECS/          World, ComponentType, Systems, Physics, Prefab, QueryBuilder + Constraints
+├── Physics/      PhysicsDemo scene + ConstraintSolver
+├── Helpers/      Grid / Grid3D / Axes / Box / Camera / Arrow helpers + PhysicsDebugRenderer
+├── Audio/        AudioListener / PositionalAudio / Audio / AudioLoader / AudioAnalyser
+├── Terrain/      TerrainGeometry / HeightmapGenerator / TerrainSplat / TerrainLayer
+├── Acceleration/ BVH / BVHBuilder / MeshBVH
 └── Tools/        Profiler (ring-buffer frame profiler)
 ```
 
@@ -223,14 +229,25 @@ following deliberate deviations:
 | `BufferAttribute` | Typed-array view + `itemSize` + `version` + `needsUpdate` flag + `setUsage` shim. |
 | `Material` | Abstract material interface; `BasicMaterial` is the trivial concrete impl. |
 | `Texture` | GPU texture wrapper with `version`, `needsUpdate`, format / wrap / filter options. |
+| `CubeTexture` | 6-face environment map (reflection or refraction mapping); images array ordered `+X, -X, +Y, -Y, +Z, -Z`. |
+| `DataTexture` | Typed-array backed (`Uint8/16/32`, `Float32`) — used for LUTs, noise, scientific data. |
+| `DataArrayTexture` | 2D array texture (depth slices) — used for animation atlases, terrain tiles. Supports per-layer partial updates via `layerUpdates`. |
+| `DepthTexture` | Depth / depth-stencil texture for shadow maps and depth-based post-FX; supports hardware PCF via `compareFunction`. |
+| `VideoTexture` | `HTMLVideoElement` frame stream; uses `requestVideoFrameCallback` when available, else `update()` polling. |
+| `CanvasTexture` | `HTMLCanvasElement` dynamic source; caller draws to canvas then calls `update()` to bump `version` and trigger GPU re-upload. `image` field is kept in sync with `canvas` so base-class helpers work. |
+| `CompressedTexture` | Base class for S3TC / ETC / BPTC / PVRTC / ASTC compressed textures. Holds a `mipmaps: CompressedMipmap[]` chain (`{data: Uint8Array, width, height}`); renderer uploads via `compressedTexImage2D` per level. |
+| `Source` | Texture data-source wrapper (`data` / `width` / `height` / `version` with `needsUpdate()`). Decouples pixel source from sampling state, mirroring three.js `Source`. Accepts `ImageData` / `HTMLImageElement` / `HTMLCanvasElement` / `OffscreenCanvas` / typed arrays. |
 | `InstancedMesh` | Per-instance matrix array rendered via `gl.drawElementsInstanced`. |
 | `LOD` | Multi-level mesh switching based on camera distance. |
+| `Fog` / `FogExp2` | Linear and exponential fog. Renderer blends fragment color toward fog color by distance (`(dist-near)/(far-near)` or `1 - exp(-(density*dist)^2)`). |
+| `Raycaster` / `intersectGeometry` | Ray-scene intersection; returns `Intersection[]` with `Face` / `distance` / `point` / `uv` / `object`. `MeshBVH` (Acceleration module) accelerates ray-mesh tests when attached. |
 
 **Design note — versioned invalidation:** the renderer does not poll
 attributes every frame. Each `BufferAttribute` and `Texture` carries a
 monotonic `version` integer; the renderer caches GPU state per-object and
 only re-uploads when the version changes. This mirrors Three.js' approach
-and keeps per-frame GPU traffic minimal.
+and keeps per-frame GPU traffic minimal. `Source.needsUpdate()` and
+`CanvasTexture.update()` follow the same convention.
 
 ### 4.2 Math Library
 
@@ -359,7 +376,12 @@ executes the pass array in order, ping-ponging between two textures.
 | Export | Role |
 |--------|------|
 | `StandardMaterial` | PBR material. Properties: `baseColor` (`{ r, g, b }`), `metallic`, `roughness`, `emissive`, `opacity`, `wireframe`. Procedural texture slots. |
-| `ShaderMaterial` | Custom-shader material. Accepts `vertexSrc` / `fragmentSrc` (GLSL ES 3.0 strings) and a `uniforms` descriptor. The renderer injects `u_time`, `u_model`, `u_view`, `u_projection`, `u_normalMatrix`, `u_cameraPos` automatically. |
+| `MeshPhysicalMaterial` | Extended PBR. Adds `clearcoat`, `clearcoatRoughness`, `sheen`, `sheenColor`, `IOR`, `transmission`, `thickness`, `attenuationDistance`, `attenuationColor`, `anisotropy` for dielectric / glass / fabric surfaces. |
+| `MeshBasicMaterial` | Unlit — flat color or texture, ignores scene lighting; useful for sprites, debug quads, UI. |
+| `MeshPhongMaterial` | Legacy Blinn-Phong with `specular` and `shininess` — for non-PBR pipelines and stylistic looks. |
+| `MeshNormalMaterial` | Debug material — outputs object-space or world-space normals as RGB. |
+| `ShadowMaterial` | Shadow-only receiver — reads shadow maps without contributing surface color; used for invisible shadow catchers compositing onto scene backgrounds. |
+| `ShaderMaterial` | Custom-shader material. Accepts `vertexSrc` / `fragmentSrc` (GLSL ES 3.0 strings) and a `uniforms` descriptor. The renderer injects `u_time`, `u_model`, `u_view`, `u_projection`, `u_normalMatrix`, `u_cameraPos` automatically. Supports `onBeforeCompile(shader)` for injecting GLSL snippets into the built-in shaders without rewriting them — used by `MeshPhysicalMaterial` for clearcoat / transmission extensions. |
 | `ShaderChunks` | Shared vertex / fragment GLSL blocks (`#version 300 es` head, attribute / uniform declarations, PBR functions, shadow sampling). |
 | `shaders.ts` | Built-in shader source: `STANDARD_VERTEX_SRC` / `STANDARD_FRAGMENT_SRC`, shadow / depth-normal / SSAO / post-processing shaders. |
 
@@ -368,7 +390,8 @@ returns one of two cached programs (standard / skinned) and uses uniform
 values to differentiate materials. This is adequate for small scenes;
 larger scenes will need shader keys composed from material attribute
 combinations (Three.js approach — tracked in Phase 3.3, material-graph
-blocks).
+blocks). `onBeforeCompile` invalidates the program cache when the material
+shader-injection signature changes.
 
 ### 4.5 Lights
 
@@ -379,10 +402,11 @@ blocks).
 | `Light` | Base class. `color`, `intensity`. |
 | `AmbientLight` | Flat ambient term. |
 | `DirectionalLight` | Sun-like. `direction` vector, `castShadow` flag, `DirectionalLightShadow` config (map size, bias). |
-| `PointLight` | Radial point light with attenuation. |
-| `SpotLight` | Cone with inner / outer angle. |
+| `PointLight` | Radial point light with distance attenuation. |
+| `SpotLight` | Cone with inner / outer angle and penumbra. |
 | `HemisphereLight` | Sky / ground two-color ambient. |
 | `RectAreaLight` | Rectangular area light (used for IBL-style fill). |
+| `ShadowMapManager` | Renderer-side shadow-map FBO / texture lifecycle manager (also exported from `Renderer/`). Centralizes per-light depth target allocation, reuse, and resize policy. |
 
 The renderer collects lights per-scene via `_collectLights(scene)`. Light
 collection is one of the known O(n²) hotspots targeted for caching in
@@ -414,6 +438,11 @@ Both produce a view-projection matrix consumed by the renderer and by
 | `FBXLoader` | FBX binary parsing (model + material + animation extraction). |
 | `HDRLoader` | Radiance `.hdr` with **per-channel RLE** RGBE → Float32 decode. Covers compressed, uncompressed, and mixed-encoding scanline variants. |
 | `KTX2Loader` | KTX2 / Basis Universal texture decompression. Pluggable `setBasisTranscoder` / `setZstdDecoder`. |
+| `STLLoader` | Stereolithography CAD mesh import — ASCII and binary STL variants, returns a typed `BufferGeometry`. |
+| `PLYLoader` | Polygon File Format mesh import — ASCII and binary (little / big endian) variants. |
+| `TGALoader` | Truevision TGA image import — uncompressed, RLE, and color-mapped variants; returns `ImageData`-style data for `DataTexture`. |
+| `MTLLoader` | Wavefront MTL material library parser; pairs with `OBJLoader` to recover PBR-ish material assignments. |
+| `EXRLoader` | OpenEXR float image import for HDR textures and IBL; supports scanline and tiled variants. |
 | `TextureLoader` | Image texture loading. |
 | `DracoDecoder` | `draco3d` wrapper. `getDracoModule()`, `decodeDraco(...)`. Optional peer dependency. |
 
@@ -448,6 +477,9 @@ AnimStateSystem (ECS) ──ticks per frame──→ AnimationStateMachine
 | `BlendSpace1D` | Smooth 1-D animation blending by speed (Idle ↔ Walk ↔ Run). |
 | `buildHumanoid()` | Humanoid rig definitions (`HumanoidBundle`). |
 | Animation events | Time-anchored callbacks (e.g. footstep triggers) firing during `AnimationAction.update`. |
+| `IKBone` / `IKChain` / `IKSolver` | Inverse Kinematics — `IKChain` is a sequence of `IKBone`s with joint constraints; `IKSolver` implements Forward And Backward Reaching Inverse Kinematics (FABRIK) for general chains. |
+| `CCDSolver` | Cyclic Coordinate Descent IK solver — alternative to FABRIK for stiff chains; per-iteration angle-limited. |
+| `IKHumanoid` | Full biped IK rig — left/right arm, left/right leg, spine chains with side chaining and pole vectors. |
 
 **`AnimState` name collision:** the animation FSM exposes a *type*
 `AnimMachineState` (a state node) while the ECS exposes a *class*
@@ -597,6 +629,23 @@ Pipeline (per fixed step):
 
 Colliders supported: `AABB`, `Sphere`, `Capsule`.
 
+**Constraint subsystem** (`src/engine/ECS/PhysicsComponents.ts` +
+`PhysicsSystems.ts`): an iterative sequential-impulse `ConstraintSolver`
+runs after `CollisionSystem.resolve` each fixed step. Constraints:
+
+| Constraint | DOF locked | Use case |
+|------------|------------|----------|
+| `BallConstraint` | 3 rot free, 3 trans locked | Ragdoll shoulders / hips, chain links. |
+| `HingeConstraint` | 1 rot about axis, 3 trans locked | Doors, knees, elbows. |
+| `SliderConstraint` | 1 trans along axis, 3 rot locked | Pistons, drawers, elevators. |
+| `FixedConstraint` | All 6 DOF locked | Rigid welds (compound bodies). |
+| `DistanceConstraint` | Maintains fixed anchor distance | Ropes, springs, culling volumes. |
+
+Each constraint references two `Rigidbody` entities plus local-space
+anchor offsets; the solver iterates `iterations` times per step (default
+10) and applies position correction via Baumgarte stabilization, the
+same scheme used for collision response.
+
 `PhysicsDemo` (`src/engine/Physics/PhysicsDemo.ts`) ships a 24-body
 scene with random boxes and a particle emitter, exercisable from the
 `PHYSICS` and `PHYS-DBG` toolbar toggles in the inspector.
@@ -605,11 +654,12 @@ scene with random boxes and a particle emitter, exercisable from the
 
 **Path:** `src/engine/Controls/`
 
-`OrbitControls` — orbit / pan / dolly input handling for the
-self-developed engine path. Mirrors the Three.js `OrbitControls` API
-(`target`, `enableDamping`, `minDistance` / `maxDistance`,
-`minPolarAngle` / `maxPolarAngle`, `update()`) but operates on the
-engine's own `PerspectiveCamera`.
+| Export | Role |
+|--------|------|
+| `OrbitControls` | Orbit / pan / dolly input handling — the default inspector camera. Mirrors Three.js `OrbitControls` API (`target`, `enableDamping`, `minDistance` / `maxDistance`, `minPolarAngle` / `maxPolarAngle`, `update()`) but operates on the engine's own `PerspectiveCamera`. |
+| `FlyControls` | Free-fly camera — WASD translate + mouse look with optional roll (Q/E); no up-vector lock. Suited for level-editor-style navigation and cinematic cameras. |
+| `PointerLockControls` | First-person pointer-lock camera — uses the Pointer Lock API; yaw / pitch only, no roll. Suited for 1st-person walkthroughs and FPS-style demos. |
+| `MapControls` | Top-down map pan / zoom — like `OrbitControls` but pan is screen-space (no orbit), giving an orthogonal feel even with a perspective camera. Suited for map / strategy UIs. |
 
 ### 4.12 Geometries
 
@@ -630,6 +680,11 @@ Procedural primitive geometry generators. Each produces a
 | `RingGeometry` | innerRadius, outerRadius, thetaSegments |
 | `TorusGeometry` | radius, tube, radialSegments, tubularSegments, arc |
 | `TorusKnotGeometry` | radius, tube, tubularSegments, radialSegments, p, q |
+| `LatheGeometry` | points (`Vector2[]`), segments — revolve a 2D profile around the Y axis. |
+| `ExtrudeGeometry` | shape, depth, bevelEnabled, bevelThickness, bevelSize, bevelSegments, curveSegments — extrude a 2D `Shape` into 3D with optional bevel. |
+| `Shape` | 2D contour builder — `moveTo`, `lineTo`, `quadraticCurveTo`, `bezierCurveTo`, `absarc`, `absellipse`, `holes[]`. Used by `ExtrudeGeometry` / `LatheGeometry`. |
+| `WireframeGeometry` | Edge-only geometry derived from a source `BufferGeometry` — one line segment per triangle edge, including diagonals. |
+| `EdgesGeometry` | Hard-edge-only geometry (crenellation threshold, default 1°) — excludes coplanar diagonals for CAD-style edge highlighting. |
 
 `Primitives.ts` re-exports all of the above for convenience.
 
@@ -640,7 +695,12 @@ Procedural primitive geometry generators. Each produces a
 | Export | Role |
 |--------|------|
 | `GridHelper` | Procedural ground grid mesh. |
+| `GridHelper3D` | 3-axis volumetric grid — full 3D cell visualization, not just ground plane. |
 | `LineHelper` / `LineMesh` / `createLineMesh` | Dynamic line mesh for collider / velocity / contact visualization. |
+| `AxesHelper` | RGB axis tripod (X red, Y green, Z blue) sized to a unit length; attachable to any `Object3D`. |
+| `BoxHelper` | Bounding-box wireframe from an `Object3D`'s `Box3` or an explicit `Box3`; updates when the source moves. |
+| `CameraHelper` | Frustum visualization — draws near / far planes, corners, and up / right vectors of a `Camera`. |
+| `ArrowHelper` | Direction arrow with origin / direction / length / color; used for normals, force vectors, and contact normals. |
 | `PhysicsDebugRenderer` | Three-channel debug overlay — cyan colliders, yellow contact normals / tangents / bitangents / depths, magenta velocity vectors. Each channel is independently toggleable. |
 
 ### 4.14 Tools (Profiler)
@@ -659,6 +719,65 @@ buffer (120 frames by default). Markers:
 The UI subscribes via `onSample` and renders the frame chart /
 system-execution timeline via `FrameChart.tsx` and
 `SystemTimingChart.tsx`.
+
+### 4.15 Audio
+
+**Path:** `src/engine/Audio/`
+
+WebAudio-based spatial audio subsystem. The `AudioListener` is attached
+to the active `Camera` (or any `Object3D`) and tracks its world position
++ orientation each frame; `PositionalAudio` sources use WebAudio
+`PannerNode` distance / cone attenuation relative to that listener.
+
+| Export | Role |
+|--------|------|
+| `AudioListener` | Scene-level listener — represents the player's ears. Tracks position and orientation; one per scene. |
+| `Audio` | Non-positional sound (UI SFX, music). Bound to an `AudioBuffer` and played directly through the listener's gain node. |
+| `PositionalAudio` | 3D positional sound — adds a `PannerNode` between the source and the listener; supports distance model, ref distance, max distance, cone inner / outer angle. |
+| `AudioLoader` | Decodes `ArrayBuffer` (mp3 / ogg / wav) into `AudioBuffer`s using the WebAudio `decodeAudioData` API. |
+| `AudioAnalyser` | FFT analyser node for visualization — exposes `getFrequencyData()` / `getTimeDomainData()` with configurable FFT size. |
+
+`AudioContext` management is centralized: a single lazily-created
+context is shared by all listeners / sources, and a mock context is
+provided for unit tests (`audioContextMock.ts`).
+
+### 4.16 Terrain
+
+**Path:** `src/engine/Terrain/`
+
+Procedural terrain system for outdoor scenes. Combines a height-field
+mesh, procedural heightmap generators, and a splat-map based texture
+blender for multi-layer surface materials.
+
+| Export | Role |
+|--------|------|
+| `TerrainGeometry` | Height-field mesh — `width × height` quads with per-vertex elevation sampled from a heightmap. Produces position / normal / uv attributes. |
+| `HeightmapGenerator` | Procedural heightmap generators — fractal noise (Diamond-Square / value noise), ridged multifractal, and hydraulic-erosion post-process. |
+| `TerrainSplat` | Splat-map based texture blender — up to N layers, each with an alpha mask sampled from a `DataTexture`. Renderer samples the splat in the fragment shader to blend per-layer albedo / normal. |
+| `TerrainLayer` | Per-layer metadata — albedo texture, normal texture, tiling scale, metallic / roughness, blend sharpness. |
+
+The terrain subsystem is decoupled from the renderer — it produces
+standard `BufferGeometry` and `StandardMaterial` / `DataTexture` objects
+that the existing renderer can consume without terrain-specific code.
+
+### 4.17 Acceleration
+
+**Path:** `src/engine/Acceleration/`
+
+Spatial acceleration structures for ray tracing and broad-phase
+culling. Used by `Raycaster` for sub-linear ray-mesh intersection and
+by the ECS `Broadphase` for collision candidate generation.
+
+| Export | Role |
+|--------|------|
+| `BVH` | Generic Bounding Volume Hierarchy — axis-aligned primitive storing an AABB per node, with `intersectRay(ray)` traversal. |
+| `BVHBuilder` | Surface Area Heuristic (SAH) builder that constructs a `BVH` from a triangle soup (positions + indices). |
+| `MeshBVH` | Triangle-aware `BVH` over a `BufferGeometry` — precomputes per-node triangle indices for fast ray-mesh intersection; attaches to `BufferGeometry.bvh` and is consumed by `Raycaster.intersectGeometry`. |
+
+`MeshBVH` is opt-in: callers explicitly call `buildMeshBVH(geometry)` to
+construct it. Once attached, `Raycaster` prefers the BVH path over the
+brute-force per-triangle loop. Construction cost is amortized over many
+raycasts (e.g. mouse picking, projectile queries).
 
 ---
 

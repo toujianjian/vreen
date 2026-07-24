@@ -24,6 +24,16 @@ export { DepthTexture } from './DepthTexture';
 export type { DepthCompareFunction, DepthTextureOptions } from './DepthTexture';
 export { VideoTexture } from './VideoTexture';
 export type { VideoTextureOptions } from './VideoTexture';
+export { CanvasTexture } from './CanvasTexture';
+export type { CanvasTextureOptions } from './CanvasTexture';
+export { CompressedTexture } from './CompressedTexture';
+export type {
+  CompressedPixelFormat,
+  CompressedMipmap,
+  CompressedTextureOptions,
+} from './CompressedTexture';
+export { Source } from './Source';
+export type { SourceData, SourceOptions } from './Source';
 export { Fog } from './Fog';
 export { FogExp2 } from './FogExp2';
 export { Raycaster, intersectGeometry } from './Raycaster';
