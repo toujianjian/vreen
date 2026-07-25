@@ -36,6 +36,28 @@ export {
   type ClothOptions,
 } from './ClothSimulation';
 
+// SPH 流体模拟(Poly6/Spiky/Viscosity 核 + 边界反弹)
+export {
+  FluidSimulation,
+  type FluidParticle,
+  type FluidOptions,
+} from './FluidSimulation';
+
+// Voronoi 破碎(基于 Voronoi 图的几何碎裂)
+export {
+  VoronoiFracture,
+  type VoronoiSite,
+} from './VoronoiFracture';
+
+// 破坏系统(几何切割 / 碎裂 + 碎片物理)
+export {
+  DestructionSystem,
+  type Fragment,
+  type DestructionOptions,
+  type DestructionStats,
+  type SliceResult,
+} from './DestructionSystem';
+
 // 现有 PhysicsDemo(保持向后兼容)
 export {
   installPhysicsSystems,
