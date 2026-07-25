@@ -110,3 +110,7 @@ export { runEcsDemo, runEcsDemoSilent, type EcsDemoSummary } from './ecsDemo';
 export * from './Network';
 // Input — 输入系统 (键盘/鼠标/触摸/手柄 统一管理 + 动作映射 + JSON 配置)。
 export * from './Input';
+// AI — AI 导航系统 (NavMesh 导航网格 + A* 寻路 + Reynolds 转向行为 + Agent 代理)。
+export * from './AI';
+// Environment — 环境系统 (天气系统 + 天空系统/日夜循环 + 云系统 + 降水系统)。
+export * from './Environment';
