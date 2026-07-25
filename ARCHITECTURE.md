@@ -159,14 +159,14 @@ re-exported from the engine root `src/engine/index.ts`.
 
 ```
 src/engine/
-├── Core/         Scene graph primitives (Object3D, Scene, Mesh, Sprite, Text, BitmapText, …) + texture family + Source + MorphTargets/MorphTargetAnimation + InstancedBufferAttribute + Fog / Raycaster + DirtyFlag / SceneGraphProcessor / FrustumCuller / SceneStats + TextAtlas
+├── Core/         Scene graph primitives (Object3D, Scene, Mesh, Sprite, Text, BitmapText, …) + texture family + Source + MorphTargets/MorphTargetAnimation + InstancedBufferAttribute + FurShell (multi-layer fur) + Fog / Raycaster + DirtyFlag / SceneGraphProcessor / FrustumCuller / SceneStats + TextAtlas
 ├── Math/         Vectors, matrices, quaternions, geometry primitives
 ├── Cameras/      Perspective / Orthographic cameras
 ├── Controls/     Orbit / Fly / PointerLock / Map controls
 ├── Lights/       Ambient / Directional / Point / Spot / Hemisphere / RectArea + ShadowMapManager
 ├── Geometries/   Procedural primitive geometry (15 generators)
-├── Materials/    Standard / Physical / Basic / Phong / Normal / Shadow / Sprite + ShaderMaterial + ShaderChunks/ subdirectory (10 GLSL fragments + ShaderChunkRegistry)
-├── Renderer/     Renderer interface, WebGL2Renderer, ShaderProgram, RenderPass, ShadowMapManager + MRTTarget / GBuffer (deferred) + PostProcess/ enhanced passes
+├── Materials/    Standard / Physical / Basic / Phong / Normal / Shadow / Sprite + ShaderMaterial + ShaderChunks/ subdirectory (10 GLSL fragments + ShaderChunkRegistry) + FurMaterial (shell-based fur / hair)
+├── Renderer/     Renderer interface, WebGL2Renderer, ShaderProgram, RenderPass, ShadowMapManager + MRTTarget / GBuffer (deferred) + PostProcess/ enhanced passes + PathTracer (CPU reference path tracer)
 ├── Loaders/      GLB / OBJ / FBX / HDR / KTX2 / STL / PLY / TGA / MTL / EXR / Draco / AssetManager + 4 exporters (OBJ / GLTF / STL / PLY)
 ├── Animation/    Clip, Mixer, StateMachine, BlendSpace1D, Humanoid + AnimationLayer / AnimationLayerMixer / BoneMask / AvatarMask / AdditiveBlend / AnimationSync + IK (FABRIK / CCD)
 ├── ECS/          World, ComponentType, Systems, Physics, Prefab, QueryBuilder + Constraints
@@ -266,6 +266,7 @@ following deliberate deviations:
 | `TextAtlas` | Character texture atlas. Rasterizes characters one-by-one to a shared canvas, records per-char `AtlasChar { x, y, width, height, advance }` for UV lookup. Layout is simple row-packing (line wraps when exceeding row width). `getTexture()` returns a `CanvasTexture` whose version bumps on each new char addition, triggering GPU re-upload. Accepts an injected canvas + 2D context factory; degrades to dry-run metadata-only mode when DOM is unavailable (tests / SSR). |
 | `MorphTargets` | Morph target deformation (facial expressions / shape animation). Stores `morphTargets: Map<string, Float32Array>` (absolute vertex positions), `morphInfluences: number[]` (weights, default 0), and `morphTargetDictionary: Map<string, number>` (name → index lookup). Application rule: `result[i] = base[i] + Σ_j (target_j[i] - base[i]) * influence_j`. Mounted on `mesh.morphTargets`; the renderer calls `update(geometry)` before each draw to write back the blended positions and bump `geometry.version` for GPU VBO re-upload. Caches `_basePositions` on first apply to avoid clobbering the original base. |
 | `MorphTargetAnimation` | Morph target animation driver. Holds a `MorphTargets` instance + multiple `MorphTargetTrack`s (`name` + `times: Float32Array` + `values: Float32Array` scalar weight sequences). `update(dt)` advances time, binary-searches each track, linearly interpolates the weight, and writes it back to `morphTargets.morphInfluences`. Complements `AnimationMixer` — the mixer drives skeleton bone matrices (overall pose) while morph animation drives scalar weights (facial / local detail). Deliberately does not reuse `KeyframeTrack` to avoid a reverse dependency on `Object3D` / `TrackTarget`. |
+| `FurShell` | Multi-layer shell fur rendering wrapper. Generates N concentric `Mesh` shells sharing the base `BufferGeometry`, each bound to a `FurMaterial` whose `shellLayer` (0..1) is set per shell. `generate()` builds the shell set (attached as children of the base mesh by default, or standalone), `update(dt)` advances the `time` uniform and re-synchronizes gravity / wind / fur-length / fur-color / density / occlusion / noise texture from the master `furMaterial` to every shell material, `setShellCount(n)` re-generates with a new layer count, `dispose()` releases per-shell materials and detaches shells. Each shell sets `castShadow = false` and an increasing `renderOrder` (100 + i) so the renderer draws them back-to-front. Pairs with `FurMaterial` for layered shell-based fur / hair rendering. |
 
 **Design note — versioned invalidation:** the renderer does not poll
 attributes every frame. Each `BufferAttribute` and `Texture` carries a
@@ -443,6 +444,53 @@ import explicitly from `./RenderPass`.
 > with different option shapes. The barrel exports the enhanced
 > versions.
 
+#### `PathTracer` (`PathTracer.ts`)
+
+CPU-simplified path tracer for reference / validation rendering. Not a
+real-time backend — it is the ground-truth comparator for the WebGL2 PBR
+pipeline, useful for unit tests, PBR parameter validation, and offline
+debugging.
+
+```ts
+export interface PathTracerOptions {
+  maxBounces?: number;       // default 8
+  samplesPerPixel?: number;  // default 4
+  width?: number;            // default 256
+  height?: number;           // default 256
+  backgroundColor?: Color;   // default black
+}
+```
+
+API surface:
+- `render(scene, camera)` — collects meshes / lights from the scene, then
+  traces one pass per pixel (`samplesPerPixel` rays per pixel, each bounced
+  up to `maxBounces` times). Increments `frameCount` and accumulates into
+  the internal `Float32Array` buffer.
+- `accumulate(scene, camera)` — alias for `render()`; provided so callers
+  can express the progressive intent explicitly.
+- `getResult()` — returns the accumulated image as a `Uint8ClampedArray`
+  (averaged by `frameCount`, gamma-corrected).
+- `reset()` — zeroes the accumulation buffer and `frameCount`.
+- `setBounces(n)` / `setSamples(n)` — runtime configuration; both call
+  `reset()`.
+- `dispose()` — releases the accumulation buffer.
+
+Internals: Möller–Trumbore ray-triangle intersection (local-variable
+form to avoid scratch-buffer aliasing), cosine-weighted hemisphere
+sampling for indirect bounces, direct lighting from collected lights
+with shadow-ray occlusion, Russian-roulette path termination past depth
+3 to bound work per ray. Camera position is extracted from
+`matrixWorld.elements[12..14]` (no `setFromMatrixPosition` dependency);
+camera basis is derived from `getWorldDirection()` + a synthetic up
+vector. The output is *not* tonemapped — callers can post-process the
+`Uint8ClampedArray` if needed.
+
+> **Why CPU-only?** A GPU path tracer would compete with the WebGL2
+> renderer for context state and complicate the test harness. The CPU
+> path keeps the tracer fully deterministic and headless-testable; the
+> performance cost is acceptable for the small reference images used in
+> tests.
+
 ### 4.4 Materials
 
 **Path:** `src/engine/Materials/`
@@ -458,6 +506,7 @@ import explicitly from `./RenderPass`.
 | `SpriteMaterial` | Sprite material — extends `BasicMaterial` with `color` (linear RGB, multiplied with `map`), `map` (optional color texture), `opacity`, `rotation` (radians, applied in shader around sprite center), `sizeAttenuation` (whether perspective cameras apply near-big-far-small, default true), `depthTest` / `depthWrite`, `wireframe`, `renderOrder`. Pairs with `Sprite`; the renderer uses a separate sprite shader path that implements billboard orientation in the vertex shader. `transparent` defaults to true (sprites usually have alpha). |
 | `ShaderMaterial` | Custom-shader material. Accepts `vertexSrc` / `fragmentSrc` (GLSL ES 3.0 strings) and a `uniforms` descriptor. The renderer injects `u_time`, `u_model`, `u_view`, `u_projection`, `u_normalMatrix`, `u_cameraPos` automatically. Supports `onBeforeCompile(shader)` for injecting GLSL snippets into the built-in shaders without rewriting them — used by `MeshPhysicalMaterial` for clearcoat / transmission extensions. |
 | `ShaderChunks/` subdirectory | 10 GLSL fragment string constants (`COMMON_CHUNK`, `LIGHTING_CHUNK`, `FOG_CHUNK` / `FOG_EXP2_CHUNK`, `NORMAL_PACK_CHUNK`, `SHADOW_CHUNK`, `ENVMAP_CHUNK`, `TONEMAP_ACES_CHUNK` / `TONEMAP_REINHARD_CHUNK`, `NOISE_CHUNK`, `UV_TRANSFORM_CHUNK`, `COLOR_SPACE_CHUNK`) + `ShaderChunkRegistry` class (with `shaderChunkRegistry` process-wide singleton) supporting `#include <name>` resolution. `registerBuiltinChunks()` registers all built-ins idempotently. `BUILTIN_SHADER_CHUNKS` is a `Record<string, string>` of all built-in fragments for one-shot registration to a custom registry. |
+| `FurMaterial` | Shell-based fur / hair material. Extends `BasicMaterial` (same base as `ToonMaterial` / `OutlineMaterial`) with `furLength`, `furDensity`, `furColor` (`Color`), `furOcclusion` (root darkening, 0..1), `gravity` (`Vector3`), `wind` (`Vector3`), `noiseTexture` (`Texture \| null`), `shellLayer` (0..1, set per shell by `FurShell`), `time` (animation clock). The vertex shader (`FUR_VERT`) displaces vertices along `a_normal` by `shellLayer * furLength`, then offsets by gravity and wind scaled by `shellLayer * furLength` (top shells sway more). The fragment shader (`FUR_FRAG`) samples the noise texture (falling back to a hash-based pseudo-noise), discards fragments below a layer-dependent density threshold (`threshold = furDensity * (1 - layer² * 0.7)` — top shells are sparser), and darkens roots via `mix(1 - furOcclusion, 1.0, layer)`. `transparent` defaults to true; `doubleSided` defaults to true. Pairs with `FurShell` which manages the per-shell `shellLayer` uniform and synchronizes animation uniforms each frame. |
 | `shaders.ts` | Built-in shader source: `STANDARD_VERTEX_SRC` / `STANDARD_FRAGMENT_SRC`, shadow / depth-normal / SSAO / post-processing shaders. |
 
 **Variant caching:** `WebGL2Renderer.getProgramFor(material, skinned)`

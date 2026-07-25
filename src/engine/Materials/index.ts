@@ -38,6 +38,13 @@ export {
   MATCAP_VERT,
   MATCAP_FRAG,
 } from './MatcapMaterial';
+// 毛发材质(shell-based fur)。
+export {
+  FurMaterial,
+  type FurMaterialOptions,
+  FUR_VERT,
+  FUR_FRAG,
+} from './FurMaterial';
 export {
   PBR_VERT,
   PBR_FRAG,

@@ -22,6 +22,8 @@ export class Mesh extends Object3D {
   isMesh: boolean = true;
   castShadow: boolean = true;
   receiveShadow: boolean = true;
+  /** 渲染排序权重(数值越小越先绘制)。供多层 shell/描边等需要按层级绘制的特性使用。 */
+  renderOrder: number = 0;
 
   constructor(geometry: BufferGeometry, material: Material | Material[]) {
     super();

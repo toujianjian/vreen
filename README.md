@@ -275,6 +275,7 @@ The scene-graph foundation, modeled after Three.js' object model but implemented
 | `TextAtlas` | Character texture atlas — rasterizes characters to a canvas, records per-char UV coordinates, produces a `CanvasTexture`. Degrades to dry-run metadata-only mode when DOM is unavailable (tests / SSR). |
 | `MorphTargets` | Morph target deformation (facial expressions / shape animation). Stores absolute vertex positions + weight array + name lookup. Application rule: `result[i] = base[i] + Σ(target - base) * influence`. Mounted on `mesh.morphTargets`; renderer calls `update(geometry)` before each draw to write back positions and bump `version`. |
 | `MorphTargetAnimation` | Morph target animation driver — holds `MorphTargets` + multiple `MorphTargetTrack`s (times + scalar values, binary search + linear interpolation). `update(dt)` advances time, samples tracks, writes back influences. Complements `AnimationMixer` (skeleton does overall pose, morph does facial / local detail). |
+| `FurShell` | Multi-layer shell fur rendering wrapper — generates N concentric `Mesh` shells sharing the base geometry, each with a `FurMaterial` at progressively higher `shellLayer` (0..1). `generate()` builds the shell set, `update(dt)` advances wind / gravity / time uniforms across all shells, `setShellCount(n)` re-generates with a new layer count. Shells attach as children of the base mesh (default) or remain standalone; `dispose()` releases per-shell materials. Pairs with `FurMaterial` for layered shell-based fur / hair. |
 | `Fog` / `FogExp2` | Linear and exponential fog; renderer blends fragment color toward fog color by distance. |
 | `Raycaster` / `intersectGeometry` | Ray-scene intersection with `Face` / `Intersection` results; reusable `RaycasterParameters`. |
 
@@ -306,6 +307,7 @@ A complete math library with scratch-object reuse to minimize per-frame allocati
 | `GBuffer` | Geometry Buffer for deferred rendering — built on `MRTTarget` with 4 color attachments (position `RGBA16F` / normal `RGBA16F` / albedo+opacity `RGBA8` / metallic+roughness+emissive+AO `RGBA8`) + depth. Provides `positionTexture` / `normalTexture` / `albedoTexture` / `materialTexture` for downstream lighting passes. |
 | Post-processing passes (basic) | `BloomPass`, `ChromaticAberrationPass`, `VignettePass`, `FinalComposePass` (built-in) plus `SSAOPass` (screen-space ambient occlusion), `FXAAPass` (fast approximate anti-aliasing), `ToneMappingPass` (ACES filmic / Reinhard), `GammaCorrectPass`, `DOFPass` (depth of field). |
 | Post-processing passes (enhanced, `PostProcess/`) | `ColorGradingPass` (ASC-CDL 8-param color grading), `LUTPass` (3D or 2D strip LUT color lookup), `ChromaticAberrationPass` (enhanced — Vector2 offset + radial modulation), `VignettePass` (enhanced — offset/darkness + color tint), `FilmGrainPass` (strength/size/animation), `AfterimagePass` (cross-frame accumulation), `PixelationPass` (mosaic). All implement the `RenderPass` interface and compose into `PostProcessingPipeline`. |
+| `PathTracer` | CPU-simplified path tracer for reference / validation rendering — progressive accumulation with `frameCount`, configurable `maxBounces` (default 8) and `samplesPerPixel` (default 4). Möller–Trumbore ray-triangle intersection, direct + indirect lighting, Russian-roulette path termination. `render(scene, camera)` traces one pass per call; `accumulate()` is an alias; `getResult()` returns the accumulated `Uint8ClampedArray`; `reset()` clears the buffer. Slow but useful for ground-truth comparison against the WebGL2 PBR pipeline. |
 
 ### Materials (`src/engine/Materials/`)
 
@@ -741,7 +743,7 @@ Unit tests cover the engine foundation (2219+ tests across 134+ engine test file
 | ECS | `World`, `Prefab`, `QueryBuilder`, `Broadphase`, `PhysicsSystems`, `PhysicsBenchmark` |
 | Animation | `Animation`, `AnimationEvents`, `BlendSpace1D`, `AnimationLayer`, `AvatarMask`, `BoneMask`, `AdditiveBlend`, `IKBone`, `IKChain`, `IKSolver`, `CCDSolver` |
 | Loaders | `GLBLoader`, `HDRLoader`, `FBXLoader`, `KTX2Loader`, `STLLoader`, `PLYLoader`, `TGALoader`, `AssetManager`, `OBJExporter`, `GLTFExporter`, `STLExporter`, `PLYExporter` |
-| Renderer | `Renderer`, `RenderPass`, `ShadowMapManager`, `MRTTarget`, `PostProcessPasses` |
+| Renderer | `Renderer`, `RenderPass`, `ShadowMapManager`, `MRTTarget`, `PostProcessPasses`, `PathTracer` |
 | Lights | `AmbientLight`, `DirectionalLight`, `PointLight`, `SpotLight`, `HemisphereLight`, `RectAreaLight` |
 | Materials | `MeshBasicMaterial`, `MeshNormalMaterial`, `MeshPhongMaterial`, `MeshPhysicalMaterial`, `ShadowMaterial`, `SpriteMaterial`, `ShaderChunkRegistry`, `chunks` |
 | Controls | `FlyControls`, `MapControls`, `PointerLockControls` |
@@ -853,7 +855,7 @@ npm run electron:build
 | Serialization | Scene/Geometry/Material ↔ JSON | None |
 | Export | GLTF / OBJ / STL / PLY (4 exporters) | None |
 | i18n | 5 languages (en/zh/ja/ko/es) | 2 languages (en/zh) |
-| Testing | 2219+ unit tests (134+ engine test files) | None |
+| Testing | 2621+ unit tests (170+ test files, 480+ source files) | None |
 | Visual Scripting | Blockly integration | None |
 | Package Format | .vreen (ZIP + delta diff) | None |
 

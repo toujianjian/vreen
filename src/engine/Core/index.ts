@@ -48,3 +48,5 @@ export { Raycaster, intersectGeometry } from './Raycaster';
 export type { Face, Intersection, RaycasterParameters } from './Raycaster';
 export { MorphTargets } from './MorphTargets';
 export { MorphTargetAnimation, MorphTargetTrack } from './MorphTargetAnimation';
+// 毛发 shell 网格(配合 Materials/FurMaterial 实现多层毛发)。
+export { FurShell, type FurShellOptions } from './FurShell';

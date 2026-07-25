@@ -59,4 +59,6 @@ export {
   ReflectionProbeManager,
   type ReflectionProbeManagerOptions,
 } from './ReflectionProbeManager';
+// CPU 简化路径追踪器(参考/验证用,渐进式累积)。
+export { PathTracer, type PathTracerOptions } from './PathTracer';
 
