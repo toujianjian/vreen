@@ -1,7 +1,7 @@
 // PostProcess barrel — 增强后处理 Pass 集合。
 //
 // 与 RenderPass.ts 中的基础后处理 Bloom/CA/Vignette/FinalCompose 平行。
-// 本模块提供 7 个增强 Pass:
+// 本模块提供 9 个增强 Pass:
 //   - ColorGradingPass  : 色彩分级(8 个 ASC-CDL 参数)
 //   - LUTPass           : LUT 色彩查找表(3D 或 2D strip)
 //   - ChromaticAberrationPass : 增强色差(Vector2 偏移 + 径向调制)
@@ -9,8 +9,13 @@
 //   - FilmGrainPass     : 胶片颗粒(强度/大小/动画)
 //   - AfterimagePass    : 残影(跨帧累积)
 //   - PixelationPass    : 像素化(马赛克)
+//   - SSRPass           : 屏幕空间反射(独立类,不继承 RenderPass)
+//   - VolumetricFogPass : 体积雾 + 体积光(独立类,不继承 RenderPass)
 //
-// 这些 Pass 都实现 RenderPass 接口,可直接加入 PostProcessingPipeline。
+// 注意:
+//   - 前 7 个 Pass 都实现 RenderPass 接口,可直接加入 PostProcessingPipeline。
+//   - SSRPass / VolumetricFogPass 签名包含额外的 GBuffer 纹理参数,
+//     不适配 RenderPass.apply(input, ctx) 抽象,因此独立管理 FBO / program。
 //
 // 注意:
 //   - ChromaticAberrationPass 与 VignettePass 的"增强版"位于本目录,
@@ -28,3 +33,5 @@ export { VignettePass, type VignetteEnhancedOptions } from './VignettePass';
 export { FilmGrainPass, type FilmGrainOptions } from './FilmGrainPass';
 export { AfterimagePass, type AfterimageOptions } from './AfterimagePass';
 export { PixelationPass, type PixelationOptions } from './PixelationPass';
+export { SSRPass, type SSRPassOptions } from './SSRPass';
+export { VolumetricFogPass, type VolumetricFogPassOptions } from './VolumetricFogPass';

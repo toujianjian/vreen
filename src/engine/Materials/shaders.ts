@@ -1169,3 +1169,208 @@ void main() {
 }
 `;
 
+// ── SSR (Screen-Space Reflection) ──────────────────────────────────
+// 基于 GBuffer 的 position / normal + 颜色缓冲,屏幕空间射线步进。
+// 流程:
+//   1. 从世界位置 + 法线计算反射方向
+//   2. 在世界空间步进,每步把射线端点投影到屏幕 UV
+//   3. 检测 UV 处采样的 positionTexture.z 是否落在射线端点厚度内
+//   4. 命中后做 8 步二分查找细化
+//   5. 边缘衰减 + Fresnel 权重
+//
+// 输入纹理:
+//   u_colorMap    — 当前帧颜色
+//   u_positionMap — 世界位置(RGBA16F,xyz)
+//   u_normalMap   — 世界法线(RGBA16F,xyz)
+// uniforms:
+//   u_projection / u_view  — 把世界位置投影到 clip space
+//   u_cameraPos            — 视点位置(计算 view dir)
+//   u_screenSize           — 视口尺寸(目前未使用,留给未来边缘检测)
+//   u_maxSteps             — 射线步进次数
+//   u_thickness            — 厚度容差(世界单位)
+//   u_reflectionStrength   — 反射强度(0..1)
+export const SSR_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;
+uniform sampler2D u_positionMap;
+uniform sampler2D u_normalMap;
+uniform mat4 u_projection;
+uniform mat4 u_view;
+uniform vec3 u_cameraPos;
+uniform vec2 u_screenSize;
+uniform int   u_maxSteps;
+uniform float u_thickness;
+uniform float u_reflectionStrength;
+
+// 把世界位置投影到屏幕 UV(0..1)。
+vec2 projectToUV(vec3 worldPos) {
+  vec4 clip = u_projection * u_view * vec4(worldPos, 1.0);
+  return (clip.xy / clip.w) * 0.5 + 0.5;
+}
+
+// 厚度检测:UV 越界返回 false;否则比较 sampledPos.z 与 rayPos.z,
+// 当几何在射线前方(深度差为正)且在厚度内 → 击中。
+bool hitTest(vec3 rayPos, vec2 uv, out float depthDiff) {
+  depthDiff = 1e9;
+  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return false;
+  vec3 sampledPos = texture(u_positionMap, uv).xyz;
+  depthDiff = sampledPos.z - rayPos.z;
+  return depthDiff > 0.0 && depthDiff < u_thickness;
+}
+
+void main() {
+  vec3 sceneColor  = texture(u_colorMap,    v_uv).rgb;
+  vec3 worldPos    = texture(u_positionMap, v_uv).xyz;
+  vec3 worldNormal = texture(u_normalMap,   v_uv).xyz;
+
+  // 法线过小 → 几何未写入,直接输出原色(避免反射空中)
+  if (length(worldNormal) < 0.01) {
+    outColor = vec4(sceneColor, 1.0);
+    return;
+  }
+  worldNormal = normalize(worldNormal);
+
+  vec3 viewDir  = normalize(u_cameraPos - worldPos);
+  vec3 reflDir  = reflect(-viewDir, worldNormal);
+
+  // 步长基于厚度的一半,保证 step > thickness 才能跨过薄层
+  vec3 stepDir  = reflDir * (u_thickness * 0.5);
+  vec3 rayPos   = worldPos + stepDir;
+  vec2 uv       = projectToUV(rayPos);
+  vec2 hitUV    = uv;
+  vec3 hitPos   = rayPos;
+  bool  hit     = false;
+
+  // Ray march
+  for (int i = 0; i < 64; i++) {
+    if (i >= u_maxSteps) break;
+    float dd;
+    if (hitTest(rayPos, uv, dd)) {
+      hit    = true;
+      hitPos = rayPos;
+      hitUV  = uv;
+      break;
+    }
+    rayPos += stepDir;
+    uv = projectToUV(rayPos);
+  }
+
+  // 二分查找细化(8 步足够把误差压到 thickness/256)
+  if (hit) {
+    vec3 lo = worldPos;
+    vec3 hi = hitPos;
+    for (int i = 0; i < 8; i++) {
+      vec3 mid   = (lo + hi) * 0.5;
+      vec2 midUV = projectToUV(mid);
+      float dd;
+      if (hitTest(mid, midUV, dd)) {
+        hi     = mid;
+        hitUV  = midUV;
+      } else {
+        lo = mid;
+      }
+    }
+  }
+
+  if (hit) {
+    vec3 reflectionColor = texture(u_colorMap, hitUV).rgb;
+
+    // 边缘衰减:命中 UV 越靠近屏幕边缘,反射越弱
+    vec2  edgeDist = min(hitUV, 1.0 - hitUV);
+    float edgeFade = smoothstep(0.0, 0.1, min(edgeDist.x, edgeDist.y));
+
+    // Fresnel 权重:掠射角反射更强
+    float fresnel = pow(1.0 - max(dot(viewDir, worldNormal), 0.0), 3.0);
+    float strength = u_reflectionStrength * edgeFade * (0.5 + 0.5 * fresnel);
+
+    outColor = vec4(mix(sceneColor, reflectionColor, clamp(strength, 0.0, 1.0)), 1.0);
+  } else {
+    outColor = vec4(sceneColor, 1.0);
+  }
+}
+`;
+
+// ── Volumetric Fog ─────────────────────────────────────────────────
+// 基于深度纹理的体积雾 + 简化光散射(体积光 god rays)。
+// 流程:
+//   1. 从 NDC 深度重建世界坐标
+//   2. 计算像素到相机距离,按指数衰减计算雾密度
+//   3. fogStart / fogEnd 限制雾作用范围
+//   4. 沿光源方向计算散射项,叠加到雾色上(god rays)
+//   5. mix(sceneColor, fogColor, fogFactor)
+//
+// 输入纹理:
+//   u_colorMap  — 当前帧颜色
+//   u_depthMap  — NDC 深度(0..1)
+// uniforms:
+//   u_projectionInverse / u_viewInverse — 把 NDC 还原到世界空间
+//   u_cameraPos                         — 视点位置
+//   u_density                           — 雾密度(指数衰减系数)
+//   u_fogColor                          — 雾色
+//   u_fogStart / u_fogEnd               — 雾作用距离范围
+//   u_lightDir                          — 光照方向(指向光源)
+//   u_lightColor                        — 光色
+//   u_godRaysStrength                   — 体积光强度(0 关闭)
+export const VOLUMETRIC_FOG_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;
+uniform sampler2D u_depthMap;
+uniform mat4 u_projectionInverse;
+uniform mat4 u_viewInverse;
+uniform vec3 u_cameraPos;
+uniform vec2 u_screenSize;
+uniform float u_density;
+uniform vec3  u_fogColor;
+uniform float u_fogStart;
+uniform float u_fogEnd;
+uniform vec3  u_lightDir;
+uniform vec3  u_lightColor;
+uniform float u_godRaysStrength;
+
+// 从 NDC 深度重建世界坐标。depth 为 0..1 的采样器原始值。
+vec3 reconstructWorldPos(vec2 uv, float depth) {
+  vec4 ndc   = vec4(uv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
+  vec4 world = u_viewInverse * u_projectionInverse * ndc;
+  return world.xyz / world.w;
+}
+
+void main() {
+  vec3  sceneColor = texture(u_colorMap, v_uv).rgb;
+  float depth      = texture(u_depthMap, v_uv).r;
+
+  // 深度为 1.0(远裁面)时跳过重建(除以 w 会出现 inf)
+  if (depth >= 0.99999) {
+    outColor = vec4(sceneColor, 1.0);
+    return;
+  }
+
+  vec3  worldPos = reconstructWorldPos(v_uv, depth);
+  float dist     = length(worldPos - u_cameraPos);
+
+  // 指数雾密度
+  float fogFactor = 1.0 - exp(-u_density * max(dist, 0.0));
+  fogFactor = clamp(fogFactor, 0.0, 1.0);
+
+  // 距离范围裁剪
+  if (dist < u_fogStart) fogFactor = 0.0;
+  if (dist > u_fogEnd)   fogFactor = 1.0;
+
+  // 体积光散射:沿光线方向的相函数近似
+  vec3  viewDir     = normalize(worldPos - u_cameraPos);
+  float scatter     = max(dot(viewDir, -normalize(u_lightDir)), 0.0);
+  scatter           = pow(scatter, 8.0);
+  vec3  fogColor    = u_fogColor + u_lightColor * scatter * u_godRaysStrength;
+
+  vec3 finalColor   = mix(sceneColor, fogColor, fogFactor);
+  outColor          = vec4(finalColor, 1.0);
+}
+`;
+

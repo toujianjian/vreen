@@ -53,4 +53,10 @@ export {
   type DeferredRendererStats,
   type DeferredLight,
 } from './DeferredRenderer';
+// 反射探针 + 管理器(局部 IBL 立方体贴图捕获)。
+export { ReflectionProbe, type ReflectionProbeOptions } from './ReflectionProbe';
+export {
+  ReflectionProbeManager,
+  type ReflectionProbeManagerOptions,
+} from './ReflectionProbeManager';
 
