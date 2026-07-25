@@ -18,6 +18,11 @@ export * from './Renderer';
 export * from './Helpers';
 export * from './Terrain';
 export * from './Acceleration';
+// Assets — 资源管理 (AssetCache LRU / AssetRegistry 引用计数 / AssetLoader 异步加载)。
+// 与 Loaders/AssetManager 互补：AssetManager 关注 Promise 缓存；Assets 关注实例生命周期。
+export * from './Assets';
+// Serialization — 场景序列化 (Scene/Geometry/Material ↔ JSON)，支持往返还原。
+export * from './Serialization';
 export {
   KeyframeTrack,
   NumberKeyframeTrack,

@@ -16,3 +16,24 @@ export {
   PCF_SHADOW_FRAG,
 } from './shaders';
 
+// 着色器片段库(子模块)。注意:与 ShaderChunks.ts 平级文件同名,
+// 用显式 '/index' 路径消歧,确保解析到 ShaderChunks/ 目录而非 ShaderChunks.ts。
+export {
+  COMMON_CHUNK,
+  LIGHTING_CHUNK,
+  FOG_CHUNK,
+  FOG_EXP2_CHUNK,
+  NORMAL_PACK_CHUNK,
+  SHADOW_CHUNK,
+  ENVMAP_CHUNK,
+  TONEMAP_ACES_CHUNK,
+  TONEMAP_REINHARD_CHUNK,
+  NOISE_CHUNK,
+  UV_TRANSFORM_CHUNK,
+  COLOR_SPACE_CHUNK,
+  ShaderChunkRegistry,
+  shaderChunkRegistry,
+  BUILTIN_SHADER_CHUNKS,
+  registerBuiltinChunks,
+} from './ShaderChunks/index';
+
