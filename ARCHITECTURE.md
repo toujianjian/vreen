@@ -1,6 +1,6 @@
 # VREEN Architecture
 
-> Version 0.5.x · Last updated 2026-07-25
+> Version 0.5.x · Last updated 2026-07-25 (Timeline / AI / Environment sections added)
 >
 > This document describes the architecture of the **VREEN** project — a
 > browser-first 3D engine and asset inspection platform built around a
@@ -43,6 +43,9 @@
    - 4.24 [Network](#424-network)
    - 4.25 [SaveSystem](#425-savesystem)
    - 4.26 [SceneManager](#426-scenemanager)
+   - 4.27 [AI](#427-ai)
+   - 4.28 [Environment](#428-environment)
+   - 4.29 [Timeline](#429-timeline)
 5. [Render Pipeline](#5-render-pipeline)
 6. [ECS Architecture](#6-ecs-architecture)
 7. [Dual-Backend Rendering](#7-dual-backend-rendering)
@@ -1129,6 +1132,66 @@ store subscription.
 |--------|------|
 | `SceneManager` | Scene registry (`Map<name, Scene>`). `register(name, scene)` / `unregister` / `get`. `switchTo(name, transition?)` swaps the active scene and runs an optional `SceneTransition`. `current` exposes the active `Scene` (or null). |
 | `SceneTransition` | Visual transition between scenes — `Fade` / `Crossfade` / `Slide` / `Wipe` / `None`. `update(dt)` advances an internal `t` (0..1) with an easing function; `isDone()` reports completion; the renderer reads `alpha` / `offset` to blend the outgoing and incoming scenes. Configurable duration. |
+
+### 4.27 AI
+
+**Path:** `src/engine/AI/`
+
+AI navigation subsystem for game agents. Decoupled from the ECS — it reads / writes `Transform`-like state via the `Agent` handle, so it can layer on top of any entity system.
+
+| Export | Role |
+|--------|------|
+| `NavMesh` | Navigation mesh — built from a `BufferGeometry` or a convex polygon set. Produces a walkable surface graph with polygon clustering and boundary extraction. `build(geometry)` / `buildFromPolygons(polys)` construct the mesh; `queryPolygon(point)` locates the polygon containing a world position. |
+| `PathFinder` | A* pathfinding over a `NavMesh` graph. `findPath(start, end)` returns a `Vector3[]` waypoint list. Supports heuristic tuning and optional path smoothing (string-pulling across polygon portals). |
+| `SteeringBehavior` | Reynolds steering behaviors — Seek / Flee / Arrive / Wander / Pursue / Evade / ObstacleAvoidance / PathFollowing / Separation / Alignment / Cohesion / Flocking. Each behavior returns a desired velocity; multiple behaviors compose into a steering pipeline via weighted accumulation. |
+| `Agent` | AI agent combining `PathFinder` + `SteeringBehavior`. Holds `target` / `path` / `velocity` / `maxSpeed` / `maxForce` / `steeringForce`. `update(dt)` advances locomotion: compute desired velocity from active steering behaviors, clamp to `maxForce`, integrate into `velocity`, apply to `position`. |
+
+**Design note:** The AI module is intentionally separate from the ECS `PhysicsSystems`. Steering behaviors produce kinematic velocity; the caller decides whether to feed that into a `Rigidbody` (ECS physics) or apply it directly to a `Transform` (kinematic motion). This mirrors the Unity / Unreal split where navigation and physics are independent systems.
+
+### 4.28 Environment
+
+**Path:** `src/engine/Environment/`
+
+Atmospheric and weather environment systems for outdoor scenes. Decoupled from the renderer — each system produces state (fog density, sun direction, particle spawn) that downstream consumers (renderer, `ParticleSystem`, `Fog`) read each frame.
+
+| Export | Role |
+|--------|------|
+| `WeatherSystem` | Weather state machine — `Clear` / `Cloudy` / `Rain` / `Snow` / `Storm`. `setWeather(type, transitionDuration)` initiates a smooth transition; `update(dt)` advances the transition factor. Exposes current `fogDensity` / `cloudCover` / `precipitationIntensity` for downstream consumers. |
+| `SkySystem` | Procedural sky + day/night cycle. `setTimeOfDay(t)` (0..24 hours) computes the sun position via solar elevation / azimuth; `update(dt)` advances time. Produces `sunDirection` / `sunColor` / `skyTopColor` / `skyHorizonColor` with an atmospheric scattering approximation. The renderer reads these to shade the sky dome and directional light. |
+| `CloudSystem` | Procedural cloud layer — noise-texture animation with configurable `altitude` / `coverage` / `windDirection` / `windSpeed`. `update(dt)` scrolls the noise offset; produces a `cloudOpacity` for the sky shader. |
+| `PrecipitationSystem` | Precipitation particles (rain / snow) driven by a particle system with wind influence. `setIntensity(n)` controls spawn rate; `update(dt)` advances the particle simulation. Pairs with `Particles/ParticleSystem2` for rendering. |
+
+**Why a separate `Environment/` module?** Weather, sky, clouds, and precipitation share state (time-of-day drives sun angle → drives cloud lighting → drives precipitation visibility). Grouping them avoids circular dependencies between the renderer, particle system, and scene graph, and lets a designer swap the entire environment preset in one call.
+
+### 4.29 Timeline
+
+**Path:** `src/engine/Timeline/`
+
+Multi-track timeline / sequencer system for orchestrating animation clips, timed events, and property keyframes. Complements `AnimationMixer` (which focuses on per-action bone blending) with per-track multi-type orchestration.
+
+```
+TimelineSequencer
+   ├── tracks: TrackLike[] (TimelineTrack | EventTrack | PropertyTrack)
+   │     │
+   │     ├── TimelineTrack ──holds──→ TimelineClip[] ──holds──→ data (AnimationAction / custom)
+   │     ├── EventTrack    ──holds──→ TimedEvent[] ──triggers──→ EventBus
+   │     └── PropertyTrack ──holds──→ Keyframe[] ──writes──→ target[propertyPath]
+   │
+   ├── time / duration / isPlaying / loop / speed / lastTime
+   └── play() / pause() / stop() / seek(t) / update(dt) / export() / import(json)
+```
+
+| Export | Role |
+|--------|------|
+| `TimelineClip` | Timeline clip — `start` / `duration` / `name` / `data` / `blendMode` / `speed`. `contains(time)` tests if a world-time falls within the clip; `getLocalTime(time)` maps world time to clip-local time (accounting for `speed` scaling). `end` is a computed property (`start + duration`). |
+| `TimelineTrack` | Track base class — `name` / `type` (`'animation'` / `'event'` / `'audio'` / `'property'`) / `clips[]` / `enabled` / `locked`. `addClip` / `removeClip` maintain clip sort order by `start`. `getClipsAtTime(time)` returns active clips. `update(time, dt)` dispatches to each active clip's `data.update(localTime, dt)` if present. |
+| `EventTrack` | Event track — triggers named events at specific times. `TimedEvent { time, eventName, data }`. `getEventsBetween(lastTime, time)` returns events in the `(lastTime, time]` interval; supports loop wrap-around with two-segment detection (`(lastTime, +∞) ∪ [0, time]`, returning first-segment events in time order before second-segment events). `trigger(time, lastTime, bus)` fires events through `EventBus` with payload passthrough. `enabled=false` or `bus=null` makes it a no-op. |
+| `PropertyTrack` | Property track — animates object properties via keyframes. `Keyframe { time, value, interp? }` where `interp` is `'linear'` / `'step'` / `'smoothstep'` (default `'linear'`). `evaluate(time)` binary-searches the keyframe pair and interpolates; supports both scalar (`number`) and vector (`{ x, y, z }`) values. `update(time)` writes the sampled value back to `target[propertyPath]` (supports dotted paths like `'material.baseColor'` via recursive lookup). `addTarget(obj)` binds the animation target. |
+| `TimelineSequencer` | Sequencer — aggregates `TimelineTrack` / `EventTrack` / `PropertyTrack` via the `TrackLike` union. `play()` (auto-seeks to 0 if at duration and non-loop) / `pause()` / `stop()` (pause + seek 0) / `seek(time)` (clamp to `[0, duration]`, syncs `lastTime = time` to avoid spurious event triggers) / `update(dt)` (advances `time` by `dt * speed`, handles loop wrap-around or duration-clamp auto-pause). `addTrack` auto-extends `duration`; `removeTrack` recomputes it. `export()` / `import(json)` round-trip the sequencer state (tracks rebuilt by `kind` field; runtime references like `target` / `data` are not serialized and must be re-bound by the caller). `lastTime` is public for external playback-head tracking. |
+
+**Loop wrap-around semantics:** when `loop=true` and `update(dt)` pushes `time` past `duration`, the sequencer wraps `time %= duration` and calls `advanceTracks(time, prevTime, dt)` with `prevTime > time`. `EventTrack.getEventsBetween` detects this and fires two segments in chronological order: first the tail events `(lastTime, +∞)`, then the head events `[0, time]`. This ensures events at the end of the timeline fire before events at the beginning during a wrap, matching real-world playback expectation.
+
+**Nesting with `AnimationMixer`:** `TimelineTrack.data` can hold an `AnimationAction`; the track's `update(time, dt)` calls `data.update(localTime, dt)` which advances the mixer. This lets a timeline drive bone animation clips at specific time ranges, while `PropertyTrack` drives material / transform properties in parallel — a common pattern for cutscenes.
 
 ---
 

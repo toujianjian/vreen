@@ -114,3 +114,6 @@ export * from './Input';
 export * from './AI';
 // Environment — 环境系统 (天气系统 + 天空系统/日夜循环 + 云系统 + 降水系统)。
 export * from './Environment';
+// Timeline — 时间轴 / Sequencer 系统 (TimelineClip + TimelineTrack + EventTrack + PropertyTrack + TimelineSequencer)。
+// 多轨道编排:动画片段 / 事件触发 / 属性关键帧,支持 play/pause/seek/loop/export/import。
+export * from './Timeline';

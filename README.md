@@ -63,7 +63,7 @@ VREEN is positioned as a **lightweight Web game engine** — comparable in scope
 
 | Category | Capability |
 |----------|-----------|
-| **Engine kernel** | Self-developed WebGL2 renderer with PBR, IBL, real-time shadows, post-processing (Bloom, chromatic aberration, vignette, SMAA, SSAO, color grading, LUT, film grain, afterimage, pixelation), GPU skinning, morph targets, MRT / GBuffer for deferred rendering, and a `Renderer` interface for backend pluggability. |
+| **Engine kernel** | Self-developed WebGL2 renderer with PBR, IBL, real-time shadows, post-processing (Bloom, chromatic aberration, vignette, SMAA, SSAO, color grading, LUT, film grain, afterimage, pixelation), GPU skinning, morph targets, MRT / GBuffer for deferred rendering, path tracing (CPU reference), and a `Renderer` interface for backend pluggability. |
 | **Scene graph** | `Object3D` / `Scene` / `Mesh` / `Group` / `Bone` / `Skeleton` / `SkinnedMesh` / `BufferGeometry` / `BufferAttribute` / `InstancedBufferAttribute` / `Texture` / `InstancedMesh` / `LOD` / `Sprite` / `Text` / `BitmapText` / `TextAtlas`. |
 | **Math library** | `Vector2/3/4`, `Matrix3/4`, `Quaternion`, `Euler`, `Box3`, `Sphere`, `Plane`, `Ray`, `Line3`, `Triangle`, `Frustum`, `Color`, `MathUtils`. |
 | **ECS** | `World`, `ComponentType` registry, `QueryBuilder` with caching, `Prefab` templates, `Broadphase` acceleration, and POJO components for serializability. |
@@ -182,6 +182,9 @@ vreen/
 │   │   ├── SceneManager/       # SceneManager / SceneTransition (Fade/Crossfade/Slide/Wipe/None)
 │   │   ├── Input/              # InputManager / KeyboardState / MouseState / TouchState / GamepadState / InputAction / InputMap
 │   │   ├── Tools/              # Profiler / FrameProfiler / SystemProfiler / MemoryTracker / GpuProfiler / PerformanceReport
+│   │   ├── AI/                 # NavMesh (navigation mesh) + PathFinder (A*) + SteeringBehavior (Reynolds) + Agent
+│   │   ├── Environment/        # WeatherSystem + SkySystem (day/night) + CloudSystem + PrecipitationSystem
+│   │   ├── Timeline/           # TimelineClip + TimelineTrack + EventTrack + PropertyTrack + TimelineSequencer (play/pause/seek/loop/export/import)
 │   │   └── ecsDemo.ts          # ECS demo entry
 │   ├── pages/                  # Route-level pages (HomePage / ViewerPage / EngineDemoPage)
 │   ├── stores/                 # Zustand stores (viewer / ui / world / profiler / inspector)
@@ -563,6 +566,40 @@ Advanced CPU particle system — separate from the legacy ECS `ParticleSystem`. 
 | `TrailModule` | Optional ribbon-trail renderer attachment — records particle positions over time and produces `TrailRenderData` for the renderer. Supports multiple color modes (`TrailColorMode`). |
 | `ParticleData` | Per-particle state struct (position / velocity / size / color / lifetime / etc). |
 
+### AI (`src/engine/AI/`)
+
+AI navigation subsystem for game agents.
+
+| Export | Purpose |
+|--------|---------|
+| `NavMesh` | Navigation mesh — built from a `BufferGeometry` or convex polygon set; produces a walkable surface graph with polygon clustering and boundary extraction. |
+| `PathFinder` | A* pathfinding over a `NavMesh` graph. `findPath(start, end)` returns a `Vector3[]` waypoint list. Supports heuristic tuning and path smoothing. |
+| `SteeringBehavior` | Reynolds steering behaviors — Seek / Flee / Arrive / Wander / Pursue / Evade / ObstacleAvoidance / PathFollowing / Separation / Alignment / Cohesion / Flocking. Composable into a steering pipeline. |
+| `Agent` | AI agent combining `PathFinder` + `SteeringBehavior`. Holds target / path / velocity / maxSpeed / steeringForce; `update(dt)` advances locomotion. |
+
+### Environment (`src/engine/Environment/`)
+
+Atmospheric and weather environment systems for outdoor scenes.
+
+| Export | Purpose |
+|--------|---------|
+| `WeatherSystem` | Weather state machine (Clear / Cloudy / Rain / Snow / Storm) with transition interpolation and fog联动. |
+| `SkySystem` | Procedural sky + day/night cycle — sun position computed from time-of-day, atmospheric scattering approximation, gradient sky dome. |
+| `CloudSystem` | Procedural cloud layer — noise-texture animation with altitude coverage and movement direction. |
+| `PrecipitationSystem` | Precipitation particles (rain / snow) driven by a particle system with wind influence. |
+
+### Timeline (`src/engine/Timeline/`)
+
+Multi-track timeline / sequencer system for orchestrating animation clips, events, and property keyframes.
+
+| Export | Purpose |
+|--------|---------|
+| `TimelineClip` | Timeline clip — `start` / `duration` / `name` / `data` / `blendMode` / `speed`. `contains(time)` and `getLocalTime(time)` map world time to clip-local time (accounting for `speed`). |
+| `TimelineTrack` | Track base class — `name` / `type` (`'animation'` / `'event'` / `'audio'` / `'property'`) / `clips[]` / `enabled` / `locked`. `addClip` / `removeClip` / `getClipsAtTime` / `update(time, dt)`. |
+| `EventTrack` | Event track — triggers named events at specific times. `TimedEvent { time, eventName, data }`. `getEventsBetween(lastTime, time)` supports loop wrap-around (two-segment detection: `(lastTime, +∞) ∪ [0, time]`). `trigger(time, lastTime, bus)` fires events through `EventBus`. |
+| `PropertyTrack` | Property track — animates object properties via keyframes. `Keyframe { time, value, interp? }`. `evaluate(time)` supports `linear` / `step` / `smoothstep` interpolation. `update(time)` writes the sampled value back to `target[propertyPath]` (supports dotted paths like `a.b.c`). |
+| `TimelineSequencer` | Sequencer — `play` / `pause` / `stop` / `seek(time)` / `update(dt)` / `addTrack` / `removeTrack` / `getDuration` / `export()` / `import(json)`. Supports `loop` (wrap-around triggers EventTrack two-segment) and `speed` (global time-scale). `lastTime` is public for external playback-head tracking. Complements `AnimationMixer` (per-action bone blending) with per-track multi-type orchestration; nestable via `TimelineTrack.data` holding an `AnimationAction`. |
+
 ---
 
 ## The `.vreen` Package Format
@@ -763,6 +800,9 @@ Unit tests cover the engine foundation (2219+ tests across 134+ engine test file
 | Tools | `FrameProfiler`, `SystemProfiler`, `MemoryTracker` |
 | Particles | `ParticleSystem2`, `ParticleEmitter`, `ParticleModifier`, `ParticleCurve`, `ParticleData`, `TrailModule` |
 | Input | `KeyboardState`, `MouseState`, `InputAction`, `InputMap`, `InputManager` |
+| AI | `Agent`, `NavMesh`, `PathFinder`, `SteeringBehavior` |
+| Environment | `SkySystem`, `WeatherSystem` |
+| Timeline | `TimelineSequencer`, `TimelineTrack`, `EventTrack`, `PropertyTrack` |
 | Lib | `vreenPack`, `vreenPublish`, `blocklyScriptStore`, `ecsScriptApi` (animsm / material / base), `vreenBlockly.tick` |
 
 Tests live alongside source files as `*.test.ts` and are picked up automatically by Vitest's default glob.
@@ -857,10 +897,13 @@ npm run electron:build
 | Particles | 7-module system (Emitter/Modifier/Curve/Trail) | None |
 | Audio | 3D spatial audio + FFT analyser | None |
 | Text & Sprites | Text/BitmapText/TextAtlas + Sprite (billboard) | None |
+| AI Navigation | NavMesh + A* PathFinder + SteeringBehavior + Agent | None |
+| Environment | Weather + Sky (day/night) + Clouds + Precipitation | None |
+| Timeline | Multi-track Sequencer (Clips/Events/Property keyframes) | None |
 | Serialization | Scene/Geometry/Material ↔ JSON | None |
 | Export | GLTF / OBJ / STL / PLY (4 exporters) | None |
 | i18n | 5 languages (en/zh/ja/ko/es) | 2 languages (en/zh) |
-| Testing | 2621+ unit tests (170+ test files, 480+ source files) | None |
+| Testing | 3003+ unit tests (189 test files, 380+ source files) | None |
 | Visual Scripting | Blockly integration | None |
 | Package Format | .vreen (ZIP + delta diff) | None |
 
