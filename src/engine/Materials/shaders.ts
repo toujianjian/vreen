@@ -1374,3 +1374,258 @@ void main() {
 }
 `;
 
+// ── Velocity (motion vectors) ──────────────────────────────────────
+// 从 GBuffer 世界位置 + 当前/上一帧 view-projection 计算屏幕空间速度。
+//
+// 输入纹理:
+//   u_positionMap — GBuffer 世界位置(RGBA16F,xyz=worldPos)
+// uniforms:
+//   u_currViewProjection — 当前帧 view * projection
+//   u_prevViewProjection — 上一帧 view * projection
+//   u_screenSize         — 视口尺寸(用于 jitter 缩放,可选)
+//
+// 输出:RG = 屏幕空间速度(curr - prev),单位为像素的归一化 (-1..1)。
+// 速度的 R 通道在 shader 内已乘以 0.5 以映射到 [0..1] 便于 LINEAR 采样;
+// 这里直接输出 NDC 差值,下游采样时按需缩放。
+export const VELOCITY_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_positionMap;
+uniform mat4 u_currViewProjection;
+uniform mat4 u_prevViewProjection;
+
+void main() {
+  vec3 worldPos = texture(u_positionMap, v_uv).xyz;
+
+  // 把世界位置投影到当前 / 上一帧的 NDC
+  vec4 currClip = u_currViewProjection * vec4(worldPos, 1.0);
+  vec4 prevClip = u_prevViewProjection * vec4(worldPos, 1.0);
+
+  // 防御性 w=0(空像素)
+  if (abs(currClip.w) < 1e-6 || abs(prevClip.w) < 1e-6) {
+    outColor = vec4(0.0, 0.0, 0.0, 1.0);
+    return;
+  }
+
+  vec2 currNdc = currClip.xy / currClip.w;
+  vec2 prevNdc = prevClip.xy / prevClip.w;
+
+  // 速度 = 当前帧 NDC - 上一帧 NDC(范围 -2..2,实际场景通常 << 1)
+  vec2 velocity = (currNdc - prevNdc) * 0.5;
+
+  outColor = vec4(velocity, 0.0, 1.0);
+}
+`;
+
+// ── TAA (Temporal Anti-Aliasing) ───────────────────────────────────
+// 时间抗锯齿:用上一帧累积历史 + 当前帧做邻域裁剪(clamp)后混合。
+//
+// 输入纹理:
+//   u_colorMap    — 当前帧颜色(已用 jitter 投影渲染)
+//   u_historyMap  — 上一帧累积颜色
+//   u_velocityMap — 速度缓冲(RG = NDC 速度)
+// uniforms:
+//   u_blendFactor    — 当前帧权重(0..1,默认 0.1;越小越平滑)
+//   u_screenSize     — 屏幕尺寸(像素)
+//   u_jitter         — 当前帧投影 jitter(用于 history 复原,单位像素)
+//
+// 流程:
+//   1. 采样 velocity → 反推上一帧 UV(history 采样位置)
+//   2. 在 3x3 邻域采样当前帧,构造 min/max 包围盒
+//   3. 把 history clamp 到包围盒内(避免拖影)
+//   4. mix(history, current, blendFactor)
+export const TAA_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;
+uniform sampler2D u_historyMap;
+uniform sampler2D u_velocityMap;
+uniform float u_blendFactor;
+uniform vec2 u_screenSize;
+uniform vec2 u_jitter;
+
+// 3x3 邻域 min/max 包围盒(邻域裁剪 neighborhood clamping)。
+void neighborhoodClamp(vec2 uv, out vec3 colorMin, out vec3 colorMax) {
+  vec2 texel = 1.0 / u_screenSize;
+  colorMin = vec3(1e9);
+  colorMax = vec3(-1e9);
+  for (int y = -1; y <= 1; y++) {
+    for (int x = -1; x <= 1; x++) {
+      vec3 c = texture(u_colorMap, uv + vec2(float(x), float(y)) * texel).rgb;
+      colorMin = min(colorMin, c);
+      colorMax = max(colorMax, c);
+    }
+  }
+}
+
+void main() {
+  vec2 velocity = texture(u_velocityMap, v_uv).rg;
+  // velocity 已乘 0.5,反推 NDC 差值后取上一帧 UV
+  vec2 historyUv = v_uv - velocity;
+
+  vec3 current = texture(u_colorMap, v_uv).rgb;
+
+  // 邻域裁剪
+  vec3 cMin, cMax;
+  neighborhoodClamp(v_uv, cMin, cMax);
+
+  // history 越界 → 用当前帧(避免边缘拖影)
+  if (historyUv.x < 0.0 || historyUv.x > 1.0 ||
+      historyUv.y < 0.0 || historyUv.y > 1.0) {
+    outColor = vec4(current, 1.0);
+    return;
+  }
+
+  vec3 history = texture(u_historyMap, historyUv).rgb;
+  // 把 history 限制在当前帧邻域内(去除明显错误的历史像素)
+  history = clamp(history, cMin, cMax);
+
+  vec3 color = mix(history, current, u_blendFactor);
+  outColor = vec4(color, 1.0);
+}
+`;
+
+// ── Motion Blur ───────────────────────────────────────────────────
+// 基于速度缓冲的方向性模糊:沿速度向量采样多次并平均。
+//
+// 输入纹理:
+//   u_colorMap    — 当前帧颜色
+//   u_velocityMap — 速度缓冲(RG = NDC 速度,已乘 0.5)
+// uniforms:
+//   u_strength    — 模糊强度(0..1+,默认 1.0)
+//   u_maxSamples  — 最大采样数(偶数,默认 16)
+//   u_screenSize  — 屏幕尺寸(像素)
+export const MOTION_BLUR_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;
+uniform sampler2D u_velocityMap;
+uniform float u_strength;
+uniform int   u_maxSamples;
+uniform vec2 u_screenSize;
+
+void main() {
+  vec2 velocity = texture(u_velocityMap, v_uv).rg;
+  // 反推 NDC 速度 → 像素速度
+  vec2 pixelVel = velocity * 2.0 * u_screenSize * 0.5;
+  pixelVel *= u_strength;
+
+  float velLen = length(pixelVel);
+  // 速度过小 → 直接输出(节省采样)
+  if (velLen < 0.5) {
+    outColor = texture(u_colorMap, v_uv);
+    return;
+  }
+
+  // 采样数随速度自适应(clamp 到 u_maxSamples)
+  int sampleCount = int(clamp(velLen, 1.0, float(u_maxSamples)));
+  float invCount = 1.0 / float(sampleCount);
+
+  // 沿速度向量两侧采样(sampleCount 个点)
+  vec2 dir = normalize(pixelVel);
+  vec2 texel = dir / u_screenSize;
+
+  vec3 color = vec3(0.0);
+  for (int i = 0; i < 64; i++) {
+    if (i >= sampleCount) break;
+    float t = (float(i) + 0.5) * invCount - 0.5;
+    color += texture(u_colorMap, v_uv + texel * t * velLen).rgb;
+  }
+  color *= invCount;
+
+  outColor = vec4(color, 1.0);
+}
+`;
+
+// ── Auto Exposure (luminance downsample) ───────────────────────────
+// 第一步:把输入纹理降采样到 1x1 计算平均对数亮度。
+//
+// 该 shader 用于降采样中间 pass:每次把 2x2 → 1x1 平均,
+// 用对数亮度避免高亮像素主导(参考 EA "Average Luminance" 技术)。
+//
+// uniforms:
+//   u_screenSize — 输入纹理尺寸(像素)
+//   u_inputSize  — 输入纹理尺寸(同 u_screenSize,保留以匹配 API)
+//
+// 注:实际多级降采样由 AutoExposurePass 在 CPU 端循环调用此 shader 实现。
+export const AUTO_EXPOSURE_LUMINANCE_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;
+uniform vec2 u_screenSize;
+
+void main() {
+  // 2x2 box filter 计算本 tile 平均对数亮度
+  vec2 texel = 1.0 / u_screenSize;
+  float logLum = 0.0;
+  float count = 0.0;
+  for (int y = 0; y < 2; y++) {
+    for (int x = 0; x < 2; x++) {
+      vec3 c = texture(u_colorMap, v_uv + vec2(float(x), float(y)) * texel * 0.5).rgb;
+      float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+      // 防止 log(0):最小亮度 1e-4
+      l = max(l, 1e-4);
+      logLum += log(l);
+      count += 1.0;
+    }
+  }
+  logLum /= count;
+  // 输出对数亮度到 R 通道(B 通道存原始亮度用于调试)
+  outColor = vec4(logLum, 0.0, 0.0, 1.0);
+}
+`;
+
+// ── Auto Exposure apply ────────────────────────────────────────────
+// 第二步:根据平均亮度计算曝光值,把场景色调向目标曝光适应。
+//
+// 输入纹理:
+//   u_colorMap      — 当前帧颜色(HDR)
+//   u_luminanceMap  — 1x1 平均亮度(对数)纹理
+// uniforms:
+//   u_currentExposure — 当前曝光(CPU 端维护,经 adaptationSpeed 适应)
+//   u_minExposure     — 最小曝光(EV)
+//   u_maxExposure     — 最大曝光(EV)
+//   u_deltaTime       — 帧间隔(秒,用于适应速率)
+//   u_adaptationSpeed — 适应速度(默认 1.5)
+//
+// 流程:
+//   1. 采样 u_luminanceMap 得到平均对数亮度 → exp 还原平均亮度
+//   2. 目标曝光 = clamp(-0.5 * log2(avgLum) + keyOffset, min, max)
+//   3. 适应:currentExposure = mix(current, target, 1 - exp(-adaptationSpeed * dt))
+//   4. 输出 color * exp(currentExposure)
+//
+// 注:CPU 端在 apply() 后会回读 currentExposure 并保存到下一帧使用。
+//     但由于不能跨帧持有 GLSL 计算结果,此处把适应过程放在 CPU 端做,
+//     shader 只负责应用曝光 + 输出新曝光到 R 通道(B 用于读回)。
+//     实际实现:CPU 在 apply() 中先读取 1x1 纹理(通过 readPixels),
+//     计算 currentExposure,再把曝光作为 uniform 喂给本 shader。
+//     此 shader 不再修改 currentExposure,只渲染最终颜色。
+export const AUTO_EXPOSURE_APPLY_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;
+uniform float u_exposure;  // 已适应的曝光(由 CPU 端计算)
+
+void main() {
+  vec3 color = texture(u_colorMap, v_uv).rgb;
+  // 曝光应用:scene *= 2^exposure
+  color *= exp2(u_exposure);
+  outColor = vec4(color, 1.0);
+}
+`;
+

@@ -1,7 +1,7 @@
 // PostProcess barrel — 增强后处理 Pass 集合。
 //
 // 与 RenderPass.ts 中的基础后处理 Bloom/CA/Vignette/FinalCompose 平行。
-// 本模块提供 9 个增强 Pass:
+// 本模块提供 13 个增强 Pass:
 //   - ColorGradingPass  : 色彩分级(8 个 ASC-CDL 参数)
 //   - LUTPass           : LUT 色彩查找表(3D 或 2D strip)
 //   - ChromaticAberrationPass : 增强色差(Vector2 偏移 + 径向调制)
@@ -11,10 +11,15 @@
 //   - PixelationPass    : 像素化(马赛克)
 //   - SSRPass           : 屏幕空间反射(独立类,不继承 RenderPass)
 //   - VolumetricFogPass : 体积雾 + 体积光(独立类,不继承 RenderPass)
+//   - VelocityPass     : 速度缓冲生成(供 TAA / MotionBlur 消费)
+//   - TAAPass          : 时间抗锯齿(Halton jitter + 邻域裁剪 + 历史混合)
+//   - MotionBlurPass   : 运动模糊(基于速度的方向性模糊)
+//   - AutoExposurePass : 自动曝光(眼适应,降采样 + 对数平均 + 指数适应)
 //
 // 注意:
 //   - 前 7 个 Pass 都实现 RenderPass 接口,可直接加入 PostProcessingPipeline。
-//   - SSRPass / VolumetricFogPass 签名包含额外的 GBuffer 纹理参数,
+//   - SSRPass / VolumetricFogPass / VelocityPass / TAAPass / MotionBlurPass /
+//     AutoExposurePass 签名包含额外的 GBuffer 纹理参数,
 //     不适配 RenderPass.apply(input, ctx) 抽象,因此独立管理 FBO / program。
 //
 // 注意:
@@ -35,3 +40,7 @@ export { AfterimagePass, type AfterimageOptions } from './AfterimagePass';
 export { PixelationPass, type PixelationOptions } from './PixelationPass';
 export { SSRPass, type SSRPassOptions } from './SSRPass';
 export { VolumetricFogPass, type VolumetricFogPassOptions } from './VolumetricFogPass';
+export { VelocityPass, type VelocityPassOptions } from './VelocityPass';
+export { TAAPass, type TAAPassOptions } from './TAAPass';
+export { MotionBlurPass, type MotionBlurPassOptions } from './MotionBlurPass';
+export { AutoExposurePass, type AutoExposurePassOptions } from './AutoExposurePass';
