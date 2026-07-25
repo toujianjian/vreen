@@ -119,3 +119,5 @@ export * from './Environment';
 export * from './Timeline';
 // Voxel — 体素系统 (VoxelChunk 16³ + VoxelWorld 多块管理 + VoxelMesher 贪婪网格合并 + VoxelRaycaster DDA + VoxelPalette 类型表)。
 export * from './Voxel';
+// Editor — 编辑器系统 (SelectionSystem 选择/拾取 + TransformGizmo 变换手柄 + UndoRedoSystem 撤销重做 + EditorCommands 命令工厂 + SnapSystem 吸附)。
+export * from './Editor';

@@ -159,7 +159,7 @@ vreen/
 │   │   ├── Core/               # Scene graph primitives + Sprite/Text/BitmapText/TextAtlas + texture family (Cube/Data/DataArray/Depth/Video/Canvas/Compressed) + Source + MorphTargets/MorphTargetAnimation + InstancedBufferAttribute + Fog/FogExp2 + Raycaster + DirtyFlag/SceneGraphProcessor/FrustumCuller/SceneStats
 │   │   ├── Math/               # Vector2/3/4, Matrix3/4, Quaternion, Euler, Color, Box3, Sphere, Plane, Ray, Line3, Triangle, Frustum, MathUtils
 │   │   ├── Cameras/            # Perspective / Orthographic cameras
-│   │   ├── Controls/           # Orbit / Fly / PointerLock / Map controls
+│   │   ├── Controls/           # Orbit / Fly / PointerLock / Map controls + CharacterController (kinematic)
 │   │   ├── Lights/             # Ambient / Directional / Point / Spot / Hemisphere / RectArea + ShadowMapManager
 │   │   ├── Geometries/         # Box / Sphere / Cylinder / Cone / Torus / Plane / Circle / Ring / Capsule / TorusKnot / Lathe / Extrude / Shape / Wireframe / Edges
 │   │   ├── Materials/          # Standard / Physical / Basic / Phong / Normal / Shadow / Sprite materials + ShaderMaterial + ShaderChunks/ subdirectory (10 GLSL fragments + ShaderChunkRegistry) + onBeforeCompile
@@ -185,6 +185,8 @@ vreen/
 │   │   ├── AI/                 # NavMesh (navigation mesh) + PathFinder (A*) + SteeringBehavior (Reynolds) + Agent
 │   │   ├── Environment/        # WeatherSystem + SkySystem (day/night) + CloudSystem + PrecipitationSystem
 │   │   ├── Timeline/           # TimelineClip + TimelineTrack + EventTrack + PropertyTrack + TimelineSequencer (play/pause/seek/loop/export/import)
+│   │   ├── Voxel/              # VoxelChunk 16³ + VoxelWorld (multi-chunk) + VoxelMesher (greedy meshing) + VoxelRaycaster (DDA) + VoxelPalette
+│   │   ├── Editor/             # SelectionSystem (pick/select/hover) + TransformGizmo (translate/rotate/scale) + UndoRedoSystem (with beginGroup/endGroup) + EditorCommands (Move/Rotate/Scale/Add/Remove/Property) + SnapSystem (grid/angle/scale snap)
 │   │   └── ecsDemo.ts          # ECS demo entry
 │   ├── pages/                  # Route-level pages (HomePage / ViewerPage / EngineDemoPage)
 │   ├── stores/                 # Zustand stores (viewer / ui / world / profiler / inspector)
@@ -600,6 +602,30 @@ Multi-track timeline / sequencer system for orchestrating animation clips, event
 | `PropertyTrack` | Property track — animates object properties via keyframes. `Keyframe { time, value, interp? }`. `evaluate(time)` supports `linear` / `step` / `smoothstep` interpolation. `update(time)` writes the sampled value back to `target[propertyPath]` (supports dotted paths like `a.b.c`). |
 | `TimelineSequencer` | Sequencer — `play` / `pause` / `stop` / `seek(time)` / `update(dt)` / `addTrack` / `removeTrack` / `getDuration` / `export()` / `import(json)`. Supports `loop` (wrap-around triggers EventTrack two-segment) and `speed` (global time-scale). `lastTime` is public for external playback-head tracking. Complements `AnimationMixer` (per-action bone blending) with per-track multi-type orchestration; nestable via `TimelineTrack.data` holding an `AnimationAction`. |
 
+### Voxel (`src/engine/Voxel/`)
+
+Voxel system for Minecraft-style blocky worlds — chunked storage, greedy meshing, and DDA ray traversal.
+
+| Export | Purpose |
+|--------|---------|
+| `VoxelPalette` | Voxel type registry — `id → { name, color, transparent, solid }`. `defaultPalette` preloads AIR / Stone / Grass / Dirt / Sand / Wood / Leaves. |
+| `VoxelChunk` | 16³ voxel block. `getVoxel` / `setVoxel` on local `[0,15]` coords. `buildMesh(palette)` emits only exposed faces (face culling) → `VoxelMeshData { positions, normals, colors, indices }`. |
+| `VoxelMesher` | Mesh generator: `greedyMesh` (merges collinear same-type faces into larger quads, minimises triangle count), `simpleMesh` (one quad per face), `getAmbientOcclusion` (per-vertex AO from neighbour occupancy). |
+| `VoxelRaycaster` | DDA voxel ray traversal. `raycast(world, origin, direction, maxDist)` → `VoxelRayHit { blockX/Y/Z, normalX/Y/Z, distance }`. O(distance) regardless of triangle count — far faster than `Core/Raycaster` for blocky worlds. |
+| `VoxelWorld` | Multi-chunk world manager. `setVoxel` / `getVoxel` translate world coords to `(chunkCoord, localCoord)`. `generateTerrain(heightmap, palette)` batch-fills from a heightmap. Tracks `VoxelWorldStats`. |
+
+### Editor (`src/engine/Editor/`)
+
+Editor subsystem for in-engine object manipulation — selection, transform gizmo, undo/redo, and snapping. Components are decoupled; the UI layer wires them together.
+
+| Export | Purpose |
+|--------|---------|
+| `SelectionSystem` | Selection/hover/pick manager. `selected: Set<Object3D>`. `select(obj, additive)` replaces or appends. `pick(raycaster, scene)` ray-picks closest hit and, per `multiSelect`, replaces/appends/toggles. `on(listener)` emits `SelectionChangeEvent` for UI refresh. |
+| `TransformGizmo` | Transform handle (translate/rotate/scale). 3 axis-end-spheres act as pick targets. `handleMouseDown/Move/Up(ray)` handle drag; ray projection onto axis computes delta written back to `target.position/rotation/scale`. `getMeshData()` returns `GizmoMeshData` for UI rendering (gizmo itself draws no WebGL). |
+| `UndoRedoSystem` | Undo/redo stack with grouping. `execute(action)` calls `redo()` and pushes (clears redo stack). `beginGroup(name)` / `endGroup()` merge multiple actions into one atomic entry (undo reverse-order, redo forward-order). `maxHistory` trims oldest. |
+| `EditorCommands` | `HistoryAction` factories: `createMoveCommand` / `createRotateCommand` / `createScaleCommand` / `createAddCommand` / `createRemoveCommand` / `createPropertyCommand`. Snapshots taken at factory-call time. |
+| `SnapSystem` | Snapping with three independent toggles: `gridSnap` (position, `snapPosition` rounds to `gridSize`), `angleSnap` (rotation, default 15°), `scaleSnap` (scale). All `snap*` return new `Vector3`, never mutate input. |
+
 ---
 
 ## The `.vreen` Package Format
@@ -774,7 +800,7 @@ npm run test:coverage     # coverage report
 
 ### Coverage
 
-Unit tests cover the engine foundation (2219+ tests across 134+ engine test files):
+Unit tests cover the engine foundation (3128+ tests across 192+ engine test files):
 
 | Area | Test files |
 |------|-----------|
@@ -803,6 +829,8 @@ Unit tests cover the engine foundation (2219+ tests across 134+ engine test file
 | AI | `Agent`, `NavMesh`, `PathFinder`, `SteeringBehavior` |
 | Environment | `SkySystem`, `WeatherSystem` |
 | Timeline | `TimelineSequencer`, `TimelineTrack`, `EventTrack`, `PropertyTrack` |
+| Voxel | `VoxelChunk`, `VoxelWorld`, `VoxelPalette`, `VoxelRaycaster` |
+| Editor | `SelectionSystem`, `UndoRedoSystem`, `SnapSystem` |
 | Lib | `vreenPack`, `vreenPublish`, `blocklyScriptStore`, `ecsScriptApi` (animsm / material / base), `vreenBlockly.tick` |
 
 Tests live alongside source files as `*.test.ts` and are picked up automatically by Vitest's default glob.
@@ -900,10 +928,12 @@ npm run electron:build
 | AI Navigation | NavMesh + A* PathFinder + SteeringBehavior + Agent | None |
 | Environment | Weather + Sky (day/night) + Clouds + Precipitation | None |
 | Timeline | Multi-track Sequencer (Clips/Events/Property keyframes) | None |
+| Voxel | VoxelChunk 16³ + VoxelWorld + Greedy meshing + DDA raycast | None |
+| Editor | Selection + TransformGizmo + Undo/Redo + Snap | None |
 | Serialization | Scene/Geometry/Material ↔ JSON | None |
 | Export | GLTF / OBJ / STL / PLY (4 exporters) | None |
 | i18n | 5 languages (en/zh/ja/ko/es) | 2 languages (en/zh) |
-| Testing | 3003+ unit tests (189 test files, 380+ source files) | None |
+| Testing | 3128+ unit tests (192 test files, 390+ source files) | None |
 | Visual Scripting | Blockly integration | None |
 | Package Format | .vreen (ZIP + delta diff) | None |
 

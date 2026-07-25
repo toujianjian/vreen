@@ -54,7 +54,7 @@ src/
 │   ├── Loaders/             # GLB/OBJ/FBX/HDR/KTX2/STL/PLY/TGA/MTL/EXR Loader + TextureLoader + DracoDecoder + AssetManager + 4 导出器 (OBJExporter/GLTFExporter/STLExporter/PLYExporter)
 │   ├── Animation/           # AnimationMixer/AnimationClip/AnimationAction/AnimationStateMachine/BlendSpace1D/Humanoid + AnimationLayer/AnimationLayerMixer/BoneMask/AvatarMask/AdditiveBlend/AnimationSync + IK (IKBone/IKChain/IKSolver(FABRIK)/CCDSolver/IKHumanoid)
 │   ├── ECS/                 # World, ComponentType, Components, Systems, PhysicsComponents (含 Constraint: Ball/Hinge/Slider/Fixed/Distance), PhysicsSystems (含 ConstraintSolver), Prefab, QueryBuilder, Broadphase
-│   ├── Controls/            # OrbitControls, FlyControls, PointerLockControls, MapControls
+│   ├── Controls/            # OrbitControls, FlyControls, PointerLockControls, MapControls, CharacterController (kinematic 角色)
 │   ├── Geometries/          # Box/Sphere/Cylinder/Cone/Torus/Plane/Circle/Ring/Capsule/TorusKnot/Lathe/Extrude/Shape/Wireframe/Edges + Primitives barrel
 │   ├── Helpers/             # GridHelper, GridHelper3D, AxesHelper, BoxHelper, CameraHelper, ArrowHelper, LineHelper, PhysicsDebugRenderer
 │   ├── Events/              # EventBus, EventQueue, GameEvent (CollisionEvent/TriggerEvent/SpawnEvent/DestroyEvent/ScoreEvent/CustomEvent) - 类型化 pub/sub
@@ -73,7 +73,9 @@ src/
 │   ├── Input/               # InputManager (统一键盘/鼠标/触摸/手柄) + KeyboardState/MouseState/TouchState/GamepadState + InputAction (动作映射) + InputMap (JSON 配置往返)
 │   ├── AI/                  # AI 导航 (NavMesh 导航网格 + A* PathFinder 寻路 + SteeringBehavior 转向行为 + Agent 代理)
 │   ├── Environment/         # 环境系统 (WeatherSystem 天气 + SkySystem 天空/日夜循环 + CloudSystem 云层 + PrecipitationSystem 降水)
-│   └── Timeline/            # 时间轴/Sequencer (TimelineClip 片段 + TimelineTrack 轨道 + EventTrack 事件 + PropertyTrack 属性关键帧 + TimelineSequencer 序列器,支持 play/pause/seek/loop/export/import)
+│   ├── Timeline/            # 时间轴/Sequencer (TimelineClip 片段 + TimelineTrack 轨道 + EventTrack 事件 + PropertyTrack 属性关键帧 + TimelineSequencer 序列器,支持 play/pause/seek/loop/export/import)
+│   ├── Voxel/               # VoxelChunk 16³ + VoxelWorld 多块管理 + VoxelMesher 贪婪网格合并 + VoxelRaycaster DDA + VoxelPalette 类型表
+│   └── Editor/              # 编辑器系统:SelectionSystem 选择/拾取 + TransformGizmo 变换手柄 (translate/rotate/scale) + UndoRedoSystem 撤销重做 (含 beginGroup/endGroup) + EditorCommands 命令工厂 (Move/Rotate/Scale/Add/Remove/Property) + SnapSystem 网格/角度/缩放吸附
 ├── pages/                   # 页面组件 (HomePage, ViewerPage, EngineDemoPage)
 ├── stores/                  # Zustand 状态管理
 │   ├── viewerStore.ts       # 资产加载、相机、引擎模式、物理调试、Blockly 开关
@@ -335,6 +337,24 @@ src/
 - 可配 `maxBounces`(默认 8)/ `samplesPerPixel`(默认 4)/ 分辨率;`reset()` 清缓冲;`setBounces` / `setSamples` 运行时调整
 - 输出未做 tonemap,调用方可后续处理;完全确定性 + 无头测试友好
 
+### 体素系统 (Voxel/)
+
+- `VoxelPalette` — 体素类型注册表(id → 颜色/透明/固体),`defaultPalette` 预置空气/石头/草地/泥土等
+- `VoxelChunk` — 16³ 体素块,单块网格化;`getVoxel`/`setVoxel` 读写,`buildMesh` 产出 `VoxelMeshData`
+- `VoxelMesher` — 网格生成器:`greedyMesh`(贪婪合并相邻同面,产面最少)/ `simpleMesh`(逐面)/ `getAmbientOcclusion`(顶点 AO)
+- `VoxelRaycaster` — DDA 体素射线遍历,`raycast(world, origin, direction, maxDist)` 返回 `VoxelRayHit`(块坐标 + 面法线 + 距离)
+- `VoxelWorld` — 多块世界,跨块读写 / 地形生成(Heightmap)/ 统计 `VoxelWorldStats`
+- **为什么是 16³ 块而非世界级单网格?** 块是流式加载/卸载、编辑重网格化的最小单元;16³ 兼顾缓存命中率与重算成本
+
+### 编辑器系统 (Editor/)
+
+- `SelectionSystem` — 选择/悬停/射线拾取,`selected: Set<Object3D>` 管理选中集合;`pick(raycaster, scene)` 按 `multiSelect` 决定替换/追加/toggle;`on(listener)` 派发 `SelectionChangeEvent` 供 UI 刷新
+- `TransformGizmo` — 变换手柄(translate/rotate/scale),3 轴端球做命中检测;`handleMouseDown/Move/Up` 处理拖拽,射线投影到轴方向算增量写回 target.position/rotation/scale;`getMeshData()` 产出渲染数据由调用方绘制
+- `UndoRedoSystem` — 撤销/重做栈,`execute(action)` 调 redo 并入栈(清空 redo 栈);`beginGroup(name)`/`endGroup()` 把多个操作合并为单个原子 entry(undo 倒序、redo 正序);`maxHistory` 裁剪最旧
+- `EditorCommands` — 预定义 `HistoryAction` 工厂:`createMoveCommand`/`createRotateCommand`/`createScaleCommand`/`createAddCommand`/`createRemoveCommand`/`createPropertyCommand`,快照在工厂调用时读取
+- `SnapSystem` — 吸附系统,三类独立开关:`gridSnap`(位置,`snapPosition` round 到 `gridSize` 倍数)/`angleSnap`(旋转)/`scaleSnap`(缩放);不修改输入,返回新 Vector3
+- **为什么各组件零耦合?** SelectionSystem 不依赖 Gizmo,Gizmo 不依赖 UndoRedoSystem;调用方(UI 层)负责串联:鼠标点击 → pick → 选中 → setTarget → 拖拽 → snap → createCommand → execute
+
 ### .vreen 包格式
 
 - ZIP 容器: manifest.json + scene.json + 嵌入资源 (GLB/纹理) + world.json
@@ -365,6 +385,6 @@ src/
 
 - `npm test` / `npm run test:watch` / `npm run test:coverage`
 - Vitest 4 + @vitest/coverage-v8;测试文件与源码同目录 `*.test.ts`
-- 当前测试数量:**3003+**(189 个测试文件,覆盖 Math / Core / ECS / Animation / Physics / Renderer / Loaders / Materials / Particles / Audio / Terrain / Network / SaveSystem / SceneManager / Input / AI / Environment / Timeline 等 34+ 模块)
+- 当前测试数量:**3128+**(192 个测试文件,覆盖 Math / Core / ECS / Animation / Physics / Renderer / Loaders / Materials / Particles / Audio / Terrain / Network / SaveSystem / SceneManager / Input / AI / Environment / Timeline / Voxel / Editor 等 39+ 模块)
 
 ## 📌&#x20;

@@ -46,6 +46,8 @@
    - 4.27 [AI](#427-ai)
    - 4.28 [Environment](#428-environment)
    - 4.29 [Timeline](#429-timeline)
+   - 4.30 [Voxel](#430-voxel)
+   - 4.31 [Editor](#431-editor)
 5. [Render Pipeline](#5-render-pipeline)
 6. [ECS Architecture](#6-ecs-architecture)
 7. [Dual-Backend Rendering](#7-dual-backend-rendering)
@@ -169,7 +171,7 @@ src/engine/
 ├── Core/         Scene graph primitives (Object3D, Scene, Mesh, Sprite, Text, BitmapText, …) + texture family + Source + MorphTargets/MorphTargetAnimation + InstancedBufferAttribute + FurShell (multi-layer fur) + Fog / Raycaster + DirtyFlag / SceneGraphProcessor / FrustumCuller / SceneStats + TextAtlas
 ├── Math/         Vectors, matrices, quaternions, geometry primitives
 ├── Cameras/      Perspective / Orthographic cameras
-├── Controls/     Orbit / Fly / PointerLock / Map controls
+├── Controls/     Orbit / Fly / PointerLock / Map controls + CharacterController (kinematic character)
 ├── Lights/       Ambient / Directional / Point / Spot / Hemisphere / RectArea + ShadowMapManager
 ├── Geometries/   Procedural primitive geometry (15 generators)
 ├── Materials/    Standard / Physical / Basic / Phong / Normal / Shadow / Sprite + ShaderMaterial + ShaderChunks/ subdirectory (10 GLSL fragments + ShaderChunkRegistry) + FurMaterial (shell-based fur / hair)
@@ -191,7 +193,12 @@ src/engine/
 ├── Network/      NetworkSync (server-authoritative sync) + Snapshot (binary serialization/compression) + NetworkTransport (WebSocket/Mock) + NetworkLerp (interpolation/prediction/reconciliation)
 ├── SaveSystem/   SaveSystem (multi-slot + auto-save) + SaveSerializer (Scene+World ↔ SaveData, compressed) + LocalStorageAdapter (localStorage/memory fallback)
 ├── SceneManager/ SceneManager (multi-scene register/load/switch) + SceneTransition (Fade/Crossfade/Slide/Wipe/None)
-└── Input/        InputManager (unified keyboard/mouse/touch/gamepad) + KeyboardState/MouseState/TouchState/GamepadState + InputAction (binding→action) + InputMap (JSON config)
+├── Input/        InputManager (unified keyboard/mouse/touch/gamepad) + KeyboardState/MouseState/TouchState/GamepadState + InputAction (binding→action) + InputMap (JSON config)
+├── AI/           NavMesh navigation mesh + A* PathFinder + SteeringBehavior + Agent
+├── Environment/  WeatherSystem + SkySystem (day/night cycle) + CloudSystem + PrecipitationSystem
+├── Timeline/     TimelineClip + TimelineTrack + EventTrack + PropertyTrack + TimelineSequencer (play/pause/seek/loop/export/import)
+├── Voxel/        VoxelChunk 16³ + VoxelWorld (multi-chunk) + VoxelMesher (greedy meshing) + VoxelRaycaster (DDA) + VoxelPalette
+└── Editor/       SelectionSystem (pick/select/hover) + TransformGizmo (translate/rotate/scale) + UndoRedoSystem (with beginGroup/endGroup) + EditorCommands (Move/Rotate/Scale/Add/Remove/Property) + SnapSystem (grid/angle/scale snap)
 ```
 
 ### Module dependency graph
@@ -1192,6 +1199,71 @@ TimelineSequencer
 **Loop wrap-around semantics:** when `loop=true` and `update(dt)` pushes `time` past `duration`, the sequencer wraps `time %= duration` and calls `advanceTracks(time, prevTime, dt)` with `prevTime > time`. `EventTrack.getEventsBetween` detects this and fires two segments in chronological order: first the tail events `(lastTime, +∞)`, then the head events `[0, time]`. This ensures events at the end of the timeline fire before events at the beginning during a wrap, matching real-world playback expectation.
 
 **Nesting with `AnimationMixer`:** `TimelineTrack.data` can hold an `AnimationAction`; the track's `update(time, dt)` calls `data.update(localTime, dt)` which advances the mixer. This lets a timeline drive bone animation clips at specific time ranges, while `PropertyTrack` drives material / transform properties in parallel — a common pattern for cutscenes.
+
+### 4.30 Voxel
+
+**Path:** `src/engine/Voxel/`
+
+Voxel system for Minecraft-style blocky worlds. Separated from `Core/` because chunked storage, greedy meshing, and DDA ray traversal are domain-specific algorithms that don't fit the general scene graph.
+
+```
+VoxelWorld
+   ├── chunks: Map<chunkKey, VoxelChunk>   (chunkKey = "cx,cy,cz")
+   │     │
+   │     └── VoxelChunk (16³ voxels)
+   │           ├── voxels: Uint8Array(4096)   (palette id per cell, 0 = AIR)
+   │           ├── getVoxel(x,y,z) / setVoxel(x,y,z,id)
+   │           └── buildMesh(palette) → VoxelMeshData { positions, normals, colors, indices }
+   │
+   ├── setVoxel(worldX, worldY, worldZ, id)  (cross-chunk write, marks chunk dirty)
+   ├── getVoxel(worldX, worldY, worldZ)      (cross-chunk read)
+   ├── generateTerrain(heightmapFn, palette) (batch fill from a heightmap)
+   └── stats: VoxelWorldStats { chunkCount, solidVoxelCount, meshVertexCount }
+```
+
+| Export | Role |
+|--------|------|
+| `VoxelPalette` | Voxel type registry — maps `id → { name, color, transparent, solid }`. `defaultPalette` preloads AIR / Stone / Grass / Dirt / Sand / Wood / Leaves. `register(type)` assigns sequential ids; `get(id)` / `find(name)` lookups. |
+| `VoxelChunk` | 16³ voxel block. `getVoxel`/`setVoxel` operate on local `[0,15]` coords. `buildMesh(palette)` walks cells and emits faces only for solid voxels adjacent to transparent/empty neighbours (face culling). `VoxelMeshData` is a plain buffer the caller uploads to a `BufferGeometry`. |
+| `VoxelMesher` | Mesh generator with three strategies: `greedyMesh` (greedy face merging — collinear same-type faces are merged into larger quads, minimising triangle count), `simpleMesh` (one quad per exposed face, fast to build but more triangles), `getAmbientOcclusion` (per-vertex AO from neighbour occupancy). `VoxelNeighborProvider` abstracts cross-chunk neighbour lookup so mesher can read adjacent chunks for seamless edges. |
+| `VoxelRaycaster` | DDA (Digital Differential Analyzer) voxel ray traversal. `raycast(world, origin, direction, maxDist)` steps through the voxel grid one cell at a time (not triangle-by-triangle), returning `VoxelRayHit { blockX, blockY, blockZ, normalX/Y/Z, distance }`. Far faster than `Core/Raycaster` for blocky worlds. |
+| `VoxelWorld` | Multi-chunk world manager. Chunks are lazily created on first write. `setVoxel`/`getVoxel` translate world coords to `(chunkCoord, localCoord)` and dispatch to the right chunk. `generateTerrain(heightmap, palette)` batch-fills the world from a heightmap function. Tracks `VoxelWorldStats` for debugging. |
+
+**Why 16³ chunks instead of a single world mesh?** A chunk is the minimum unit for streaming (load/unload around the player) and re-meshing after an edit. When the player edits one block, only that chunk re-meshes — not the entire world. 16³ balances cache locality (a chunk fits in L1) against re-mesh cost.
+
+**Why DDA raycasting instead of `Core/Raycaster`?** `Core/Raycaster` walks triangle lists, which for a voxel world means thousands of triangles per chunk. DDA steps through the voxel grid analytically (one cell per iteration, ~6 flops), giving O(distance) traversal regardless of triangle count — essential for instant block selection in editors.
+
+### 4.31 Editor
+
+**Path:** `src/engine/Editor/`
+
+Editor subsystem for in-engine object manipulation: selection, transform gizmo, undo/redo, and snapping. Components are intentionally decoupled — `SelectionSystem` doesn't know about `TransformGizmo`, `TransformGizmo` doesn't know about `UndoRedoSystem`. The UI layer wires them together. This mirrors how Unity and Godot structure their editor tooling.
+
+```
+Mouse click → SelectionSystem.pick(raycaster, scene)
+                ↓
+              selected Object3D → TransformGizmo.setTarget(object)
+                ↓
+Mouse drag → TransformGizmo.handleMouseMove(ray)
+                ↓ (raw delta)
+           SnapSystem.snapPosition(delta)   ← optional, toggled in UI
+                ↓ (snapped delta)
+           EditorCommands.createMoveCommand(obj, oldPos, newPos)
+                ↓
+           UndoRedoSystem.execute(command)  ← pushes to undo stack
+```
+
+| Export | Role |
+|--------|------|
+| `SelectionSystem` | Selection/hover/pick manager. `selected: Set<Object3D>` holds the current selection. `select(obj, additive)` replaces (default) or appends. `pick(raycaster, scene)` ray-picks the closest hit and, depending on `multiSelect`, either replaces the selection, appends, or toggles (if already selected). `setHover(obj)` tracks mouse-over for UI highlight. `on(listener)` emits `SelectionChangeEvent { selected, primary, kind }` so the outliner/inspector can refresh. |
+| `TransformGizmo` | Transform handle (translate/rotate/scale) attached to a target `Object3D`. Three axis-end-spheres act as pick targets. `handleMouseDown(ray)` ray-sphere-tests each axis; on hit, records a snapshot of `target.position/rotation/scale` and the ray's projection onto the axis. `handleMouseMove(ray)` re-projects the ray, computes a delta, and writes it back to the target's transform (translate = addScaledVector, rotate = quaternion from axis-angle, scale = per-axis multiply). `getMeshData()` returns a `GizmoMeshData` struct (origin/axes/size/mode/hoveredAxis) for the UI to render — the gizmo itself draws no WebGL. |
+| `UndoRedoSystem` | Undo/redo stack with operation grouping. `execute(action)` calls `action.redo()` and pushes to the undo stack (clearing the redo stack, classic linear history). `undo()`/`redo()` move entries between stacks. `beginGroup(name)` / `endGroup()` buffer subsequent `execute` calls and merge them into one atomic entry (undo runs actions in reverse, redo in forward order). `maxHistory` trims the oldest entries (FIFO). `getHistory()` returns a view for UI history lists. |
+| `EditorCommands` | `HistoryAction` factory functions: `createMoveCommand` / `createRotateCommand` / `createScaleCommand` snapshot the old/new transform and restore on undo; `createAddCommand` / `createRemoveCommand` swap `scene.add` / `scene.remove` on undo/redo (recording original parent for round-trip); `createPropertyCommand` is a generic `keyof T` setter for arbitrary properties. Snapshots are taken at factory-call time, so callers should invoke the factory right before `execute`. |
+| `SnapSystem` | Snapping system with three independent toggles: `gridSnap` (position — `snapPosition` rounds each component to `gridSize` multiples), `angleSnap` (rotation — `snapRotation` rounds to `angleStep` multiples, default 15°), `scaleSnap` (scale — `snapScale` rounds to `scaleStep` multiples). All `snap*` methods return a new `Vector3` and never mutate the input. `toggle*Snap()` flips the switch and returns the new state. |
+
+**Why are the components decoupled?** A selection system is useful without a gizmo (e.g. programmatic batch operations). A gizmo is useful without undo/redo (e.g. live preview before commit). Keeping them separate lets each be tested in isolation (the test suite has 57 cases covering Selection/Undo/Snap without touching WebGL) and lets the UI layer decide the wiring — the same `SelectionSystem` can drive an outliner, a property grid, or a batch-operation toolbar.
+
+**Why does `TransformGizmo` not render itself?** Rendering requires a WebGL context, which would make the gizmo untestable in Node. By emitting plain `GizmoMeshData` structs, the gizmo stays pure-logic and the UI layer (which already has a context) handles drawing — the same pattern as `Helpers/ArrowHelper` producing geometry rather than draw calls.
 
 ---
 
