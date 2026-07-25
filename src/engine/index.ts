@@ -117,3 +117,5 @@ export * from './Environment';
 // Timeline — 时间轴 / Sequencer 系统 (TimelineClip + TimelineTrack + EventTrack + PropertyTrack + TimelineSequencer)。
 // 多轨道编排:动画片段 / 事件触发 / 属性关键帧,支持 play/pause/seek/loop/export/import。
 export * from './Timeline';
+// Voxel — 体素系统 (VoxelChunk 16³ + VoxelWorld 多块管理 + VoxelMesher 贪婪网格合并 + VoxelRaycaster DDA + VoxelPalette 类型表)。
+export * from './Voxel';

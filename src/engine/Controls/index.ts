@@ -11,3 +11,11 @@ export type { PointerLockControlsOptions } from './PointerLockControls';
 
 export { MapControls } from './MapControls';
 export type { MapControlsOptions } from './MapControls';
+
+// CharacterController — kinematic 角色控制器（重力 / 跳跃 / 台阶 / 坡度限制）。
+export { CharacterController } from './CharacterController';
+export type {
+  CharacterState,
+  CharacterControllerOptions,
+  GroundSampleFn,
+} from './CharacterController';
