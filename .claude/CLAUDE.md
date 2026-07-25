@@ -66,7 +66,11 @@ src/
 │   ├── Assets/              # AssetCache (LRU), AssetRegistry (引用计数), AssetLoader (异步加载) - 资源生命周期管理 (与 Loaders/AssetManager 互补)
 │   ├── Serialization/       # SerializerRegistry, GeometrySerializer, MaterialSerializer, SceneSerializer - 场景/几何体/材质 ↔ JSON 往返
 │   ├── Tools/               # Profiler (CPU/GPU mark), FrameProfiler (帧级 FPS), SystemProfiler (ECS 系统耗时), MemoryTracker (分配/泄漏), GpuProfiler (timer query), PerformanceReport (文本/JSON 报告)
-│   └── Physics/             # PhysicsDemo + ConstraintSolver + Joint 约束 (Ball/Hinge/Slider/Fixed/Distance) + ClothSimulation (Verlet 布料)
+│   ├── Physics/             # PhysicsDemo + ConstraintSolver + Joint 约束 (Ball/Hinge/Slider/Fixed/Distance) + ClothSimulation (Verlet 布料) + FluidSimulation (SPH 流体) + DestructionSystem + VoronoiFracture
+│   ├── Network/             # NetworkSync (服务器权威同步) + Snapshot (二进制快照序列化/压缩) + NetworkTransport (WebSocket/Mock 传输抽象) + NetworkLerp (位置/旋转插值 + 预测 + 和解)
+│   ├── SaveSystem/          # SaveSystem (多槽位 + 自动保存) + SaveSerializer (Scene+World ↔ SaveData,含压缩) + LocalStorageAdapter (localStorage/内存兜底)
+│   ├── SceneManager/        # SceneManager (多场景注册/加载/切换) + SceneTransition (Fade/Crossfade/Slide/Wipe/None 过渡)
+│   └── Input/               # InputManager (统一键盘/鼠标/触摸/手柄) + KeyboardState/MouseState/TouchState/GamepadState + InputAction (动作映射) + InputMap (JSON 配置往返)
 ├── pages/                   # 页面组件 (HomePage, ViewerPage, EngineDemoPage)
 ├── stores/                  # Zustand 状态管理
 │   ├── viewerStore.ts       # 资产加载、相机、引擎模式、物理调试、Blockly 开关
@@ -266,6 +270,68 @@ src/
 - `Fog` / `FogExp2` — 线性雾 / 指数雾
 - `Raycaster` / `intersectGeometry` — 射线场景求交 (优先使用 `MeshBVH`)
 
+### 网络同步 (Network/)
+
+- 服务器权威模型 + 客户端插值/预测;`NetworkSync` 管理同步实体注册与每帧 tick
+- `NetworkTransport` — 传输抽象契约,内置 `WebSocketTransport`(浏览器)与 `MockTransport`(测试)
+- `Snapshot` — 二进制快照序列化 (实体 Transform + 组件状态),支持压缩以降低带宽
+- `NetworkLerp` — 位置/旋转插值 + 客户端预测 + 服务器和解 (reconciliation),平滑远程实体运动
+- `createNetworkEntity` 工厂 — 注册同步实体并返回 `NetworkEntity` 句柄
+
+### 存档系统 (SaveSystem/)
+
+- 与 Scene + World 解耦:`save()` 接收实例,`load()` 返回重建实例
+- `SaveSystem` — 多槽位管理 (slotId → SaveSlot) + 自动保存 (每 N 秒触发 source) + import/export 跨实例迁移
+- `SaveSerializer` — Scene + World + metadata ↔ `SaveData`,含压缩;委托 `SceneSerializer` / `World.toJSON`
+- `LocalStorageAdapter` — 字符串键值存储契约,浏览器用 `localStorage`,Node/测试用 `MemoryStorageBackend` 兜底;所有 key 加前缀避免污染
+- `StorageAdapter` 契约可被 IndexedDB / FileSystem 实现替换
+
+### 场景管理 (SceneManager/)
+
+- `SceneManager` — 多场景注册 / 按名切换 / 当前场景跟踪;场景以 `Scene` 实例注册,切换时替换渲染根
+- `SceneTransition` — 场景过渡效果 (Fade / Crossfade / Slide / Wipe / None),基于 alpha + 缓动函数;`update(dt)` 推进过渡,完成后回调
+- 与 `viewerStore` 解耦:SceneManager 是纯引擎层,UI 通过 store 监听切换事件
+
+### 输入系统 (Input/)
+
+- `InputManager` — 统一管理键盘/鼠标/触摸/手柄,`attach(domElement)` 绑定 DOM 事件,`update()` 每帧推进状态 + 手柄轮询;`setEnabled(false)` 暂停采集
+- `KeyboardState` — `keysDown` / `keysPressed`(本帧)/ `keysReleased`(本帧)三套集合,键码用 `KeyboardEvent.code`(布局无关);`anyDown` / `allDown` 查询
+- `MouseState` — `position` / `delta`(Vector2)+ `buttonsDown` / `buttonsPressed` / `buttonsReleased` + `wheelDelta`;按钮编号遵循 MouseEvent.button (0=左/1=中/2=右)
+- `TouchState` — 多点触摸 `Map<id, Touch>`,Touch 携带 `phase`(began/moved/ended/cancelled)+ `position` / `delta`;`getMultiTouchDistance` 支持捏合手势
+- `GamepadState` — 封装 `navigator.getGamepads()`,带死区 + 按钮/轴查询 + `rumble`(震动,需 GamepadHapticActuator);无 gamepad API 时退化为未连接
+- `InputAction` — 物理输入 → 逻辑动作映射,持多个 `InputBinding`(`type: 'keyboard'|'mouse'|'gamepad'`),`evaluate()` 聚合 `value`(最大绝对值)与 `pressed`(OR)
+- `InputMap` — 动作表管理 + `saveToJSON` / `loadFromJSON` 往返,便于存档与配置热重载
+- 与 `Controls/` 互补:OrbitControls 等直接消费 DOM 事件做相机;InputManager 提供「本帧快照」式查询,供游戏逻辑 (InputAction) 消费
+
+### 流体模拟 (Physics/FluidSimulation)
+
+- `FluidSimulation` — SPH (Smoothed Particle Hydrodynamics) 风格的不可压缩流体模拟
+- 粒子携带 position / velocity / density / pressure;每帧 computeDensityPressure → computeForces → integrate
+- 空间哈希加速邻居查询,避免 O(n²);与 ECS `PhysicsSystems` 独立(流体形态与刚体差异大)
+- `getMeshData()` 输出粒子位置供渲染;可与 `Particles/` 渲染管线对接
+
+### 破坏系统 (Physics/DestructionSystem + VoronoiFracture)
+
+- `VoronoiFracture` — 用 Voronoi 单元剖分将 `BufferGeometry` 切成多个碎块;每个碎块输出独立 geometry + 中心点
+- `DestructionSystem` — 管理碎块刚体生成 + 物理模拟;触发断裂时把原 mesh 替换为碎块集合,各碎块带 Rigidbody + Collider
+- 与 `ConstraintSolver` 协作:碎块间可临时用 `DistanceJointConstraint` 模拟粘连
+- 适合可破坏墙体 / 玻璃碎裂等效果
+
+### 毛发渲染 (Core/FurShell + Materials/FurMaterial)
+
+- `FurShell` — 多层 shell 毛发渲染:生成 N 个同心 shell mesh 共享基础 geometry,每个绑定 `FurMaterial` 的 `shellLayer` (0..1)
+- `generate()` 构建 shell 集合(默认作为基础 mesh 子节点),`update(dt)` 同步 gravity/wind/time/furLength/furColor/density/noiseTexture 到所有 shell;`setShellCount(n)` 重建;`dispose()` 释放
+- `FurMaterial` — 顶点沿法线 `shellLayer * furLength` 位移 + 重力/风力偏移;片元按密度阈值 discard(顶层稀疏)+ 根部 occlusion 变暗
+- `transparent` / `doubleSided` 默认 true;`renderOrder` 递增保证 back-to-front
+
+### 路径追踪 (Renderer/PathTracer)
+
+- `PathTracer` — CPU 参考路径追踪器,用于 PBR 验证与离线调试(非实时后端)
+- Möller–Trumbore 射线-三角形求交 + 余弦加权半球采样 + 直接光照(含阴影射线)+ 俄罗斯轮盘路径终止
+- `render(scene, camera)` 每次追踪一 pass,`frameCount` 累积到 Float32 缓冲;`getResult()` 返回 gamma 校正后的 `Uint8ClampedArray`
+- 可配 `maxBounces`(默认 8)/ `samplesPerPixel`(默认 4)/ 分辨率;`reset()` 清缓冲;`setBounces` / `setSamples` 运行时调整
+- 输出未做 tonemap,调用方可后续处理;完全确定性 + 无头测试友好
+
 ### .vreen 包格式
 
 - ZIP 容器: manifest.json + scene.json + 嵌入资源 (GLB/纹理) + world.json
@@ -291,5 +357,11 @@ src/
 | `npm run electron:dev`   | Electron 开发模式               |
 | `npm run electron:build` | Electron 生产构建 (.exe)        |
 | `npm run vreen`          | .vreen CLI 工具               |
+
+### 测试
+
+- `npm test` / `npm run test:watch` / `npm run test:coverage`
+- Vitest 4 + @vitest/coverage-v8;测试文件与源码同目录 `*.test.ts`
+- 当前测试数量:**2806**(179 个测试文件,覆盖 Math / Core / ECS / Animation / Physics / Renderer / Loaders / Materials / Particles / Audio / Terrain / Network / SaveSystem / SceneManager / Input 等)
 
 ## 📌&#x20;

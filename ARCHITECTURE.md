@@ -39,6 +39,10 @@
    - 4.20 [Acceleration](#420-acceleration)
    - 4.21 [Assets](#421-assets)
    - 4.22 [Serialization](#422-serialization)
+   - 4.23 [Input](#423-input)
+   - 4.24 [Network](#424-network)
+   - 4.25 [SaveSystem](#425-savesystem)
+   - 4.26 [SceneManager](#426-scenemanager)
 5. [Render Pipeline](#5-render-pipeline)
 6. [ECS Architecture](#6-ecs-architecture)
 7. [Dual-Backend Rendering](#7-dual-backend-rendering)
@@ -180,7 +184,11 @@ src/engine/
 ├── Acceleration/ BVH / BVHBuilder / MeshBVH
 ├── Assets/       AssetCache (LRU) / AssetRegistry (ref-counting) / AssetLoader (async) — resource lifecycle management
 ├── Serialization/ SerializerRegistry / GeometrySerializer / MaterialSerializer / SceneSerializer — Scene/Geometry/Material ↔ JSON round-trip
-└── Tools/        Profiler / FrameProfiler / SystemProfiler / MemoryTracker / GpuProfiler / PerformanceReport
+├── Tools/        Profiler / FrameProfiler / SystemProfiler / MemoryTracker / GpuProfiler / PerformanceReport
+├── Network/      NetworkSync (server-authoritative sync) + Snapshot (binary serialization/compression) + NetworkTransport (WebSocket/Mock) + NetworkLerp (interpolation/prediction/reconciliation)
+├── SaveSystem/   SaveSystem (multi-slot + auto-save) + SaveSerializer (Scene+World ↔ SaveData, compressed) + LocalStorageAdapter (localStorage/memory fallback)
+├── SceneManager/ SceneManager (multi-scene register/load/switch) + SceneTransition (Fade/Crossfade/Slide/Wipe/None)
+└── Input/        InputManager (unified keyboard/mouse/touch/gamepad) + KeyboardState/MouseState/TouchState/GamepadState + InputAction (binding→action) + InputMap (JSON config)
 ```
 
 ### Module dependency graph
@@ -1031,6 +1039,96 @@ user-defined plugins. The `NON_POJO_COMPONENTS` set in the ECS layer
 plays a similar role for ECS serialization: runtime-only references
 (`MeshRef`, `SkinnedMeshRef`) are skipped during `World.toJSON` and
 re-attached by the caller after `loadJSON`.
+
+### 4.23 Input
+
+**Path:** `src/engine/Input/`
+
+A unified input layer that normalises keyboard, mouse, touch, and
+gamepad input into per-frame snapshot state. It is the
+game-logic-facing counterpart to the camera-oriented `Controls/`
+module — `Controls/` consumes raw DOM events to drive a camera, while
+`Input/` exposes a "this frame" query API for game systems
+(`InputAction` / `InputMap`) and the ECS `PlayerInput` component.
+
+| Export | Role |
+|--------|------|
+| `InputManager` | Top-level coordinator. `attach(domElement)` binds DOM listeners (keydown / keyup / mousedown / mouseup / mousemove / wheel / touchstart / touchmove / touchend / touchcancel); `update()` advances per-frame state and polls the gamepad; `setEnabled(false)` short-circuits event handlers while still clearing per-frame buffers to avoid stale "pressed" flags on re-enable. Mouse / touch positions are converted to element-relative coordinates via `getBoundingClientRect`. |
+| `KeyboardState` | Three sets: `keysDown` (held), `keysPressed` (pressed this frame), `keysReleased` (released this frame). Key codes use `KeyboardEvent.code` (layout-independent: `'KeyW'`, `'ArrowUp'`, `'Space'`). Autorepeat does not double-count `keysPressed`. `anyDown(...)` / `allDown(...)` for combo queries. |
+| `MouseState` | `position` / `delta` (`Vector2`) + `buttonsDown` / `buttonsPressed` / `buttonsReleased` + `wheelDelta`. Button numbering follows `MouseEvent.button` (0=left, 1=middle, 2=right). `delta` accumulates within a frame and is zeroed by `update()`. |
+| `TouchState` | `Map<id, Touch>` with `Touch.phase` (`'began'` / `'moved'` / `'ended'` / `'cancelled'`). `maxTouches` caps simultaneous tracking. `getMultiTouchDistance()` returns the distance between the first two active touches for pinch gestures. `update()` removes ended/cancelled touches and zeroes surviving deltas. |
+| `GamepadState` | Wraps `navigator.getGamepads()`. `poll()` snapshots `axes` / `buttons` each frame; `getAxis(i)` applies a linear deadzone (default 0.1); `getTrigger(i)` returns 0..1; `rumble(strong, weak, ms)` drives `GamepadHapticActuator` when supported. Degrades to `connected=false` without throwing when the Gamepad API is unavailable (Node / Safari). `onConnectionChange` listener fires on connect / disconnect transitions. |
+| `InputAction` | Maps physical input to a logical action via `InputBinding[]` (`{ type: 'keyboard' \| 'mouse' \| 'gamepad', code?, button?, axis?, axisThreshold? }`). `evaluate(input)` aggregates bindings: `value` = the binding with the largest absolute value (sign preserved), `pressed` = OR of all bindings' this-frame-pressed flags. `addBinding` is chainable. |
+| `InputMap` | Named-action registry (`Map<string, InputAction>`). `update(input)` evaluates all actions each frame. `saveToJSON()` / `loadFromJSON()` round-trip the binding configuration, enabling save-game persistence and hot-reloadable input configs. |
+
+**Decoupling via `InputStateProvider`:** `InputAction` and `InputMap`
+read input through the `InputStateProvider` interface
+(`{ keyboard, mouse, touch, gamepad }`), which `InputManager`
+satisfies structurally. This avoids a circular import — `InputManager`
+does not import `InputAction` / `InputMap`; the caller wires them:
+
+```ts
+const mgr = new InputManager();
+mgr.attach(canvas);
+const map = new InputMap();
+map.addAction('jump', new InputAction('jump', [
+  { type: 'keyboard', code: 'Space' },
+  { type: 'gamepad', button: 0 },
+]));
+// each frame:
+mgr.update();
+map.update(mgr);
+if (map.getAction('jump')!.isPressed()) player.jump();
+```
+
+**Test environment:** the Vitest config runs in a Node environment
+without a real DOM. `InputManager` tests use a `MockElement` that
+records `addEventListener` registrations and dispatches mock events;
+`GamepadState` tests mock `navigator.getGamepads`. This keeps the input
+layer fully unit-testable headlessly.
+
+### 4.24 Network
+
+**Path:** `src/engine/Network/`
+
+Server-authoritative network synchronisation foundation. Decoupled
+from the ECS `World` — it reads / writes `Transform`-like state via the
+`NetworkEntity` handle, so it can layer on top of any entity system.
+
+| Export | Role |
+|--------|------|
+| `NetworkTransport` | Transport contract (`send` / `onMessage` / `connect` / `close`). Built-in implementations: `WebSocketTransport` (browser) and `MockTransport` (in-process loopback for tests). |
+| `Snapshot` | Binary snapshot serialisation — packs per-entity transform + component state into a compact buffer with optional compression. The wire format is versioned for forward compatibility. |
+| `NetworkLerp` | Client-side interpolation / prediction / reconciliation. Buffers snapshots, interpolates remote entity positions / rotations, and reconciles local prediction errors when a server snapshot arrives. |
+| `NetworkSync` | Top-level sync manager. `createNetworkEntity` registers an entity for synchronisation; `update(dt)` ticks snapshot send (server) / receive + interpolate (client). `NetworkSyncOptions` configures send rate, interpolation delay, and ownership. |
+
+### 4.25 SaveSystem
+
+**Path:** `src/engine/SaveSystem/`
+
+Multi-slot save system layered on `Serialization/` and `ECS/World`.
+Decoupled from `Scene` / `World` — `save()` takes instances, `load()`
+returns rebuilt instances.
+
+| Export | Role |
+|--------|------|
+| `SaveSystem` | Multi-slot manager (`Map<slotId, SaveSlot>`). `save` / `load` / `deleteSlot` / `getSlots` (sorted by timestamp desc). `enableAutoSave(interval, source)` triggers periodic saves to a reserved `__auto__` slot via `update(dt)`. `exportSlot` / `importSlot` migrate slots across instances as JSON strings. `maxSlots` enforces a slot cap. |
+| `SaveSerializer` | Scene + World + metadata ↔ `SaveData`. Delegates to `SceneSerializer` / `World.toJSON`; `compress` / `decompress` produce a compact string for storage. `SAVE_SERIALIZER_VERSION` tags the format. |
+| `LocalStorageAdapter` | `StorageAdapter` contract implementation. Browser path uses `window.localStorage`; Node / test path falls back to `MemoryStorageBackend`. All keys are prefixed (default `vreen:save:`) to avoid namespace pollution. `clear()` iterates keys to remove only prefixed entries (never `backend.clear()`). |
+| `StorageAdapter` | Minimal contract (`save` / `load` / `remove` / `exists` / `clear`) — the seam for future `IndexedDBAdapter` / `FileSystemAdapter`. |
+
+### 4.26 SceneManager
+
+**Path:** `src/engine/SceneManager/`
+
+Multi-scene registration and transition. Pure engine layer (no React /
+Zustand dependency) — the UI layer listens to scene changes via its own
+store subscription.
+
+| Export | Role |
+|--------|------|
+| `SceneManager` | Scene registry (`Map<name, Scene>`). `register(name, scene)` / `unregister` / `get`. `switchTo(name, transition?)` swaps the active scene and runs an optional `SceneTransition`. `current` exposes the active `Scene` (or null). |
+| `SceneTransition` | Visual transition between scenes — `Fade` / `Crossfade` / `Slide` / `Wipe` / `None`. `update(dt)` advances an internal `t` (0..1) with an easing function; `isDone()` reports completion; the renderer reads `alpha` / `offset` to blend the outgoing and incoming scenes. Configurable duration. |
 
 ---
 

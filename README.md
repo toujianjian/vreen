@@ -177,6 +177,10 @@ vreen/
 │   │   ├── Events/             # EventBus / EventQueue / GameEvent (typed pub/sub)
 │   │   ├── Scripting/          # ScriptComponent / ScriptSystem / ScriptRegistry / CoroutineSystem
 │   │   ├── Particles/          # ParticleSystem2 / ParticleEmitter / ParticleModifier / ParticleCurve / TrailModule
+│   │   ├── Network/            # NetworkSync / Snapshot / NetworkTransport (WebSocket/Mock) / NetworkLerp — server-authoritative sync
+│   │   ├── SaveSystem/         # SaveSystem (multi-slot + auto-save) / SaveSerializer / LocalStorageAdapter
+│   │   ├── SceneManager/       # SceneManager / SceneTransition (Fade/Crossfade/Slide/Wipe/None)
+│   │   ├── Input/              # InputManager / KeyboardState / MouseState / TouchState / GamepadState / InputAction / InputMap
 │   │   ├── Tools/              # Profiler / FrameProfiler / SystemProfiler / MemoryTracker / GpuProfiler / PerformanceReport
 │   │   └── ecsDemo.ts          # ECS demo entry
 │   ├── pages/                  # Route-level pages (HomePage / ViewerPage / EngineDemoPage)
@@ -758,6 +762,7 @@ Unit tests cover the engine foundation (2219+ tests across 134+ engine test file
 | Scripting | `Coroutine`, `ScriptRegistry` |
 | Tools | `FrameProfiler`, `SystemProfiler`, `MemoryTracker` |
 | Particles | `ParticleSystem2`, `ParticleEmitter`, `ParticleModifier`, `ParticleCurve`, `ParticleData`, `TrailModule` |
+| Input | `KeyboardState`, `MouseState`, `InputAction`, `InputMap`, `InputManager` |
 | Lib | `vreenPack`, `vreenPublish`, `blocklyScriptStore`, `ecsScriptApi` (animsm / material / base), `vreenBlockly.tick` |
 
 Tests live alongside source files as `*.test.ts` and are picked up automatically by Vitest's default glob.

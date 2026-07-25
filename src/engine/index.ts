@@ -108,3 +108,5 @@ export {
 export { runEcsDemo, runEcsDemoSilent, type EcsDemoSummary } from './ecsDemo';
 // Network — 网络同步基础 (传输抽象 + 快照序列化 + 插值/预测 + 同步管理器)。
 export * from './Network';
+// Input — 输入系统 (键盘/鼠标/触摸/手柄 统一管理 + 动作映射 + JSON 配置)。
+export * from './Input';
