@@ -392,5 +392,46 @@
       "deltaMake": "Construir y descargar .vreen-delta",
       "deltaApply": "Aplicar y descargar"
     }
+  },
+  "engineFeatures": {
+    "title": "FUNCIONES DEL MOTOR",
+    "hint": "Activa/desactiva los subsistemas del motor. Solo efectivo en modo motor WebGL2 personalizado.",
+    "actions": {
+      "enable": "ACTIVAR",
+      "on": "ACTIVO",
+      "builtin": "INTEGRADO"
+    },
+    "particle": {
+      "title": "Sistema de Partículas",
+      "desc": "ParticleSystem2 · Pool de partículas CPU + Modifier + Curve + Trail"
+    },
+    "terrain": {
+      "title": "Sistema de Terreno",
+      "desc": "TerrainGeometry · Campo de altura + Splat blending + erosión hidráulica"
+    },
+    "ik": {
+      "title": "Cinemática Inversa",
+      "desc": "IKSolver (FABRIK) / CCD / IKHumanoid rig bípedo"
+    },
+    "shadow": {
+      "title": "Sistema de Sombras",
+      "desc": "ShadowMapManager · Shadow map FBO + gestión de ciclo de vida"
+    },
+    "bvh": {
+      "title": "Aceleración BVH",
+      "desc": "MeshBVH · Construcción SAH + consumo prioritario de Raycaster"
+    },
+    "constraint": {
+      "title": "Restricciones Físicas",
+      "desc": "ConstraintSolver · Ball/Hinge/Slider/Fixed/Distance"
+    },
+    "animLayer": {
+      "title": "Capas de Animación",
+      "desc": "AnimationLayerMixer · Mezcla multicapa + BoneMask + Additive"
+    },
+    "audio": {
+      "title": "Sistema de Audio",
+      "desc": "AudioListener · PositionalAudio + AudioAnalyser FFT"
+    }
   }
 }

@@ -43,6 +43,14 @@ interface ViewerState {
   showTuner: boolean;
   /** Blockly 可视化脚本面板显示开关。 */
   showBlockly: boolean;
+  /** 引擎功能开关:高级粒子系统 (ParticleSystem2)。 */
+  particleEnabled: boolean;
+  /** 引擎功能开关:地形系统 (TerrainGeometry)。 */
+  terrainEnabled: boolean;
+  /** 引擎功能开关:IK 逆向运动学 (IKSolver)。 */
+  ikEnabled: boolean;
+  /** 引擎功能开关:阴影系统 (ShadowMapManager)。 */
+  shadowEnabled: boolean;
 
   // Actions
   setAssetSource: (source: AssetSource | null, name?: string) => void;
@@ -66,6 +74,10 @@ interface ViewerState {
   toggleProfiler: () => void;
   toggleTuner: () => void;
   toggleBlockly: () => void;
+  toggleParticle: () => void;
+  toggleTerrain: () => void;
+  toggleIK: () => void;
+  toggleShadow: () => void;
   reset: () => void;
 }
 
@@ -111,6 +123,10 @@ export const useViewerStore = create<ViewerState>((set) => ({
   profilerEnabled: false,
   showTuner: false,
   showBlockly: false,
+  particleEnabled: false,
+  terrainEnabled: false,
+  ikEnabled: false,
+  shadowEnabled: true,
 
   setAssetSource: (source, name) =>
     set(() => ({
@@ -154,6 +170,10 @@ export const useViewerStore = create<ViewerState>((set) => ({
   toggleProfiler: () => set((s) => ({ profilerEnabled: !s.profilerEnabled })),
   toggleTuner: () => set((s) => ({ showTuner: !s.showTuner })),
   toggleBlockly: () => set((s) => ({ showBlockly: !s.showBlockly })),
+  toggleParticle: () => set((s) => ({ particleEnabled: !s.particleEnabled })),
+  toggleTerrain: () => set((s) => ({ terrainEnabled: !s.terrainEnabled })),
+  toggleIK: () => set((s) => ({ ikEnabled: !s.ikEnabled })),
+  toggleShadow: () => set((s) => ({ shadowEnabled: !s.shadowEnabled })),
   reset: () =>
     set({
       assetSource: null,

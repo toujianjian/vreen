@@ -152,7 +152,11 @@
       "physics": "物理演示",
       "physicsDebug": "物理调试",
       "profiler": "性能分析",
-      "tuner": "参数调节"
+      "tuner": "参数调节",
+      "particle": "粒子",
+      "terrain": "地形",
+      "ik": "IK",
+      "shadow": "阴影"
     },
     "projectMenu": {
       "title": "项目",
@@ -181,7 +185,15 @@
       "profilerOn": "性能分析器: 开启 (CPU/GPU/系统计时)",
       "profilerOff": "性能分析器: 关闭",
       "tunerOn": "参数调节器: 开启 (生成器预设实时编辑)",
-      "tunerOff": "参数调节器: 关闭"
+      "tunerOff": "参数调节器: 关闭",
+      "particleOn": "粒子系统: 开启 (ParticleSystem2)",
+      "particleOff": "粒子系统: 关闭",
+      "terrainOn": "地形系统: 开启 (TerrainGeometry)",
+      "terrainOff": "地形系统: 关闭",
+      "ikOn": "IK 逆向运动学: 开启 (IKSolver)",
+      "ikOff": "IK 逆向运动学: 关闭",
+      "shadowOn": "阴影系统: 开启 (ShadowMapManager)",
+      "shadowOff": "阴影系统: 关闭"
     }
   },
   "profiler": {
@@ -374,6 +386,47 @@
       "normalScale": "法线强度",
       "opacity": "不透明度",
       "wireframe": "线框"
+    }
+  },
+  "engineFeatures": {
+    "title": "引擎功能",
+    "hint": "切换开关以启用/禁用对应引擎子系统。仅自研 WebGL2 引擎模式下生效。",
+    "actions": {
+      "enable": "启用",
+      "on": "已启用",
+      "builtin": "内置"
+    },
+    "particle": {
+      "title": "粒子系统",
+      "desc": "ParticleSystem2 · CPU 粒子池 + Modifier + Curve + Trail"
+    },
+    "terrain": {
+      "title": "地形系统",
+      "desc": "TerrainGeometry · 高度场 + Splat 混合 + 水力侵蚀"
+    },
+    "ik": {
+      "title": "IK 逆向运动学",
+      "desc": "IKSolver (FABRIK) / CCD / IKHumanoid 双足 rig"
+    },
+    "shadow": {
+      "title": "阴影系统",
+      "desc": "ShadowMapManager · 阴影贴图 FBO + 生命周期管理"
+    },
+    "bvh": {
+      "title": "BVH 加速",
+      "desc": "MeshBVH · SAH 构建 + Raycaster 优先消费"
+    },
+    "constraint": {
+      "title": "物理约束",
+      "desc": "ConstraintSolver · Ball/Hinge/Slider/Fixed/Distance"
+    },
+    "animLayer": {
+      "title": "动画层",
+      "desc": "AnimationLayerMixer · 多层混合 + BoneMask + Additive"
+    },
+    "audio": {
+      "title": "音频系统",
+      "desc": "AudioListener · PositionalAudio + AudioAnalyser FFT"
     }
   },
   "vreen": {

@@ -392,5 +392,46 @@
       "deltaMake": ".vreen-delta を作成・ダウンロード",
       "deltaApply": "適用してダウンロード"
     }
+  },
+  "engineFeatures": {
+    "title": "エンジン機能",
+    "hint": "スイッチを切り替えてエンジンサブシステムを有効/無効にします。カスタム WebGL2 エンジンモードでのみ有効です。",
+    "actions": {
+      "enable": "有効化",
+      "on": "アクティブ",
+      "builtin": "内蔵"
+    },
+    "particle": {
+      "title": "パーティクルシステム",
+      "desc": "ParticleSystem2 · CPU パーティクルプール + Modifier + Curve + Trail"
+    },
+    "terrain": {
+      "title": "地形システム",
+      "desc": "TerrainGeometry · 高度フィールド + Splat ブレンド + 水力侵食"
+    },
+    "ik": {
+      "title": "逆運動学",
+      "desc": "IKSolver (FABRIK) / CCD / IKHumanoid 二足リグ"
+    },
+    "shadow": {
+      "title": "シャドウシステム",
+      "desc": "ShadowMapManager · シャドウマップ FBO + ライフサイクル管理"
+    },
+    "bvh": {
+      "title": "BVH アクセラレーション",
+      "desc": "MeshBVH · SAH 構築 + Raycaster 優先消費"
+    },
+    "constraint": {
+      "title": "物理制約",
+      "desc": "ConstraintSolver · Ball/Hinge/Slider/Fixed/Distance"
+    },
+    "animLayer": {
+      "title": "アニメーションレイヤー",
+      "desc": "AnimationLayerMixer · 多層ブレンド + BoneMask + Additive"
+    },
+    "audio": {
+      "title": "オーディオシステム",
+      "desc": "AudioListener · PositionalAudio + AudioAnalyser FFT"
+    }
   }
 }

@@ -152,7 +152,11 @@
       "physics": "PHYSICS",
       "physicsDebug": "PHYS-DBG",
       "profiler": "PROFILER",
-      "tuner": "TUNER"
+      "tuner": "TUNER",
+      "particle": "PARTICLE",
+      "terrain": "TERRAIN",
+      "ik": "IK",
+      "shadow": "SHADOW"
     },
     "projectMenu": {
       "title": "PROJECT",
@@ -181,7 +185,15 @@
       "profilerOn": "Profiler: ON (CPU/GPU/System timing)",
       "profilerOff": "Profiler: OFF",
       "tunerOn": "Tuner: ON (live param editor for generator presets)",
-      "tunerOff": "Tuner: OFF"
+      "tunerOff": "Tuner: OFF",
+      "particleOn": "Particle system: ON (ParticleSystem2)",
+      "particleOff": "Particle system: OFF",
+      "terrainOn": "Terrain system: ON (TerrainGeometry)",
+      "terrainOff": "Terrain system: OFF",
+      "ikOn": "Inverse kinematics: ON (IKSolver)",
+      "ikOff": "Inverse kinematics: OFF",
+      "shadowOn": "Shadow system: ON (ShadowMapManager)",
+      "shadowOff": "Shadow system: OFF"
     }
   },
   "profiler": {
@@ -374,6 +386,47 @@
       "normalScale": "Normal Scale",
       "opacity": "Opacity",
       "wireframe": "Wireframe"
+    }
+  },
+  "engineFeatures": {
+    "title": "ENGINE FEATURES",
+    "hint": "Toggle switches to enable/disable engine subsystems. Only effective in custom WebGL2 engine mode.",
+    "actions": {
+      "enable": "ENABLE",
+      "on": "ACTIVE",
+      "builtin": "BUILT-IN"
+    },
+    "particle": {
+      "title": "Particle System",
+      "desc": "ParticleSystem2 · CPU particle pool + Modifier + Curve + Trail"
+    },
+    "terrain": {
+      "title": "Terrain System",
+      "desc": "TerrainGeometry · Heightfield + Splat blending + hydraulic erosion"
+    },
+    "ik": {
+      "title": "Inverse Kinematics",
+      "desc": "IKSolver (FABRIK) / CCD / IKHumanoid biped rig"
+    },
+    "shadow": {
+      "title": "Shadow System",
+      "desc": "ShadowMapManager · Shadow map FBO + lifecycle management"
+    },
+    "bvh": {
+      "title": "BVH Acceleration",
+      "desc": "MeshBVH · SAH build + Raycaster priority consumption"
+    },
+    "constraint": {
+      "title": "Physics Constraints",
+      "desc": "ConstraintSolver · Ball/Hinge/Slider/Fixed/Distance"
+    },
+    "animLayer": {
+      "title": "Animation Layers",
+      "desc": "AnimationLayerMixer · Multi-layer blend + BoneMask + Additive"
+    },
+    "audio": {
+      "title": "Audio System",
+      "desc": "AudioListener · PositionalAudio + AudioAnalyser FFT"
     }
   },
   "vreen": {

@@ -16,6 +16,10 @@ import {
   Activity,
   Sliders,
   Puzzle,
+  Sparkles,
+  Mountain,
+  Bone,
+  Sun,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useEffect, useRef, useState } from 'react';
@@ -74,6 +78,14 @@ export function ViewerToolbar() {
   const toggleTuner = useViewerStore((s) => s.toggleTuner);
   const showBlockly = useViewerStore((s) => s.showBlockly);
   const toggleBlockly = useViewerStore((s) => s.toggleBlockly);
+  const particleEnabled = useViewerStore((s) => s.particleEnabled);
+  const toggleParticle = useViewerStore((s) => s.toggleParticle);
+  const terrainEnabled = useViewerStore((s) => s.terrainEnabled);
+  const toggleTerrain = useViewerStore((s) => s.toggleTerrain);
+  const ikEnabled = useViewerStore((s) => s.ikEnabled);
+  const toggleIK = useViewerStore((s) => s.toggleIK);
+  const shadowEnabled = useViewerStore((s) => s.shadowEnabled);
+  const toggleShadow = useViewerStore((s) => s.toggleShadow);
   // 用 selector 订阅,避免 getState 闭包捕到旧值
   const modelFile = useViewerStore((s) => s.currentModelFile);
   const pushLog = useUIStore((s) => s.pushLog);
@@ -440,6 +452,61 @@ export function ViewerToolbar() {
           <Sliders className="w-3.5 h-3.5" />
           <span className="hidden md:inline">{t('toolbar.buttons.tuner')}</span>
         </button>
+
+        {/* 引擎功能开关:粒子 / 地形 / IK / 阴影 */}
+        <div className="hidden md:flex items-center gap-1 px-1 border-l border-neon-cyan/15 ml-0.5">
+          <button
+            onClick={() => {
+              toggleParticle();
+              pushLog('INFO', !particleEnabled ? t('toolbar.logs.particleOn') : t('toolbar.logs.particleOff'));
+            }}
+            className={cn('hud-btn', particleEnabled && 'bg-neon-magenta/15 text-neon-magenta')}
+            title={t('toolbar.buttons.particle')}
+            aria-pressed={particleEnabled}
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span className="hidden xl:inline">{t('toolbar.buttons.particle')}</span>
+          </button>
+
+          <button
+            onClick={() => {
+              toggleTerrain();
+              pushLog('INFO', !terrainEnabled ? t('toolbar.logs.terrainOn') : t('toolbar.logs.terrainOff'));
+            }}
+            className={cn('hud-btn', terrainEnabled && 'bg-neon-amber/15 text-neon-amber')}
+            title={t('toolbar.buttons.terrain')}
+            aria-pressed={terrainEnabled}
+          >
+            <Mountain className="w-3.5 h-3.5" />
+            <span className="hidden xl:inline">{t('toolbar.buttons.terrain')}</span>
+          </button>
+
+          <button
+            onClick={() => {
+              toggleIK();
+              pushLog('INFO', !ikEnabled ? t('toolbar.logs.ikOn') : t('toolbar.logs.ikOff'));
+            }}
+            className={cn('hud-btn', ikEnabled && 'bg-neon-cyan/15 text-neon-cyan')}
+            title={t('toolbar.buttons.ik')}
+            aria-pressed={ikEnabled}
+          >
+            <Bone className="w-3.5 h-3.5" />
+            <span className="hidden xl:inline">{t('toolbar.buttons.ik')}</span>
+          </button>
+
+          <button
+            onClick={() => {
+              toggleShadow();
+              pushLog('INFO', !shadowEnabled ? t('toolbar.logs.shadowOn') : t('toolbar.logs.shadowOff'));
+            }}
+            className={cn('hud-btn', shadowEnabled && 'bg-neon-amber/15 text-neon-amber')}
+            title={t('toolbar.buttons.shadow')}
+            aria-pressed={shadowEnabled}
+          >
+            <Sun className="w-3.5 h-3.5" />
+            <span className="hidden xl:inline">{t('toolbar.buttons.shadow')}</span>
+          </button>
+        </div>
 
         <button
           onClick={handleScreenshot}

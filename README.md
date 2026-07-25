@@ -789,6 +789,36 @@ npm run electron:build
 
 ---
 
+## Comparison with Other Engines
+
+### VREEN vs soup3D
+
+[soup3D](https://github.com/OrenLiu/soup3D) is a Python + pygame + OpenGL 3D engine designed for beginners. VREEN is built on a different foundation — TypeScript + WebGL2 — targeting professional-grade 3D game development with a complete engine architecture.
+
+| Feature | VREEN | soup3D |
+|---|---|---|
+| Language | TypeScript (WebGL2) | Python (OpenGL + pygame) |
+| Runtime | Browser-native + Electron desktop | Desktop only (pygame) |
+| Architecture | Full ECS (Entity-Component-System) | Procedural API |
+| Rendering | PBR + IBL + Shadow + Post-processing | Fixed-function + basic shaders |
+| Physics | Rigid body + Collision + 6 Joint constraints | None |
+| Animation | Clip/Mixer/StateMachine + IK (FABRIK/CCD) + Layer blending | Basic skeleton |
+| Geometry | 15 primitives + Terrain + BVH acceleration | Basic primitives |
+| Particles | 7-module system (Emitter/Modifier/Curve/Trail) | None |
+| Audio | 3D spatial audio + FFT analyser | None |
+| Serialization | Scene/Geometry/Material ↔ JSON | None |
+| Export | GLTF / OBJ / STL / PLY | None |
+| i18n | 5 languages (en/zh/ja/ko/es) | 2 languages (en/zh) |
+| Testing | 2000+ unit tests | None |
+| Visual Scripting | Blockly integration | None |
+| Package Format | .vreen (ZIP + delta diff) | None |
+
+### VREEN vs three.js
+
+VREEN bundles a **self-contained WebGL2 engine** alongside Three.js integration. The self-contained engine provides a learning and production path that doesn't depend on Three.js, while the Three.js mode remains available for compatibility.
+
+---
+
 ## Contributing
 
 Issues and pull requests are welcome. For non-trivial changes, please open an issue first to discuss the approach.

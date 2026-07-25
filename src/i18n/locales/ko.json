@@ -392,5 +392,46 @@
       "deltaMake": ".vreen-delta 생성 및 다운로드",
       "deltaApply": "적용 후 다운로드"
     }
+  },
+  "engineFeatures": {
+    "title": "엔진 기능",
+    "hint": "스위치를 토글하여 엔진 서브시스템을 활성화/비활성화합니다. 커스텀 WebGL2 엔진 모드에서만 작동합니다.",
+    "actions": {
+      "enable": "활성화",
+      "on": "활성",
+      "builtin": "내장"
+    },
+    "particle": {
+      "title": "파티클 시스템",
+      "desc": "ParticleSystem2 · CPU 파티클 풀 + Modifier + Curve + Trail"
+    },
+    "terrain": {
+      "title": "지형 시스템",
+      "desc": "TerrainGeometry · 높이 필드 + Splat 블렌딩 + 수력 침식"
+    },
+    "ik": {
+      "title": "역운동학",
+      "desc": "IKSolver (FABRIK) / CCD / IKHumanoid 이족 리그"
+    },
+    "shadow": {
+      "title": "섀도우 시스템",
+      "desc": "ShadowMapManager · 섀도우 맵 FBO + 라이프사이클 관리"
+    },
+    "bvh": {
+      "title": "BVH 가속",
+      "desc": "MeshBVH · SAH 빌드 + Raycaster 우선 소비"
+    },
+    "constraint": {
+      "title": "물리 제약",
+      "desc": "ConstraintSolver · Ball/Hinge/Slider/Fixed/Distance"
+    },
+    "animLayer": {
+      "title": "애니메이션 레이어",
+      "desc": "AnimationLayerMixer · 다층 블렌드 + BoneMask + Additive"
+    },
+    "audio": {
+      "title": "오디오 시스템",
+      "desc": "AudioListener · PositionalAudio + AudioAnalyser FFT"
+    }
   }
 }

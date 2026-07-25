@@ -12,6 +12,20 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import {
+  Sparkles,
+  Mountain,
+  Bone,
+  Box,
+  Link2,
+  Layers,
+  Sun,
+  Volume2,
+  Power,
+  ChevronDown,
+} from 'lucide-react';
+import { useViewerStore } from '@/stores/viewerStore';
+import { cn } from '@/lib/cn';
+import {
   AmbientLight,
   DirectionalLight,
   Group,
@@ -37,6 +51,17 @@ export function EngineDemoPage() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [stats, setStats] = useState<FpsSample>({ fps: 0, draws: 0, tris: 0 });
   const [preset, setPreset] = useState<'free' | 'iso' | 'top' | 'front'>('free');
+  const [featuresOpen, setFeaturesOpen] = useState(true);
+
+  // 引擎功能开关(来自 viewerStore,与 ViewerToolbar / EngineFeaturesPanel 共享)
+  const particleEnabled = useViewerStore((s) => s.particleEnabled);
+  const terrainEnabled = useViewerStore((s) => s.terrainEnabled);
+  const ikEnabled = useViewerStore((s) => s.ikEnabled);
+  const shadowEnabled = useViewerStore((s) => s.shadowEnabled);
+  const toggleParticle = useViewerStore((s) => s.toggleParticle);
+  const toggleTerrain = useViewerStore((s) => s.toggleTerrain);
+  const toggleIK = useViewerStore((s) => s.toggleIK);
+  const toggleShadow = useViewerStore((s) => s.toggleShadow);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -212,6 +237,111 @@ export function EngineDemoPage() {
         </ul>
       </div>
 
+      {/* 引擎功能展示卡片 — 右侧浮动面板 (避开顶部 CAMERA HUD) */}
+      <div className="pointer-events-auto absolute top-20 right-3 bottom-16 w-[320px] overflow-y-auto">
+        <div className="hud-panel p-2.5 font-mono">
+          {/* Header */}
+          <button
+            type="button"
+            onClick={() => setFeaturesOpen((o) => !o)}
+            className="w-full flex items-center justify-between border-b border-neon-cyan/15 pb-1.5"
+            aria-expanded={featuresOpen}
+          >
+            <div className="flex items-center gap-1.5 text-neon-cyan">
+              <Power className="w-3.5 h-3.5" />
+              <span className="font-display text-[11px] tracking-[0.22em]">
+                {t('engineFeatures.title')}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[9px] tracking-[0.18em] text-mist">
+                {[particleEnabled, terrainEnabled, ikEnabled, shadowEnabled].filter(Boolean).length}/4 ON
+              </span>
+              <ChevronDown
+                className={cn(
+                  'w-3.5 h-3.5 text-mist transition-transform',
+                  featuresOpen && 'rotate-180',
+                )}
+              />
+            </div>
+          </button>
+
+          {/* Body — 8 个引擎功能卡片 */}
+          {featuresOpen && (
+            <div className="mt-2 grid grid-cols-1 gap-1.5">
+              {/* 粒子系统 */}
+              <FeatureCard
+                Icon={Sparkles}
+                accent="magenta"
+                title={t('engineFeatures.particle.title')}
+                desc={t('engineFeatures.particle.desc')}
+                active={particleEnabled}
+                onToggle={toggleParticle}
+              />
+              {/* 地形系统 */}
+              <FeatureCard
+                Icon={Mountain}
+                accent="amber"
+                title={t('engineFeatures.terrain.title')}
+                desc={t('engineFeatures.terrain.desc')}
+                active={terrainEnabled}
+                onToggle={toggleTerrain}
+              />
+              {/* IK */}
+              <FeatureCard
+                Icon={Bone}
+                accent="cyan"
+                title={t('engineFeatures.ik.title')}
+                desc={t('engineFeatures.ik.desc')}
+                active={ikEnabled}
+                onToggle={toggleIK}
+              />
+              {/* 阴影 */}
+              <FeatureCard
+                Icon={Sun}
+                accent="amber"
+                title={t('engineFeatures.shadow.title')}
+                desc={t('engineFeatures.shadow.desc')}
+                active={shadowEnabled}
+                onToggle={toggleShadow}
+              />
+              {/* BVH (仅展示) */}
+              <FeatureCard
+                Icon={Box}
+                accent="cyan"
+                title={t('engineFeatures.bvh.title')}
+                desc={t('engineFeatures.bvh.desc')}
+              />
+              {/* 物理约束 (仅展示) */}
+              <FeatureCard
+                Icon={Link2}
+                accent="magenta"
+                title={t('engineFeatures.constraint.title')}
+                desc={t('engineFeatures.constraint.desc')}
+              />
+              {/* 动画层 (仅展示) */}
+              <FeatureCard
+                Icon={Layers}
+                accent="cyan"
+                title={t('engineFeatures.animLayer.title')}
+                desc={t('engineFeatures.animLayer.desc')}
+              />
+              {/* 音频系统 (仅展示) */}
+              <FeatureCard
+                Icon={Volume2}
+                accent="magenta"
+                title={t('engineFeatures.audio.title')}
+                desc={t('engineFeatures.audio.desc')}
+              />
+
+              <div className="mt-1 text-[9px] text-mist/70 leading-relaxed border-t border-neon-cyan/10 pt-1.5">
+                {t('engineFeatures.hint')}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* 右下角：返回 */}
       <Link
         to="/"
@@ -226,3 +356,78 @@ export function EngineDemoPage() {
 
 // Three.js 不在这里出现；为 lint 加一个使用 Group 的地方避免 unused 警告。
 void Group;
+
+// ── 引擎功能卡片 (赛博朋克风格) ──────────────────────────────────────────
+type Accent = 'cyan' | 'magenta' | 'amber';
+
+function accentText(a: Accent): string {
+  return a === 'magenta' ? 'text-neon-magenta' : a === 'amber' ? 'text-neon-amber' : 'text-neon-cyan';
+}
+function accentBorder(a: Accent): string {
+  if (a === 'magenta') return 'border-neon-magenta/40 hover:border-neon-magenta/70';
+  if (a === 'amber') return 'border-neon-amber/40 hover:border-neon-amber/70';
+  return 'border-neon-cyan/40 hover:border-neon-cyan/70';
+}
+function accentBg(a: Accent): string {
+  if (a === 'magenta') return 'bg-neon-magenta/15';
+  if (a === 'amber') return 'bg-neon-amber/15';
+  return 'bg-neon-cyan/15';
+}
+function accentDot(a: Accent): string {
+  if (a === 'magenta') return 'bg-neon-magenta';
+  if (a === 'amber') return 'bg-neon-amber';
+  return 'bg-neon-cyan';
+}
+
+interface FeatureCardProps {
+  Icon: typeof Sparkles;
+  title: string;
+  desc: string;
+  accent: Accent;
+  active?: boolean;
+  onToggle?: () => void;
+}
+
+function FeatureCard({ Icon, title, desc, accent, active, onToggle }: FeatureCardProps) {
+  const switchable = typeof onToggle === 'function';
+  return (
+    <div
+      className={cn(
+        'relative p-2 border bg-space-950/50 backdrop-blur-sm transition-all duration-200',
+        accentBorder(accent),
+        active && accentBg(accent),
+      )}
+    >
+      <span className={cn('absolute top-0 left-0 w-1.5 h-1.5', accentDot(accent))} />
+      <div className="flex items-start gap-2">
+        <Icon className={cn('w-3.5 h-3.5 mt-0.5 shrink-0', accentText(accent))} />
+        <div className="flex-1 min-w-0">
+          <div className={cn('font-display text-[10px] tracking-[0.18em] truncate', accentText(accent))}>
+            {title}
+          </div>
+          <div className="text-[9px] text-mist leading-relaxed mt-0.5">{desc}</div>
+        </div>
+      </div>
+      {switchable && (
+        <button
+          type="button"
+          onClick={onToggle}
+          className={cn(
+            'mt-1.5 w-full px-2 py-1 text-[9px] tracking-[0.18em] border transition-all',
+            active
+              ? cn(accentText(accent), accentBorder(accent), accentBg(accent))
+              : 'border-neon-cyan/15 text-mist hover:text-haze hover:border-neon-cyan/40',
+          )}
+          aria-pressed={active}
+        >
+          {active ? 'ON' : 'ENABLE'}
+        </button>
+      )}
+      {!switchable && (
+        <div className="mt-1.5 w-full px-2 py-1 text-[9px] tracking-[0.18em] text-mist/60 border border-neon-cyan/10 text-center">
+          BUILT-IN
+        </div>
+      )}
+    </div>
+  );
+}
