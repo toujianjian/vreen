@@ -5,6 +5,10 @@
 //   * SkySystem            — 天空系统(日夜循环 / 太阳月亮位置 / 颜色)
 //   * CloudSystem          — 云系统(粒子化云团 + 风漂移)
 //   * PrecipitationSystem  — 降水系统(雨/雪粒子 + 重生)
+//   * VegetationSystem     — 植被系统(大规模草地/树木 InstancedMesh + LOD)
+//   * VegetationType       — 植被类型定义(几何/材质/放置规则)
+//   * WaterSystem          — 水域系统(水面网格 + 波动 + 水下雾)
+//   * WaterSimulation      — 水面波动模拟(2D 波动方程 ripples)
 
 export {
   WeatherSystem,
@@ -24,3 +28,20 @@ export {
   type PrecipitationParticle,
   type PrecipitationMeshData,
 } from './PrecipitationSystem';
+export {
+  VegetationSystem,
+  type VegetationPatch,
+  type VegetationInstance,
+  type VegetationStats,
+} from './VegetationSystem';
+export {
+  VegetationType,
+  type VegetationTypeOptions,
+} from './VegetationType';
+export {
+  WaterSystem,
+  type UnderwaterFog,
+} from './WaterSystem';
+export {
+  WaterSimulation,
+} from './WaterSimulation';
