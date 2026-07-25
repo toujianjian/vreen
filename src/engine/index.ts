@@ -78,5 +78,22 @@ export {
   type ParticleSystemRenderData,
   type SpawnDefaults,
 } from './Particles';
-export { Profiler, type FrameSample, type ProfilerMark, type DrawCallSample } from './Tools/Profiler';
+export {
+  Profiler,
+  FrameProfiler,
+  SystemProfiler,
+  MemoryTracker,
+  GpuProfiler,
+  PerformanceReport,
+  type FrameSample,
+  type ProfilerMark,
+  type DrawCallSample,
+  type FrameMetrics,
+  type FrameStats,
+  type SystemTiming,
+  type AllocationRecord,
+  type MemorySummary,
+  type GpuQuery,
+  type PerformanceReportJson,
+} from './Tools';
 export { runEcsDemo, runEcsDemoSilent, type EcsDemoSummary } from './ecsDemo';

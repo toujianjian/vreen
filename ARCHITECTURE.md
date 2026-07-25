@@ -1,6 +1,6 @@
 # VREEN Architecture
 
-> Version 0.5.x · Last updated 2026-07-23
+> Version 0.5.x · Last updated 2026-07-24
 >
 > This document describes the architecture of the **VREEN** project — a
 > browser-first 3D engine and asset inspection platform built around a
@@ -30,10 +30,13 @@
    - 4.11 [Controls](#411-controls)
    - 4.12 [Geometries](#412-geometries)
    - 4.13 [Helpers & Debug](#413-helpers--debug)
-   - 4.14 [Tools (Profiler)](#414-tools-profiler)
-   - 4.15 [Audio](#415-audio)
-   - 4.16 [Terrain](#416-terrain)
-   - 4.17 [Acceleration](#417-acceleration)
+   - 4.14 [Tools (Performance Profiling)](#414-tools-performance-profiling)
+   - 4.15 [Events](#415-events)
+   - 4.16 [Scripting](#416-scripting)
+   - 4.17 [Particles](#417-particles)
+   - 4.18 [Audio](#418-audio)
+   - 4.19 [Terrain](#419-terrain)
+   - 4.20 [Acceleration](#420-acceleration)
 5. [Render Pipeline](#5-render-pipeline)
 6. [ECS Architecture](#6-ecs-architecture)
 7. [Dual-Backend Rendering](#7-dual-backend-rendering)
@@ -148,13 +151,13 @@ against the canonical format spec.
 
 ## 3. Engine Module Map
 
-The engine is organised into 16 top-level directories under
+The engine is organised into top-level directories under
 `src/engine/`. Each directory exports through a barrel `index.ts` and is
 re-exported from the engine root `src/engine/index.ts`.
 
 ```
 src/engine/
-├── Core/         Scene graph primitives (Object3D, Scene, Mesh, …) + texture family + Source + Fog / Raycaster
+├── Core/         Scene graph primitives (Object3D, Scene, Mesh, …) + texture family + Source + Fog / Raycaster + DirtyFlag / SceneGraphProcessor / FrustumCuller / SceneStats
 ├── Math/         Vectors, matrices, quaternions, geometry primitives
 ├── Cameras/      Perspective / Orthographic cameras
 ├── Controls/     Orbit / Fly / PointerLock / Map controls
@@ -162,15 +165,18 @@ src/engine/
 ├── Geometries/   Procedural primitive geometry (15 generators)
 ├── Materials/    Standard / Physical / Basic / Phong / Normal / Shadow + ShaderMaterial + GLSL chunks
 ├── Renderer/     Renderer interface, WebGL2Renderer, ShaderProgram, RenderPass, ShadowMapManager
-├── Loaders/      GLB / OBJ / FBX / HDR / KTX2 / STL / PLY / TGA / MTL / EXR / Draco / AssetManager
-├── Animation/    Clip, Mixer, StateMachine, BlendSpace1D, Humanoid + IK (FABRIK / CCD)
+├── Loaders/      GLB / OBJ / FBX / HDR / KTX2 / STL / PLY / TGA / MTL / EXR / Draco / AssetManager + GLTFExporter / OBJExporter
+├── Animation/    Clip, Mixer, StateMachine, BlendSpace1D, Humanoid + AnimationLayer / AnimationLayerMixer / BoneMask / AvatarMask / AdditiveBlend / AnimationSync + IK (FABRIK / CCD)
 ├── ECS/          World, ComponentType, Systems, Physics, Prefab, QueryBuilder + Constraints
 ├── Physics/      PhysicsDemo scene + ConstraintSolver
 ├── Helpers/      Grid / Grid3D / Axes / Box / Camera / Arrow helpers + PhysicsDebugRenderer
+├── Events/       EventBus / EventQueue / GameEvent (typed pub/sub)
+├── Scripting/    ScriptComponent / ScriptSystem / ScriptRegistry / CoroutineSystem
+├── Particles/    ParticleSystem2 / ParticleEmitter / ParticleModifier / ParticleCurve / TrailModule (advanced CPU particle system, separate from ECS ParticleSystem)
 ├── Audio/        AudioListener / PositionalAudio / Audio / AudioLoader / AudioAnalyser
 ├── Terrain/      TerrainGeometry / HeightmapGenerator / TerrainSplat / TerrainLayer
 ├── Acceleration/ BVH / BVHBuilder / MeshBVH
-└── Tools/        Profiler (ring-buffer frame profiler)
+└── Tools/        Profiler / FrameProfiler / SystemProfiler / MemoryTracker / GpuProfiler / PerformanceReport
 ```
 
 ### Module dependency graph
@@ -197,11 +203,16 @@ graph TD
     Animation --> ECS
     Core --> ECS
     ECS --> Physics
+    ECS --> Events[Events/EventBus]
+    ECS --> Scripting[Scripting/ScriptSystem]
+    Events --> Scripting
+    Core --> Particles[Particles/ParticleSystem2]
     Renderer --> Helpers
     ECS --> Helpers
     Core --> Controls
     Cameras --> Controls
-    Renderer --> Tools[Tools/Profiler]
+    Renderer --> Tools[Tools/Profiler family]
+    ECS --> Tools
 ```
 
 ---
@@ -703,24 +714,75 @@ Procedural primitive geometry generators. Each produces a
 | `ArrowHelper` | Direction arrow with origin / direction / length / color; used for normals, force vectors, and contact normals. |
 | `PhysicsDebugRenderer` | Three-channel debug overlay — cyan colliders, yellow contact normals / tangents / bitangents / depths, magenta velocity vectors. Each channel is independently toggleable. |
 
-### 4.14 Tools (Profiler)
+### 4.14 Tools (Performance Profiling)
 
-**Path:** `src/engine/Tools/Profiler.ts`
+**Path:** `src/engine/Tools/`
 
-`Profiler` collects per-frame timing and draw-call samples in a ring
-buffer (120 frames by default). Markers:
+The Tools subsystem houses the engine's performance analysis toolkit.
+It is a **family of complementary profilers** — each focuses on a
+different layer (frame / system / memory / GPU) and they can be combined
+freely via `PerformanceReport`.
 
-| Marker | Meaning |
-|--------|---------|
-| `FrameSample` | Total frame time, CPU time, GPU time (when `EXT_disjoint_timer_query` is available). |
-| `ProfilerMark` | A named CPU interval (`markCpu` / `markCpuEnd`). |
-| `DrawCallSample` | Draw call count + triangle count for the frame. |
+| Export | Role |
+|--------|------|
+| `Profiler` | The original ring-buffer profiler (120 frames). Collects named CPU / GPU mark intervals via `mark(name)` / `markEnd(name)` with optional `EXT_disjoint_timer_query_webgl2` integration. Each `FrameSample` carries per-mark timings plus optional draw-call / triangle breakdowns. Consumed by `profilerStore` and `FrameChart.tsx`. |
+| `FrameProfiler` | Frame-level FPS / draw-call / triangle aggregator. Ring buffer (default 120 samples) of `FrameSample { frame, time, dt, drawCalls, triangles, vertices, memoryMB }`. Rolling `currentFPS` / `avgFPS` / `minFPS` / `maxFPS` recomputed on every `endFrame(stats)`. API: `beginFrame()` / `endFrame(stats)` / `getMetrics()` / `getHistory(count)` / `reset()`. |
+| `SystemProfiler` | ECS system timing tracker. `begin(name)` / `end(name)` pushes / pops an open-stack; each `SystemTiming { name, totalTime, callCount, avgTime, maxTime, lastTime }` is updated on `end`. `getAllTimings()` sorts by `totalTime` descending; `getSlowestSystems(count)` sorts by `avgTime` descending — used to locate hot systems in `SystemTimingChart.tsx`. |
+| `MemoryTracker` | Engine-managed resource allocation ledger (not a JS heap profiler — JS GC is V8's job). `track(type, size, stack?)` returns a numeric id; `untrack(id)` releases it. `getSummary()` returns `byType` grouping + active/total bytes; `getLeaks(minAgeMs)` flags allocations that survived past an age threshold, useful for catching "alloc-then-leak" bugs in BufferGeometry / Texture / typed-array caches. O(1) deletion via swap-with-tail. |
+| `GpuProfiler` | Standalone GPU timer-query wrapper. `beginQuery(gl, id)` / `endQuery(gl, id)` / `getQueryResult(gl, id)`. Internally caches the `EXT_disjoint_timer_query_webgl2` extension; `pollAll(gl)` resolves pending queries non-blockingly and handles `GPU_DISJOINT_EXT` by discarding results. Degrades to CPU-side timing when the extension is unavailable (e.g. Safari). `dispose(gl)` releases all `WebGLQuery` objects. |
+| `PerformanceReport` | Static report generator. `generate(fp?, sp?, mt?)` produces a human-readable text report (frame / systems / memory sections, all optional). `toJSON(...)` produces a `PerformanceReportJson` for tooling / automated regression tracking. |
 
-The UI subscribes via `onSample` and renders the frame chart /
-system-execution timeline via `FrameChart.tsx` and
-`SystemTimingChart.tsx`.
+**Why a family instead of one profiler?** Each profiler has a different
+shape (ring buffer vs. map vs. set vs. async-query) and a different
+consumer (HUD vs. leak triage vs. CI). Splitting them keeps each class
+small, testable, and independently usable; `PerformanceReport` provides
+the aggregation layer when a combined view is needed.
 
-### 4.15 Audio
+### 4.15 Events
+
+**Path:** `src/engine/Events/`
+
+Lightweight pub/sub decoupling game logic from ECS systems.
+
+| Export | Role |
+|--------|------|
+| `EventBus` | Synchronous topic-based dispatcher. `on(topic, listener)` / `off(topic, listener)` (removal by reference) / `emit(topic, payload)`. |
+| `EventQueue` | Buffered FIFO queue for deferred dispatch. `enqueue(event)` / `drain()` flushes all pending events in order. Used by systems that must defer side effects (entity destruction, spawn cascades) until safe points in the frame. |
+| `GameEvent` | Discriminated union of typed events — `CollisionEvent`, `TriggerEvent`, `SpawnEvent`, `DestroyEvent`, `ScoreEvent`, `CustomEvent`. Each carries a typed `data` payload; the `GameEventType` enum lists all variants. |
+
+### 4.16 Scripting
+
+**Path:** `src/engine/Scripting/`
+
+Code-driven scripting layer that complements the Blockly visual
+scripting surface (see [§9](#9-blockly-visual-scripting-integration)).
+Both ultimately operate on the same ECS `World`.
+
+| Export | Role |
+|--------|------|
+| `ScriptComponent` | ECS component holding a script instance plus lifecycle hooks (`onCreate` / `onUpdate` / `onDestroy` / `onCollision` / `onTrigger`). Registered as `ScriptC` ComponentType so it round-trips through `World.toJSON()`. |
+| `ScriptSystem` | ECS system that ticks all `ScriptComponent` entities each frame, dispatches collision / trigger events from `EventQueue`, and manages script lifecycle. |
+| `ScriptRegistry` | Factory registry mapping a string name → `ScriptFactory`. `scriptRegistry` is the process-wide singleton; scripts look themselves up by name for serialization (the component stores the script name, not the instance). |
+| `CoroutineSystem` | Cooperative coroutine scheduler. `startCoroutine(generator)` returns a `CoroutineHandle`; coroutines yield `CoroutineYield` values (frame count / seconds / predicate) and resume on the next matching tick. Used for sequenced gameplay logic — cutscenes, delayed effects, multi-step spawns. |
+
+### 4.17 Particles
+
+**Path:** `src/engine/Particles/`
+
+Advanced CPU particle system — **separate from the legacy ECS
+`ParticleSystem`** (in `ECS/PhysicsSystems.ts`). The advanced system
+supports modifiers, curves, sub-emitters, and trails.
+
+| Export | Role |
+|--------|------|
+| `ParticleSystem2` | Main simulator. Owns a particle pool, runs `ParticleModifier`s each tick, spawns from one or more `ParticleEmitter`s, exports `ParticleSystemRenderData` for the renderer. |
+| `ParticleEmitter` | Spawn source — configurable shape (sphere / box / cone / hemisphere / mesh), rate, burst schedule, lifetime / speed / size `MinMaxRange`s. Re-exported as `AdvancedParticleEmitter` from the engine barrel to avoid colliding with the ECS `ParticleEmitter` component. |
+| `ParticleModifier` | Abstract base for per-particle behaviour. Built-ins: `ForceFieldModifier`, `VortexModifier`, `TurbulenceModifier`, `ColorOverLifeModifier`, `SizeOverLifeModifier`, `VelocityOverLifeModifier`, `SubEmittersModifier`. |
+| `ParticleCurve` | Sampling curve interface for life-driven properties. Implementations: `ConstantCurve`, `LinearCurve`, `BezierCurve`, `RandomCurve`. |
+| `TrailModule` | Optional ribbon-trail renderer attachment — records particle positions over time and produces `TrailRenderData`. Supports multiple `TrailColorMode`s. |
+| `ParticleData` | Per-particle state struct (position / velocity / size / color / lifetime / etc). |
+
+### 4.18 Audio
 
 **Path:** `src/engine/Audio/`
 
@@ -760,7 +822,7 @@ The terrain subsystem is decoupled from the renderer — it produces
 standard `BufferGeometry` and `StandardMaterial` / `DataTexture` objects
 that the existing renderer can consume without terrain-specific code.
 
-### 4.17 Acceleration
+### 4.20 Acceleration
 
 **Path:** `src/engine/Acceleration/`
 

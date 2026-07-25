@@ -4,7 +4,10 @@
 // 统一注册 / 缓存。
 
 export { parseOBJ, type ParsedOBJ, type OBJMaterialRef } from './OBJLoader';
-export { exportOBJ } from './OBJExporter';
+export { exportOBJ, OBJExporter } from './OBJExporter';
+export { GLTFExporter, type GLTFOptions, type GLTFResult } from './GLTFExporter';
+export { STLExporter, type STLExportOptions } from './STLExporter';
+export { PLYExporter, type PLYExportOptions } from './PLYExporter';
 export type {
   AssetSource,
   LoaderProgress,

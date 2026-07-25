@@ -72,7 +72,7 @@ VREEN is positioned as a **lightweight Web game engine** — comparable in scope
 | **Loaders** | `GLBLoader`, `OBJLoader`, `FBXLoader`, `HDRLoader` (per-channel RLE RGBE decode), `KTX2Loader`, `TextureLoader`, `DracoDecoder`, `AssetManager` with LRU cache, `OBJExporter`. |
 | **Materials** | `StandardMaterial` (PBR: base color, metallic, roughness, emissive, opacity, wireframe), `ShaderMaterial` with GLSL injection, `ShaderChunks` shared GLSL blocks. |
 | **Inspection UI** | 9 camera presets (Free / Iso / Front / Back / Side / Top / 1st-person / 3rd-person / Cinematic), real-time material lab, HDRI environments, post-FX toggles, PNG capture, drag-and-drop upload. |
-| **Debug tooling** | Physics debug renderer (collider / contact / velocity channels), `EntityGraph` relationship visualizer, 120-frame ring-buffer profiler with CPU / GPU / System timing views and `FrameChart`. |
+| **Debug tooling** | Physics debug renderer (collider / contact / velocity channels), `EntityGraph` relationship visualizer, profiler family — `Profiler` (CPU/GPU marks) / `FrameProfiler` (FPS aggregation) / `SystemProfiler` (ECS hot systems) / `MemoryTracker` (leak detection) / `GpuProfiler` (timer queries) / `PerformanceReport` (text + JSON) — surfaced through `FrameChart` and `ProfilerHUD`. |
 | **Visual scripting** | Blockly block editor with Camera / Animation / Scene / Renderer / Physics / Control categories, bound to the live ECS World via `EcsScriptAPI`, with Tick-callback registration. |
 | **Package format** | `.vreen` ZIP container (manifest + scene + world + embedded assets), `.vreen-delta` incremental diffs, multi-language SDKs, `vreen` CLI for pack / unpack / validate / diff. |
 | **Desktop** | Electron 43 + electron-builder producing a single-file portable Windows `.exe`. |
@@ -170,7 +170,10 @@ vreen/
 │   │   ├── Audio/              # AudioListener / PositionalAudio / Audio / AudioLoader / AudioAnalyser
 │   │   ├── Terrain/            # TerrainGeometry / HeightmapGenerator / TerrainSplat / TerrainLayer
 │   │   ├── Acceleration/       # BVH / BVHBuilder / MeshBVH
-│   │   ├── Tools/              # Profiler
+│   │   ├── Events/             # EventBus / EventQueue / GameEvent (typed pub/sub)
+│   │   ├── Scripting/          # ScriptComponent / ScriptSystem / ScriptRegistry / CoroutineSystem
+│   │   ├── Particles/          # ParticleSystem2 / ParticleEmitter / ParticleModifier / ParticleCurve / TrailModule
+│   │   ├── Tools/              # Profiler / FrameProfiler / SystemProfiler / MemoryTracker / GpuProfiler / PerformanceReport
 │   │   └── ecsDemo.ts          # ECS demo entry
 │   ├── pages/                  # Route-level pages (HomePage / ViewerPage / EngineDemoPage)
 │   ├── stores/                 # Zustand stores (viewer / ui / world / profiler / inspector)
@@ -329,6 +332,7 @@ The renderer collects lights per-scene via `_collectLights(scene)` with change d
 |--------|---------|
 | `GLBLoader` | Binary glTF parsing with staged logging (load → read → `parseGLB` → `buildFromGltf`); Draco support via `DracoDecoder`. |
 | `OBJLoader` / `OBJExporter` | Wavefront OBJ import and string export. |
+| `GLTFExporter` | glTF-GLB binary export — serializes engine `Scene` / `Mesh` / `Material` into a self-contained `.glb` with embedded buffers and images; round-trippable with `GLBLoader`. |
 | `FBXLoader` | FBX parsing (model + material + animation extraction). |
 | `HDRLoader` | Radiance `.hdr` decoding with **per-channel RLE** RGBE → Float32 conversion; covers compressed, uncompressed, and mixed-encoding scanline variants. |
 | `KTX2Loader` | KTX2 / Basis Universal texture decompression for bandwidth reduction. |
@@ -472,7 +476,50 @@ Constraint subsystem (in `src/engine/ECS/PhysicsComponents.ts` and `PhysicsSyste
 
 ### Tools (`src/engine/Tools/`)
 
-`Profiler` — 120-frame ring buffer with CPU / GPU / System timing markers, surfaced through `profilerStore`, `FrameChart`, and `ProfilerHUD`.
+Performance analysis toolkit — a family of complementary profilers that can be combined or used standalone.
+
+| Export | Purpose |
+|--------|---------|
+| `Profiler` | Original 120-frame ring-buffer profiler with CPU / GPU mark intervals (`mark` / `markEnd`), nested children, and `EXT_disjoint_timer_query_webgl2` integration. Surfaces per-frame `FrameSample` snapshots consumed by `FrameChart.tsx` and `ProfilerHUD.tsx`. |
+| `FrameProfiler` | Frame-level FPS / draw-call / triangle aggregator. Rolling `currentFPS` / `avgFPS` / `minFPS` / `maxFPS` over a configurable ring buffer (default 120). `beginFrame()` / `endFrame(stats)` / `getMetrics()` / `getHistory(count)`. |
+| `SystemProfiler` | ECS system timing tracker. `begin(name)` / `end(name)` records `totalTime` / `callCount` / `avgTime` / `maxTime` / `lastTime` per system; `getSlowestSystems(count)` ranks hot systems. |
+| `MemoryTracker` | Engine-managed resource allocation ledger. `track(type, size)` returns an id; `untrack(id)` releases it; `getLeaks(minAgeMs)` flags allocations that survived past an age threshold. Maintains `byType` summary for leak triage. |
+| `GpuProfiler` | Standalone GPU timer-query wrapper. `beginQuery(gl, id)` / `endQuery(gl, id)` / `getQueryResult(gl, id)`; non-blocking `pollAll(gl)` resolves elapsed ns → ms once the driver reports availability. Silently degrades to CPU-side timing when `EXT_disjoint_timer_query_webgl2` is unavailable. |
+| `PerformanceReport` | Static report generator — `generate(fp?, sp?, mt?)` produces a human-readable text report; `toJSON(...)` produces a `PerformanceReportJson` for tooling. |
+
+### Events (`src/engine/Events/`)
+
+Lightweight pub/sub event bus decoupling game logic from systems.
+
+| Export | Purpose |
+|--------|---------|
+| `EventBus` | Synchronous topic-based dispatcher — `on(topic, listener)` / `off(topic, listener)` / `emit(topic, payload)`. Listener removal by reference. |
+| `EventQueue` | Buffered FIFO queue for deferred dispatch — `enqueue(event)` / `drain()` flushes all pending events in order. Used by systems that must defer side effects until safe points in the frame. |
+| `GameEvent` | Discriminated union of typed events: `CollisionEvent`, `TriggerEvent`, `SpawnEvent`, `DestroyEvent`, `ScoreEvent`, `CustomEvent`. Each carries a typed `data` payload. |
+
+### Scripting (`src/engine/Scripting/`)
+
+Code-driven scripting layer complementing Blockly visual scripting.
+
+| Export | Purpose |
+|--------|---------|
+| `ScriptComponent` | ECS component holding a script instance + lifecycle hooks (`onCreate` / `onUpdate` / `onDestroy` / `onCollision` / `onTrigger`). Registered as `ScriptC` ComponentType. |
+| `ScriptSystem` | ECS system that ticks all `ScriptComponent` entities each frame, dispatches collision / trigger events, and manages script lifecycle. |
+| `ScriptRegistry` | Factory registry mapping a string name → `ScriptFactory`. `scriptRegistry` is the process-wide singleton; scripts look themselves up by name for serialization. |
+| `CoroutineSystem` | Cooperative coroutine scheduler — `startCoroutine(generator)` returns a `CoroutineHandle`; coroutines yield `CoroutineYield` values (frame / seconds / predicate) and resume on the next matching tick. Used for sequenced gameplay logic (cutscenes, delayed effects). |
+
+### Particles (`src/engine/Particles/`)
+
+Advanced CPU particle system — separate from the legacy ECS `ParticleSystem`. Supports modifiers, curves, sub-emitters, and trails.
+
+| Export | Purpose |
+|--------|---------|
+| `ParticleSystem2` | Main simulator — owns a particle pool, runs `ParticleModifier`s each tick, spawns from one or more `ParticleEmitter`s, exports `ParticleSystemRenderData` for the renderer. |
+| `ParticleEmitter` | Spawn source — configurable shape (sphere / box / cone / hemisphere / mesh), rate, burst schedule, lifetime / speed / size ranges. (Re-exported as `AdvancedParticleEmitter` from the engine barrel to avoid colliding with the ECS `ParticleEmitter` component.) |
+| `ParticleModifier` | Abstract base for per-particle behaviour. Built-ins: `ForceFieldModifier`, `VortexModifier`, `TurbulenceModifier`, `ColorOverLifeModifier`, `SizeOverLifeModifier`, `VelocityOverLifeModifier`, `SubEmittersModifier`. |
+| `ParticleCurve` | Sampling curve interface for life-driven properties. Implementations: `ConstantCurve`, `LinearCurve`, `BezierCurve`, `RandomCurve`. |
+| `TrailModule` | Optional ribbon-trail renderer attachment — records particle positions over time and produces `TrailRenderData` for the renderer. Supports multiple color modes (`TrailColorMode`). |
+| `ParticleData` | Per-particle state struct (position / velocity / size / color / lifetime / etc). |
 
 ---
 
