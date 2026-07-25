@@ -28,8 +28,25 @@ import {
   Profiler,
   HDRLoader,
   CubeTexture,
+  // 引擎功能开关所需的类
+  ParticleSystem2,
+  AdvancedParticleEmitter as ParticleEmitter,
+  ColorOverLifeModifier,
+  SizeOverLifeModifier,
+  LinearCurve,
+  HeightmapGenerator,
+  TerrainGeometry,
+  IKBone,
+  IKChain,
+  IKSolver,
+  Color,
+  BufferGeometry,
+  BufferAttribute,
+  ShaderProgram,
+  Quaternion,
 } from '@/engine';
 import { createGridMesh } from '@/engine/Helpers/GridHelper';
+import { createLineMesh, LineMesh } from '@/engine/Helpers/LineHelper';
 import { Velocity, VelocityC, PlayerInput, PlayerInputC, World as ECSWorld } from '@/engine/ECS';
 import { createPhysicsDemo, syncMeshesFromTransforms } from '@/engine/Physics/PhysicsDemo';
 import { createLogger } from '@/lib/logger';
@@ -73,6 +90,14 @@ export function CustomStage({ onError }: { onError?: () => void }) {
     gridMesh?: Mesh;
     physicsWorld?: ECSWorld;
     physicsDebug?: PhysicsDebugRenderer;
+    // 引擎功能开关所需的运行时引用
+    dirLight?: DirectionalLight;
+    particleSystem?: ParticleSystem2;
+    particleMesh?: Mesh;
+    terrainMesh?: Mesh;
+    ikSolver?: IKSolver;
+    ikChain?: IKChain;
+    ikMesh?: Mesh;
   }>({});
   const [stats, setStats] = useState<CustomStageStats>({ fps: 0, draws: 0, tris: 0 });
   const [error, setError] = useState<string | null>(null);
@@ -89,6 +114,11 @@ export function CustomStage({ onError }: { onError?: () => void }) {
   const togglePhysicsDemo = useViewerStore((s) => s.togglePhysicsDemo);
   const physicsDebug = useViewerStore((s) => s.physicsDebug);
   const profilerEnabled = useViewerStore((s) => s.profilerEnabled);
+  // 引擎功能开关:粒子 / 地形 / IK / 阴影
+  const particleEnabled = useViewerStore((s) => s.particleEnabled);
+  const terrainEnabled = useViewerStore((s) => s.terrainEnabled);
+  const ikEnabled = useViewerStore((s) => s.ikEnabled);
+  const shadowEnabled = useViewerStore((s) => s.shadowEnabled);
 
   useEffect(() => {
     if (error && onError) {
@@ -165,7 +195,9 @@ export function CustomStage({ onError }: { onError?: () => void }) {
     }
 
     const dir = new DirectionalLight(0xfff2d9, 2.0, { x: 4, y: 6, z: 3 });
-    dir.castShadow = true;
+    dir.castShadow = shadowEnabled;
+    dir.shadow.mapSize = 2048;
+    dir.shadow.cameraHalfSize = 6;
     const dir2 = new DirectionalLight(0xff2bd6, 0.45, { x: -4, y: 3, z: -2 });
     const dir3 = new DirectionalLight(0x00f0ff, 0.25, { x: 0, y: -2, z: 4 });
     const amb = new AmbientLight(0xffffff, 0.55);
@@ -251,7 +283,7 @@ export function CustomStage({ onError }: { onError?: () => void }) {
 
     // 把内部对象暴露到外部 effect — 用一个外部 ref 对象
     if (!stageRef.current) stageRef.current = {};
-    Object.assign(stageRef.current, { renderer, camera, scene, controls, ground, gridMesh });
+    Object.assign(stageRef.current, { renderer, camera, scene, controls, ground, gridMesh, dirLight: dir });
 
     let root: Group | null = null;
     let rootEntityId: number | null = null;
@@ -475,6 +507,30 @@ export function CustomStage({ onError }: { onError?: () => void }) {
       }
       profiler.markEnd('controls');
 
+      // ── 引擎功能开关的每帧驱动:粒子 billboard + IK 求解 ─────────────
+      profiler.mark('engine-features');
+      const psys = stageRef.current.particleSystem;
+      const pmesh = stageRef.current.particleMesh;
+      if (psys && pmesh && camera) {
+        psys.update(dt);
+        updateParticleBillboards(psys, pmesh, camera);
+      }
+      const ikSolver = stageRef.current.ikSolver;
+      const ikChain = stageRef.current.ikChain;
+      const ikMesh = stageRef.current.ikMesh;
+      if (ikSolver && ikChain && ikMesh) {
+        const t = ts / 1000;
+        // 目标点在场景上方做利萨如轨迹,便于观察 IK 链追踪
+        ikChain.target.set(
+          Math.sin(t * 0.8) * 0.9,
+          1.5 + Math.sin(t * 1.3) * 0.25,
+          0.4 + Math.cos(t * 0.6) * 0.4,
+        );
+        ikSolver.solve();
+        updateIKLineMesh(ikChain, ikMesh);
+      }
+      profiler.markEnd('engine-features');
+
       // GPU 计时:render mark 走 GPU query (ext 不可用时内部静默)
       profiler.mark('render', { gpu: { gl: renderer.gl } });
       try {
@@ -581,6 +637,186 @@ export function CustomStage({ onError }: { onError?: () => void }) {
     if (!r) return;
     applyEnvironment(r, environment);
   }, [environment]);
+
+  // ── 引擎功能开关:阴影 ──────────────────────────────────────────────
+  // WebGL2Renderer 内部已实现 shadow pass,自动遍历 castShadow 的 DirectionalLight。
+  // 这里只需要切换 dir.castShadow 标志和 shadow.mapSize,无需另接 ShadowMapManager。
+  useEffect(() => {
+    const dir = stageRef.current.dirLight;
+    if (!dir) return;
+    dir.castShadow = shadowEnabled;
+    // 关闭时降到 256 节省显存,开启时恢复高分辨率
+    dir.shadow.mapSize = shadowEnabled ? 2048 : 256;
+    log.info(`shadow ${shadowEnabled ? 'enabled' : 'disabled'} (mapSize=${dir.shadow.mapSize})`);
+  }, [shadowEnabled]);
+
+  // ── 引擎功能开关:地形 ──────────────────────────────────────────────
+  useEffect(() => {
+    const stage = stageRef.current;
+    const scene = stage.scene;
+    const renderer = stage.renderer;
+    if (!scene || !renderer) return;
+
+    if (terrainEnabled) {
+      if (stage.terrainMesh) {
+        stage.terrainMesh.visible = true;
+        return;
+      }
+      const SEG = 96;
+      const tGen0 = performance.now();
+      const heightmap = HeightmapGenerator.fromPerlinNoise(
+        SEG + 1, SEG + 1, 18, 5, 0.5, 1337,
+      );
+      const geo = new TerrainGeometry({
+        width: 20,
+        height: 20,
+        widthSegments: SEG,
+        heightSegments: SEG,
+        heightmap,
+        heightScale: 1.6,
+      });
+      const mat = new StandardMaterial();
+      mat.baseColor = { r: 0.18, g: 0.32, b: 0.16 };
+      mat.metallic = 0.0;
+      mat.roughness = 0.95;
+      mat.receiveShadow = true;
+      const mesh = new Mesh(geo, mat);
+      mesh.name = 'TERRAIN';
+      mesh.castShadow = false;
+      mesh.receiveShadow = true;
+      // 把地形往下沉一点,让默认 ground plane 仍可见作为参考层
+      mesh.position.y = -0.4;
+      scene.add(mesh);
+      stage.terrainMesh = mesh;
+      log.info(`terrain generated in ${(performance.now() - tGen0).toFixed(1)}ms ` +
+        `(${SEG}x${SEG} grid, heightScale=1.6)`);
+    } else {
+      const m = stage.terrainMesh;
+      if (m) {
+        scene.remove(m);
+        m.geometry.dispose();
+        stage.terrainMesh = undefined;
+        log.info('terrain disposed');
+      }
+    }
+  }, [terrainEnabled]);
+
+  // ── 引擎功能开关:IK ────────────────────────────────────────────────
+  // 创建 3 骨骼 FABRIK 链:根在 (0,1.5,0),沿 +X 伸出两段长度 0.6 的骨骼,
+  // 末端为 effector(length=0)。每帧在 tick 中由 ikChain.target 驱动求解。
+  // 可视化用 LineMesh (走 helper 旁路),3 段:root→mid→end→target。
+  useEffect(() => {
+    const stage = stageRef.current;
+    const scene = stage.scene;
+    const renderer = stage.renderer;
+    if (!scene || !renderer) return;
+
+    if (ikEnabled) {
+      if (stage.ikSolver) return; // 已存在,避免重复创建
+      const rootBone = new IKBone('ik_root', new Vector3(0, 1.5, 0), new Quaternion(), 0.6);
+      const midBone = new IKBone('ik_mid', new Vector3(0.6, 0, 0), new Quaternion(), 0.6);
+      const endBone = new IKBone('ik_end', new Vector3(0.6, 0, 0), new Quaternion(), 0);
+      const chain = new IKChain({ iterations: 16, tolerance: 1e-3 });
+      chain.addBone(rootBone);
+      chain.addBone(midBone);
+      chain.addBone(endBone);
+      chain.target.set(0.9, 1.5, 0.4);
+      chain.poleTarget = new Vector3(0, 2.5, -0.5);
+      const solver = new IKSolver({ iterations: 16, tolerance: 1e-3 });
+      solver.addChain(chain);
+
+      // LineMesh:3 段(root→mid、mid→end、end→target),青色
+      const lineMesh = createLineMesh(renderer, 3, [0, 0.94, 1], 1);
+      lineMesh.name = 'IK_LINE';
+      scene.add(lineMesh);
+
+      stage.ikSolver = solver;
+      stage.ikChain = chain;
+      stage.ikMesh = lineMesh;
+      log.info('IK chain enabled (3 bones, FABRIK)');
+    } else {
+      const m = stage.ikMesh;
+      if (m) {
+        scene.remove(m);
+        m.geometry.dispose();
+        stage.ikMesh = undefined;
+      }
+      stage.ikSolver = undefined;
+      stage.ikChain = undefined;
+      log.info('IK chain disabled');
+    }
+  }, [ikEnabled]);
+
+  // ── 引擎功能开关:粒子 ──────────────────────────────────────────────
+  // ParticleSystem2 产出 CPU 端 positions/colors/sizes,通过 Billboard Mesh 适配
+  // 到 WebGL2Renderer 的 helper 旁路(无 POINTS 模式,故每粒子展开成 2 三角形)。
+  useEffect(() => {
+    const stage = stageRef.current;
+    const scene = stage.scene;
+    const renderer = stage.renderer;
+    if (!scene || !renderer) return;
+
+    if (particleEnabled) {
+      if (stage.particleSystem) return;
+      const psys = new ParticleSystem2(500);
+      psys.duration = 6;
+      psys.loop = true;
+      const emitter = new ParticleEmitter();
+      emitter.shape = { type: 'sphere', radius: 0.25, shellOnly: false };
+      emitter.position = new Vector3(0, 1.4, 0);
+      emitter.rate = 60;
+      emitter.lifetime = { min: 1.4, max: 2.4 };
+      emitter.speed = { min: 0.4, max: 1.2 };
+      emitter.startColor = new Color(0, 0.94, 1); // 青色
+      emitter.endColor = new Color(1, 0.18, 0.84); // 品红
+      emitter.startSize = { min: 0.10, max: 0.16 };
+      emitter.endSize = { min: 0, max: 0 };
+      emitter.gravity = -0.4;
+      emitter.drag = 0.6;
+      psys.addEmitter(emitter);
+      psys.addModifier(new ColorOverLifeModifier(
+        new Color(0, 0.94, 1),
+        new Color(1, 0.18, 0.84),
+      ));
+      psys.addModifier(new SizeOverLifeModifier(new LinearCurve(1, 0)));
+
+      // Billboard Mesh:预分配 maxParticles*6 顶点的 buffer,每帧只更新 count*6 部分
+      const MAX_VERTS = psys.maxParticles * 6;
+      const positions = new Float32Array(MAX_VERTS * 3);
+      const colors = new Float32Array(MAX_VERTS * 3);
+      const geo = new BufferGeometry();
+      geo.setAttribute('position', new BufferAttribute(positions, 3));
+      geo.setAttribute('color', new BufferAttribute(colors, 3));
+      // 让 frustum culling 不要把整个 billboard 池剔除(顶点都是 0 时 bounding sphere 半径为 0)
+      geo.computeBoundingBox();
+      const mesh = new Mesh(geo, {} as never);
+      mesh.name = 'PARTICLES';
+      mesh.frustumCulled = false;
+      mesh.userData = {
+        __helper: 'particles',
+        program: getParticleProgram(renderer.gl),
+        uniforms: {
+          u_softness: 0.45,
+        },
+      };
+      scene.add(mesh);
+
+      stage.particleSystem = psys;
+      stage.particleMesh = mesh;
+      log.info('particle system enabled (max=500, sphere emitter)');
+    } else {
+      const psys = stage.particleSystem;
+      const m = stage.particleMesh;
+      if (m) {
+        scene.remove(m);
+        m.geometry.dispose();
+        stage.particleMesh = undefined;
+      }
+      if (psys) psys.clear();
+      stage.particleSystem = undefined;
+      log.info('particle system disabled');
+    }
+  }, [particleEnabled]);
 
   useEffect(() => {
     const scene = stageRef.current.scene;
@@ -808,4 +1044,167 @@ function namePresetMeshes(root: Group): void {
       node.name = `${rootName}#${i++}`;
     }
   });
+}
+
+// ── 引擎功能开关:粒子 Billboard 渲染 ─────────────────────────────────
+//
+// ParticleSystem2 产出 CPU 端的 positions/colors/sizes,但 WebGL2Renderer
+// 没有 POINTS 图元支持(helper 旁路只支持 TRIANGLES / LINES)。这里用适配
+// 方案:每个粒子在 CPU 端展开成 2 个三角形(6 顶点)构成面向相机的 billboard
+// quad,通过 helper 旁路 + 自定义 ShaderProgram 渲染。
+//
+// Billboard 朝向:从 camera.matrixWorld 列主序提取 right (col 0) / up (col 1),
+// 顶点 = 粒子中心 + (right * cornerX + up * cornerY) * size。
+// 软圆:fragment shader 中根据 v_uv(由 gl_VertexID % 6 推算)到原点距离 discard。
+
+const PARTICLE_VERT = /* glsl */ `#version 300 es
+precision highp float;
+layout(location = 0) in vec3 a_position; // billboard 角落的世界位置(已 CPU 展开)
+layout(location = 3) in vec3 a_color;
+uniform mat4 u_model;
+uniform mat4 u_view;
+uniform mat4 u_projection;
+out vec3 v_color;
+out vec2 v_uv;
+void main() {
+  v_color = a_color;
+  // gl_VertexID % 6 决定 quad 角落,uv ∈ [-1, 1]
+  // 0:(-1,-1), 1:(1,-1), 2:(1,1), 3:(-1,-1), 4:(1,1), 5:(-1,1)
+  int c = gl_VertexID % 6;
+  vec2 uv;
+  if (c == 0) uv = vec2(-1.0, -1.0);
+  else if (c == 1) uv = vec2( 1.0, -1.0);
+  else if (c == 2) uv = vec2( 1.0,  1.0);
+  else if (c == 3) uv = vec2(-1.0, -1.0);
+  else if (c == 4) uv = vec2( 1.0,  1.0);
+  else             uv = vec2(-1.0,  1.0);
+  v_uv = uv;
+  gl_Position = u_projection * u_view * u_model * vec4(a_position, 1.0);
+}
+`;
+
+const PARTICLE_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+in vec3 v_color;
+in vec2 v_uv;
+uniform float u_softness;
+out vec4 fragColor;
+void main() {
+  // 软圆 alpha:uv 到原点距离越近越实,边缘按 u_softness 平滑过渡
+  float d = length(v_uv);
+  float alpha = smoothstep(1.0, 1.0 - u_softness, d);
+  if (alpha < 0.01) discard;
+  // 加性混合感:颜色 × alpha,背景叠加而非遮挡
+  fragColor = vec4(v_color * alpha, alpha);
+}
+`;
+
+let _particleProgram: ShaderProgram | null = null;
+function getParticleProgram(gl: WebGL2RenderingContext): ShaderProgram {
+  if (_particleProgram && _particleProgram.gl === gl) return _particleProgram;
+  _particleProgram = new ShaderProgram(gl, PARTICLE_VERT, PARTICLE_FRAG);
+  log.debug('compiled particle billboard program');
+  return _particleProgram;
+}
+
+/**
+ * 把 ParticleSystem2 的当前粒子状态展开成 billboard 顶点 buffer。
+ *
+ * - 每个粒子 → 6 顶点(2 个三角形构成 quad)
+ * - 顶点位置 = 粒子中心 + (right * cornerX + up * cornerY) * size
+ *   其中 right/up 来自 camera.matrixWorld 的列 0/列 1
+ * - 顶点颜色 = 粒子当前颜色
+ * - 超出活跃粒子数的尾部顶点保持 (0,0,0),fragment 会因 alpha<0.01 discard
+ *
+ * 这里直接修改 mesh 的 BufferAttribute 数组并标记 needsUpdate,
+ * WebGL2Renderer 在下一帧 _drawHelper 时会通过 bufferData 重传。
+ */
+function updateParticleBillboards(
+  psys: ParticleSystem2,
+  mesh: Mesh,
+  camera: PerspectiveCamera,
+): void {
+  const posAttr = mesh.geometry.getAttribute('position') as BufferAttribute | undefined;
+  const colAttr = mesh.geometry.getAttribute('color') as BufferAttribute | undefined;
+  if (!posAttr || !colAttr) return;
+
+  const positions = posAttr.array as Float32Array;
+  const colors = colAttr.array as Float32Array;
+
+  // 列主序:col 0 = right, col 1 = up
+  const e = camera.matrixWorld.elements;
+  const rx = e[0], ry = e[1], rz = e[2];
+  const ux = e[4], uy = e[5], uz = e[6];
+
+  const particles = psys.particles;
+  const n = particles.length;
+  // 清空尾部(防止上一帧残留粒子绘制)
+  const totalVerts = Math.min(positions.length / 3, n * 6);
+
+  for (let i = 0; i < n; i++) {
+    const p = particles[i];
+    const px = p.position.x, py = p.position.y, pz = p.position.z;
+    const cr = p.color.r, cg = p.color.g, cb = p.color.b;
+    const s = p.size;
+    const o = i * 18; // 6 顶点 * 3 float
+    const oc = i * 18;
+
+    // 6 顶点的 corner 偏移(已 unroll,避免 inner loop):
+    //  0: (-1,-1)   1: ( 1,-1)   2: ( 1, 1)
+    //  3: (-1,-1)   4: ( 1, 1)   5: (-1, 1)
+    positions[o + 0]  = px + (-rx - ux) * s;
+    positions[o + 1]  = py + (-ry - uy) * s;
+    positions[o + 2]  = pz + (-rz - uz) * s;
+    positions[o + 3]  = px + ( rx - ux) * s;
+    positions[o + 4]  = py + ( ry - uy) * s;
+    positions[o + 5]  = pz + ( rz - uz) * s;
+    positions[o + 6]  = px + ( rx + ux) * s;
+    positions[o + 7]  = py + ( ry + uy) * s;
+    positions[o + 8]  = pz + ( rz + uz) * s;
+    positions[o + 9]  = positions[o + 0];
+    positions[o + 10] = positions[o + 1];
+    positions[o + 11] = positions[o + 2];
+    positions[o + 12] = positions[o + 6];
+    positions[o + 13] = positions[o + 7];
+    positions[o + 14] = positions[o + 8];
+    positions[o + 15] = px + (-rx + ux) * s;
+    positions[o + 16] = py + (-ry + uy) * s;
+    positions[o + 17] = pz + (-rz + uz) * s;
+
+    // 6 顶点共用粒子颜色
+    for (let k = 0; k < 6; k++) {
+      colors[oc + k * 3 + 0] = cr;
+      colors[oc + k * 3 + 1] = cg;
+      colors[oc + k * 3 + 2] = cb;
+    }
+  }
+
+  // 把尾部(totalVerts..MAX)置零,避免上一帧残留粒子继续绘制
+  for (let i = totalVerts * 3; i < positions.length; i++) {
+    positions[i] = 0;
+    colors[i] = 0;
+  }
+
+  posAttr.needsUpdate = true;
+  colAttr.needsUpdate = true;
+}
+
+/**
+ * 把 IK 解算后的骨骼世界位置写入 LineMesh,共 3 段 6 顶点:
+ *   root → mid → end → target
+ */
+function updateIKLineMesh(chain: IKChain, mesh: Mesh): void {
+  if (!(mesh instanceof LineMesh)) return;
+  const bones = chain.bones;
+  if (bones.length < 2) return;
+  const root = bones[0].getWorldPosition(new Vector3());
+  const mid = bones[1].getWorldPosition(new Vector3());
+  const end = bones[bones.length - 1].getWorldPosition(new Vector3());
+  const tgt = chain.target;
+  const verts = new Float32Array([
+    root.x, root.y, root.z, mid.x, mid.y, mid.z,
+    mid.x, mid.y, mid.z, end.x, end.y, end.z,
+    end.x, end.y, end.z, tgt.x, tgt.y, tgt.z,
+  ]);
+  mesh.updateVertices(verts);
 }

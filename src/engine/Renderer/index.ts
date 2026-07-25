@@ -43,4 +43,7 @@ export {
   type ShadowMapManagerOptions,
   isCastShadowLight,
 } from './ShadowMapManager';
+// 多渲染目标(MRT)+ 几何缓冲(GBuffer,延迟渲染用)。
+export { MRTTarget, type MRTSetupOptions } from './MRTTarget';
+export { GBuffer, type GBufferOptions } from './GBuffer';
 

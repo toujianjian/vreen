@@ -27,6 +27,15 @@ export { DistanceJointConstraint } from './DistanceJointConstraint';
 // 求解器
 export { ConstraintSolver } from './ConstraintSolver';
 
+// 布料模拟(Verlet 积分 + 距离约束,与 ECS PhysicsSystems 解耦)
+export {
+  ClothSimulation,
+  type ClothParticle,
+  type ClothConstraint,
+  type ClothSphere,
+  type ClothOptions,
+} from './ClothSimulation';
+
 // 现有 PhysicsDemo(保持向后兼容)
 export {
   installPhysicsSystems,

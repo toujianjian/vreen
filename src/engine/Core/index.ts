@@ -46,3 +46,5 @@ export { Fog } from './Fog';
 export { FogExp2 } from './FogExp2';
 export { Raycaster, intersectGeometry } from './Raycaster';
 export type { Face, Intersection, RaycasterParameters } from './Raycaster';
+export { MorphTargets } from './MorphTargets';
+export { MorphTargetAnimation, MorphTargetTrack } from './MorphTargetAnimation';
