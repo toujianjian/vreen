@@ -1629,3 +1629,284 @@ void main() {
 }
 `;
 
+// ── GTAO (Ground Truth Ambient Occlusion) ──────────────────────────
+// 基于深度 + 法线纹理的高质量环境光遮蔽。
+// 流程:
+//   1. 从 NDC 深度重建视图空间位置
+//   2. 世界法线 → 视图法线
+//   3. 在屏幕空间沿 4 个方向采样,找到每个方向的地平线角(horizon angle)
+//   4. 半球积分得到 AO,用 power 指数调整强度
+//
+// 输入纹理:
+//   u_depthMap  — NDC 深度(0..1)
+//   u_normalMap — 世界空间法线(RGBA16F,xyz)
+// uniforms:
+//   u_projectionInverse — NDC → 视图空间
+//   u_viewMatrix        — 世界 → 视图(把世界法线转到视图空间)
+//   u_screenSize        — 视口尺寸
+//   u_radius            — 采样半径(屏幕空间像素缩放)
+//   u_thickness         — 厚度容差(世界单位,大于此距离的几何不算遮蔽)
+//   u_power             — 强度指数(>1 更锐利,<1 更柔)
+//   u_maxPixels         — 每方向最大采样数(1..32)
+//
+// 输出:R=G=B=AO(0..1,1=无遮蔽),A=1。
+export const GTAO_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_depthMap;
+uniform sampler2D u_normalMap;
+uniform mat4 u_projectionInverse;
+uniform mat4 u_viewMatrix;
+uniform vec2 u_screenSize;
+uniform float u_radius;
+uniform float u_thickness;
+uniform float u_power;
+uniform int   u_maxPixels;
+
+// 从 NDC 深度重建视图空间位置。
+vec3 reconstructViewPos(vec2 uv, float depth) {
+  vec4 ndc  = vec4(uv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
+  vec4 view = u_projectionInverse * ndc;
+  return view.xyz / view.w;
+}
+
+void main() {
+  float depth = texture(u_depthMap, v_uv).r;
+  if (depth >= 0.99999) {
+    outColor = vec4(1.0);
+    return;
+  }
+
+  vec3 viewPos = reconstructViewPos(v_uv, depth);
+  vec3 worldN  = texture(u_normalMap, v_uv).xyz;
+  if (length(worldN) < 0.01) {
+    outColor = vec4(1.0);
+    return;
+  }
+  vec3 viewN = normalize((u_viewMatrix * vec4(worldN, 0.0)).xyz);
+
+  vec2 texel = 1.0 / u_screenSize;
+  int  samples = max(1, min(32, u_maxPixels));
+
+  // 4 个采样方向(0°, 90°, 45°, 135°)
+  vec2 dirs[4];
+  dirs[0] = vec2( 1.0,  0.0);
+  dirs[1] = vec2( 0.0,  1.0);
+  dirs[2] = vec2( 0.7071,  0.7071);
+  dirs[3] = vec2(-0.7071,  0.7071);
+
+  float occlusion = 0.0;
+  for (int d = 0; d < 4; d++) {
+    float horizon = 0.0;
+    for (int i = 1; i <= 32; i++) {
+      if (i > samples) break;
+      vec2 offset = dirs[d] * texel * u_radius * (float(i) / float(samples));
+      vec2 sUV = v_uv + offset;
+      if (sUV.x < 0.0 || sUV.x > 1.0 || sUV.y < 0.0 || sUV.y > 1.0) break;
+
+      float sDepth = texture(u_depthMap, sUV).r;
+      if (sDepth >= 0.99999) continue;
+      vec3 sPos = reconstructViewPos(sUV, sDepth);
+      vec3 delta = sPos - viewPos;
+
+      float dist = length(delta);
+      if (dist < 1e-4 || dist > u_thickness) continue;
+
+      float sinA = dot(viewN, delta) / dist;
+      horizon = max(horizon, asin(clamp(sinA, -1.0, 1.0)));
+    }
+    occlusion += max(0.0, horizon);
+  }
+  occlusion /= 4.0;
+
+  // 归一化(π/2)→ 0..1,再用 power 调整
+  float norm = occlusion / 1.5707963;
+  float ao = 1.0 - pow(clamp(norm, 0.0, 1.0), u_power);
+  outColor = vec4(ao, ao, ao, 1.0);
+}
+`;
+
+// ── SSSS (Screen-Space Subsurface Scattering) ──────────────────────
+// 可分离高斯模糊 + 深度感知 + 次表面颜色混合。
+// 流程(每趟):
+//   1. 沿 u_blurDir 采样 maxSamples 个点
+//   2. 用 u_kernel 高斯核加权
+//   3. 深度差大时降低权重(避免背景渗透)
+//   4. 混合次表面颜色
+//
+// 输入纹理:
+//   u_colorMap — 当前帧颜色(对 SSSS 通常是 skin color buffer)
+//   u_depthMap — NDC 深度(0..1)
+// uniforms:
+//   u_blurDir          — 模糊方向(屏幕空间,1.0=全屏;典型 (1,0)/(0,1))
+//   u_screenSize       — 视口尺寸
+//   u_strength         — 强度(0..1+)
+//   u_falloff          — 深度衰减(越大越锐利)
+//   u_subsurfaceColor  — 次表面颜色(皮肤/蜡/玉石)
+//   u_maxSamples       — 采样数(奇数,1..17)
+//   u_kernel[17]       — 高斯核(kernel[8]=中心)
+//
+// 注:可分离 = 水平一趟 + 垂直一趟,由 CPU 端调用方分两次 apply 实现。
+//     本 shader 只做单趟;Pass 内部用 ping-pong FBO 完成两趟。
+export const SSSS_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;
+uniform sampler2D u_depthMap;
+uniform vec2  u_blurDir;
+uniform vec2  u_screenSize;
+uniform float u_strength;
+uniform float u_falloff;
+uniform vec3  u_subsurfaceColor;
+uniform int   u_maxSamples;
+uniform float u_kernel[17];
+
+void main() {
+  vec3  centerColor = texture(u_colorMap, v_uv).rgb;
+  float centerDepth = texture(u_depthMap, v_uv).r;
+
+  vec2 texel = u_blurDir / u_screenSize;
+  int  halfSamples = u_maxSamples / 2;
+
+  vec3  color = vec3(0.0);
+  float totalWeight = 0.0;
+
+  for (int i = 0; i < 17; i++) {
+    if (i >= u_maxSamples) break;
+    float weight = u_kernel[i];
+    int offset = i - halfSamples;
+    vec2 uvOffset = texel * float(offset);
+
+    vec3  sColor = texture(u_colorMap, v_uv + uvOffset).rgb;
+    float sDepth = texture(u_depthMap, v_uv + uvOffset).r;
+
+    // 深度感知权重:深度差越大,贡献越低(避免背景渗透)
+    float depthDiff = abs(sDepth - centerDepth);
+    float depthWeight = exp(-depthDiff * u_falloff * 100.0);
+    weight *= depthWeight;
+
+    color += sColor * weight;
+    totalWeight += weight;
+  }
+
+  color /= max(totalWeight, 1e-6);
+
+  // 混合:基础颜色 ↔ 模糊颜色 ↔ 次表面颜色
+  vec3 blurred = mix(centerColor, color, u_strength);
+  vec3 result = mix(blurred, color * u_subsurfaceColor, u_strength * 0.5);
+  outColor = vec4(result, 1.0);
+}
+`;
+
+// ── DOF Enhanced (Circle of Confusion + Bokeh Shape) ───────────────
+// 增强景深:基于深度的 CoC 计算 + 散景形状(圆形/六边形/八边形)采样。
+// 流程:
+//   1. 从深度重建视图空间 Z,计算到焦点的偏差
+//   2. CoC = |dist - focusDistance| / focusRange,clamp 0..1
+//   3. radius = CoC * bokehSize,clamp 到 maxRadius
+//   4. 沿圆周采样 SAMPLES 个点,按 bokehShape 过滤形状
+//   5. 按 CoC 混合原始色与散景色
+//
+// 输入纹理:
+//   u_colorMap — 当前帧颜色
+//   u_depthMap — NDC 深度(0..1)
+// uniforms:
+//   u_projectionInverse — NDC → 视图空间
+//   u_screenSize        — 视口尺寸
+//   u_focusDistance     — 焦点距离(视图空间 Z,正值)
+//   u_focusRange        — 焦点范围(范围内清晰)
+//   u_bokehShape        — 0=circle, 1=hexagon, 2=octagon
+//   u_bokehSize         — 散景大小(像素)
+//   u_maxRadius         — 最大散景半径(像素,限制开销)
+export const DOF_ENHANCED_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;
+uniform sampler2D u_depthMap;
+uniform mat4 u_projectionInverse;
+uniform vec2 u_screenSize;
+uniform float u_focusDistance;
+uniform float u_focusRange;
+uniform int   u_bokehShape;
+uniform float u_bokehSize;
+uniform float u_maxRadius;
+
+vec3 reconstructViewPos(vec2 uv, float depth) {
+  vec4 ndc  = vec4(uv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
+  vec4 view = u_projectionInverse * ndc;
+  return view.xyz / view.w;
+}
+
+// 散景形状权重:返回 1.0(在形状内) 或 0.0(形状外)。
+// offset 为单位方向向量(|offset|<=1)。
+float bokehWeight(vec2 offset, int shape) {
+  float r = length(offset);
+  if (r < 1e-4) return 1.0;
+  if (shape == 0) {
+    // 圆形
+    return r <= 1.0 ? 1.0 : 0.0;
+  } else if (shape == 1) {
+    // 六边形:6 条边的菱形近似
+    float a = atan(offset.y, offset.x);
+    float d = 0.8660254 * abs(cos(a)) + 0.5 * abs(sin(a));
+    return (r * d) <= 0.8660254 ? 1.0 : 0.0;
+  } else {
+    // 八边形:max(|cos|,|sin|) 近似
+    float a = atan(offset.y, offset.x);
+    float d = max(abs(cos(a)), abs(sin(a)));
+    return (r * d) <= 0.9238795 ? 1.0 : 0.0;
+  }
+}
+
+void main() {
+  vec3  centerColor = texture(u_colorMap, v_uv).rgb;
+  float depth = texture(u_depthMap, v_uv).r;
+
+  if (depth >= 0.99999) {
+    outColor = vec4(centerColor, 1.0);
+    return;
+  }
+
+  vec3  viewPos = reconstructViewPos(v_uv, depth);
+  float dist = -viewPos.z;  // 视图空间 Z(正值=前方)
+
+  // Circle of Confusion
+  float coc = clamp(abs(dist - u_focusDistance) / max(u_focusRange, 1e-4), 0.0, 1.0);
+  float radius = min(coc * u_bokehSize, u_maxRadius);
+
+  // 半径太小 → 跳过(像素清晰)
+  if (radius < 0.5) {
+    outColor = vec4(centerColor, 1.0);
+    return;
+  }
+
+  vec2 texel = 1.0 / u_screenSize;
+  vec3 color = vec3(0.0);
+  float totalWeight = 0.0;
+
+  const int SAMPLES = 16;
+  for (int i = 0; i < SAMPLES; i++) {
+    float angle = 6.2831853 * (float(i) + 0.5) / float(SAMPLES);
+    vec2 dir = vec2(cos(angle), sin(angle));
+    float w = bokehWeight(dir, u_bokehShape);
+    vec2 offset = dir * radius * texel;
+    vec3 sColor = texture(u_colorMap, v_uv + offset).rgb;
+    color += sColor * w;
+    totalWeight += w;
+  }
+
+  color /= max(totalWeight, 1e-6);
+  vec3 result = mix(centerColor, color, coc);
+  outColor = vec4(result, 1.0);
+}
+`;
+

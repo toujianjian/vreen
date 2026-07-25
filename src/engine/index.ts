@@ -23,6 +23,10 @@ export * from './Acceleration';
 export * from './Assets';
 // Serialization — 场景序列化 (Scene/Geometry/Material ↔ JSON)，支持往返还原。
 export * from './Serialization';
+// SaveSystem — 多槽位存档系统 + 自动保存 + 持久化适配器 (localStorage / 内存)。
+export * from './SaveSystem';
+// SceneManager — 多场景注册 / 加载 / 切换 + 场景过渡 (Fade/Crossfade/Slide/Wipe/None)。
+export * from './SceneManager';
 export {
   KeyframeTrack,
   NumberKeyframeTrack,
