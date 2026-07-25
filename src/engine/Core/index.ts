@@ -6,11 +6,16 @@ export { SceneGraphProcessor, type SceneGraphStats } from './SceneGraphProcessor
 export { SceneStats, type SceneStatsData } from './SceneStats';
 export { FrustumCuller, type FrustumCullStats } from './FrustumCuller';
 export { BufferAttribute, type AttributeKind } from './BufferAttribute';
+export { InstancedBufferAttribute } from './InstancedBufferAttribute';
 export { BufferGeometry } from './BufferGeometry';
 export { Mesh } from './Mesh';
+export { Sprite } from './Sprite';
 export { InstancedMesh } from './InstancedMesh';
 export { LOD, type LODLevel } from './LOD';
 export { Group } from './Group';
+export { Text, type TextAlignment, type TextOptions } from './Text';
+export { BitmapText, type BitmapTextOptions } from './BitmapText';
+export { TextAtlas, DEFAULT_FONT, DEFAULT_ATLAS_WIDTH, DEFAULT_ATLAS_HEIGHT, type AtlasChar, type TextFont } from './TextAtlas';
 export { BasicMaterial, type Material, type RGB, type ShaderObject } from './Material';
 export { Bone } from './Bone';
 export { Skeleton } from './Skeleton';

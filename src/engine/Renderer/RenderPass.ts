@@ -26,8 +26,6 @@ import {
   POST_VERT as POST_VERT_SRC,
   BLOOM_EXTRACT_FRAG,
   BLOOM_BLUR_FRAG,
-  CHROMATIC_ABERRATION_FRAG,
-  VIGNETTE_FRAG,
   FINAL_COMPOSE_FRAG,
   SSAO_POST_FRAG,
   FXAA_FRAG,
@@ -35,6 +33,11 @@ import {
   GAMMA_CORRECT_FRAG,
   DOF_FRAG,
 } from '../Materials/shaders';
+
+// 注意:增强版 ChromaticAberrationPass / VignettePass 已移至 ./PostProcess/。
+// CHROMATIC_ABERRATION_FRAG / VIGNETTE_FRAG shader 字符串仍由 WebGL2Renderer
+// 的 legacy 后处理路径直接使用(从 ../Materials/shaders 导入);同名 Pass
+// 类的"增强版"由 PostProcess/ 目录提供,并通过 Renderer/index.ts 重新导出。
 
 /** 色调映射模式。 */
 export enum ToneMappingMode {
@@ -161,85 +164,8 @@ export class BloomPass extends RenderPass {
   }
 }
 
-/** 色差效果:input → finalFbo → mainFbo(ping-pong 两次,因 CA shader 单 pass)。
- *  输出:mainTexture。 */
-export class ChromaticAberrationPass extends RenderPass {
-  readonly name = 'chromatic-aberration';
-  enabled = false;
-  offset = 0.0008;
-
-  constructor(opts: { offset?: number; enabled?: boolean } = {}) {
-    super();
-    if (opts.offset !== undefined) this.offset = opts.offset;
-    if (opts.enabled !== undefined) this.enabled = opts.enabled;
-  }
-
-  apply(input: WebGLTexture, ctx: PassContext): WebGLTexture {
-    const gl = ctx.gl;
-    const res = ctx.resources;
-
-    // 第一遍:input → finalFbo
-    gl.bindFramebuffer(gl.FRAMEBUFFER, res.finalFbo);
-    gl.viewport(0, 0, res.width, res.height);
-    gl.clear(gl.COLOR_BUFFER_BIT);
-    const prog = ctx.getProgram('chromatic-aberration', POST_VERT_SRC, CHROMATIC_ABERRATION_FRAG);
-    prog.use();
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, input);
-    prog.setUniformSampler('u_colorMap', 0);
-    prog.setUniform1f('u_caOffset', this.offset);
-    gl.bindVertexArray(ctx.fullscreenQuad);
-    gl.drawArrays(gl.TRIANGLES, 0, 6);
-
-    // 第二遍:finalTexture → mainFbo(ping-pong 回 main,保持 input 链一致)
-    gl.bindFramebuffer(gl.FRAMEBUFFER, res.mainFbo);
-    gl.viewport(0, 0, res.width, res.height);
-    gl.clear(gl.COLOR_BUFFER_BIT);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, res.finalTexture);
-    prog.setUniformSampler('u_colorMap', 0);
-    gl.bindVertexArray(ctx.fullscreenQuad);
-    gl.drawArrays(gl.TRIANGLES, 0, 6);
-
-    return res.mainTexture;
-  }
-}
-
-/** 暗角效果:input → finalFbo。
- *  输出:finalTexture。 */
-export class VignettePass extends RenderPass {
-  readonly name = 'vignette';
-  enabled = false;
-  darkness = 0.45;
-  offset = 0.0;
-
-  constructor(opts: { darkness?: number; offset?: number; enabled?: boolean } = {}) {
-    super();
-    if (opts.darkness !== undefined) this.darkness = opts.darkness;
-    if (opts.offset !== undefined) this.offset = opts.offset;
-    if (opts.enabled !== undefined) this.enabled = opts.enabled;
-  }
-
-  apply(input: WebGLTexture, ctx: PassContext): WebGLTexture {
-    const gl = ctx.gl;
-    const res = ctx.resources;
-
-    gl.bindFramebuffer(gl.FRAMEBUFFER, res.finalFbo);
-    gl.viewport(0, 0, res.width, res.height);
-    gl.clear(gl.COLOR_BUFFER_BIT);
-    const prog = ctx.getProgram('vignette', POST_VERT_SRC, VIGNETTE_FRAG);
-    prog.use();
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, input);
-    prog.setUniformSampler('u_colorMap', 0);
-    prog.setUniform1f('u_vignetteDarkness', this.darkness);
-    prog.setUniform1f('u_vignetteOffset', this.offset);
-    gl.bindVertexArray(ctx.fullscreenQuad);
-    gl.drawArrays(gl.TRIANGLES, 0, 6);
-
-    return res.finalTexture;
-  }
-}
+// ChromaticAberrationPass 与 VignettePass 已移至 ./PostProcess/(增强版)。
+// 本文件不再保留同名基础版,以避免与 Renderer/index.ts 的重导出冲突。
 
 /** 最终合成:把 color + bloom 合到屏幕。
  *  输出:null(输出到 screen,framebuffer=null)。 */

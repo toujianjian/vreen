@@ -5,14 +5,15 @@
 //   - enabled 过滤
 //   - 顺序执行(input 链式传递)
 //   - dispose 一次性释放
+//
+// 注意:增强版 ChromaticAberrationPass / VignettePass 已移至 ./PostProcess/,
+// 此处不再测试基础版(已删除)。增强版的测试在 PostProcess/PostProcessPasses.test.ts。
 
 import { describe, it, expect } from 'vitest';
 import {
   RenderPass,
   PostProcessingPipeline,
   BloomPass,
-  ChromaticAberrationPass,
-  VignettePass,
   FinalComposePass,
   SSAOPass,
   FXAAPass,
@@ -70,7 +71,7 @@ function makeCtx(): PassContext {
 describe('PostProcessingPipeline', () => {
   it('add appends passes and returns this for chaining', () => {
     const p = new PostProcessingPipeline();
-    const r = p.add(new VignettePass()).add(new FinalComposePass());
+    const r = p.add(new BloomPass()).add(new FinalComposePass());
     expect(r).toBe(p);
     expect(p.passes).toHaveLength(2);
   });
@@ -86,10 +87,10 @@ describe('PostProcessingPipeline', () => {
 
   it('getByName finds a pass', () => {
     const p = new PostProcessingPipeline();
-    const v = new VignettePass();
-    p.add(v);
-    expect(p.getByName('vignette')).toBe(v);
-    expect(p.getByName('bloom')).toBeUndefined();
+    const bp = new BloomPass();
+    p.add(bp);
+    expect(p.getByName('bloom')).toBe(bp);
+    expect(p.getByName('vignette')).toBeUndefined();
   });
 
   it('render calls enabled passes in order with chained input', () => {
@@ -125,7 +126,7 @@ describe('PostProcessingPipeline', () => {
 
   it('dispose clears passes and marks disposed', () => {
     const p = new PostProcessingPipeline();
-    p.add(new VignettePass());
+    p.add(new BloomPass());
     p.add(new FinalComposePass());
     p.dispose(makeCtx());
     expect(p.disposed).toBe(true);
@@ -134,7 +135,7 @@ describe('PostProcessingPipeline', () => {
 
   it('dispose is idempotent', () => {
     const p = new PostProcessingPipeline();
-    p.add(new VignettePass());
+    p.add(new BloomPass());
     const ctx = makeCtx();
     p.dispose(ctx);
     p.dispose(ctx); // second call should not throw
@@ -155,20 +156,6 @@ describe('Concrete pass classes', () => {
     expect(bp2.enabled).toBe(true);
   });
 
-  it('ChromaticAberrationPass config', () => {
-    const cp = new ChromaticAberrationPass({ offset: 0.01, enabled: true });
-    expect(cp.name).toBe('chromatic-aberration');
-    expect(cp.offset).toBe(0.01);
-    expect(cp.enabled).toBe(true);
-  });
-
-  it('VignettePass config', () => {
-    const vp = new VignettePass({ darkness: 0.8, offset: 0.2 });
-    expect(vp.name).toBe('vignette');
-    expect(vp.darkness).toBe(0.8);
-    expect(vp.offset).toBe(0.2);
-  });
-
   it('FinalComposePass defaults to enabled', () => {
     const fp = new FinalComposePass();
     expect(fp.name).toBe('final-compose');
@@ -178,8 +165,6 @@ describe('Concrete pass classes', () => {
 
   it('all passes extend RenderPass', () => {
     expect(new BloomPass()).toBeInstanceOf(RenderPass);
-    expect(new ChromaticAberrationPass()).toBeInstanceOf(RenderPass);
-    expect(new VignettePass()).toBeInstanceOf(RenderPass);
     expect(new FinalComposePass()).toBeInstanceOf(RenderPass);
   });
 });
@@ -272,8 +257,6 @@ describe('Extended post-processing passes', () => {
   it('passes have unique names', () => {
     const names = [
       new BloomPass().name,
-      new ChromaticAberrationPass().name,
-      new VignettePass().name,
       new FinalComposePass().name,
       new SSAOPass().name,
       new FXAAPass().name,

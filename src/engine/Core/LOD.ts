@@ -16,11 +16,11 @@
 //     可见性,无需特殊渲染分支。
 //   - hysteresis(滞后量)防止在阈值边界抖动:切换需要距离超过阈值 ±hysteresis。
 //
-// 集成:渲染器在 traverse 遇到 LOD 节点时自动调用 update(camera),无需应用层
-// 手动驱动。应用层也可自行调用 update(例如离屏/自定义策略)。
+// 集成:渲染器在 traverse 遇到 LOD 节点时自动调用 update(camera)(受 autoUpdate
+// 控制),无需应用层手动驱动。应用层也可自行调用 update(例如离屏/自定义策略)。
 
 import { Object3D } from './Object3D';
-import type { Mesh } from './Mesh';
+import { Mesh } from './Mesh';
 import type { Camera } from '../Cameras/Camera';
 
 export interface LODLevel {
@@ -41,6 +41,13 @@ export class LOD extends Object3D {
   currentLevel: number = 0;
   /** 全局默认滞后量(可在 addLevel 时覆盖)。 */
   hysteresis: number = 0;
+  /**
+   * 是否由渲染器每帧自动调用 update(camera)。
+   * - true (默认): 渲染器在 traverse 遇到 LOD 时自动 update。
+   * - false: 应用层需自行在 render loop 中调用 update(camera)。
+   * 对齐 three.js LOD.autoUpdate,便于跨引擎迁移。
+   */
+  autoUpdate: boolean = true;
 
   /** 添加一个精度级别。object 会作为子节点 add 进来(继承 world transform)。
    *  @param distance 切换到本级的最小距离(>=0)。 */
@@ -55,6 +62,35 @@ export class LOD extends Object3D {
     // 初始可见性:只显示第 0 级。
     this._applyVisibility(0);
     return this;
+  }
+
+  /**
+   * 移除指定 index 的级别(levels 数组下标,非 distance)。
+   * 同时从子节点中移除该级别的 object。
+   * 如果移除的是当前可见级别,会重算可见性(显示最近的剩余级别)。
+   *
+   * 被移除的 object.visible 会被置为 false — 因为它不再由 LOD 系统管理可见性,
+   * 默认隐藏避免误渲染。若需复用该 mesh,调用方应自行显式设置 visible=true。
+   *
+   * @param index levels 数组下标(0..levels.length-1)
+   * @returns true 移除成功;false index 越界
+   */
+  removeLevel(index: number): boolean {
+    if (index < 0 || index >= this.levels.length) return false;
+    const removed = this.levels.splice(index, 1)[0];
+    this.remove(removed.object);
+    // 被移除的 object 不再由 LOD 管可见性,置 false 避免误渲染。
+    removed.object.visible = false;
+    // 重新计算 currentLevel 与可见性。
+    if (this.levels.length === 0) {
+      this.currentLevel = -1;
+    } else {
+      // 收缩 currentLevel 到合法范围,并应用可见性。
+      const newLevel = Math.min(this.currentLevel, this.levels.length - 1);
+      this.currentLevel = newLevel;
+      this._applyVisibility(newLevel);
+    }
+    return true;
   }
 
   /** 按相机距离更新可见级别。返回当前级别 index。 */
@@ -117,6 +153,26 @@ export class LOD extends Object3D {
     return this.levels[this.currentLevel].object;
   }
 
+  /**
+   * 返回当前可见级别 index(levels 数组下标)。
+   * -1 表示空 LOD(无级别或 update 后未匹配)。
+   * 与直接访问 `currentLevel` 字段等价,提供此方法是为对齐 three.js
+   * `LOD.getCurrentLevel()` API。
+   */
+  getCurrentLevel(): number {
+    return this.currentLevel;
+  }
+
+  /**
+   * 返回 levels 数组引用(非拷贝)。
+   * 调用方不应直接修改数组元素 — 请使用 addLevel / removeLevel。
+   * 返回引用而非拷贝是为了在热路径(如渲染器遍历、Inspector 显示)中
+   * 避免每帧分配。
+   */
+  getLevels(): LODLevel[] {
+    return this.levels;
+  }
+
   /** 移除所有级别(同时从子节点移除)。 */
   clearLevels(): void {
     for (const lv of this.levels) {
@@ -124,5 +180,33 @@ export class LOD extends Object3D {
     }
     this.levels = [];
     this.currentLevel = -1;
+  }
+
+  /**
+   * 深拷贝:构造新的 LOD,拷贝 transform / hysteresis / autoUpdate,
+   * 并对每个 level 的 Mesh 做浅拷贝(共享 geometry / material 引用,
+   * 与 three.js 行为一致)。
+   */
+  clone(): LOD {
+    const clone = new LOD();
+    // 拷贝 transform。
+    clone.position.copy(this.position);
+    clone.rotation.copy(this.rotation);
+    clone.scale.copy(this.scale);
+    clone.name = this.name;
+    clone.visible = this.visible;
+    clone.hysteresis = this.hysteresis;
+    clone.autoUpdate = this.autoUpdate;
+    // 拷贝每个 level(浅拷贝 Mesh:共享 geometry/material)。
+    for (const lv of this.levels) {
+      const meshClone = new Mesh(lv.object.geometry, lv.object.material);
+      meshClone.position.copy(lv.object.position);
+      meshClone.rotation.copy(lv.object.rotation);
+      meshClone.scale.copy(lv.object.scale);
+      meshClone.name = lv.object.name;
+      meshClone.visible = lv.object.visible;
+      clone.addLevel(meshClone, lv.distance, lv.hysteresis);
+    }
+    return clone;
   }
 }

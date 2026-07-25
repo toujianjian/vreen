@@ -890,3 +890,282 @@ float sampleShadowPCF(vec3 worldPos) {
 }
 `;
 
+// ── 增强后处理 shader(ColorGrading / LUT / FilmGrain / Afterimage / Pixelation)──
+// 这些 shader 配合 Renderer/PostProcess/ 下的 Pass 类使用,与 RenderPass.ts
+// 中的基础后处理 shader 平行。POST_VERT 复用现有全屏三角形顶点着色器。
+
+// 色彩分级:一站式 color grading,包含色温/色调/饱和度/对比度/gain/lift/gamma/色相偏移。
+// 参考 DaVinci Resolve 与 three.js ColorCorrectionShader 的合并思路。
+//   u_temperature (-1..1): 色温,负=冷(蓝),正=暖(橙)
+//   u_tint        (-1..1): 色调,负=绿,正=洋红
+//   u_saturation  (0..2):  饱和度,1=原色
+//   u_contrast    (0..2):  对比度,1=原色
+//   u_gain        (0..2):  增益(高光),>1 提亮
+//   u_lift        (-1..1): 提升(阴影),正=提亮阴影
+//   u_gamma       (0.1..4):伽马,默认 1.0(不调整)
+//   u_hueShift    (0..360):色相偏移角度
+export const COLOR_GRADING_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;
+uniform float u_temperature;
+uniform float u_tint;
+uniform float u_saturation;
+uniform float u_contrast;
+uniform float u_gain;
+uniform float u_lift;
+uniform float u_gamma;
+uniform float u_hueShift;
+
+// RGB <-> HSV (hue 0..1)
+vec3 rgb2hsv(vec3 c) {
+  vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
+  vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
+  vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
+  float d = q.x - min(q.w, q.y);
+  float e = 1.0e-10;
+  return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
+}
+
+vec3 hsv2rgb(vec3 c) {
+  vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+  vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+  return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+}
+
+void main() {
+  vec3 color = texture(u_colorMap, v_uv).rgb;
+
+  // 1. Lift/Gamma/Gain (ASC-CDL 风格简化)
+  color = color * u_gain + u_lift * (1.0 - color);
+
+  // 2. 色温/色调:在 RGB 空间偏移
+  color.r += u_temperature * 0.1;
+  color.b -= u_temperature * 0.1;
+  color.g += u_tint * 0.05;
+  color.r -= u_tint * 0.05;
+  color.b -= u_tint * 0.05;
+
+  // 3. Gamma
+  color = pow(max(color, vec3(0.0)), vec3(1.0 / max(u_gamma, 1.0e-4)));
+
+  // 4. 对比度:围绕中灰 0.5
+  color = (color - 0.5) * u_contrast + 0.5;
+
+  // 5. 色相偏移 + 饱和度:走 HSV
+  vec3 hsv = rgb2hsv(color);
+  hsv.x = fract(hsv.x + u_hueShift / 360.0);
+  hsv.y = clamp(hsv.y * u_saturation, 0.0, 1.0);
+  color = hsv2rgb(hsv);
+
+  outColor = vec4(clamp(color, 0.0, 1.0), 1.0);
+}
+`;
+
+// LUT 3D: 使用 sampler3D 进行 3D 查找表映射。
+//   u_lut3D    : 3D 纹理(sampler3D)
+//   u_lutSize  : 每轴格点数(通常 16 或 32)
+//   u_intensity: 0..1 混合系数
+export const LUT_3D_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;
+uniform sampler3D u_lut3D;
+uniform float u_lutSize;
+uniform float u_intensity;
+
+void main() {
+  vec4 src = texture(u_colorMap, v_uv);
+  // 半像素内缩,使采样落在边缘像素中心(避免越界)
+  float pixelWidth = 1.0 / u_lutSize;
+  float halfPixel = 0.5 / u_lutSize;
+  vec3 uvw = vec3(halfPixel) + src.rgb * (1.0 - pixelWidth);
+  vec3 graded = texture(u_lut3D, uvw).rgb;
+  outColor = vec4(mix(src.rgb, graded, u_intensity), src.a);
+}
+`;
+
+// LUT 2D strip: 使用 2D 横向 strip 纹理(每片 lutSize×lutSize,共 lutSize 片横向排开)。
+//   u_lut2D     : 2D 纹理(sampler2D)
+//   u_lutSize   : 每轴格点数
+//   u_intensity : 0..1 混合系数
+export const LUT_2D_STRIP_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;
+uniform sampler2D u_lut2D;
+uniform float u_lutSize;
+
+uniform float u_intensity;
+
+void main() {
+  vec4 src = texture(u_colorMap, v_uv);
+  // strip 总宽度 = lutSize * lutSize,高度 = lutSize
+  // 对 B 通道选 slice,在 slice 内用 R/G 寻址
+  float slice = clamp(src.b, 0.0, 1.0) * (u_lutSize - 1.0);
+  float sliceF = floor(slice);
+  float sliceT = fract(slice);
+  float halfTexel = 0.5 / (u_lutSize * u_lutSize);
+  float halfTexelY = 0.5 / u_lutSize;
+
+  // slice 0..lutSize-1, 每片宽度 1/(lutSize*lutSize)
+  float x0 = (sliceF * u_lutSize + 0.5) / (u_lutSize * u_lutSize);
+  float x1 = ((sliceF + 1.0) * u_lutSize + 0.5) / (u_lutSize * u_lutSize);
+  vec2 uv0 = vec2(x0 + src.r * (u_lutSize - 1.0) / (u_lutSize * u_lutSize), halfTexelY + src.g * (1.0 - 2.0 * halfTexelY));
+  vec2 uv1 = vec2(x1 + src.r * (u_lutSize - 1.0) / (u_lutSize * u_lutSize), halfTexelY + src.g * (1.0 - 2.0 * halfTexelY));
+  vec3 c0 = texture(u_lut2D, uv0).rgb;
+  vec3 c1 = texture(u_lut2D, uv1).rgb;
+  vec3 graded = mix(c0, c1, sliceT);
+  outColor = vec4(mix(src.rgb, graded, u_intensity), src.a);
+}
+`;
+
+// 增强色差:支持 Vector2 偏移、径向调制、径向中心。
+//   u_offset    : vec2 色差偏移(R 与 B 反向偏移)
+//   u_radialMod : 1=按到中心距离放大偏移,0=常数偏移
+//   u_center    : 径向中心(默认 0.5, 0.5)
+export const CA_ENHANCED_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;
+uniform vec2 u_offset;
+uniform int u_radialMod;
+uniform vec2 u_center;
+
+void main() {
+  vec2 dir = v_uv - u_center;
+  float dist = length(dir);
+  vec2 off = u_offset;
+  if (u_radialMod == 1) {
+    off *= dist;
+  }
+
+  float r = texture(u_colorMap, v_uv + off).r;
+  float g = texture(u_colorMap, v_uv).g;
+  float b = texture(u_colorMap, v_uv - off).b;
+
+  outColor = vec4(r, g, b, 1.0);
+}
+`;
+
+// 增强暗角:支持 offset/darkness + 颜色染色。
+//   u_offset   : 暗角起始偏移(0..2)
+//   u_darkness : 暗角强度(0..2)
+//   u_color    : 暗角颜色(默认黑色)
+export const VIGNETTE_ENHANCED_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;
+uniform float u_offset;
+uniform float u_darkness;
+uniform vec3 u_color;
+
+void main() {
+  vec3 color = texture(u_colorMap, v_uv).rgb;
+  vec2 uv = v_uv - 0.5;
+  float dist = length(uv);
+  float vignette = smoothstep(u_offset + 0.4, u_offset, dist);
+  vec3 darkTint = u_color * (1.0 - vignette) * u_darkness;
+  color = mix(color, color * (1.0 - u_darkness * (1.0 - vignette)) + darkTint * 0.5, 1.0);
+  outColor = vec4(color, 1.0);
+}
+`;
+
+// 胶片颗粒:基于 hash 噪声的颗粒叠加,可动画。
+//   u_intensity: 0..1
+//   u_size     : 颗粒大小(texel 倍数)
+//   u_animated : 1=每帧变化,0=固定
+//   u_time     : 时间种子(秒)
+//   u_screenSize: 屏幕尺寸
+export const FILM_GRAIN_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;
+uniform float u_intensity;
+uniform float u_size;
+uniform int u_animated;
+uniform float u_time;
+uniform vec2 u_screenSize;
+
+float hash21(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+
+void main() {
+  vec3 color = texture(u_colorMap, v_uv).rgb;
+  vec2 px = v_uv * u_screenSize / max(u_size, 1.0);
+  if (u_animated == 1) {
+    px += fract(u_time) * 79.0;
+  }
+  float grain = hash21(floor(px)) - 0.5;
+  // 颗粒在亮度上叠加,避免过度染色
+  float lum = dot(color, vec3(0.2126, 0.7152, 0.0722));
+  float amount = u_intensity * (0.5 + 0.5 * (1.0 - lum));
+  color += grain * amount;
+  outColor = vec4(clamp(color, 0.0, 1.0), 1.0);
+}
+`;
+
+// 残影:把当前帧与上一帧按 damp 系数混合。
+//   u_damp: 0..1,值越大残影越强(0=无残影,1=完全保留)
+//   u_colorMap: 当前帧
+//   u_oldMap:   上一帧
+export const AFTERIMAGE_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;
+uniform sampler2D u_oldMap;
+uniform float u_damp;
+
+void main() {
+  vec3 cur = texture(u_colorMap, v_uv).rgb;
+  vec3 old = texture(u_oldMap, v_uv).rgb;
+  // damp = 0 → 只用 cur;damp = 1 → 只用 old
+  vec3 mixColor = mix(cur, old, clamp(u_damp, 0.0, 0.95));
+  outColor = vec4(mixColor, 1.0);
+}
+`;
+
+// 像素化:把屏幕分块降采样,每块取单点。
+//   u_pixelSize: 像素块大小(texel 倍数)
+//   u_screenSize: 屏幕尺寸
+export const PIXELATION_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;
+uniform float u_pixelSize;
+uniform vec2 u_screenSize;
+
+void main() {
+  vec2 size = u_screenSize / max(u_pixelSize, 1.0);
+  vec2 pix = floor(v_uv * size) / size + 0.5 / size;
+  outColor = texture(u_colorMap, pix);
+}
+`;
+

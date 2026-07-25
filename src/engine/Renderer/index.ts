@@ -7,12 +7,36 @@ export {
   RenderPass,
   PostProcessingPipeline,
   BloomPass,
-  ChromaticAberrationPass,
-  VignettePass,
   FinalComposePass,
+  SSAOPass,
+  FXAAPass,
+  ToneMappingPass,
+  GammaCorrectPass,
+  DOFPass,
+  ToneMappingMode,
   type PassContext,
   type PostProcessingFBOs,
 } from './RenderPass';
+// 增强后处理 Pass 集合(色彩分级 / LUT / 增强色差 / 增强暗角 / 胶片颗粒 / 残影 / 像素化)。
+// 这些 Pass 与 RenderPass.ts 中的 BloomPass / FinalComposePass 互补,可加入
+// PostProcessingPipeline 组合使用。ChromaticAberrationPass / VignettePass 的
+// "增强版"位于此模块,API 与 RenderPass.ts 中同名基础版不同(Vector2 偏移 / Color 染色)。
+export {
+  ColorGradingPass,
+  type ColorGradingOptions,
+  LUTPass,
+  type LUTPassOptions,
+  ChromaticAberrationPass,
+  type ChromaticAberrationEnhancedOptions,
+  VignettePass,
+  type VignetteEnhancedOptions,
+  FilmGrainPass,
+  type FilmGrainOptions,
+  AfterimagePass,
+  type AfterimageOptions,
+  PixelationPass,
+  type PixelationOptions,
+} from './PostProcess';
 export {
   ShadowMapManager,
   type ShadowType,

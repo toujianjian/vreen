@@ -6,6 +6,7 @@ export { MeshBasicMaterial, type MeshBasicMaterialOptions } from './MeshBasicMat
 export { PhongMaterial, type PhongMaterialOptions } from './MeshPhongMaterial';
 export { NormalMaterial, type NormalMaterialOptions } from './MeshNormalMaterial';
 export { ShadowMaterial, type ShadowMaterialOptions, SHADOW_MATERIAL_VERT, SHADOW_MATERIAL_FRAG } from './ShadowMaterial';
+export { SpriteMaterial, type SpriteMaterialOptions } from './SpriteMaterial';
 export {
   PBR_VERT,
   PBR_FRAG,
