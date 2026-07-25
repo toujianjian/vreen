@@ -45,13 +45,13 @@ src/
 │       ├── VreenInspectorPanel.tsx # .vreen 包内省面板
 │       └── ...
 ├── engine/                  # 自研 WebGL2 引擎 (@vreen/engine)
-│   ├── Core/                # 场景图 (Object3D/Scene/Group/Mesh/SkinnedMesh/Bone/Skeleton/BufferGeometry/BufferAttribute/Material/InstancedMesh/LOD) + 纹理家族 (Texture/CubeTexture/DataTexture/DataArrayTexture/DepthTexture/VideoTexture/CanvasTexture/CompressedTexture) + Source + Fog/FogExp2 + Raycaster + DirtyFlag/SceneGraphProcessor/FrustumCuller/SceneStats
-│   ├── Renderer/            # WebGL2Renderer, ShaderProgram, RenderPass, ShadowMapManager + 后处理 (Bloom/ChromaticAberration/Vignette/SSAO/FXAA/ToneMapping/Gamma/DOF)
-│   ├── Materials/           # StandardMaterial, MeshPhysicalMaterial, MeshBasicMaterial, MeshPhongMaterial, MeshNormalMaterial, ShadowMaterial, ShaderMaterial (+onBeforeCompile), ShaderChunks
+│   ├── Core/                # 场景图 (Object3D/Scene/Group/Mesh/SkinnedMesh/Bone/Skeleton/BufferGeometry/BufferAttribute/InstancedBufferAttribute/Material/InstancedMesh/LOD/Sprite/Text/BitmapText/TextAtlas) + 纹理家族 (Texture/CubeTexture/DataTexture/DataArrayTexture/DepthTexture/VideoTexture/CanvasTexture/CompressedTexture) + Source + MorphTargets/MorphTargetAnimation + Fog/FogExp2 + Raycaster + DirtyFlag/SceneGraphProcessor/FrustumCuller/SceneStats
+│   ├── Renderer/            # WebGL2Renderer, ShaderProgram, RenderPass, ShadowMapManager + MRTTarget/GBuffer (延迟渲染) + 后处理 (Bloom/ChromaticAberration/Vignette/SSAO/FXAA/ToneMapping/Gamma/DOF + PostProcess/ 增强 Pass: ColorGrading/LUT/ FilmGrain/Afterimage/Pixelation)
+│   ├── Materials/           # StandardMaterial, MeshPhysicalMaterial, MeshBasicMaterial, MeshPhongMaterial, MeshNormalMaterial, ShadowMaterial, SpriteMaterial, ShaderMaterial (+onBeforeCompile), ShaderChunks/ 子目录 (10 GLSL 片段 + ShaderChunkRegistry)
 │   ├── Math/                # Vector2/3/4, Matrix3/4, Quaternion, Euler, Color, Box3, Sphere, Plane, Ray, Line3, Triangle, Frustum, MathUtils
 │   ├── Cameras/             # PerspectiveCamera, OrthographicCamera
 │   ├── Lights/              # Ambient/Directional/Point/Spot/Hemisphere/RectArea + DirectionalLightShadow + ShadowMapManager
-│   ├── Loaders/             # GLB/OBJ/FBX/HDR/KTX2/STL/PLY/TGA/MTL/EXR Loader + TextureLoader + DracoDecoder + AssetManager + OBJExporter + GLTFExporter
+│   ├── Loaders/             # GLB/OBJ/FBX/HDR/KTX2/STL/PLY/TGA/MTL/EXR Loader + TextureLoader + DracoDecoder + AssetManager + 4 导出器 (OBJExporter/GLTFExporter/STLExporter/PLYExporter)
 │   ├── Animation/           # AnimationMixer/AnimationClip/AnimationAction/AnimationStateMachine/BlendSpace1D/Humanoid + AnimationLayer/AnimationLayerMixer/BoneMask/AvatarMask/AdditiveBlend/AnimationSync + IK (IKBone/IKChain/IKSolver(FABRIK)/CCDSolver/IKHumanoid)
 │   ├── ECS/                 # World, ComponentType, Components, Systems, PhysicsComponents (含 Constraint: Ball/Hinge/Slider/Fixed/Distance), PhysicsSystems (含 ConstraintSolver), Prefab, QueryBuilder, Broadphase
 │   ├── Controls/            # OrbitControls, FlyControls, PointerLockControls, MapControls
@@ -63,8 +63,10 @@ src/
 │   ├── Audio/               # AudioListener, Audio, PositionalAudio, AudioLoader, AudioAnalyser
 │   ├── Terrain/             # TerrainGeometry, HeightmapGenerator, TerrainSplat, TerrainLayer
 │   ├── Acceleration/        # BVH, BVHBuilder, MeshBVH
+│   ├── Assets/              # AssetCache (LRU), AssetRegistry (引用计数), AssetLoader (异步加载) - 资源生命周期管理 (与 Loaders/AssetManager 互补)
+│   ├── Serialization/       # SerializerRegistry, GeometrySerializer, MaterialSerializer, SceneSerializer - 场景/几何体/材质 ↔ JSON 往返
 │   ├── Tools/               # Profiler (CPU/GPU mark), FrameProfiler (帧级 FPS), SystemProfiler (ECS 系统耗时), MemoryTracker (分配/泄漏), GpuProfiler (timer query), PerformanceReport (文本/JSON 报告)
-│   └── Physics/             # PhysicsDemo + ConstraintSolver 集成
+│   └── Physics/             # PhysicsDemo + ConstraintSolver + Joint 约束 (Ball/Hinge/Slider/Fixed/Distance) + ClothSimulation (Verlet 布料)
 ├── pages/                   # 页面组件 (HomePage, ViewerPage, EngineDemoPage)
 ├── stores/                  # Zustand 状态管理
 │   ├── viewerStore.ts       # 资产加载、相机、引擎模式、物理调试、Blockly 开关
@@ -101,7 +103,7 @@ src/
 │   └── convertCustomToThree.ts # 自定义引擎转 Three.js
 ├── i18n/                    # 国际化
 │   ├── index.ts             # i18next 配置
-│   └── locales/             # zh.json, en.json
+│   └── locales/             # zh.json, en.json, ja.json, ko.json, es.json (5 语言)
 ├── types/                   # TypeScript 类型定义
 │   └── index.ts             # 共享类型
 └── styles/                  # CSS
@@ -137,16 +139,20 @@ src/
 - 固定步长 semi-implicit Euler 积分 + 四元数旋转积分
 - Broadphase + narrowphase 碰撞检测 + 冲量响应 + Baumgarte 矫正
 - 支持 AABB/Sphere/Capsule collider
-- Constraint 子系统 — `BallConstraint` / `HingeConstraint` / `SliderConstraint` / `FixedConstraint` / `DistanceConstraint`，由 `ConstraintSolver` 迭代求解
+- Constraint 子系统 — `BallJointConstraint` / `HingeJointConstraint` / `SliderJointConstraint` / `FixedJointConstraint` / `DistanceJointConstraint`，由 `ConstraintSolver` 迭代求解 (基于 `Constraint` 基类 + `RigidbodyLike` 接口,与任意刚体实现解耦)
+- `ClothSimulation` — Verlet 积分布料模拟 (soft body),粒子网格 + 距离约束 (PBD 风格位置修正) + 球体碰撞 + 固定粒子 (pinned 挂点);`getMeshData()` 输出 positions/indices/normals 灌入 BufferGeometry;与 ECS PhysicsSystems 独立 (soft body 形态差异大)
 - CPU 粒子系统 + Emitter spawn
 - PhysicsDebugRenderer: collider(青色) / contact(黄色) / velocity(品红) 三通道独立开关
 
 ### 渲染与材质
 
 - `WebGL2Renderer` — PBR / IBL / 阴影贴图 / 后处理，GLSL ES 3.0
-- 材质家族 — `StandardMaterial`(PBR) / `MeshPhysicalMaterial`(clearcoat+transmission) / `MeshBasicMaterial`(unlit) / `MeshPhongMaterial`(Blinn-Phong) / `MeshNormalMaterial`(法线 debug) / `ShadowMaterial`(阴影捕获) / `ShaderMaterial`(`onBeforeCompile` GLSL 注入)
-- 后处理 — Bloom / ChromaticAberration / Vignette / SSAO / FXAA / ToneMapping / Gamma / DOF，基于 `RenderPass` 抽象组合
+- 材质家族 — `StandardMaterial`(PBR) / `MeshPhysicalMaterial`(clearcoat+transmission) / `MeshBasicMaterial`(unlit) / `MeshPhongMaterial`(Blinn-Phong) / `MeshNormalMaterial`(法线 debug) / `ShadowMaterial`(阴影捕获) / `SpriteMaterial`(精灵) / `ShaderMaterial`(`onBeforeCompile` GLSL 注入)
+- 后处理 — 基础 Pass: Bloom / ChromaticAberration / Vignette / SSAO / FXAA / ToneMapping / Gamma / DOF;增强 Pass (PostProcess/): ColorGrading / LUT / FilmGrain / Afterimage / Pixelation,基于 `RenderPass` 抽象组合
+- `MRTTarget` — 多渲染目标 FBO (N 颜色附件 + 可选深度/模板),RGBA16F/RGBA32F/RGBA8 等格式
+- `GBuffer` — 基于 MRTTarget 的几何缓冲 (4 附件: position/normal/albedo/material + 深度),用于延迟渲染管线
 - `ShadowMapManager` — 阴影贴图 FBO / 纹理生命周期管理
+- `ShaderChunks/` 子目录 — 10 个 GLSL 片段 (common/lighting/fog/normal_packing/shadow/envmap/tonemapping/noise/uv_transform/color_space) + `ShaderChunkRegistry` 注册表 (支持 `#include <name>` 解析)
 
 ### 纹理系统 (Core/)
 
@@ -155,8 +161,8 @@ src/
 
 ### 加载器 (Loaders/)
 
-- `GLBLoader` / `OBJLoader`+`OBJExporter` / `FBXLoader` / `HDRLoader`(per-channel RLE RGBE) / `KTX2Loader`(Basis Universal) / `STLLoader` / `PLYLoader` / `TGALoader` / `MTLLoader` / `EXRLoader` / `TextureLoader` / `DracoDecoder`(可选 peer) / `AssetManager`(LRU 缓存)
-- 导出器: `OBJExporter`(Wavefront OBJ 字符串) / `GLTFExporter`(glTF-GLB 二进制,含嵌入 buffer/image,与 `GLBLoader` 往返)
+- `GLBLoader` / `OBJLoader` / `FBXLoader` / `HDRLoader`(per-channel RLE RGBE) / `KTX2Loader`(Basis Universal) / `STLLoader` / `PLYLoader` / `TGALoader` / `MTLLoader` / `EXRLoader` / `TextureLoader` / `DracoDecoder`(可选 peer) / `AssetManager`(LRU 缓存)
+- 导出器 (4 个): `OBJExporter`(Wavefront OBJ 字符串) / `GLTFExporter`(glTF-GLB 二进制,含嵌入 buffer/image,与 `GLBLoader` 往返) / `STLExporter`(ASCII/二进制 STL) / `PLYExporter`(ASCII/二进制 PLY)
 
 ### 几何体 (Geometries/)
 
@@ -215,6 +221,34 @@ src/
 - `SceneGraphProcessor` — 场景图遍历处理器,统一 world matrix 更新 / dirty 传播 / 渲染前 flatten
 - `FrustumCuller` — 视锥剔除器,基于 `Frustum` + 包围盒(`Box3`/`Sphere`)剔除不可见 mesh,与 `Object3D.frustumCulled` 标志配合
 - `SceneStats` — 场景统计聚合(mesh/light/draw call/triangles 计数),供 Profiler HUD 与 `PerformanceReport` 消费
+
+### 文本与精灵 (Core/)
+
+- `Sprite` — 始终面向相机的 2D 精灵 (billboard),CPU 在 `updateMatrixWorld` 中写入相机世界旋转,raycast 单位 quad 求交;配合 `SpriteMaterial` 渲染
+- `Text` — 3D 文字渲染,通过 `TextAtlas` 光栅化字符为共享纹理图集,每个字符生成 quad 组装 BufferGeometry,用 `MeshBasicMaterial` + atlas texture 渲染;支持换行/对齐
+- `BitmapText` — 接受外部预渲染 `TextAtlas` 的位图文字,适合大量文本共享图集场景
+- `TextAtlas` — 文字纹理图集,把字符光栅化到 canvas 并记录 UV 坐标,产出 `CanvasTexture`;无 DOM 时退化为 dry-run 模式 (测试/SSR)
+- `InstancedBufferAttribute` — 实例化渲染的 per-instance 顶点属性,`meshPerAttribute` 对应 `gl.vertexAttribDivisor(loc, N)`,默认 N=1
+
+### Morph Targets (Core/)
+
+- `MorphTargets` — 形变目标 (面部表情/形变动画),存绝对顶点位置 + 权重数组 + 名称反查表;应用规则 `result[i] = base[i] + Σ(target - base) * influence`;由 `mesh.morphTargets` 挂载,renderer 每帧 draw 前调用 `update(geometry)` 写回 position 并 version++ 触发 GPU 重传
+- `MorphTargetAnimation` — 形变目标动画驱动器,持 `MorphTargets` + 多条 `MorphTargetTrack` (times + values 标量序列,二分查找 + 线性插值),`update(dt)` 推进时间采样写回 influence;与 `AnimationMixer` 互补 (骨骼做整体姿态,形变做面部/局部细节)
+
+### 资源管理 (Assets/)
+
+- 与 `Loaders/AssetManager` 互补:`AssetManager` 关注 Promise 缓存,`Assets/` 关注实例生命周期
+- `AssetCache` — 同步 LRU 资源实例缓存 (按 key),`get`/`set`/`has`/`delete` + 容量驱逐
+- `AssetRegistry` — 资源注册表 + 引用计数,`acquire(key)` 返回 `AssetHandle` (持有引用),`release(handle)` 递减计数,归零时触发 dispose 回调;`getDefaultAssetRegistry()` 进程级单例
+- `AssetLoader` — 异步资源加载器 (封装 `AssetManager`),`load(entries)` 批量加载,返回 `AssetBatchResult` (成功/失败分组)
+
+### 序列化 (Serialization/)
+
+- 场景序列化模块,支持 Scene/Geometry/Material ↔ JSON 往返还原
+- `SerializerRegistry` — 序列化器注册表 (按 type 分派),`getDefaultSerializerRegistry()` 进程级单例
+- `GeometrySerializer` — `BufferGeometry` ↔ `GeometryJSON` (含 attributes/index/morphTargets)
+- `MaterialSerializer` — `Material` ↔ `MaterialJSON`,支持 `registerMaterialType` 注册自定义材质类型元数据
+- `SceneSerializer` — `Scene` ↔ `SceneJSON` 顶层入口,递归序列化 Object3D 树;支持 `registerObjectHandler` 自定义节点处理器;版本号 `SCENE_SERIALIZER_VERSION`
 
 ### 性能分析工具 (Tools/)
 

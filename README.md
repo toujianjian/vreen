@@ -63,20 +63,22 @@ VREEN is positioned as a **lightweight Web game engine** — comparable in scope
 
 | Category | Capability |
 |----------|-----------|
-| **Engine kernel** | Self-developed WebGL2 renderer with PBR, IBL, real-time shadows, post-processing (Bloom, chromatic aberration, vignette, SMAA, SSAO), GPU skinning, and a `Renderer` interface for backend pluggability. |
-| **Scene graph** | `Object3D` / `Scene` / `Mesh` / `Group` / `Bone` / `Skeleton` / `SkinnedMesh` / `BufferGeometry` / `BufferAttribute` / `Texture` / `InstancedMesh` / `LOD`. |
+| **Engine kernel** | Self-developed WebGL2 renderer with PBR, IBL, real-time shadows, post-processing (Bloom, chromatic aberration, vignette, SMAA, SSAO, color grading, LUT, film grain, afterimage, pixelation), GPU skinning, morph targets, MRT / GBuffer for deferred rendering, and a `Renderer` interface for backend pluggability. |
+| **Scene graph** | `Object3D` / `Scene` / `Mesh` / `Group` / `Bone` / `Skeleton` / `SkinnedMesh` / `BufferGeometry` / `BufferAttribute` / `InstancedBufferAttribute` / `Texture` / `InstancedMesh` / `LOD` / `Sprite` / `Text` / `BitmapText` / `TextAtlas`. |
 | **Math library** | `Vector2/3/4`, `Matrix3/4`, `Quaternion`, `Euler`, `Box3`, `Sphere`, `Plane`, `Ray`, `Line3`, `Triangle`, `Frustum`, `Color`, `MathUtils`. |
 | **ECS** | `World`, `ComponentType` registry, `QueryBuilder` with caching, `Prefab` templates, `Broadphase` acceleration, and POJO components for serializability. |
-| **Physics** | Fixed-step semi-implicit Euler integration, quaternion rotation integration, broadphase + narrowphase collision, impulse response with Baumgarte stabilization, AABB / Sphere / Capsule colliders, CPU particle system with emitters. |
-| **Animation** | `AnimationClip`, `AnimationAction`, `AnimationMixer`, `AnimationStateMachine` (Idle / Walk / Run auto-transitions), `BlendSpace1D`, `Humanoid` rig, `KeyframeTrack`, animation event callbacks. |
-| **Loaders** | `GLBLoader`, `OBJLoader`, `FBXLoader`, `HDRLoader` (per-channel RLE RGBE decode), `KTX2Loader`, `TextureLoader`, `DracoDecoder`, `AssetManager` with LRU cache, `OBJExporter`. |
-| **Materials** | `StandardMaterial` (PBR: base color, metallic, roughness, emissive, opacity, wireframe), `ShaderMaterial` with GLSL injection, `ShaderChunks` shared GLSL blocks. |
+| **Physics** | Fixed-step semi-implicit Euler integration, quaternion rotation integration, broadphase + narrowphase collision, impulse response with Baumgarte stabilization, AABB / Sphere / Capsule colliders, 5 joint constraints (Ball / Hinge / Slider / Fixed / Distance) + `ConstraintSolver`, `ClothSimulation` Verlet soft body, CPU particle system with emitters. |
+| **Animation** | `AnimationClip`, `AnimationAction`, `AnimationMixer`, `AnimationStateMachine` (Idle / Walk / Run auto-transitions), `BlendSpace1D`, `Humanoid` rig, `KeyframeTrack`, animation event callbacks, `MorphTargets` + `MorphTargetAnimation` for facial / shape animation, animation layers / masks / additive blend / sync. |
+| **Loaders** | 12 loaders (`GLBLoader`, `OBJLoader`, `FBXLoader`, `HDRLoader` per-channel RLE RGBE, `KTX2Loader`, `STLLoader`, `PLYLoader`, `TGALoader`, `MTLLoader`, `EXRLoader`, `TextureLoader`, `DracoDecoder`) + 4 exporters (`OBJExporter`, `GLTFExporter`, `STLExporter`, `PLYExporter`) + `AssetManager` LRU cache. |
+| **Materials** | `StandardMaterial` (PBR), `MeshPhysicalMaterial` (clearcoat / transmission), `MeshBasicMaterial`, `MeshPhongMaterial`, `MeshNormalMaterial`, `ShadowMaterial`, `SpriteMaterial`, `ShaderMaterial` with `onBeforeCompile` GLSL injection, `ShaderChunks/` subdirectory (10 GLSL fragments + `ShaderChunkRegistry` with `#include` resolution). |
+| **Resource management** | `Assets/` module — `AssetCache` (LRU), `AssetRegistry` (reference counting), `AssetLoader` (async batched). |
+| **Serialization** | `Serialization/` module — `SceneSerializer` / `GeometrySerializer` / `MaterialSerializer` round-trip Scene / Geometry / Material ↔ JSON. |
 | **Inspection UI** | 9 camera presets (Free / Iso / Front / Back / Side / Top / 1st-person / 3rd-person / Cinematic), real-time material lab, HDRI environments, post-FX toggles, PNG capture, drag-and-drop upload. |
 | **Debug tooling** | Physics debug renderer (collider / contact / velocity channels), `EntityGraph` relationship visualizer, profiler family — `Profiler` (CPU/GPU marks) / `FrameProfiler` (FPS aggregation) / `SystemProfiler` (ECS hot systems) / `MemoryTracker` (leak detection) / `GpuProfiler` (timer queries) / `PerformanceReport` (text + JSON) — surfaced through `FrameChart` and `ProfilerHUD`. |
 | **Visual scripting** | Blockly block editor with Camera / Animation / Scene / Renderer / Physics / Control categories, bound to the live ECS World via `EcsScriptAPI`, with Tick-callback registration. |
 | **Package format** | `.vreen` ZIP container (manifest + scene + world + embedded assets), `.vreen-delta` incremental diffs, multi-language SDKs, `vreen` CLI for pack / unpack / validate / diff. |
 | **Desktop** | Electron 43 + electron-builder producing a single-file portable Windows `.exe`. |
-| **i18n** | First-class zh / en via i18next; all user-facing strings flow through translation keys. |
+| **i18n** | First-class zh / en / ja / ko / es via i18next; all user-facing strings flow through translation keys. |
 
 ---
 
@@ -154,22 +156,24 @@ vreen/
 │   │   ├── three/              # Mini-canvas helpers (BackgroundScene / PresetPreview / SafeEnvironment)
 │   │   └── hud/                # Reusable HUD widgets (HudPanel / TopBar / LangSwitcher)
 │   ├── engine/                 # Self-developed WebGL2 engine (mirrored to packages/engine/src)
-│   │   ├── Core/               # Scene graph primitives + texture family (Cube/Data/DataArray/Depth/Video/Canvas/Compressed) + Source + Fog/FogExp2 + Raycaster
+│   │   ├── Core/               # Scene graph primitives + Sprite/Text/BitmapText/TextAtlas + texture family (Cube/Data/DataArray/Depth/Video/Canvas/Compressed) + Source + MorphTargets/MorphTargetAnimation + InstancedBufferAttribute + Fog/FogExp2 + Raycaster + DirtyFlag/SceneGraphProcessor/FrustumCuller/SceneStats
 │   │   ├── Math/               # Vector2/3/4, Matrix3/4, Quaternion, Euler, Color, Box3, Sphere, Plane, Ray, Line3, Triangle, Frustum, MathUtils
 │   │   ├── Cameras/            # Perspective / Orthographic cameras
 │   │   ├── Controls/           # Orbit / Fly / PointerLock / Map controls
 │   │   ├── Lights/             # Ambient / Directional / Point / Spot / Hemisphere / RectArea + ShadowMapManager
 │   │   ├── Geometries/         # Box / Sphere / Cylinder / Cone / Torus / Plane / Circle / Ring / Capsule / TorusKnot / Lathe / Extrude / Shape / Wireframe / Edges
-│   │   ├── Materials/          # Standard / Physical / Basic / Phong / Normal / Shadow materials + ShaderMaterial + ShaderChunks + onBeforeCompile
-│   │   ├── Renderer/           # WebGL2Renderer, ShaderProgram, RenderPass, ShadowMapManager + post-FX (SSAO / FXAA / ToneMapping / Gamma / DOF)
-│   │   ├── Loaders/            # GLB / OBJ / FBX / HDR / KTX2 / STL / PLY / TGA / MTL / EXR / Draco / AssetManager
-│   │   ├── Animation/          # Clips, Mixer, StateMachine, BlendSpace1D, Humanoid + IK (FABRIK / CCD / IKHumanoid)
+│   │   ├── Materials/          # Standard / Physical / Basic / Phong / Normal / Shadow / Sprite materials + ShaderMaterial + ShaderChunks/ subdirectory (10 GLSL fragments + ShaderChunkRegistry) + onBeforeCompile
+│   │   ├── Renderer/           # WebGL2Renderer, ShaderProgram, RenderPass, ShadowMapManager + MRTTarget / GBuffer (deferred) + post-FX (basic: SSAO / FXAA / ToneMapping / Gamma / DOF; enhanced PostProcess/: ColorGrading / LUT / FilmGrain / Afterimage / Pixelation)
+│   │   ├── Loaders/            # GLB / OBJ / FBX / HDR / KTX2 / STL / PLY / TGA / MTL / EXR / Draco / AssetManager + 4 exporters (OBJ / GLTF / STL / PLY)
+│   │   ├── Animation/          # Clips, Mixer, StateMachine, BlendSpace1D, Humanoid + layers / masks / additive blend + IK (FABRIK / CCD / IKHumanoid)
 │   │   ├── ECS/                # World, ComponentType, Systems, Physics, Prefab, QueryBuilder + Constraint subsystem
-│   │   ├── Physics/            # PhysicsDemo + ConstraintSolver
+│   │   ├── Physics/            # PhysicsDemo + ConstraintSolver + Joint constraints (Ball/Hinge/Slider/Fixed/Distance) + ClothSimulation (Verlet)
 │   │   ├── Helpers/            # Grid / Grid3D / Axes / Box / Camera / Arrow helpers + PhysicsDebugRenderer
 │   │   ├── Audio/              # AudioListener / PositionalAudio / Audio / AudioLoader / AudioAnalyser
 │   │   ├── Terrain/            # TerrainGeometry / HeightmapGenerator / TerrainSplat / TerrainLayer
 │   │   ├── Acceleration/       # BVH / BVHBuilder / MeshBVH
+│   │   ├── Assets/             # AssetCache (LRU) / AssetRegistry (ref-counting) / AssetLoader (async) — resource lifecycle
+│   │   ├── Serialization/      # SerializerRegistry / GeometrySerializer / MaterialSerializer / SceneSerializer — Scene/Geometry/Material ↔ JSON
 │   │   ├── Events/             # EventBus / EventQueue / GameEvent (typed pub/sub)
 │   │   ├── Scripting/          # ScriptComponent / ScriptSystem / ScriptRegistry / CoroutineSystem
 │   │   ├── Particles/          # ParticleSystem2 / ParticleEmitter / ParticleModifier / ParticleCurve / TrailModule
@@ -258,12 +262,19 @@ The scene-graph foundation, modeled after Three.js' object model but implemented
 | `Mesh` | Renderable leaf binding a `BufferGeometry` and a `Material`. |
 | `SkinnedMesh` / `Bone` / `Skeleton` | GPU skinning — per-bone matrices uploaded as uniform arrays. |
 | `BufferGeometry` / `BufferAttribute` | Vertex / index buffers with `dispose`, `setUsage`, `needsUpdate` for WebGL resource management. |
+| `InstancedBufferAttribute` | Per-instance vertex attribute for instanced rendering — `meshPerAttribute` maps to `gl.vertexAttribDivisor(loc, N)` (default 1). |
 | `Material` | Abstract material interface. |
 | `Texture` | GPU texture wrapper with `version`, `needsUpdate`, format / wrap / filter options. |
 | `Texture` family | `CubeTexture` (6-face env maps), `DataTexture` (typed-array backed), `DataArrayTexture` (2D array textures), `DepthTexture` (shadow maps / depth post-FX), `VideoTexture` (HTMLVideoElement frame stream), `CanvasTexture` (HTMLCanvasElement dynamic source with `update()`), `CompressedTexture` (S3TC / ETC / BPTC / PVRTC / ASTC base class with per-mip `{data, width, height}` chain). |
 | `Source` | Texture data-source wrapper — `data` / `width` / `height` / `version` with `needsUpdate()` for renderer re-upload. Decouples pixel source from sampling state. |
 | `InstancedMesh` | Per-instance matrix array rendered via `gl.drawElementsInstanced`. |
 | `LOD` | Multi-level mesh switching based on camera distance. |
+| `Sprite` | 2D billboard sprite — always faces the camera. CPU writes camera world rotation into `matrixWorld` during `updateMatrixWorld`; raycast does unit-quad intersection. Pairs with `SpriteMaterial`. |
+| `Text` | 3D text rendering — rasterizes characters through `TextAtlas` into a shared texture atlas, generates a quad per character into a `BufferGeometry`, rendered with `MeshBasicMaterial` + atlas texture. Supports newlines and left/center/right alignment. |
+| `BitmapText` | Bitmap text — accepts an externally pre-rendered `TextAtlas`, suitable for large amounts of text sharing one atlas. |
+| `TextAtlas` | Character texture atlas — rasterizes characters to a canvas, records per-char UV coordinates, produces a `CanvasTexture`. Degrades to dry-run metadata-only mode when DOM is unavailable (tests / SSR). |
+| `MorphTargets` | Morph target deformation (facial expressions / shape animation). Stores absolute vertex positions + weight array + name lookup. Application rule: `result[i] = base[i] + Σ(target - base) * influence`. Mounted on `mesh.morphTargets`; renderer calls `update(geometry)` before each draw to write back positions and bump `version`. |
+| `MorphTargetAnimation` | Morph target animation driver — holds `MorphTargets` + multiple `MorphTargetTrack`s (times + scalar values, binary search + linear interpolation). `update(dt)` advances time, samples tracks, writes back influences. Complements `AnimationMixer` (skeleton does overall pose, morph does facial / local detail). |
 | `Fog` / `FogExp2` | Linear and exponential fog; renderer blends fragment color toward fog color by distance. |
 | `Raycaster` / `intersectGeometry` | Ray-scene intersection with `Face` / `Intersection` results; reusable `RaycasterParameters`. |
 
@@ -291,7 +302,10 @@ A complete math library with scratch-object reuse to minimize per-frame allocati
 | `ShaderProgram` | Program cache, uniform type-safe setters (`setUniform1i` / `setUniformMatrix4fv` etc.), `computeHash` for variant caching. |
 | `RenderPass` | Abstract pass (`apply(input, output)`) for composable post-processing — replaces the previously hard-coded 5-pass chain. |
 | `ShadowMapManager` | Centralized shadow-map FBO / texture lifecycle for cast-shadow lights; per-light depth target reuse and resize policy. |
-| Post-processing passes | `BloomPass`, `ChromaticAberrationPass`, `VignettePass`, `FinalComposePass` (built-in) plus `SSAOPass` (screen-space ambient occlusion), `FXAAPass` (fast approximate anti-aliasing), `ToneMappingPass` (ACES filmic / Reinhard), `GammaCorrectionPass`, `DepthOfFieldPass` (DOF). |
+| `MRTTarget` | Multi-Render Target FBO — N color attachments (`COLOR_ATTACHMENT0..N-1`) + optional depth/stencil. Supports `rgba8` / `rgba16f` / `rgba32f` / `rg16f` / `r16f` internal formats; `bind()` configures `drawBuffers`, `resize()` reallocates textures. Generalizes the SSAO-specific 2-attachment FBO. |
+| `GBuffer` | Geometry Buffer for deferred rendering — built on `MRTTarget` with 4 color attachments (position `RGBA16F` / normal `RGBA16F` / albedo+opacity `RGBA8` / metallic+roughness+emissive+AO `RGBA8`) + depth. Provides `positionTexture` / `normalTexture` / `albedoTexture` / `materialTexture` for downstream lighting passes. |
+| Post-processing passes (basic) | `BloomPass`, `ChromaticAberrationPass`, `VignettePass`, `FinalComposePass` (built-in) plus `SSAOPass` (screen-space ambient occlusion), `FXAAPass` (fast approximate anti-aliasing), `ToneMappingPass` (ACES filmic / Reinhard), `GammaCorrectPass`, `DOFPass` (depth of field). |
+| Post-processing passes (enhanced, `PostProcess/`) | `ColorGradingPass` (ASC-CDL 8-param color grading), `LUTPass` (3D or 2D strip LUT color lookup), `ChromaticAberrationPass` (enhanced — Vector2 offset + radial modulation), `VignettePass` (enhanced — offset/darkness + color tint), `FilmGrainPass` (strength/size/animation), `AfterimagePass` (cross-frame accumulation), `PixelationPass` (mosaic). All implement the `RenderPass` interface and compose into `PostProcessingPipeline`. |
 
 ### Materials (`src/engine/Materials/`)
 
@@ -303,8 +317,9 @@ A complete math library with scratch-object reuse to minimize per-frame allocati
 | `MeshPhongMaterial` | Legacy Blinn-Phong — specular highlights for non-PBR pipelines / stylistic looks. |
 | `MeshNormalMaterial` | Debug material — visualize object-space or world-space normals as RGB. |
 | `ShadowMaterial` | Shadow-only material — receives shadow maps without contributing surface color (used for invisible shadow catchers). |
+| `SpriteMaterial` | Sprite material — extends `BasicMaterial` with color, map, opacity, rotation, `sizeAttenuation` (perspective near-big-far-small), depth test/write, render order. Pairs with `Sprite`; renderer uses a separate sprite shader path implementing billboard orientation. |
 | `ShaderMaterial` | Custom-shader material accepting GLSL strings and a uniform descriptor. Supports `onBeforeCompile` for injecting GLSL snippets into the built-in shaders without rewriting them. |
-| `ShaderChunks` | Shared vertex / fragment GLSL blocks injected into generated shaders. |
+| `ShaderChunks/` subdirectory | 10 GLSL fragment string constants (`COMMON_CHUNK`, `LIGHTING_CHUNK`, `FOG_CHUNK` / `FOG_EXP2_CHUNK`, `NORMAL_PACK_CHUNK`, `SHADOW_CHUNK`, `ENVMAP_CHUNK`, `TONEMAP_ACES_CHUNK` / `TONEMAP_REINHARD_CHUNK`, `NOISE_CHUNK`, `UV_TRANSFORM_CHUNK`, `COLOR_SPACE_CHUNK`) + `ShaderChunkRegistry` (singleton `shaderChunkRegistry`) supporting `#include <name>` resolution. `registerBuiltinChunks()` registers all built-ins idempotently. |
 | `shaders.ts` | Built-in shader source. |
 
 ### Lights (`src/engine/Lights/`)
@@ -331,8 +346,10 @@ The renderer collects lights per-scene via `_collectLights(scene)` with change d
 | Export | Purpose |
 |--------|---------|
 | `GLBLoader` | Binary glTF parsing with staged logging (load → read → `parseGLB` → `buildFromGltf`); Draco support via `DracoDecoder`. |
-| `OBJLoader` / `OBJExporter` | Wavefront OBJ import and string export. |
+| `OBJLoader` / `OBJExporter` | Wavefront OBJ import (`parseOBJ`) and string export (`exportOBJ`). |
 | `GLTFExporter` | glTF-GLB binary export — serializes engine `Scene` / `Mesh` / `Material` into a self-contained `.glb` with embedded buffers and images; round-trippable with `GLBLoader`. |
+| `STLExporter` | Stereolithography (STL) mesh export — ASCII and binary variants. |
+| `PLYExporter` | Polygon File Format (PLY) mesh export — ASCII and binary variants. |
 | `FBXLoader` | FBX parsing (model + material + animation extraction). |
 | `HDRLoader` | Radiance `.hdr` decoding with **per-channel RLE** RGBE → Float32 conversion; covers compressed, uncompressed, and mixed-encoding scanline variants. |
 | `KTX2Loader` | KTX2 / Basis Universal texture decompression for bandwidth reduction. |
@@ -375,10 +392,6 @@ The Entity-Component-System core, modeled on O3DE's CES principles with POJO com
 | `Broadphase` | Spatial acceleration for collision detection (replaces naive O(n²)). |
 
 Loaded models auto-generate ECS entities; ECS mutations are synchronized back to the Three.js render root in real time via the ECS → render bridge.
-
-### Physics (`src/engine/Physics/`)
-
-`PhysicsDemo` ships a 24-body scene with random boxes and a particle emitter, exercisable from the `PHYSICS` and `PHYS-DBG` toolbar toggles.
 
 ### Controls (`src/engine/Controls/`)
 
@@ -463,16 +476,39 @@ Spatial acceleration structures for ray tracing and broad-phase culling.
 
 `PhysicsDemo` ships a 24-body scene with random boxes and a particle emitter, exercisable from the `PHYSICS` and `PHYS-DBG` toolbar toggles.
 
-Constraint subsystem (in `src/engine/ECS/PhysicsComponents.ts` and `PhysicsSystems.ts`):
+Constraint subsystem (in `src/engine/Physics/`, based on the `Constraint` base class + `RigidbodyLike` interface, decoupled from any specific rigid-body implementation):
 
 | Constraint | Purpose |
 |------------|---------|
-| `BallConstraint` | Ball-and-socket — 3-DOF rotational, 0-DOF translational. |
-| `HingeConstraint` | Hinge — 1-DOF rotational about an axis. |
-| `SliderConstraint` | Slider — 1-DOF translational along an axis. |
-| `FixedConstraint` | Rigid weld — 0-DOF, fully locks two bodies together. |
-| `DistanceConstraint` | Maintains a fixed distance between two anchor points. |
+| `BallJointConstraint` | Ball-and-socket — 3-DOF rotational, 0-DOF translational. |
+| `HingeJointConstraint` | Hinge — 1-DOF rotational about an axis. |
+| `SliderJointConstraint` | Slider — 1-DOF translational along an axis. |
+| `FixedJointConstraint` | Rigid weld — 0-DOF, fully locks two bodies together. |
+| `DistanceJointConstraint` | Maintains a fixed distance between two anchor points. |
 | `ConstraintSolver` | Iterative sequential-impulse solver that processes all active constraints each fixed step. |
+
+`ClothSimulation` — Verlet-integration cloth simulator (soft body). Particle grid (`ClothParticle`: position / prevPosition / acceleration / pinned / mass) + distance constraints (`ClothConstraint`: p1 / p2 / restLength / stiffness) solved PBD-style with multiple iterations. Supports sphere collision (`ClothSphere`) and pinned anchor particles. `getMeshData()` outputs flattened positions / indices / normals for upload to `BufferGeometry`. Independent of the ECS `PhysicsSystems` (soft-body shape differs significantly from rigid bodies).
+
+### Assets (`src/engine/Assets/`)
+
+Resource lifecycle management — complements `Loaders/AssetManager` (which focuses on Promise caching). The `Assets/` module focuses on instance lifecycle and reference counting.
+
+| Export | Purpose |
+|--------|---------|
+| `AssetCache` | Synchronous LRU resource instance cache keyed by string. `get` / `set` / `has` / `delete` with capacity-based eviction. |
+| `AssetRegistry` | Resource registry with reference counting. `acquire(key)` returns an `AssetHandle` holding a reference; `release(handle)` decrements the count and triggers a dispose callback when it reaches zero. `getDefaultAssetRegistry()` returns the process-wide singleton. |
+| `AssetLoader` | Async resource loader wrapping `AssetManager`. `load(entries)` batches multiple load requests and returns an `AssetBatchResult` (success / failure groups). |
+
+### Serialization (`src/engine/Serialization/`)
+
+Scene serialization module supporting round-trip Scene / Geometry / Material ↔ JSON.
+
+| Export | Purpose |
+|--------|---------|
+| `SerializerRegistry` | Serializer registry dispatching by type. `getDefaultSerializerRegistry()` returns the process-wide singleton. |
+| `GeometrySerializer` | `BufferGeometry` ↔ `GeometryJSON` (attributes / index / morphTargets). |
+| `MaterialSerializer` | `Material` ↔ `MaterialJSON`. Supports `registerMaterialType` to register custom material type metadata; `serializeMaterial` / `deserializeMaterial` helpers. |
+| `SceneSerializer` | `Scene` ↔ `SceneJSON` top-level entry. Recursively serializes the `Object3D` tree. Supports `registerObjectHandler` for custom node handlers. Versioned via `SCENE_SERIALIZER_VERSION`. |
 
 ### Tools (`src/engine/Tools/`)
 
@@ -695,24 +731,31 @@ npm run test:coverage     # coverage report
 
 ### Coverage
 
-Unit tests cover the engine foundation:
+Unit tests cover the engine foundation (2219+ tests across 134+ engine test files):
 
 | Area | Test files |
 |------|-----------|
 | Math | `Vector2/3/4`, `Matrix3/4`, `Quaternion`, `Euler`, `Box3`, `Sphere`, `Plane`, `Ray`, `Line3`, `Triangle`, `Frustum`, `Color` |
-| Core | `InstancedMesh`, `LOD`, `CubeTexture`, `DataTexture`, `DataArrayTexture`, `DepthTexture`, `VideoTexture`, `CanvasTexture`, `CompressedTexture`, `Source`, `Fog`, `FogExp2`, `Raycaster` |
+| Core | `InstancedMesh`, `LOD`, `InstancedBufferAttribute`, `Sprite`, `TextAtlas`, `MorphTargets`, `CubeTexture`, `DataTexture`, `DataArrayTexture`, `DepthTexture`, `VideoTexture`, `CanvasTexture`, `CompressedTexture`, `Source`, `Fog`, `FogExp2`, `Raycaster`, `FrustumCuller`, `SceneGraphProcessor`, `SceneStats` |
 | Geometries | `Box`, `Sphere`, `Plane`, `Cylinder`, `Cone`, `Capsule`, `Circle`, `Ring`, `Torus`, `TorusKnot`, `Lathe`, `Extrude`, `Shape`, `Wireframe`, `Edges` |
 | ECS | `World`, `Prefab`, `QueryBuilder`, `Broadphase`, `PhysicsSystems`, `PhysicsBenchmark` |
-| Animation | `Animation`, `AnimationEvents`, `BlendSpace1D`, `IKBone`, `IKChain`, `IKSolver`, `CCDSolver` |
-| Loaders | `GLBLoader`, `HDRLoader`, `FBXLoader`, `KTX2Loader`, `STLLoader`, `PLYLoader`, `TGALoader`, `AssetManager` |
-| Renderer | `Renderer`, `RenderPass`, `ShadowMapManager` |
+| Animation | `Animation`, `AnimationEvents`, `BlendSpace1D`, `AnimationLayer`, `AvatarMask`, `BoneMask`, `AdditiveBlend`, `IKBone`, `IKChain`, `IKSolver`, `CCDSolver` |
+| Loaders | `GLBLoader`, `HDRLoader`, `FBXLoader`, `KTX2Loader`, `STLLoader`, `PLYLoader`, `TGALoader`, `AssetManager`, `OBJExporter`, `GLTFExporter`, `STLExporter`, `PLYExporter` |
+| Renderer | `Renderer`, `RenderPass`, `ShadowMapManager`, `MRTTarget`, `PostProcessPasses` |
 | Lights | `AmbientLight`, `DirectionalLight`, `PointLight`, `SpotLight`, `HemisphereLight`, `RectAreaLight` |
-| Materials | `MeshBasicMaterial`, `MeshNormalMaterial`, `MeshPhongMaterial`, `MeshPhysicalMaterial`, `ShadowMaterial` |
+| Materials | `MeshBasicMaterial`, `MeshNormalMaterial`, `MeshPhongMaterial`, `MeshPhysicalMaterial`, `ShadowMaterial`, `SpriteMaterial`, `ShaderChunkRegistry`, `chunks` |
 | Controls | `FlyControls`, `MapControls`, `PointerLockControls` |
 | Helpers | `AxesHelper`, `BoxHelper`, `CameraHelper`, `ArrowHelper`, `GridHelper3D` |
 | Audio | `Audio`, `AudioAnalyser`, `AudioContext`, `AudioListener`, `AudioLoader`, `PositionalAudio` |
 | Terrain | `TerrainGeometry`, `HeightmapGenerator`, `TerrainLayer`, `TerrainSplat` |
 | Acceleration | `BVH`, `MeshBVH` |
+| Physics | `ClothSimulation`, `Constraints` |
+| Assets | `AssetCache`, `AssetRegistry` |
+| Serialization | `GeometrySerializer`, `SceneSerializer` |
+| Events | `EventBus`, `EventQueue`, `GameEvent` |
+| Scripting | `Coroutine`, `ScriptRegistry` |
+| Tools | `FrameProfiler`, `SystemProfiler`, `MemoryTracker` |
+| Particles | `ParticleSystem2`, `ParticleEmitter`, `ParticleModifier`, `ParticleCurve`, `ParticleData`, `TrailModule` |
 | Lib | `vreenPack`, `vreenPublish`, `blocklyScriptStore`, `ecsScriptApi` (animsm / material / base), `vreenBlockly.tick` |
 
 Tests live alongside source files as `*.test.ts` and are picked up automatically by Vitest's default glob.
@@ -800,16 +843,17 @@ npm run electron:build
 | Language | TypeScript (WebGL2) | Python (OpenGL + pygame) |
 | Runtime | Browser-native + Electron desktop | Desktop only (pygame) |
 | Architecture | Full ECS (Entity-Component-System) | Procedural API |
-| Rendering | PBR + IBL + Shadow + Post-processing | Fixed-function + basic shaders |
-| Physics | Rigid body + Collision + 6 Joint constraints | None |
-| Animation | Clip/Mixer/StateMachine + IK (FABRIK/CCD) + Layer blending | Basic skeleton |
+| Rendering | PBR + IBL + Shadow + Post-processing (14 passes) + MRT/GBuffer deferred | Fixed-function + basic shaders |
+| Physics | Rigid body + Collision + 5 Joint constraints + ConstraintSolver + Cloth simulation (Verlet) | None |
+| Animation | Clip/Mixer/StateMachine + IK (FABRIK/CCD) + Layer blending + Morph Targets | Basic skeleton |
 | Geometry | 15 primitives + Terrain + BVH acceleration | Basic primitives |
 | Particles | 7-module system (Emitter/Modifier/Curve/Trail) | None |
 | Audio | 3D spatial audio + FFT analyser | None |
+| Text & Sprites | Text/BitmapText/TextAtlas + Sprite (billboard) | None |
 | Serialization | Scene/Geometry/Material ↔ JSON | None |
-| Export | GLTF / OBJ / STL / PLY | None |
+| Export | GLTF / OBJ / STL / PLY (4 exporters) | None |
 | i18n | 5 languages (en/zh/ja/ko/es) | 2 languages (en/zh) |
-| Testing | 2000+ unit tests | None |
+| Testing | 2219+ unit tests (134+ engine test files) | None |
 | Visual Scripting | Blockly integration | None |
 | Package Format | .vreen (ZIP + delta diff) | None |
 

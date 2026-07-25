@@ -1,6 +1,6 @@
 # VREEN Architecture
 
-> Version 0.5.x · Last updated 2026-07-24
+> Version 0.5.x · Last updated 2026-07-25
 >
 > This document describes the architecture of the **VREEN** project — a
 > browser-first 3D engine and asset inspection platform built around a
@@ -37,6 +37,8 @@
    - 4.18 [Audio](#418-audio)
    - 4.19 [Terrain](#419-terrain)
    - 4.20 [Acceleration](#420-acceleration)
+   - 4.21 [Assets](#421-assets)
+   - 4.22 [Serialization](#422-serialization)
 5. [Render Pipeline](#5-render-pipeline)
 6. [ECS Architecture](#6-ecs-architecture)
 7. [Dual-Backend Rendering](#7-dual-backend-rendering)
@@ -157,18 +159,18 @@ re-exported from the engine root `src/engine/index.ts`.
 
 ```
 src/engine/
-├── Core/         Scene graph primitives (Object3D, Scene, Mesh, …) + texture family + Source + Fog / Raycaster + DirtyFlag / SceneGraphProcessor / FrustumCuller / SceneStats
+├── Core/         Scene graph primitives (Object3D, Scene, Mesh, Sprite, Text, BitmapText, …) + texture family + Source + MorphTargets/MorphTargetAnimation + InstancedBufferAttribute + Fog / Raycaster + DirtyFlag / SceneGraphProcessor / FrustumCuller / SceneStats + TextAtlas
 ├── Math/         Vectors, matrices, quaternions, geometry primitives
 ├── Cameras/      Perspective / Orthographic cameras
 ├── Controls/     Orbit / Fly / PointerLock / Map controls
 ├── Lights/       Ambient / Directional / Point / Spot / Hemisphere / RectArea + ShadowMapManager
 ├── Geometries/   Procedural primitive geometry (15 generators)
-├── Materials/    Standard / Physical / Basic / Phong / Normal / Shadow + ShaderMaterial + GLSL chunks
-├── Renderer/     Renderer interface, WebGL2Renderer, ShaderProgram, RenderPass, ShadowMapManager
-├── Loaders/      GLB / OBJ / FBX / HDR / KTX2 / STL / PLY / TGA / MTL / EXR / Draco / AssetManager + GLTFExporter / OBJExporter
+├── Materials/    Standard / Physical / Basic / Phong / Normal / Shadow / Sprite + ShaderMaterial + ShaderChunks/ subdirectory (10 GLSL fragments + ShaderChunkRegistry)
+├── Renderer/     Renderer interface, WebGL2Renderer, ShaderProgram, RenderPass, ShadowMapManager + MRTTarget / GBuffer (deferred) + PostProcess/ enhanced passes
+├── Loaders/      GLB / OBJ / FBX / HDR / KTX2 / STL / PLY / TGA / MTL / EXR / Draco / AssetManager + 4 exporters (OBJ / GLTF / STL / PLY)
 ├── Animation/    Clip, Mixer, StateMachine, BlendSpace1D, Humanoid + AnimationLayer / AnimationLayerMixer / BoneMask / AvatarMask / AdditiveBlend / AnimationSync + IK (FABRIK / CCD)
 ├── ECS/          World, ComponentType, Systems, Physics, Prefab, QueryBuilder + Constraints
-├── Physics/      PhysicsDemo scene + ConstraintSolver
+├── Physics/      PhysicsDemo scene + ConstraintSolver + Joint constraints (Ball/Hinge/Slider/Fixed/Distance) + ClothSimulation (Verlet soft body)
 ├── Helpers/      Grid / Grid3D / Axes / Box / Camera / Arrow helpers + PhysicsDebugRenderer
 ├── Events/       EventBus / EventQueue / GameEvent (typed pub/sub)
 ├── Scripting/    ScriptComponent / ScriptSystem / ScriptRegistry / CoroutineSystem
@@ -176,6 +178,8 @@ src/engine/
 ├── Audio/        AudioListener / PositionalAudio / Audio / AudioLoader / AudioAnalyser
 ├── Terrain/      TerrainGeometry / HeightmapGenerator / TerrainSplat / TerrainLayer
 ├── Acceleration/ BVH / BVHBuilder / MeshBVH
+├── Assets/       AssetCache (LRU) / AssetRegistry (ref-counting) / AssetLoader (async) — resource lifecycle management
+├── Serialization/ SerializerRegistry / GeometrySerializer / MaterialSerializer / SceneSerializer — Scene/Geometry/Material ↔ JSON round-trip
 └── Tools/        Profiler / FrameProfiler / SystemProfiler / MemoryTracker / GpuProfiler / PerformanceReport
 ```
 
@@ -199,6 +203,7 @@ graph TD
     Math --> Renderer
     Core --> Loaders
     Loaders --> Materials
+    Loaders --> Assets[Assets/AssetRegistry]
     Core --> Animation
     Animation --> ECS
     Core --> ECS
@@ -211,6 +216,8 @@ graph TD
     ECS --> Helpers
     Core --> Controls
     Cameras --> Controls
+    Core --> Serialization[Serialization/SceneSerializer]
+    Materials --> Serialization
     Renderer --> Tools[Tools/Profiler family]
     ECS --> Tools
 ```
@@ -238,6 +245,7 @@ following deliberate deviations:
 | `Bone` / `Skeleton` | Bone tree + skinning palette. |
 | `BufferGeometry` | Vertex / index buffers. Attributes are `BufferAttribute` with `version` counters; the renderer caches VAOs keyed on geometry `version`. |
 | `BufferAttribute` | Typed-array view + `itemSize` + `version` + `needsUpdate` flag + `setUsage` shim. |
+| `InstancedBufferAttribute` | Per-instance vertex attribute for instanced rendering. Extends `BufferAttribute` with `meshPerAttribute` (maps to `gl.vertexAttribDivisor(loc, N)`, default 1). Used for per-instance matrices, colors, etc. |
 | `Material` | Abstract material interface; `BasicMaterial` is the trivial concrete impl. |
 | `Texture` | GPU texture wrapper with `version`, `needsUpdate`, format / wrap / filter options. |
 | `CubeTexture` | 6-face environment map (reflection or refraction mapping); images array ordered `+X, -X, +Y, -Y, +Z, -Z`. |
@@ -252,6 +260,12 @@ following deliberate deviations:
 | `LOD` | Multi-level mesh switching based on camera distance. |
 | `Fog` / `FogExp2` | Linear and exponential fog. Renderer blends fragment color toward fog color by distance (`(dist-near)/(far-near)` or `1 - exp(-(density*dist)^2)`). |
 | `Raycaster` / `intersectGeometry` | Ray-scene intersection; returns `Intersection[]` with `Face` / `distance` / `point` / `uv` / `object`. `MeshBVH` (Acceleration module) accelerates ray-mesh tests when attached. |
+| `Sprite` | 2D billboard sprite — always faces the camera. CPU writes the camera's world rotation into `matrixWorld` during `updateMatrixWorld(force, camera)` (keeping the sprite's own position/scale), so raycast / bounds / traversal can consume `matrixWorld` directly without shader-stage geometric transforms. Raycast does unit-quad (-0.5..0.5) intersection in camera space. Pairs with `SpriteMaterial`. Does not cast shadows (matches three.js). |
+| `Text` | 3D text rendering. Rasterizes characters through a `TextAtlas` into a shared texture atlas, generates a quad (2 triangles) per character into a `BufferGeometry`, rendered with `MeshBasicMaterial` + atlas texture. Supports `\n` newlines (line height = `fontSize * 1.25`) and `left` / `center` / `right` alignment. Geometry vertex units are "pixels × fontSize scale"; final world size controlled via `Object3D.scale`. Caller can supply a custom material (e.g. `SpriteMaterial`) or atlas. |
+| `BitmapText` | Bitmap text variant — accepts an externally pre-rendered `TextAtlas` instead of lazily creating one. Suitable for large amounts of text sharing one atlas across many text nodes. |
+| `TextAtlas` | Character texture atlas. Rasterizes characters one-by-one to a shared canvas, records per-char `AtlasChar { x, y, width, height, advance }` for UV lookup. Layout is simple row-packing (line wraps when exceeding row width). `getTexture()` returns a `CanvasTexture` whose version bumps on each new char addition, triggering GPU re-upload. Accepts an injected canvas + 2D context factory; degrades to dry-run metadata-only mode when DOM is unavailable (tests / SSR). |
+| `MorphTargets` | Morph target deformation (facial expressions / shape animation). Stores `morphTargets: Map<string, Float32Array>` (absolute vertex positions), `morphInfluences: number[]` (weights, default 0), and `morphTargetDictionary: Map<string, number>` (name → index lookup). Application rule: `result[i] = base[i] + Σ_j (target_j[i] - base[i]) * influence_j`. Mounted on `mesh.morphTargets`; the renderer calls `update(geometry)` before each draw to write back the blended positions and bump `geometry.version` for GPU VBO re-upload. Caches `_basePositions` on first apply to avoid clobbering the original base. |
+| `MorphTargetAnimation` | Morph target animation driver. Holds a `MorphTargets` instance + multiple `MorphTargetTrack`s (`name` + `times: Float32Array` + `values: Float32Array` scalar weight sequences). `update(dt)` advances time, binary-searches each track, linearly interpolates the weight, and writes it back to `morphTargets.morphInfluences`. Complements `AnimationMixer` — the mixer drives skeleton bone matrices (overall pose) while morph animation drives scalar weights (facial / local detail). Deliberately does not reuse `KeyframeTrack` to avoid a reverse dependency on `Object3D` / `TrackTarget`. |
 
 **Design note — versioned invalidation:** the renderer does not poll
 attributes every frame. Each `BufferAttribute` and `Texture` carries a
@@ -380,6 +394,55 @@ Concrete passes: `BloomPass`, `ChromaticAberrationPass`, `VignettePass`,
 `FinalComposePass`. The `PostProcessingPipeline` owns the FBOs and
 executes the pass array in order, ping-ponging between two textures.
 
+Additional basic passes live alongside the pipeline: `SSAOPass`
+(screen-space ambient occlusion), `FXAAPass` (fast approximate
+anti-aliasing), `ToneMappingPass` (ACES filmic / Reinhard),
+`GammaCorrectPass`, `DOFPass` (depth of field).
+
+#### MRT / GBuffer (deferred rendering) (`MRTTarget.ts`, `GBuffer.ts`)
+
+The renderer exposes Multi-Render Target and Geometry Buffer primitives
+for deferred-rendering pipelines:
+
+| Export | Role |
+|--------|------|
+| `MRTTarget` | General-purpose Multi-Render Target FBO. Holds N color attachments (`COLOR_ATTACHMENT0..N-1`) + an optional depth / stencil attachment. `setup(gl, w, h, opts)` creates GL resources; `bind(gl)` binds the FBO and configures `drawBuffers`; `unbind(gl)` restores the default FBO; `resize(gl, w, h)` reallocates textures; `dispose(gl)` releases everything. Color internal formats: `rgba8` / `rgba16f` / `rgba32f` / `rg16f` / `r16f`; default `rgba16f` (suitable for HDR G-Buffer position / normal data). Depth: `DEPTH_COMPONENT24` (uint, consistent with `ShadowMapManager`). Stencil: optional `DEPTH24_STENCIL8`. Color filter defaults to `NEAREST` (G-Buffer data should not be interpolated). Generalizes the SSAO-specific 2-attachment FBO (`_getSSAOResources`). |
+| `GBuffer` | Geometry Buffer built on `MRTTarget` for deferred rendering. 4 color attachments + 1 depth: **ATTACHMENT0** `positionTexture` `RGBA16F` (xyz = world position, a = 1), **ATTACHMENT1** `normalTexture` `RGBA16F` (xyz = world normal, a = 1), **ATTACHMENT2** `albedoTexture` `RGBA8` (rgb = diffuse albedo, a = opacity), **ATTACHMENT3** `materialTexture` `RGBA8` (r = metallic, g = roughness, b = emissive, a = AO). `highPrecisionFormat` selects `rgba16f` (default) / `rgba32f` / `rgba8` for attachments 0/1. The `GBuffer` class only manages FBO / texture lifecycle — the actual geometry rendering is done by the caller (e.g. `WebGL2Renderer`'s deferred path) with a G-Buffer shader writing to the 4 `layout(location = N) out` outputs. A downstream lighting pass samples the 4 color textures to do PBR shading (optionally with SSAO / SSR). |
+
+**Why MRT + GBuffer?** Forward rendering (the current main path) shades
+each fragment once with all lights. For scenes with many lights,
+forward rendering becomes fill-rate-bound. Deferred rendering shades
+each screen pixel once, reading light parameters from uniforms — light
+count no longer multiplies fragment work. The `GBuffer` is the input to
+that lighting pass. The `MRTTarget` is the general primitive; `GBuffer`
+is the canonical 4-attachment layout.
+
+#### Enhanced post-processing passes (`PostProcess/` subdirectory)
+
+A second family of `RenderPass` implementations lives under
+`Renderer/PostProcess/`, complementing the basic passes in
+`RenderPass.ts`:
+
+| Pass | Role |
+|------|------|
+| `ColorGradingPass` | ASC-CDL style color grading — 8 parameters (slope / offset / power per RGB channel + saturation). |
+| `LUTPass` | Color lookup table — 3D LUT or 2D strip LUT. Samples the LUT texture to remap colors. |
+| `ChromaticAberrationPass` | Enhanced chromatic aberration — `Vector2` direction offset (vs. the basic float offset) + radial modulation by distance from screen center. |
+| `VignettePass` | Enhanced vignette — `offset` / `darkness` + color tint (vs. the basic darkness-only version). |
+| `FilmGrainPass` | Film grain — configurable strength / size / animation frame count. |
+| `AfterimagePass` | Cross-frame accumulation — blends the previous frame with the current frame for motion-trail / afterimage effects. |
+| `PixelationPass` | Pixelation / mosaic — downsamples to a configurable pixel size for a low-res aesthetic. |
+
+All implement the `RenderPass` interface and compose into the same
+`PostProcessingPipeline`. The `Renderer/index.ts` barrel re-exports the
+enhanced versions by default; callers needing the basic versions should
+import explicitly from `./RenderPass`.
+
+> **Name-collision note:** `ChromaticAberrationPass` and `VignettePass`
+> exist in *both* `RenderPass.ts` (basic) and `PostProcess/` (enhanced)
+> with different option shapes. The barrel exports the enhanced
+> versions.
+
 ### 4.4 Materials
 
 **Path:** `src/engine/Materials/`
@@ -392,8 +455,9 @@ executes the pass array in order, ping-ponging between two textures.
 | `MeshPhongMaterial` | Legacy Blinn-Phong with `specular` and `shininess` — for non-PBR pipelines and stylistic looks. |
 | `MeshNormalMaterial` | Debug material — outputs object-space or world-space normals as RGB. |
 | `ShadowMaterial` | Shadow-only receiver — reads shadow maps without contributing surface color; used for invisible shadow catchers compositing onto scene backgrounds. |
+| `SpriteMaterial` | Sprite material — extends `BasicMaterial` with `color` (linear RGB, multiplied with `map`), `map` (optional color texture), `opacity`, `rotation` (radians, applied in shader around sprite center), `sizeAttenuation` (whether perspective cameras apply near-big-far-small, default true), `depthTest` / `depthWrite`, `wireframe`, `renderOrder`. Pairs with `Sprite`; the renderer uses a separate sprite shader path that implements billboard orientation in the vertex shader. `transparent` defaults to true (sprites usually have alpha). |
 | `ShaderMaterial` | Custom-shader material. Accepts `vertexSrc` / `fragmentSrc` (GLSL ES 3.0 strings) and a `uniforms` descriptor. The renderer injects `u_time`, `u_model`, `u_view`, `u_projection`, `u_normalMatrix`, `u_cameraPos` automatically. Supports `onBeforeCompile(shader)` for injecting GLSL snippets into the built-in shaders without rewriting them — used by `MeshPhysicalMaterial` for clearcoat / transmission extensions. |
-| `ShaderChunks` | Shared vertex / fragment GLSL blocks (`#version 300 es` head, attribute / uniform declarations, PBR functions, shadow sampling). |
+| `ShaderChunks/` subdirectory | 10 GLSL fragment string constants (`COMMON_CHUNK`, `LIGHTING_CHUNK`, `FOG_CHUNK` / `FOG_EXP2_CHUNK`, `NORMAL_PACK_CHUNK`, `SHADOW_CHUNK`, `ENVMAP_CHUNK`, `TONEMAP_ACES_CHUNK` / `TONEMAP_REINHARD_CHUNK`, `NOISE_CHUNK`, `UV_TRANSFORM_CHUNK`, `COLOR_SPACE_CHUNK`) + `ShaderChunkRegistry` class (with `shaderChunkRegistry` process-wide singleton) supporting `#include <name>` resolution. `registerBuiltinChunks()` registers all built-ins idempotently. `BUILTIN_SHADER_CHUNKS` is a `Record<string, string>` of all built-in fragments for one-shot registration to a custom registry. |
 | `shaders.ts` | Built-in shader source: `STANDARD_VERTEX_SRC` / `STANDARD_FRAGMENT_SRC`, shadow / depth-normal / SSAO / post-processing shaders. |
 
 **Variant caching:** `WebGL2Renderer.getProgramFor(material, skinned)`
@@ -446,6 +510,9 @@ Both produce a view-projection matrix consumed by the renderer and by
 | `AssetManager` | Registry + LRU cache. `register(ext, loader)`, `load(ext, url)`. Hit / miss / eviction logging. `getDefaultAssetManager()` returns a process-wide singleton. |
 | `GLBLoader` | Binary glTF. Staged logging (`load` → `read` → `parseGLB` → `buildFromGltf`). Draco via `DracoDecoder`. |
 | `OBJLoader` / `OBJExporter` | Wavefront OBJ import (`parseOBJ`) and string export (`exportOBJ`). |
+| `GLTFExporter` | glTF-GLB binary export — serializes engine `Scene` / `Mesh` / `Material` into a self-contained `.glb` with embedded buffers and images; round-trippable with `GLBLoader`. |
+| `STLExporter` | Stereolithography (STL) mesh export — ASCII and binary variants. |
+| `PLYExporter` | Polygon File Format (PLY) mesh export — ASCII and binary variants. |
 | `FBXLoader` | FBX binary parsing (model + material + animation extraction). |
 | `HDRLoader` | Radiance `.hdr` with **per-channel RLE** RGBE → Float32 decode. Covers compressed, uncompressed, and mixed-encoding scanline variants. |
 | `KTX2Loader` | KTX2 / Basis Universal texture decompression. Pluggable `setBasisTranscoder` / `setZstdDecoder`. |
@@ -640,22 +707,45 @@ Pipeline (per fixed step):
 
 Colliders supported: `AABB`, `Sphere`, `Capsule`.
 
-**Constraint subsystem** (`src/engine/ECS/PhysicsComponents.ts` +
-`PhysicsSystems.ts`): an iterative sequential-impulse `ConstraintSolver`
-runs after `CollisionSystem.resolve` each fixed step. Constraints:
+**Constraint subsystem** (`src/engine/Physics/`, based on the `Constraint`
+base class + `RigidbodyLike` interface, decoupled from any specific
+rigid-body implementation): an iterative sequential-impulse
+`ConstraintSolver` runs after `CollisionSystem.resolve` each fixed step.
+Constraints:
 
 | Constraint | DOF locked | Use case |
 |------------|------------|----------|
-| `BallConstraint` | 3 rot free, 3 trans locked | Ragdoll shoulders / hips, chain links. |
-| `HingeConstraint` | 1 rot about axis, 3 trans locked | Doors, knees, elbows. |
-| `SliderConstraint` | 1 trans along axis, 3 rot locked | Pistons, drawers, elevators. |
-| `FixedConstraint` | All 6 DOF locked | Rigid welds (compound bodies). |
-| `DistanceConstraint` | Maintains fixed anchor distance | Ropes, springs, culling volumes. |
+| `BallJointConstraint` | 3 rot free, 3 trans locked | Ragdoll shoulders / hips, chain links. |
+| `HingeJointConstraint` | 1 rot about axis, 3 trans locked | Doors, knees, elbows. |
+| `SliderJointConstraint` | 1 trans along axis, 3 rot locked | Pistons, drawers, elevators. |
+| `FixedJointConstraint` | All 6 DOF locked | Rigid welds (compound bodies). |
+| `DistanceJointConstraint` | Maintains fixed anchor distance | Ropes, springs, culling volumes. |
 
-Each constraint references two `Rigidbody` entities plus local-space
+Each constraint references two `RigidbodyLike` entities plus local-space
 anchor offsets; the solver iterates `iterations` times per step (default
 10) and applies position correction via Baumgarte stabilization, the
-same scheme used for collision response.
+same scheme used for collision response. The `Constraint` base class
+exposes shared helpers: `computePointEffectiveMass`, `applyImpulse`,
+`skewMat`, `mat3MulVec`, `mat3MulMat3`, `mat3Inverse`, `mat3Identity`.
+
+**Cloth simulation** (`src/engine/Physics/ClothSimulation.ts`): a
+Verlet-integration soft-body simulator, independent of the ECS
+`PhysicsSystems` (soft-body shape differs significantly from rigid
+bodies). Particle grid (`ClothParticle`: `position` / `prevPosition` /
+`acceleration` / `pinned` / `mass` / `invMass`) + distance constraints
+(`ClothConstraint`: `p1` / `p2` / `restLength` / `stiffness`) solved
+PBD-style with multiple iterations per step:
+
+```
+next = pos + (pos - prev) * (1 - damping) + accel * dt²
+```
+
+Supports sphere collision (`ClothSphere`) and pinned anchor particles
+(held fixed during integration). `getMeshData()` outputs flattened
+`positions` / `indices` / `normals` for upload to a `BufferGeometry`;
+the caller (e.g. `CustomStage` / physics demo) syncs the data to
+`Mesh.geometry` each frame. Future ECS integration could wrap this as a
+`ClothComponent` + `ClothSystem`.
 
 `PhysicsDemo` (`src/engine/Physics/PhysicsDemo.ts`) ships a 24-body
 scene with random boxes and a particle emitter, exercisable from the
@@ -803,7 +893,7 @@ to the active `Camera` (or any `Object3D`) and tracks its world position
 context is shared by all listeners / sources, and a mock context is
 provided for unit tests (`audioContextMock.ts`).
 
-### 4.16 Terrain
+### 4.19 Terrain
 
 **Path:** `src/engine/Terrain/`
 
@@ -840,6 +930,58 @@ by the ECS `Broadphase` for collision candidate generation.
 construct it. Once attached, `Raycaster` prefers the BVH path over the
 brute-force per-triangle loop. Construction cost is amortized over many
 raycasts (e.g. mouse picking, projectile queries).
+
+### 4.21 Assets
+
+**Path:** `src/engine/Assets/`
+
+Resource lifecycle management module — complements `Loaders/AssetManager`
+(which focuses on Promise caching of loaded assets). The `Assets/` module
+focuses on instance lifecycle, reference counting, and synchronous cache
+lookup.
+
+| Export | Role |
+|--------|------|
+| `AssetCache` | Synchronous LRU resource instance cache keyed by string. `get(key)` / `set(key, value)` / `has(key)` / `delete(key)` with capacity-based eviction. Used for caching already-decoded / already-constructed resource instances (textures, geometries, materials) that are too expensive to rebuild every frame. |
+| `AssetRegistry` | Resource registry with reference counting. `acquire(key)` returns an `AssetHandle` that holds a reference; `release(handle)` decrements the count and triggers a caller-supplied dispose callback when the count reaches zero. `getDefaultAssetRegistry()` returns the process-wide singleton; `resetDefaultAssetRegistry()` is used in tests. Tracks `AssetRegistryStats` (live / total / peak). |
+| `AssetLoader` | Async resource loader wrapping `AssetManager`. `load(entries)` batches multiple `AssetLoadEntry` requests and returns an `AssetBatchResult` with `success` and `failure` groups, so callers can handle partial failures gracefully. |
+
+**Why a separate `Assets/` module when `Loaders/AssetManager` exists?**
+The two have different responsibilities:
+
+| Module | Focus | Cache type | Lifecycle |
+|--------|-------|-----------|-----------|
+| `Loaders/AssetManager` | Promise caching of in-flight loads | `Map<key, Promise<T>>` | Promise resolves once, then GC'd |
+| `Assets/AssetCache` + `AssetRegistry` | Instance caching + reference counting | `Map<key, T>` + `Map<key, count>` | Explicit `acquire` / `release` |
+
+A typical workflow: `AssetLoader` calls into `AssetManager` to fetch the
+bytes, decodes them into an engine resource, then `AssetRegistry.acquire`
+holds the resource with a refcount so it isn't prematurely disposed.
+
+### 4.22 Serialization
+
+**Path:** `src/engine/Serialization/`
+
+Scene serialization module supporting round-trip
+Scene / Geometry / Material ↔ JSON. The serialized output is embeddable
+in `.vreen` packages as `scene.json` and is the foundation for the
+project's "docs as code" asset pipeline.
+
+| Export | Role |
+|--------|------|
+| `SerializerRegistry` | Serializer registry dispatching by type. `register(type, serializer)` / `get(type)` / `has(type)`. `getDefaultSerializerRegistry()` returns the process-wide singleton; `resetDefaultSerializerRegistry()` is used in tests. Implements the `Serializer<T>` interface (`toJSON(value, ctx)` / `fromJSON(json, ctx)`). |
+| `GeometrySerializer` | `BufferGeometry` ↔ `GeometryJSON`. Serializes attributes (`position` / `normal` / `uv` / `index` / etc.), `morphTargets`, bounding sphere, and `uuid`. `GEOMETRY_TYPE` is the type-tag constant. |
+| `MaterialSerializer` | `Material` ↔ `MaterialJSON`. Supports `registerMaterialType(ctor, meta)` to register custom material types with constructor + metadata (uniform descriptors, type-tag). `serializeMaterial(material, ctx)` / `deserializeMaterial(json, ctx)` are top-level helpers. Handles `StandardMaterial`, `MeshPhysicalMaterial`, `MeshBasicMaterial`, `MeshPhongMaterial`, `MeshNormalMaterial`, `ShadowMaterial`, `SpriteMaterial` out of the box. |
+| `SceneSerializer` | `Scene` ↔ `SceneJSON` top-level entry. Recursively serializes the `Object3D` tree (groups / meshes / lights / cameras / sprites / text / etc.). `serializeObject(obj, ctx)` / `deserializeObject(json, ctx)` are per-node helpers. `registerObjectHandler(type, handler)` allows callers to plug in custom node types. Versioned via `SCENE_SERIALIZER_VERSION`. |
+
+**Design note — registry pattern:** the `SerializerRegistry` decouples
+the serialization format from the concrete classes. New material types
+or object types can be registered at runtime without modifying the
+`SceneSerializer` itself — important for engine extensions and
+user-defined plugins. The `NON_POJO_COMPONENTS` set in the ECS layer
+plays a similar role for ECS serialization: runtime-only references
+(`MeshRef`, `SkinnedMeshRef`) are skipped during `World.toJSON` and
+re-attached by the caller after `loadJSON`.
 
 ---
 
@@ -900,6 +1042,48 @@ renderer.
    single visibility list.
 4. Per-frame allocations in `Object3D.lookAt` (`new Matrix4()` per call)
    — should reuse a scratch object.
+
+### Deferred rendering path (alternative)
+
+The forward pipeline above is the default main path. For scenes with
+many lights, the renderer exposes a deferred rendering alternative built
+on the `MRTTarget` / `GBuffer` primitives (see [§4.3](#43-renderer)):
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│  deferred render(scene, camera)                                       │
+├──────────────────────────────────────────────────────────────────────┤
+│  0. Update scene world matrices                                       │
+│  1. SHADOW PASS (per cast-shadow DirectionalLight)                    │
+│  2. G-BUFFER PASS                                                     │
+│     ├─ gbuffer.bind(gl) — FBO + drawBuffers([0,1,2,3])                │
+│     ├─ for each Mesh in scene (frustum-culled):                       │
+│     │    ├─ bind G-Buffer shader (writes 4 layout outputs)            │
+│     │    └─ gl.drawElements — position / normal / albedo / material   │
+│     └─ gbuffer.unbind(gl)                                             │
+│  3. LIGHTING PASS (fullscreen quad)                                   │
+│     ├─ sample positionTexture / normalTexture / albedoTexture /       │
+│     │  materialTexture                                                │
+│     ├─ for each light: accumulate PBR contribution (no per-frag loop) │
+│     └─ optional: SSAO / SSR sampling                                  │
+│  4. POST-PROCESSING PASS (same as forward path)                       │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+Trade-offs:
+
+| Aspect | Forward (default) | Deferred (alternative) |
+|--------|-------------------|------------------------|
+| Light count | O(fragments × lights) — fill-rate bound | O(pixels) — light count independent of fragment work |
+| Transparency | Native (alpha blend in main pass) | Requires separate forward pass for transparent geometry |
+| MSAA | Native (hardware multisample) | Requires edge-detect AA or FXAA in post |
+| Material diversity | One shader per material variant | G-Buffer layout fixes the material attribute set |
+| Memory | Lower (one color + depth) | Higher (4 G-Buffer textures + depth) |
+
+The `GBuffer` class only manages FBO / texture lifecycle; the actual
+G-Buffer shader and lighting pass are caller-supplied. This keeps the
+deferred path opt-in and decoupled from the forward renderer's
+hardcoded shader selection.
 
 ---
 

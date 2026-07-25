@@ -7,6 +7,37 @@ export { PhongMaterial, type PhongMaterialOptions } from './MeshPhongMaterial';
 export { NormalMaterial, type NormalMaterialOptions } from './MeshNormalMaterial';
 export { ShadowMaterial, type ShadowMaterialOptions, SHADOW_MATERIAL_VERT, SHADOW_MATERIAL_FRAG } from './ShadowMaterial';
 export { SpriteMaterial, type SpriteMaterialOptions } from './SpriteMaterial';
+// 特殊着色器材质(卡通 / 水面 / 线框 / 描边 / Matcap)。
+export {
+  ToonMaterial,
+  type ToonMaterialOptions,
+  TOON_VERT,
+  TOON_FRAG,
+} from './ToonMaterial';
+export {
+  WaterMaterial,
+  type WaterMaterialOptions,
+  WATER_VERT,
+  WATER_FRAG,
+} from './WaterMaterial';
+export {
+  WireframeMaterial,
+  type WireframeMaterialOptions,
+  WIREFRAME_VERT,
+  WIREFRAME_FRAG,
+} from './WireframeMaterial';
+export {
+  OutlineMaterial,
+  type OutlineMaterialOptions,
+  OUTLINE_VERT,
+  OUTLINE_FRAG,
+} from './OutlineMaterial';
+export {
+  MatcapMaterial,
+  type MatcapMaterialOptions,
+  MATCAP_VERT,
+  MATCAP_FRAG,
+} from './MatcapMaterial';
 export {
   PBR_VERT,
   PBR_FRAG,
