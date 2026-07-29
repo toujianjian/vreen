@@ -12,6 +12,14 @@ VREEN 是一个基于**自研 WebGL2 渲染引擎**的可视化 3D 模型检视�
 - **可视化编程**: Blockly 13 (通过 `src/lib/vreenBlockly.ts` + `BlocklyPanel.tsx`)
 - **License**: MIT
 
+## 📊 项目统计
+
+- **代码行数**: 56K+ (含引擎 + 应用 + 测试)
+- **测试数量**: 3361+ (200+ 个测试文件)
+- **引擎模块**: 34 个顶层模块
+- **源码文件**: 390+ (`src/engine/`)
+- **零运行时依赖**: `@vreen/engine` 仅 Draco 为可选 peer
+
 ## 🗂️ 源码结构
 
 ```
@@ -46,8 +54,8 @@ src/
 │       └── ...
 ├── engine/                  # 自研 WebGL2 引擎 (@vreen/engine)
 │   ├── Core/                # 场景图 (Object3D/Scene/Group/Mesh/SkinnedMesh/Bone/Skeleton/BufferGeometry/BufferAttribute/InstancedBufferAttribute/Material/InstancedMesh/LOD/Sprite/Text/BitmapText/TextAtlas) + 纹理家族 (Texture/CubeTexture/DataTexture/DataArrayTexture/DepthTexture/VideoTexture/CanvasTexture/CompressedTexture) + Source + MorphTargets/MorphTargetAnimation + Fog/FogExp2 + Raycaster + DirtyFlag/SceneGraphProcessor/FrustumCuller/SceneStats
-│   ├── Renderer/            # WebGL2Renderer, ShaderProgram, RenderPass, ShadowMapManager + MRTTarget/GBuffer (延迟渲染) + 后处理 (Bloom/ChromaticAberration/Vignette/SSAO/FXAA/ToneMapping/Gamma/DOF + PostProcess/ 增强 Pass: ColorGrading/LUT/ FilmGrain/Afterimage/Pixelation)
-│   ├── Materials/           # StandardMaterial, MeshPhysicalMaterial, MeshBasicMaterial, MeshPhongMaterial, MeshNormalMaterial, ShadowMaterial, SpriteMaterial, ShaderMaterial (+onBeforeCompile), ShaderChunks/ 子目录 (10 GLSL 片段 + ShaderChunkRegistry)
+│   ├── Renderer/            # WebGL2Renderer, ShaderProgram, RenderPass, ShadowMapManager + MRTTarget/GBuffer (延迟渲染) + DeferredRenderer (替代延迟后端) + ReflectionProbe/ReflectionProbeManager (IBL 探针) + 后处理 (基础: Bloom/ChromaticAberration/Vignette/SSAO/FXAA/ToneMapping/Gamma/DOF; PostProcess/ 增强: ColorGrading/LUT/FilmGrain/Afterimage/Pixelation/AutoExposure/DOFEnhanced/GTAO/MotionBlur/SSR/SSSS/TAA/Velocity/VolumetricFog) + PathTracer (CPU 参考路径追踪)
+│   ├── Materials/           # StandardMaterial, MeshPhysicalMaterial, MeshBasicMaterial, MeshPhongMaterial, MeshNormalMaterial, ShadowMaterial, SpriteMaterial, ShaderMaterial (+onBeforeCompile), ShaderChunks/ 子目录 (10 GLSL 片段 + ShaderChunkRegistry), 特殊材质: FurMaterial/MatcapMaterial/ToonMaterial/OutlineMaterial/WaterMaterial/WireframeMaterial
 │   ├── Math/                # Vector2/3/4, Matrix3/4, Quaternion, Euler, Color, Box3, Sphere, Plane, Ray, Line3, Triangle, Frustum, MathUtils
 │   ├── Cameras/             # PerspectiveCamera, OrthographicCamera
 │   ├── Lights/              # Ambient/Directional/Point/Spot/Hemisphere/RectArea + DirectionalLightShadow + ShadowMapManager
@@ -71,8 +79,8 @@ src/
 │   ├── SaveSystem/          # SaveSystem (多槽位 + 自动保存) + SaveSerializer (Scene+World ↔ SaveData,含压缩) + LocalStorageAdapter (localStorage/内存兜底)
 │   ├── SceneManager/        # SceneManager (多场景注册/加载/切换) + SceneTransition (Fade/Crossfade/Slide/Wipe/None 过渡)
 │   ├── Input/               # InputManager (统一键盘/鼠标/触摸/手柄) + KeyboardState/MouseState/TouchState/GamepadState + InputAction (动作映射) + InputMap (JSON 配置往返)
-│   ├── AI/                  # AI 导航 (NavMesh 导航网格 + A* PathFinder 寻路 + SteeringBehavior 转向行为 + Agent 代理)
-│   ├── Environment/         # 环境系统 (WeatherSystem 天气 + SkySystem 天空/日夜循环 + CloudSystem 云层 + PrecipitationSystem 降水)
+│   ├── AI/                  # AI 导航 + 行为树 (NavMesh 导航网格 + A* PathFinder 寻路 + SteeringBehavior 转向行为 + Agent 代理) + 行为树 (BehaviorTree/BTAction/BTComposite/BTCondition/BTDecorator/BTNode + Blackboard 黑板)
+│   ├── Environment/         # 环境系统 (WeatherSystem 天气 + SkySystem 天空/日夜循环 + CloudSystem 云层 + PrecipitationSystem 降水 + VegetationSystem/VegetationType 植被 + WaterSimulation/WaterSystem 水体)
 │   ├── Timeline/            # 时间轴/Sequencer (TimelineClip 片段 + TimelineTrack 轨道 + EventTrack 事件 + PropertyTrack 属性关键帧 + TimelineSequencer 序列器,支持 play/pause/seek/loop/export/import)
 │   ├── Voxel/               # VoxelChunk 16³ + VoxelWorld 多块管理 + VoxelMesher 贪婪网格合并 + VoxelRaycaster DDA + VoxelPalette 类型表
 │   ├── Editor/              # 编辑器系统:SelectionSystem 选择/拾取 + TransformGizmo 变换手柄 (translate/rotate/scale) + UndoRedoSystem 撤销重做 (含 beginGroup/endGroup) + EditorCommands 命令工厂 (Move/Rotate/Scale/Add/Remove/Property) + SnapSystem 网格/角度/缩放吸附
@@ -393,6 +401,63 @@ src/
 - `.vreen-delta` 增量差分包
 - 多语言 SDK: Java POJO, Kotlin, C#, C++, Unity 插件, Unreal 插件
 
+### 行为树 (AI/BehaviorTree + Blackboard)
+
+- 与 NavMesh/PathFinder/SteeringBehavior/Agent 互补:导航解决「怎么走」,行为树解决「做什么」
+- `BehaviorTree` — 树状决策结构,从根节点每 tick 评估,返回 `Success` / `Failure` / `Running`
+- `BTNode` — 行为树节点基类,子类: `BTAction`(执行动作) / `BTComposite`(组合:Sequence/Selector/Parallel) / `BTCondition`(条件判断) / `BTDecorator`(装饰器:Inverter/Repeater/RetryUntilSuccess)
+- `Blackboard` — 共享键值存储 (任意类型值),节点读写以解耦节点间数据流;支持 `get`/`set`/`has`/`unset` + 监听器
+- 与 `Scripting/` 互补:行为树是数据驱动的有限状态决策,Scripting 是代码驱动的生命周期钩子;二者都可操作同一 ECS `World`
+
+### 环境增强 (Environment/VegetationSystem + WaterSystem)
+
+- `VegetationSystem` + `VegetationType` — 程序化植被分布:基于地形/噪声密度图采样植被位置,按 `VegetationType`(草/灌木/树)实例化 mesh;支持 impostor billboard 远距渲染
+- `WaterSimulation` — 水面顶点位移 + 法线扰动 (Gerstner 波) + 折射/反射近似;`getMeshData()` 输出 positions/normals
+- `WaterSystem` — 场景级水体管理 (水位/水流方向/水质参数),驱动多个 `WaterSimulation` 实例 + 与 `WaterMaterial` 配合渲染
+- 与 `SkySystem` 联动:水面反射天空颜色;与 `WeatherSystem` 联动:雨天波纹增强
+
+### 延迟渲染与反射探针 (Renderer/DeferredRenderer + ReflectionProbe)
+
+- `DeferredRenderer` — 替代 `WebGL2Renderer` 的延迟后端:G-Buffer Pass (4 附件:position/normal/albedo/material) → 全屏 Lighting Pass;光数与片元数解耦,适合多光源场景
+- `ReflectionProbe` — 局部 IBL 探针,捕获场景立方体贴图快照 (位置/范围/捕获频率);运行时按相机位置加权混合
+- `ReflectionProbeManager` — 探针注册表 + 相机位置查询最近探针 + 跨探针平滑过渡
+- 与 `GBuffer`/`MRTTarget` 协作:G-Buffer 是延迟渲染的几何输入;ReflectionProbe 是 IBL 输入;二者都是 FBO/纹理生命周期管理类
+
+### 高级后处理 Pass (Renderer/PostProcess/ 扩展)
+
+- 在基础 Pass (Bloom/ChromaticAberration/Vignette/SSAO/FXAA/ToneMapping/Gamma/DOF) 之上,扩展了:
+  - `AutoExposurePass` — 自动曝光,基于平均亮度自适应曝光值
+  - `DOFEnhancedPass` — 增强景深,散景 (bokeh) + 弥散圆 (circle-of-confusion)
+  - `GTAOPass` — Ground-Truth Ambient Occlusion (SSAO 的精度提升版)
+  - `MotionBlurPass` — 物体/相机运动模糊,消费 `VelocityPass` 速度缓冲
+  - `SSRPass` — 屏幕空间反射
+  - `SSSSPass` — 屏幕空间次表面散射 (皮肤/蜡质感)
+  - `TAAPass` — 时域抗锯齿,需配合 `VelocityPass`
+  - `VelocityPass` — 逐像素运动矢量 (TAA/MotionBlur 共用)
+  - `VolumetricFogPass` — 体积雾 / 光轴效果
+- 所有 Pass 实现 `RenderPass` 接口,组合进同一 `PostProcessingPipeline`
+
+### 特殊用途材质 (Materials/ 扩展)
+
+- 在 PBR 与基础材质之上,扩展了:
+  - `MatcapMaterial` — Material Capture,预烘焙法线→颜色球体贴图,无光照快渲染;常用于雕刻软件风格
+  - `ToonMaterial` — 卡通渲染 (cel-shading),量化 N·L 为离散色带;可配 `OutlineMaterial` 描边
+  - `OutlineMaterial` — 背面外描边,沿法线膨胀 + 平面色;用于卡通/动漫风格
+  - `WaterMaterial` — Gerstner 波水面 + 阳光闪烁 + 屏幕折射近似 + 深度泡沫;与 `WaterSystem` 配合
+  - `WireframeMaterial` — 风格化线框,与标准材质的 `wireframe: true` 区别:可着色 + 可深度衰减
+- 多数继承 `BasicMaterial` 基类 (复用 uniform/texture 基础设施 + 自定义 shader)
+
+### 相机预设与电影相机 (Cameras/ + 预设)
+
+- 检视器内置 9 个相机预设 (Free / Iso / Front / Back / Side / Top / 1st-person / 3rd-person / Cinematic),通过 `viewerStore` 切换
+- `CinematicCamera` 不是一个独立模块,而是 Cinematic 预设对应的相机配置:慢速轨道 + FOV 呼吸 + 景深联动 + 后处理过冲,通过组合 `PerspectiveCamera` + `OrbitControls` + 后处理 Pass 实现
+- 底层仅 `PerspectiveCamera` / `OrthographicCamera` 两个具体相机类
+
+### 计划中模块 (未实现)
+
+- `CrowdSystem` — 群体避障 (基于 RVO/ORCA + SteeringBehavior 上层封装),计划在 AI/ 子目录下实现,目前尚未落地;现有 Agent + SteeringBehavior 已可处理小规模群体
+- 见 `ROADMAP.md` Phase 4/5 了解未来模块规划
+
 ### 代码规范
 
 - **ESM 模块** — `import`/`export`，不用 CommonJS
@@ -417,6 +482,6 @@ src/
 
 - `npm test` / `npm run test:watch` / `npm run test:coverage`
 - Vitest 4 + @vitest/coverage-v8;测试文件与源码同目录 `*.test.ts`
-- 当前测试数量:**3293+**(196+ 个测试文件,覆盖 Math / Core / ECS / Animation / Physics / Renderer / Loaders / Materials / Particles / Audio / Terrain / Network / SaveSystem / SceneManager / Input / AI / Environment / Timeline / Voxel / Editor / PCG / Pipeline / Gameplay 等 42+ 模块)
+- 当前测试数量:**3361+**(200+ 个测试文件,覆盖 Math / Core / ECS / Animation / Physics / Renderer / Loaders / Materials / Particles / Audio / Terrain / Network / SaveSystem / SceneManager / Input / AI / Environment / Timeline / Voxel / Editor / PCG / Pipeline / Gameplay 等 42+ 模块)
 
 ## 📌&#x20;

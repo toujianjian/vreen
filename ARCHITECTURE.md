@@ -1,6 +1,6 @@
 # VREEN Architecture
 
-> Version 0.5.x · Last updated 2026-07-25 (Timeline / AI / Environment sections added)
+> Version 0.5.x · Last updated 2026-07-29 (PCG / Pipeline / Gameplay chapters added; Environment extended with vegetation + water)
 >
 > This document describes the architecture of the **VREEN** project — a
 > browser-first 3D engine and asset inspection platform built around a
@@ -48,6 +48,9 @@
    - 4.29 [Timeline](#429-timeline)
    - 4.30 [Voxel](#430-voxel)
    - 4.31 [Editor](#431-editor)
+   - 4.32 [PCG (Procedural Content Generation)](#432-pcg-procedural-content-generation)
+   - 4.33 [Pipeline (Asset Pipeline)](#433-pipeline-asset-pipeline)
+   - 4.34 [Gameplay](#434-gameplay)
 5. [Render Pipeline](#5-render-pipeline)
 6. [ECS Architecture](#6-ecs-architecture)
 7. [Dual-Backend Rendering](#7-dual-backend-rendering)
@@ -194,11 +197,14 @@ src/engine/
 ├── SaveSystem/   SaveSystem (multi-slot + auto-save) + SaveSerializer (Scene+World ↔ SaveData, compressed) + LocalStorageAdapter (localStorage/memory fallback)
 ├── SceneManager/ SceneManager (multi-scene register/load/switch) + SceneTransition (Fade/Crossfade/Slide/Wipe/None)
 ├── Input/        InputManager (unified keyboard/mouse/touch/gamepad) + KeyboardState/MouseState/TouchState/GamepadState + InputAction (binding→action) + InputMap (JSON config)
-├── AI/           NavMesh navigation mesh + A* PathFinder + SteeringBehavior + Agent
-├── Environment/  WeatherSystem + SkySystem (day/night cycle) + CloudSystem + PrecipitationSystem
+├── AI/           NavMesh navigation mesh + A* PathFinder + SteeringBehavior + Agent + BehaviorTree + Blackboard
+├── Environment/  WeatherSystem + SkySystem (day/night cycle) + CloudSystem + PrecipitationSystem + VegetationSystem + WaterSimulation + WaterSystem
 ├── Timeline/     TimelineClip + TimelineTrack + EventTrack + PropertyTrack + TimelineSequencer (play/pause/seek/loop/export/import)
 ├── Voxel/        VoxelChunk 16³ + VoxelWorld (multi-chunk) + VoxelMesher (greedy meshing) + VoxelRaycaster (DDA) + VoxelPalette
-└── Editor/       SelectionSystem (pick/select/hover) + TransformGizmo (translate/rotate/scale) + UndoRedoSystem (with beginGroup/endGroup) + EditorCommands (Move/Rotate/Scale/Add/Remove/Property) + SnapSystem (grid/angle/scale snap)
+├── Editor/       SelectionSystem (pick/select/hover) + TransformGizmo (translate/rotate/scale) + UndoRedoSystem (with beginGroup/endGroup) + EditorCommands (Move/Rotate/Scale/Add/Remove/Property) + SnapSystem (grid/angle/scale snap)
+├── PCG/          NoiseGenerator (Perlin/Simplex/Worley/FBM) + BuildingGenerator + CityGenerator + DungeonGenerator + TreeGenerator
+├── Pipeline/     AssetPipeline + TextureProcessor + GeometryProcessor + ImportPipeline
+└── Gameplay/     DialogueSystem + DialogueTree + DialogueParticipant + QuestSystem + InventorySystem
 ```
 
 ### Module dependency graph
@@ -1144,7 +1150,7 @@ store subscription.
 
 **Path:** `src/engine/AI/`
 
-AI navigation subsystem for game agents. Decoupled from the ECS — it reads / writes `Transform`-like state via the `Agent` handle, so it can layer on top of any entity system.
+AI navigation + decision-making subsystem for game agents. Decoupled from the ECS — it reads / writes `Transform`-like state via the `Agent` handle, so it can layer on top of any entity system. Navigation solves "how to move"; behavior trees solve "what to do".
 
 | Export | Role |
 |--------|------|
@@ -1152,8 +1158,11 @@ AI navigation subsystem for game agents. Decoupled from the ECS — it reads / w
 | `PathFinder` | A* pathfinding over a `NavMesh` graph. `findPath(start, end)` returns a `Vector3[]` waypoint list. Supports heuristic tuning and optional path smoothing (string-pulling across polygon portals). |
 | `SteeringBehavior` | Reynolds steering behaviors — Seek / Flee / Arrive / Wander / Pursue / Evade / ObstacleAvoidance / PathFollowing / Separation / Alignment / Cohesion / Flocking. Each behavior returns a desired velocity; multiple behaviors compose into a steering pipeline via weighted accumulation. |
 | `Agent` | AI agent combining `PathFinder` + `SteeringBehavior`. Holds `target` / `path` / `velocity` / `maxSpeed` / `maxForce` / `steeringForce`. `update(dt)` advances locomotion: compute desired velocity from active steering behaviors, clamp to `maxForce`, integrate into `velocity`, apply to `position`. |
+| `BehaviorTree` | Tree-shaped decision structure. Root node evaluated each tick; returns `Success` / `Failure` / `Running`. Complements navigation (which solves "how to move") by deciding "what to do" — pick targets, switch states, gate actions. |
+| `BTNode` / `BTAction` / `BTComposite` / `BTCondition` / `BTDecorator` | Behavior-tree node taxonomy. `BTNode` is the abstract base. `BTAction` performs a leaf action (move-to, attack, play animation). `BTComposite` groups children with semantics: `Sequence` (succeed-all), `Selector` (succeed-first), `Parallel` (run-all). `BTCondition` is a predicate leaf. `BTDecorator` wraps a child with a modifier: `Inverter`, `Repeater`, `RetryUntilSuccess`. |
+| `Blackboard` | Shared key-value store (any typed value) read/written by BT nodes — decouples node-to-node data flow. API: `get(key)` / `set(key, value)` / `has(key)` / `unset(key)` + change-listener registration. Used to pass target entity / last-known-position / cooldown timers between nodes without explicit wiring. |
 
-**Design note:** The AI module is intentionally separate from the ECS `PhysicsSystems`. Steering behaviors produce kinematic velocity; the caller decides whether to feed that into a `Rigidbody` (ECS physics) or apply it directly to a `Transform` (kinematic motion). This mirrors the Unity / Unreal split where navigation and physics are independent systems.
+**Design note:** The AI module is intentionally separate from the ECS `PhysicsSystems`. Steering behaviors produce kinematic velocity; the caller decides whether to feed that into a `Rigidbody` (ECS physics) or apply it directly to a `Transform` (kinematic motion). This mirrors the Unity / Unreal split where navigation and physics are independent systems. Behavior trees are likewise decoupled — they observe ECS state (via the caller) and produce decisions, but do not directly mutate `World`. The `Scripting/` module is the code-driven counterpart: `ScriptComponent` hooks are imperative, `BehaviorTree` is declarative.
 
 ### 4.28 Environment
 
@@ -1167,8 +1176,13 @@ Atmospheric and weather environment systems for outdoor scenes. Decoupled from t
 | `SkySystem` | Procedural sky + day/night cycle. `setTimeOfDay(t)` (0..24 hours) computes the sun position via solar elevation / azimuth; `update(dt)` advances time. Produces `sunDirection` / `sunColor` / `skyTopColor` / `skyHorizonColor` with an atmospheric scattering approximation. The renderer reads these to shade the sky dome and directional light. |
 | `CloudSystem` | Procedural cloud layer — noise-texture animation with configurable `altitude` / `coverage` / `windDirection` / `windSpeed`. `update(dt)` scrolls the noise offset; produces a `cloudOpacity` for the sky shader. |
 | `PrecipitationSystem` | Precipitation particles (rain / snow) driven by a particle system with wind influence. `setIntensity(n)` controls spawn rate; `update(dt)` advances the particle simulation. Pairs with `Particles/ParticleSystem2` for rendering. |
+| `VegetationSystem` | Large-scale vegetation rendering. Partitions the terrain into `VegetationPatch` blocks, each holding an `InstancedMesh`. Within a patch, samples points by `baseDensity`, queries `TerrainGeometry.getHeightAt` + surface normal slope to decide placement, and picks a `VegetationType` by weighted probability. LOD by camera distance (`lodDistances[i]` selects level `i`; far patches `visible=false`, mid-distance lowers instance count). Optional `densityMap` multiplies `baseDensity`. Deterministic `mulberry32` PRNG — `setSeed` gives reproducible scatter. `getStats()` returns `VegetationStats { patchCount, instanceCount, visibleInstanceCount, visiblePatchCount }`. |
+| `WaterSimulation` | 2D water ripple simulator — solves the wave equation `∂²h/∂t² = c²∇²h − d·∂h/∂t` via explicit finite differences on a `resolution×resolution` grid. Three rotating buffers (`heightField` / `previousField` / `next`). Fixed `dt=0.5` satisfies the CFL condition (`c·dt/dx ≤ 1/√2`); the caller passes simulated `dt` and the integrator accumulates sub-steps. `addRipple(x, y, strength)` injects an instantaneous height pulse. Consumed by `WaterSystem` for surface displacement, or independently for game mechanics (buoyancy, ripple triggers). |
+| `WaterSystem` | Scene-level water — owns a `waterMesh` (rotated `PlaneGeometry`) bound to a `WaterMaterial`. `create(size, resolution)` builds the surface grid; `update(dt)` advances `time` (read by the material's `time` uniform via `userData`). Optional `attachSimulation(sim)` feeds a `WaterSimulation` height field as a displacement uniform. `isUnderwater(point)` tests `point.y < waterLevel`; `getUnderwaterFog(point)` returns `{ color, density }` for the renderer's underwater fog pass. Exposes wave / flow / colour / transparency knobs directly on the material instance. |
 
-**Why a separate `Environment/` module?** Weather, sky, clouds, and precipitation share state (time-of-day drives sun angle → drives cloud lighting → drives precipitation visibility). Grouping them avoids circular dependencies between the renderer, particle system, and scene graph, and lets a designer swap the entire environment preset in one call.
+**Why a separate `Environment/` module?** Weather, sky, clouds, precipitation, vegetation, and water share state (time-of-day drives sun angle → drives cloud lighting → drives precipitation visibility → drives vegetation LOD / water specular). Grouping them avoids circular dependencies between the renderer, particle system, terrain, and scene graph, and lets a designer swap the entire environment preset in one call.
+
+**Vegetation / water design notes.** `VegetationSystem` depends only on `TerrainGeometry.getHeightAt` + an externally-supplied normal sampler; it never mutates the terrain. Its `InstancedMesh`-per-patch strategy keeps draw calls low (one draw per patch per type) while allowing per-patch LOD culling. `WaterSimulation` is a pure math module (no scene-graph dependency) so it can be unit-tested in isolation and reused for non-rendering mechanics; `WaterSystem` is the rendering-facing wrapper that bridges simulation → material → mesh.
 
 ### 4.29 Timeline
 
@@ -1264,6 +1278,62 @@ Mouse drag → TransformGizmo.handleMouseMove(ray)
 **Why are the components decoupled?** A selection system is useful without a gizmo (e.g. programmatic batch operations). A gizmo is useful without undo/redo (e.g. live preview before commit). Keeping them separate lets each be tested in isolation (the test suite has 57 cases covering Selection/Undo/Snap without touching WebGL) and lets the UI layer decide the wiring — the same `SelectionSystem` can drive an outliner, a property grid, or a batch-operation toolbar.
 
 **Why does `TransformGizmo` not render itself?** Rendering requires a WebGL context, which would make the gizmo untestable in Node. By emitting plain `GizmoMeshData` structs, the gizmo stays pure-logic and the UI layer (which already has a context) handles drawing — the same pattern as `Helpers/ArrowHelper` producing geometry rather than draw calls.
+
+### 4.32 PCG (Procedural Content Generation)
+
+**Path:** `src/engine/PCG/`
+
+Procedural content generators. Complements `Terrain/` (which is height-field–focused) and `Geometries/` (analytic primitives): PCG produces *content* — buildings, cities, dungeons, trees — as `BufferGeometry` plus layout metadata. It deliberately does not bind `Material` or attach to a `Scene`, leaving instantiation to the caller.
+
+| Export | Role |
+|--------|------|
+| `NoiseGenerator` | Noise sampling base class with four algorithms: `Perlin` (gradient noise), `Simplex` (improved gradient, no directional artefacts), `Worley` (cellular noise, suited to terrain partitioning), `FBM` (fractal Brownian motion, multi-octave summation). Unified `noise2D(x, y)` / `noise3D(x, y, z)` interface; configurable `seed` / `lacunarity` / `persistence`. Deterministic — same seed → same output. |
+| `BuildingGenerator` | Procedural buildings: floors + window arrays + roof. Output is a merged `BufferGeometry`. Configurable `width` / `height` / `floorCount` / `windowDensity` / `roofType` (flat / gabled / hip) / `buildingStyle`. |
+| `CityGenerator` | City layout: grid + noise perturbation generates blocks / roads / plot metadata. Output `CityResult { buildings: CityBuilding[], parks: CityPark[], stats: CityStats }` — coordinates only; the caller instantiates `BuildingGenerator` per plot. |
+| `DungeonGenerator` | Dungeon generation via BSP (binary space partition) or random-walk rooms + corridor connection. Output `DungeonResult { rooms: DungeonRoom[], corridors: DungeonCorridor[], doors: DungeonDoor[], tileMap }`. Tile constants `TILE_EMPTY` / `TILE_WALL` / `TILE_ROOM` / `TILE_CORRIDOR` / `TILE_DOOR` for grid representation. Configurable `minRoomSize` / `maxRooms` / `density`. |
+| `TreeGenerator` | Procedural trees: L-system–style recursive branching + leaf point cloud. Output `TreeResult { trunk: BufferGeometry, branches: BufferGeometry, leaves: MeshData }`. Configurable `maxDepth` / `branchAngle` / `leafCount`. |
+
+**Why a separate module?** PCG involves layout, rules, and random seeds — a different shape from analytic `Geometries/`. Isolating it makes it easy to extend (L-system vegetation, Wave Function Collapse, etc.) and keeps the output contract narrow (geometry + metadata, no scene coupling).
+
+### 4.33 Pipeline (Asset Pipeline)
+
+**Path:** `src/engine/Pipeline/`
+
+Asset processing pipeline. Complements `Loaders/AssetManager`: `Loaders/` are *format adapters* (single responsibility: parse file format → engine object); `Pipeline/` is an *orchestrator* that composes multiple processing steps (e.g. import-time auto LOD + texture compress + vertex weld). Long cross-`Loaders`/`Assets`/`Materials` chains are kept here so `Loaders/` stay single-purpose.
+
+```
+ImportPipeline.run(file)
+   ├─ 1. Load    (GLBLoader / FBXLoader / OBJLoader, dispatched by extension)
+   ├─ 2. Parse   → Scene + animations + materials
+   ├─ 3. Optimize (GeometryProcessor.optimize / weld / computeNormals)
+   ├─ 4. Compress (TextureProcessor.compress / generateMipmaps, optional)
+   └─ 5. Register → ImportResult { scene, materials, animations, metadata, validation }
+```
+
+| Export | Role |
+|--------|------|
+| `AssetPipeline` | Composable step-sequence pipeline. Holds a serialized `PipelineStep[]`; each step's `process(asset)` inputs/outputs a `PipelineAsset`. `addStep` / `removeStep` / `run(asset)` batch-execute. Each step may declare `accepts(predicate)` to decide whether to process a given asset. `BatchResult` aggregates per-asset success/failure. |
+| `TextureProcessor` | Texture processing: `resize(w, h)` / `compress(format)` / `generateMipmaps()` / `flipY()` / `convertFormat(target)` / premultiply-alpha. Output is a processed `Texture` instance (in-place or new, configurable). `CompressedFormat` enum covers ASTC / ETC2 / BCn / PVRTC. |
+| `GeometryProcessor` | Geometry processing: `merge(geometries)` / `optimize(geometry)` (vertex dedup + index reordering for cache locality) / `computeNormals()` / `computeTangents()` / `generateLOD(levels)` / `weld(epsilon)` (vertex welding within epsilon). Output is a `BufferGeometry`. |
+| `ImportPipeline` | Model import: encapsulates the full load → parse → optimize → register flow, delegating to `GLBLoader` / `FBXLoader` etc. + `GeometryProcessor` / `TextureProcessor`. Output `ImportResult { scene, materials, animations, metadata }`; `ValidationReport` flags issues (missing tangents, degenerate triangles, oversized textures). |
+
+**Why separated from `Loaders/`?** A loader's contract is "turn bytes into engine objects" — adding optimisation/compression/LOD logic would bloat each loader and duplicate work across formats. The pipeline centralises cross-cutting post-processing so loaders stay thin and the same optimisation pass runs regardless of source format.
+
+### 4.34 Gameplay
+
+**Path:** `src/engine/Gameplay/`
+
+Upper-layer RPG gameplay primitives: NPC dialogue, quests, and inventory. Complements `Events/` (general pub/sub) and `Scripting/` (lifecycle hooks): `Events/` provides the transport, `Scripting/` provides imperative hooks, `Gameplay/` provides declarative state machines for dialogue nodes / quest flows with first-class serialisation (for `SaveSystem/`).
+
+| Export | Role |
+|--------|------|
+| `DialogueSystem` | Dialogue main controller. `start(dialogueId, participantId)` / `advance()` / `chooseOption(idx)` / `end()` drive the state machine. Holds `currentDialogue` + `dialogueHistory` + `participants: Map<id, DialogueParticipant>`. Dispatches `dialogue:start` / `dialogue:advance` / `dialogue:choose` / `dialogue:end` events via `EventBus` (`DIALOGUE_EVENTS` exports the topic strings). |
+| `DialogueTree` | Dialogue tree — directed graph of nodes. `DialogueNode { id, speaker, text, options: DialogueOption[], condition?, action?, nextId? }`; `DialogueOption { text, nextId, condition?, action? }`. `loadFromJSON(json)` / `saveToJSON()` round-trip serialise. `condition` is an optional predicate injected at runtime (not serialised). |
+| `DialogueParticipant` | Dialogue participant — `id` / `name` / `portrait` / `mood` / `voice`. `setMood(mood)` / `setVoice(voiceId)` swap expression and audio at runtime. |
+| `QuestSystem` | Quest system — `quests: Map<id, Quest>` + `activeQuests: Set<id>` + `completedQuests: Set<id>`. `Quest { id, title, description, objectives: QuestObjective[], rewards, state, prerequisites }`; `QuestObjective { id, description, type, target, count, current, completed }`. `startQuest` / `completeObjective` / `abandonQuest` / `progressObjective(questId, objId, amount)` / `canStartQuest` (checks prerequisites). Dispatches `quest:started` / `quest:completed` / `quest:objective` / `quest:abandoned` events. |
+| `InventorySystem` | Inventory — `items: Map<id, InventoryItem>` + `maxSlots` + `currency`. `InventoryItem { id, name, count, type, data, stackable }`. `addItem` / `removeItem(id, count)` / `hasItem(id, count?)` / `swap(a, b)` / `addCurrency` / `spendCurrency`. Stackable items auto-merge; overflow past `maxSlots` returns `false`. |
+
+**Why a separate module?** Dialogue, quests, and inventory are RPG gameplay primitives with state machines (dialogue nodes, quest flows) and serialisation needs (save files). Putting them in ECS would pollute the data-component core (which is about `Health` / `Velocity` / `Transform`). Pairing `Gameplay/` with `Scripting/` lets NPC scripts drive dialogue trees while the trees themselves remain declarative and serialisable.
 
 ---
 
