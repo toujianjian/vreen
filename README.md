@@ -79,6 +79,9 @@ VREEN is positioned as a **lightweight Web game engine** — comparable in scope
 | **Package format** | `.vreen` ZIP container (manifest + scene + world + embedded assets), `.vreen-delta` incremental diffs, multi-language SDKs, `vreen` CLI for pack / unpack / validate / diff. |
 | **Desktop** | Electron 43 + electron-builder producing a single-file portable Windows `.exe`. |
 | **i18n** | First-class zh / en / ja / ko / es via i18next; all user-facing strings flow through translation keys. |
+| **PCG** | Procedural Content Generation — `NoiseGenerator` (Perlin / Simplex / Worley / FBM), `BuildingGenerator`, `CityGenerator`, `DungeonGenerator` (BSP / random walk), `TreeGenerator` (L-system). |
+| **Pipeline** | Asset pipeline — `AssetPipeline` (step sequence), `TextureProcessor` (resize / compress / mipmap), `GeometryProcessor` (merge / optimize / weld / LOD), `ImportPipeline` (load → parse → optimize → register). |
+| **Gameplay** | RPG gameplay primitives — `DialogueSystem` + `DialogueTree` + `DialogueParticipant` (NPC dialogue with options / conditions), `QuestSystem` (objectives / prerequisites / state machine), `InventorySystem` (stackable items / currency / slots). |
 
 ---
 
@@ -187,6 +190,9 @@ vreen/
 │   │   ├── Timeline/           # TimelineClip + TimelineTrack + EventTrack + PropertyTrack + TimelineSequencer (play/pause/seek/loop/export/import)
 │   │   ├── Voxel/              # VoxelChunk 16³ + VoxelWorld (multi-chunk) + VoxelMesher (greedy meshing) + VoxelRaycaster (DDA) + VoxelPalette
 │   │   ├── Editor/             # SelectionSystem (pick/select/hover) + TransformGizmo (translate/rotate/scale) + UndoRedoSystem (with beginGroup/endGroup) + EditorCommands (Move/Rotate/Scale/Add/Remove/Property) + SnapSystem (grid/angle/scale snap)
+│   │   ├── PCG/                # Procedural Content Generation — NoiseGenerator (Perlin/Simplex/Worley/FBM) + BuildingGenerator + CityGenerator + DungeonGenerator + TreeGenerator
+│   │   ├── Pipeline/           # Asset pipeline — AssetPipeline (step sequence) + TextureProcessor + GeometryProcessor + ImportPipeline
+│   │   ├── Gameplay/           # RPG gameplay — DialogueSystem + DialogueTree + DialogueParticipant + QuestSystem + InventorySystem
 │   │   └── ecsDemo.ts          # ECS demo entry
 │   ├── pages/                  # Route-level pages (HomePage / ViewerPage / EngineDemoPage)
 │   ├── stores/                 # Zustand stores (viewer / ui / world / profiler / inspector)
@@ -626,6 +632,41 @@ Editor subsystem for in-engine object manipulation — selection, transform gizm
 | `EditorCommands` | `HistoryAction` factories: `createMoveCommand` / `createRotateCommand` / `createScaleCommand` / `createAddCommand` / `createRemoveCommand` / `createPropertyCommand`. Snapshots taken at factory-call time. |
 | `SnapSystem` | Snapping with three independent toggles: `gridSnap` (position, `snapPosition` rounds to `gridSize`), `angleSnap` (rotation, default 15°), `scaleSnap` (scale). All `snap*` return new `Vector3`, never mutate input. |
 
+### PCG (`src/engine/PCG/`)
+
+Procedural Content Generation — complements `Terrain/` (height fields) and `Geometries/` (analytic primitives) by generating "content" (buildings, cities, dungeons, vegetation) as `BufferGeometry` + layout metadata. Does not bind `Material` or `Scene`.
+
+| Export | Purpose |
+|--------|---------|
+| `NoiseGenerator` | Noise sampling with 4 algorithms: `Perlin` (gradient), `Simplex` (improved gradient, no directional artifacts), `Worley` (cellular, suited for terrain partitioning), `FBM` (Fractal Brownian Motion, multi-octave stacking). Unified `noise2D(x, y)` / `noise3D(x, y, z)` API; configurable seed / lacunarity / persistence. |
+| `BuildingGenerator` | Procedural building — floors + window grid + roof composed into a merged `BufferGeometry`. Configurable width / height / floorCount / windowDensity. |
+| `CityGenerator` | City layout — grid + noise perturbation produces block / road / lot metadata, outputting a `CityLayout` (lot coordinate list). Callers instantiate `BuildingGenerator` per lot. |
+| `DungeonGenerator` | Dungeon generation — BSP (binary space partition) or random-walk rooms + corridor connections. Outputs room rectangles + corridor segments; configurable minRoomSize / maxRooms / density. |
+| `TreeGenerator` | Procedural trees — L-system style recursive branching + leaf point cloud. Outputs trunk `BufferGeometry` + leaf `MeshData`; configurable maxDepth / branchAngle / leafCount. |
+
+### Pipeline (`src/engine/Pipeline/`)
+
+Asset pipeline — complements `Loaders/AssetManager` (which focus on parsing) by orchestrating multi-step processing (conversion / compression / optimization) at import time. Pipeline steps may invoke Loaders internally.
+
+| Export | Purpose |
+|--------|---------|
+| `AssetPipeline` | Sequential step pipeline — holds a serialized `PipelineStep[]`; each step's `process(asset)` consumes and produces an `AssetArtifact`. Supports `addStep` / `removeStep` / `run(asset)` batch execution; each step declares `accepts(predicate)` to opt in/out. |
+| `TextureProcessor` | Texture processing — `resize(w, h)` / `compress(format)` / `generateMipmaps()` / `flipY()` / `convertFormat(targetFormat)`. Outputs the processed `Texture` (in-place or new instance, configurable). |
+| `GeometryProcessor` | Geometry processing — `merge(geometries)` / `optimize(geometry)` (vertex dedup + index reorder) / `computeNormals()` / `generateLOD(levels)` / `weld(epsilon)` (vertex welding). Outputs `BufferGeometry`. |
+| `ImportPipeline` | Model import — wraps the full "load → parse → optimize → register" flow, internally delegating to `GLBLoader` / `FBXLoader` etc. + `GeometryProcessor` / `TextureProcessor`. Outputs `ImportResult { scene, materials, animations, metadata }`. |
+
+### Gameplay (`src/engine/Gameplay/`)
+
+RPG gameplay primitives — complements `Events/` (generic pub/sub) and `Scripting/` (lifecycle hooks) with higher-level dialogue / quest / inventory systems. Combined with `Scripting/` you can build complete NPC-driven RPG gameplay.
+
+| Export | Purpose |
+|--------|---------|
+| `DialogueSystem` | Dialogue state machine — `start(dialogueId, participantId)` / `advance()` / `chooseOption(idx)` / `end()` / `isActive()` / `getCurrentNode()` / `getOptions()` / `getHistory()`. Holds `currentDialogue` + `dialogueHistory` + `participants: Map<id, DialogueParticipant>`. Dispatches `dialogue:start` / `dialogue:advance` / `dialogue:choose` / `dialogue:end` events through `EventBus`. |
+| `DialogueTree` | Dialogue tree — `nodes: Map<id, DialogueNode>` + `rootId` + `entryId`. `DialogueNode { id, speaker, text, options, condition?, action?, nextId? }`, `DialogueOption { text, nextId, condition?, action? }`. `addNode` / `getNode` / `getRoot` / `getOptions` / `loadFromJSON(json)` / `saveToJSON()`. `condition` is an optional runtime predicate (not serialized). |
+| `DialogueParticipant` | Dialogue participant — `id` / `name` / `portrait` / `mood` / `voice`; `setMood(mood)` / `setVoice(voiceId)` for runtime expression / voice switching. |
+| `QuestSystem` | Quest state machine — `quests: Map<id, Quest>` + `activeQuests: Set<id>` + `completedQuests: Set<id>`. `Quest { id, title, description, objectives, rewards, state, prerequisites }`; `QuestObjective { id, description, type, target, count, current, completed }`. `startQuest` / `completeObjective` / `abandonQuest` / `progressObjective(questId, objId, amount)` / `canStartQuest` (checks prerequisites). Dispatches `quest:started` / `quest:completed` / `quest:objective` events. |
+| `InventorySystem` | Inventory — `items: Map<id, InventoryItem>` + `maxSlots` + `currency`. `InventoryItem { id, name, count, type, data, stackable }`. `addItem` / `removeItem(id, count)` / `getItem` / `hasItem(id, count?)` / `swap(a, b)` / `getItems` / `getCurrency` / `addCurrency` / `spendCurrency`. Stackable items auto-merge; returns `false` when `maxSlots` exceeded. |
+
 ---
 
 ## The `.vreen` Package Format
@@ -800,7 +841,7 @@ npm run test:coverage     # coverage report
 
 ### Coverage
 
-Unit tests cover the engine foundation (3128+ tests across 192+ engine test files):
+Unit tests cover the engine foundation (3293+ tests across 196+ engine test files, 42+ modules):
 
 | Area | Test files |
 |------|-----------|
@@ -831,6 +872,9 @@ Unit tests cover the engine foundation (3128+ tests across 192+ engine test file
 | Timeline | `TimelineSequencer`, `TimelineTrack`, `EventTrack`, `PropertyTrack` |
 | Voxel | `VoxelChunk`, `VoxelWorld`, `VoxelPalette`, `VoxelRaycaster` |
 | Editor | `SelectionSystem`, `UndoRedoSystem`, `SnapSystem` |
+| PCG | `NoiseGenerator`, `BuildingGenerator`, `DungeonGenerator`, `TreeGenerator` |
+| Pipeline | `AssetPipeline`, `GeometryProcessor` |
+| Gameplay | `DialogueSystem`, `DialogueTree`, `QuestSystem`, `InventorySystem` |
 | Lib | `vreenPack`, `vreenPublish`, `blocklyScriptStore`, `ecsScriptApi` (animsm / material / base), `vreenBlockly.tick` |
 
 Tests live alongside source files as `*.test.ts` and are picked up automatically by Vitest's default glob.
@@ -933,7 +977,7 @@ npm run electron:build
 | Serialization | Scene/Geometry/Material ↔ JSON | None |
 | Export | GLTF / OBJ / STL / PLY (4 exporters) | None |
 | i18n | 5 languages (en/zh/ja/ko/es) | 2 languages (en/zh) |
-| Testing | 3128+ unit tests (192 test files, 390+ source files) | None |
+| Testing | 3293+ unit tests (196+ test files, 390+ source files, 42+ modules) | None |
 | Visual Scripting | Blockly integration | None |
 | Package Format | .vreen (ZIP + delta diff) | None |
 

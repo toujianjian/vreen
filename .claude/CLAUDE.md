@@ -75,7 +75,10 @@ src/
 │   ├── Environment/         # 环境系统 (WeatherSystem 天气 + SkySystem 天空/日夜循环 + CloudSystem 云层 + PrecipitationSystem 降水)
 │   ├── Timeline/            # 时间轴/Sequencer (TimelineClip 片段 + TimelineTrack 轨道 + EventTrack 事件 + PropertyTrack 属性关键帧 + TimelineSequencer 序列器,支持 play/pause/seek/loop/export/import)
 │   ├── Voxel/               # VoxelChunk 16³ + VoxelWorld 多块管理 + VoxelMesher 贪婪网格合并 + VoxelRaycaster DDA + VoxelPalette 类型表
-│   └── Editor/              # 编辑器系统:SelectionSystem 选择/拾取 + TransformGizmo 变换手柄 (translate/rotate/scale) + UndoRedoSystem 撤销重做 (含 beginGroup/endGroup) + EditorCommands 命令工厂 (Move/Rotate/Scale/Add/Remove/Property) + SnapSystem 网格/角度/缩放吸附
+│   ├── Editor/              # 编辑器系统:SelectionSystem 选择/拾取 + TransformGizmo 变换手柄 (translate/rotate/scale) + UndoRedoSystem 撤销重做 (含 beginGroup/endGroup) + EditorCommands 命令工厂 (Move/Rotate/Scale/Add/Remove/Property) + SnapSystem 网格/角度/缩放吸附
+│   ├── PCG/                 # 程序化内容生成 (NoiseGenerator Perlin/Simplex/Worley/FBM + BuildingGenerator + CityGenerator + DungeonGenerator + TreeGenerator) - 产出 BufferGeometry/布局元数据,不绑定 Material/Scene
+│   ├── Pipeline/            # 资源管线 (AssetPipeline 步骤序列 + TextureProcessor 纹理处理 + GeometryProcessor 几何体处理 + ImportPipeline 模型导入) - 与 Loaders/AssetManager 互补:Loaders 关注解析,Pipeline 关注处理与优化
+│   └── Gameplay/            # 游戏玩法系统 (DialogueSystem 对话 + DialogueTree 对话树 + DialogueParticipant 参与者 + QuestSystem 任务 + InventorySystem 物品栏) - 与 Events/Scripting 互补,提供 RPG/NPC 玩法层
 ├── pages/                   # 页面组件 (HomePage, ViewerPage, EngineDemoPage)
 ├── stores/                  # Zustand 状态管理
 │   ├── viewerStore.ts       # 资产加载、相机、引擎模式、物理调试、Blockly 开关
@@ -355,6 +358,35 @@ src/
 - `SnapSystem` — 吸附系统,三类独立开关:`gridSnap`(位置,`snapPosition` round 到 `gridSize` 倍数)/`angleSnap`(旋转)/`scaleSnap`(缩放);不修改输入,返回新 Vector3
 - **为什么各组件零耦合?** SelectionSystem 不依赖 Gizmo,Gizmo 不依赖 UndoRedoSystem;调用方(UI 层)负责串联:鼠标点击 → pick → 选中 → setTarget → 拖拽 → snap → createCommand → execute
 
+### 程序化内容生成 (PCG/)
+
+- 与 Terrain/、Geometries/ 互补:Terrain 关注高度场,Geometries 关注解析式基元,PCG 关注「内容」生成(建筑/城市/地牢/植被),输出 BufferGeometry + 布局元数据,不绑定 Material/Scene
+- `NoiseGenerator` — 噪声采样基类,内置 4 种算法:`Perlin`(梯度噪声)/`Simplex`(改进梯度,无方向伪影)/`Worley`(细胞噪声,适合地形分区)/`FBM`(分形布朗运动,多 octaves 叠加);统一 `noise2D(x, y)` / `noise3D(x, y, z)` 接口,可设 seed/lacunarity/persistence
+- `BuildingGenerator` — 程序化建筑:由楼层 + 窗户阵列 + 屋顶构成,输出 `BufferGeometry`(合并 mesh);可配 width/height/floorCount/windowDensity
+- `CityGenerator` — 城市布局:基于网格 + 噪声扰动生成街区/道路/地块元数据,输出 `CityLayout`(地块坐标列表),由调用方实例化 BuildingGenerator
+- `DungeonGenerator` — 地牢生成:基于 BSP(二叉空间分割)或随机游走房间 + 走廊连接,输出房间矩形列表 + 走廊线段;支持 minRoomSize/maxRooms/density
+- `TreeGenerator` — 程序化树木:L-system 风格递归分支 + 叶子点云,输出主干 BufferGeometry + 叶子 MeshData;可配 maxDepth/branchAngle/leafCount
+- **为什么独立模块?** PCG 生成的是「内容」而非「几何基元」,涉及布局/规则/随机种子,与纯解析式 Geometries 形态不同;独立模块便于扩展(L-system 植被、Wave Function Collapse 等)
+
+### 资源管线 (Pipeline/)
+
+- 与 Loaders/AssetManager 互补:Loaders 关注「解析」(格式 → 引擎对象),Pipeline 关注「处理与优化」(导入时的转换/压缩/优化);Pipeline 内部可调用 Loaders
+- `AssetPipeline` — 步骤序列管线:持有序列化的 `PipelineStep[]`,每步 `process(asset)` 输入/输出 `AssetArtifact`;支持 `addStep`/`removeStep`/`run(asset)` 批量执行;每步可声明 `accepts(predicate)` 决定是否处理
+- `TextureProcessor` — 纹理处理:`resize(width, height)`/`compress(format)`/`generateMipmaps()`/`flipY()`/`convertFormat(targetFormat)`;输出处理后的 `Texture` 实例(原地或新实例可配)
+- `GeometryProcessor` — 几何体处理:`merge(geometries)`/`optimize(geometry)`(顶点去重 + 索引重排)/`computeNormals()`/`generateLOD(levels)`/`weld(epsilon)`(顶点焊接);输出 `BufferGeometry`
+- `ImportPipeline` — 模型导入:封装「加载 → 解析 → 优化 → 注册」完整流程,内部委托 `GLBLoader`/`FBXLoader` 等 + `GeometryProcessor`/`TextureProcessor`;输出 `ImportResult { scene, materials, animations, metadata }`
+- **为什么与 Loaders 分离?** Loaders 是「格式适配器」(单一职责:把文件格式变成引擎对象);Pipeline 是「编排器」,组合多个处理步骤(如导入时自动生成 LOD + 压缩纹理 + 顶点焊接),长链路处理跨 Loaders/Assets/Materials,独立模块避免 Loaders 膨胀
+
+### 游戏玩法系统 (Gameplay/)
+
+- 与 Events/、Scripting/ 互补:Events 提供通用 pub/sub,Scripting 提供生命周期钩子,Gameplay 提供上层 RPG 玩法原语(NPC 对话/任务/物品栏),三者组合可构建完整 RPG 玩法
+- `DialogueSystem` — 对话系统主控:`start(dialogueId, participantId)` 开始对话 / `advance()` 推进到下一节点 / `chooseOption(idx)` 选择分支 / `end()` 结束;持 `currentDialogue` + `dialogueHistory` + `participants: Map<id, DialogueParticipant>`;通过 `EventBus` 派发 `dialogue:start`/`dialogue:advance`/`dialogue:end` 事件
+- `DialogueTree` — 对话树:持 `nodes: Map<id, DialogueNode>` + `rootId` + `entryId`;`DialogueNode { id, speaker, text, options: DialogueOption[], condition?, action?, nextId? }`,`DialogueOption { text, nextId, condition?, action? }`;`loadFromJSON(json)` / `saveToJSON()` 往返序列化;`condition` 为可选谓词函数(运行时注入,不进 JSON)
+- `DialogueParticipant` — 对话参与者:`id`/`name`/`portrait`/`mood`/`voice`;`setMood(mood)` / `setVoice(voiceId)` 运行时切换表情与音色
+- `QuestSystem` — 任务系统:`quests: Map<id, Quest>` + `activeQuests: Set<id>` + `completedQuests: Set<id>`;`Quest { id, title, description, objectives: QuestObjective[], rewards, state, prerequisites }`,`QuestObjective { id, description, type, target, count, current, completed }`;`startQuest`/`completeObjective`/`abandonQuest`/`progressObjective(questId, objId, amount)`/`canStartQuest`(检查前置);通过 EventBus 派发 `quest:started`/`quest:completed`/`quest:objective` 事件
+- `InventorySystem` — 物品栏:`items: Map<id, InventoryItem>` + `maxSlots` + `currency`;`InventoryItem { id, name, count, type, data, stackable }`;`addItem`/`removeItem(id, count)`/`hasItem(id, count?)`/`swap(a, b)`/`addCurrency`/`spendCurrency`;可堆叠物品自动合并,超出 maxSlots 返回 false
+- **为什么独立模块?** 对话/任务/物品栏是 RPG 玩法原语,与 ECS 数据组件(Health/Velocity)关注点不同:玩法层有状态机(对话节点/任务流程)与序列化需求(存档),独立模块避免污染 ECS 核心;与 Scripting/ 配合可实现 NPC 脚本驱动对话
+
 ### .vreen 包格式
 
 - ZIP 容器: manifest.json + scene.json + 嵌入资源 (GLB/纹理) + world.json
@@ -385,6 +417,6 @@ src/
 
 - `npm test` / `npm run test:watch` / `npm run test:coverage`
 - Vitest 4 + @vitest/coverage-v8;测试文件与源码同目录 `*.test.ts`
-- 当前测试数量:**3128+**(192 个测试文件,覆盖 Math / Core / ECS / Animation / Physics / Renderer / Loaders / Materials / Particles / Audio / Terrain / Network / SaveSystem / SceneManager / Input / AI / Environment / Timeline / Voxel / Editor 等 39+ 模块)
+- 当前测试数量:**3293+**(196+ 个测试文件,覆盖 Math / Core / ECS / Animation / Physics / Renderer / Loaders / Materials / Particles / Audio / Terrain / Network / SaveSystem / SceneManager / Input / AI / Environment / Timeline / Voxel / Editor / PCG / Pipeline / Gameplay 等 42+ 模块)
 
 ## 📌&#x20;

@@ -127,3 +127,6 @@ export * from './PCG';
 // Pipeline — 资源管线 (AssetPipeline 步骤序列 + TextureProcessor 纹理处理 + GeometryProcessor 几何体处理 + ImportPipeline 模型导入)。
 // 与 Loaders/AssetManager 互补:Loaders 关注解析,Pipeline 关注处理与优化。
 export * from './Pipeline';
+// Gameplay — 游戏玩法系统 (DialogueSystem 对话 + DialogueTree 对话树 + DialogueParticipant 参与者 + QuestSystem 任务 + InventorySystem 物品栏)。
+// 与 Events/Scripting 互补,提供 RPG/NPC 玩法层。
+export * from './Gameplay';

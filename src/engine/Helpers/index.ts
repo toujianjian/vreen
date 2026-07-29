@@ -8,3 +8,4 @@ export { CameraHelper, buildCameraHelperGeometry } from './CameraHelper';
 export { ArrowHelper, buildArrowGeometry, fillArrowVertices } from './ArrowHelper';
 export { GridHelper3D, buildGrid3DGeometry } from './GridHelper3D';
 export { getLineProgram, getVertexColorLineProgram } from './lineShaders';
+export { DebugRenderer } from './DebugRenderer';
