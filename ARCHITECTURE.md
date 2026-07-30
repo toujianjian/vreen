@@ -1,6 +1,6 @@
 # VREEN Architecture
 
-> Version 0.5.x · Last updated 2026-07-29 (PCG / Pipeline / Gameplay chapters added; Environment extended with vegetation + water)
+> Version 0.5.x · Last updated 2026-07-30 (RenderGraph / ForwardPlus / AdvancedPBR / VR / Editor UI / PCG extensions / Network session / Profiler2 chapters added; module map resynced with 34 top-level modules)
 >
 > This document describes the architecture of the **VREEN** project — a
 > browser-first 3D engine and asset inspection platform built around a
@@ -171,38 +171,38 @@ re-exported from the engine root `src/engine/index.ts`.
 
 ```
 src/engine/
-├── Core/         Scene graph primitives (Object3D, Scene, Mesh, Sprite, Text, BitmapText, …) + texture family + Source + MorphTargets/MorphTargetAnimation + InstancedBufferAttribute + FurShell (multi-layer fur) + Fog / Raycaster + DirtyFlag / SceneGraphProcessor / FrustumCuller / SceneStats + TextAtlas
-├── Math/         Vectors, matrices, quaternions, geometry primitives
-├── Cameras/      Perspective / Orthographic cameras
-├── Controls/     Orbit / Fly / PointerLock / Map controls + CharacterController (kinematic character)
-├── Lights/       Ambient / Directional / Point / Spot / Hemisphere / RectArea + ShadowMapManager
-├── Geometries/   Procedural primitive geometry (15 generators)
-├── Materials/    Standard / Physical / Basic / Phong / Normal / Shadow / Sprite + ShaderMaterial + ShaderChunks/ subdirectory (10 GLSL fragments + ShaderChunkRegistry) + FurMaterial (shell-based fur / hair)
-├── Renderer/     Renderer interface, WebGL2Renderer, ShaderProgram, RenderPass, ShadowMapManager + MRTTarget / GBuffer (deferred) + PostProcess/ enhanced passes + PathTracer (CPU reference path tracer)
-├── Loaders/      GLB / OBJ / FBX / HDR / KTX2 / STL / PLY / TGA / MTL / EXR / Draco / AssetManager + 4 exporters (OBJ / GLTF / STL / PLY)
-├── Animation/    Clip, Mixer, StateMachine, BlendSpace1D, Humanoid + AnimationLayer / AnimationLayerMixer / BoneMask / AvatarMask / AdditiveBlend / AnimationSync + IK (FABRIK / CCD)
-├── ECS/          World, ComponentType, Systems, Physics, Prefab, QueryBuilder + Constraints
-├── Physics/      PhysicsDemo scene + ConstraintSolver + Joint constraints (Ball/Hinge/Slider/Fixed/Distance) + ClothSimulation (Verlet soft body)
-├── Helpers/      Grid / Grid3D / Axes / Box / Camera / Arrow helpers + PhysicsDebugRenderer
-├── Events/       EventBus / EventQueue / GameEvent (typed pub/sub)
-├── Scripting/    ScriptComponent / ScriptSystem / ScriptRegistry / CoroutineSystem
-├── Particles/    ParticleSystem2 / ParticleEmitter / ParticleModifier / ParticleCurve / TrailModule (advanced CPU particle system, separate from ECS ParticleSystem)
-├── Audio/        AudioListener / PositionalAudio / Audio / AudioLoader / AudioAnalyser
-├── Terrain/      TerrainGeometry / HeightmapGenerator / TerrainSplat / TerrainLayer
+├── Core/         Scene graph primitives (Object3D, Scene, Mesh, Sprite, Text, BitmapText, …) + texture family (Texture/CubeTexture/DataTexture/DataArrayTexture/DepthTexture/VideoTexture/CanvasTexture/CompressedTexture) + Source + MorphTargets/MorphTargetAnimation + InstancedBufferAttribute/InstancedMesh + LOD + FurShell (multi-layer fur) + Fog/FogExp2 + Raycaster + DirtyFlag/SceneGraphProcessor/FrustumCuller/SceneStats + TextAtlas + ModuleRegistry (Gem-style module registry, O3DE-inspired)
+├── Math/         Vectors (2/3/4), matrices (3/4), quaternions, Euler, Color, Box3, Sphere, Plane, Ray, Line3, Triangle, Frustum, MathUtils
+├── Cameras/      Perspective / Orthographic cameras + CinematicCamera (shot sequence) + CameraRig (crane/dolly/orbit/fixed follow)
+├── Controls/     Orbit / Fly / PointerLock / Map controls + CharacterController (kinematic character) + VRController (WebXR VR/XR)
+├── Lights/       Ambient / Directional / Point / Spot / Hemisphere / RectArea + DirectionalLightShadow + ShadowMapManager
+├── Geometries/   15 procedural primitives + InstancedGeometry (instanced geometry) + Primitives barrel
+├── Materials/    Standard / Physical / Basic / Phong / Normal / Shadow / Sprite + ShaderMaterial (+ onBeforeCompile) + ShaderChunks/ subdirectory (10 GLSL fragments + ShaderChunkRegistry) + ShaderLibrary (15 templates) + ShaderCompiler (#include + chunk inject + cache) + ShaderVariant (keyword variants + LRU cache) + Advanced: AdvancedPBRMaterial (anisotropy/iridescence/clearcoat/sheen), SubsurfaceScatteringMaterial (SSS) + Special: FurMaterial / MatcapMaterial / ToonMaterial / OutlineMaterial / WaterMaterial / WireframeMaterial
+├── Renderer/     Renderer interface, WebGL2Renderer, ShaderProgram, RenderPass, ShadowMapManager + MRTTarget / GBuffer (deferred) + DeferredRenderer (deferred backend) + ForwardPlusRenderer (tiled light culling) + RenderGraph (Frostbite FrameGraph-style) + RenderPipelineManager (Forward/Deferred/Forward+ orchestrator) + GPUDrivenRenderer (indirect draw prototype) + ReflectionProbe / ReflectionProbeManager (local IBL) + GlobalIllumination (SH2 light probes + VXGI simplified) + ContactShadowsPass + GTAOPass (top-level) + PostProcess/ enhanced passes + PathTracer (CPU reference path tracer)
+├── Loaders/      GLB / OBJ / FBX / HDR / KTX2 / STL / PLY / TGA / MTL / EXR / Draco / AssetManager + 4 exporters (OBJ / GLTF / STL / PLY) + GLTFExtensionLoader (DRACO/KTX2 + KHR/EXT extension registry)
+├── Animation/    Clip, Mixer, StateMachine, BlendSpace1D, Humanoid, KeyframeTrack + AnimationLayer / AnimationLayerMixer / BoneMask / AvatarMask / AdditiveBlend / AnimationSync + IK (IKBone/IKChain/IKSolver FABRIK / CCDSolver / IKHumanoid) + IKSystem (high-level, drives scene-graph joints) + ProceduralAnimation (8 procedural node types: headTrack/breathing/walkCycle/runCycle/idleSway/lookAt/reach/secondaryMotion)
+├── ECS/          World, ComponentType, Systems, Physics, Prefab, QueryBuilder, Broadphase
+├── Physics/      PhysicsDemo scene + ConstraintSolver + Joint constraints (Ball/Hinge/Slider/Fixed/Distance) + ConstraintSystem (runtime config + breakable) + CollisionSystem (BVH/SAT/GJK/EPA pipeline) + ClothSimulation (Verlet soft body) + RopePhysics (Verlet chain) + FluidSimulation (SPH) + DestructionSystem + VoronoiFracture
+├── Helpers/      Grid / Grid3D / Axes / Box / Camera / Arrow / Line helpers + PhysicsDebugRenderer
+├── Events/       EventBus / EventQueue / GameEvent (typed pub/sub — CollisionEvent/TriggerEvent/SpawnEvent/DestroyEvent/ScoreEvent/CustomEvent)
+├── Scripting/    ScriptComponent / ScriptSystem / ScriptRegistry / CoroutineSystem + VisualScriptComponent (Script Canvas-style node graph component)
+├── Particles/    ParticleSystem2 / ParticleEmitter / ParticleModifier / ParticleCurve / TrailModule / ParticleData (advanced CPU particle system, separate from ECS ParticleSystem)
+├── Audio/        AudioListener / PositionalAudio / Audio / AudioLoader / AudioAnalyser + SpatialAudio (HRTF + distance attenuation + Doppler) + AudioEffects (reverb/EQ/compression/low-pass/echo/chorus chain) + ProceduralAudio
+├── Terrain/      TerrainGeometry / HeightmapGenerator / TerrainSplat / TerrainLayer + TerrainErosion (thermal/hydraulic/wind erosion)
 ├── Acceleration/ BVH / BVHBuilder / MeshBVH
-├── Assets/       AssetCache (LRU) / AssetRegistry (ref-counting) / AssetLoader (async) — resource lifecycle management
+├── Assets/       AssetCache (LRU) / AssetRegistry (ref-counting) / AssetLoader (async) — resource lifecycle management + AssetBundle (packaged bundles) + TextureStreaming (mipmap-tier streaming)
 ├── Serialization/ SerializerRegistry / GeometrySerializer / MaterialSerializer / SceneSerializer — Scene/Geometry/Material ↔ JSON round-trip
-├── Tools/        Profiler / FrameProfiler / SystemProfiler / MemoryTracker / GpuProfiler / PerformanceReport
-├── Network/      NetworkSync (server-authoritative sync) + Snapshot (binary serialization/compression) + NetworkTransport (WebSocket/Mock) + NetworkLerp (interpolation/prediction/reconciliation)
+├── Tools/        Profiler / FrameProfiler / SystemProfiler / MemoryTracker / GpuProfiler / PerformanceReport + LODManager (screen-size / distance LOD) + Profiler2 (frame/zone/event + Chrome Trace export)
+├── Network/      NetworkSync (server-authoritative sync) + Snapshot (binary serialization/compression) + NetworkTransport (WebSocket/Mock) + NetworkLerp (interpolation/prediction/reconciliation) + StateSync (snapshot interpolation + Delta compression) + LagCompensation (server rewind + hit-check) + NetworkSession (lobby/loading/playing/paused/ended state machine)
 ├── SaveSystem/   SaveSystem (multi-slot + auto-save) + SaveSerializer (Scene+World ↔ SaveData, compressed) + LocalStorageAdapter (localStorage/memory fallback)
-├── SceneManager/ SceneManager (multi-scene register/load/switch) + SceneTransition (Fade/Crossfade/Slide/Wipe/None)
+├── SceneManager/ SceneManager (multi-scene register/load/switch) + SceneTransition (Fade/Crossfade/Slide/Wipe/None) + SceneStreaming (chunked streaming load/unload)
 ├── Input/        InputManager (unified keyboard/mouse/touch/gamepad) + KeyboardState/MouseState/TouchState/GamepadState + InputAction (binding→action) + InputMap (JSON config)
-├── AI/           NavMesh navigation mesh + A* PathFinder + SteeringBehavior + Agent + BehaviorTree + Blackboard
-├── Environment/  WeatherSystem + SkySystem (day/night cycle) + CloudSystem + PrecipitationSystem + VegetationSystem + WaterSimulation + WaterSystem
+├── AI/           NavMesh navigation mesh + A* PathFinder + SteeringBehavior + Agent + BehaviorTree + Blackboard + CrowdSystem (large-scale crowd + Reynolds separation) + SpatialGrid (2D XZ neighbourhood acceleration)
+├── Environment/  WeatherSystem + SkySystem (day/night cycle) + ProceduralSky (Preetham atmospheric scattering) + CloudSystem + VolumetricClouds (Perlin+Worley + ray-march + Beer-Lambert) + PrecipitationSystem + VegetationSystem/VegetationType + VegetationRenderer (LOD + wind sway + seasonal) + WaterSimulation + WaterSystem
 ├── Timeline/     TimelineClip + TimelineTrack + EventTrack + PropertyTrack + TimelineSequencer (play/pause/seek/loop/export/import)
 ├── Voxel/        VoxelChunk 16³ + VoxelWorld (multi-chunk) + VoxelMesher (greedy meshing) + VoxelRaycaster (DDA) + VoxelPalette
 ├── Editor/       SelectionSystem (pick/select/hover) + TransformGizmo (translate/rotate/scale) + UndoRedoSystem (with beginGroup/endGroup) + EditorCommands (Move/Rotate/Scale/Add/Remove/Property) + SnapSystem (grid/angle/scale snap)
-├── PCG/          NoiseGenerator (Perlin/Simplex/Worley/FBM) + BuildingGenerator + CityGenerator + DungeonGenerator + TreeGenerator
+├── PCG/          NoiseGenerator (Perlin/Simplex/Worley/FBM) + BuildingGenerator + BuildingGenerator2 (5 styles/4 roofs/decorations/interior, seeded) + CityGenerator + DungeonGenerator + TreeGenerator (L-system) + RoadGenerator (Catmull-Rom spline + terrain follow + intersections) + CharacterGenerator (5 races/4 body types/clothing + simplified Skeleton)
 ├── Pipeline/     AssetPipeline + TextureProcessor + GeometryProcessor + ImportPipeline
 └── Gameplay/     DialogueSystem + DialogueTree + DialogueParticipant + QuestSystem + InventorySystem
 ```
@@ -529,6 +529,64 @@ The system exposes `setMode(mode)` for runtime switching, `addProbe(probe)` / `r
 
 **Why two modes?** Light probes are cheap (SH evaluation is a few multiplies) but lose high-frequency detail; VXGI captures directional colour bleeding but requires a voxelization pass that is expensive to update per frame. Exposing both lets the caller trade quality vs. cost per scene.
 
+#### `RenderGraph` (`RenderGraph.ts`)
+
+Frostbite-style FrameGraph rendering system, providing declarative resource-dependency-driven pass scheduling for the renderer. Instead of each pass manually acquiring / releasing render targets, the caller declares:
+
+1. **Resources** — transient textures (color attachments, depth) declared by name with format / size descriptors.
+2. **Passes** — each pass declares the resources it *reads* and *writes*; the graph's `RenderGraphContext` injects the actual GL resources at execute time.
+
+The graph then:
+
+- Builds a dependency DAG from the read/write sets.
+- Topologically sorts passes so writers run before readers.
+- Computes resource lifetimes (first-write → last-read) and *automatically* creates / destroys the underlying FBO + texture at the right boundary — no manual `dispose()` calls, no leaks.
+- Hands each pass a `RenderGraphContext` exposing `getResource(name)` / `createResource(name, value)` / `destroyResource(name)` plus the `passIndex` for diagnostic logging.
+
+```ts
+export interface RenderGraphContext {
+  readonly resources: ReadonlyMap<string, unknown>;
+  getResource(name: string): unknown;
+  createResource(name: string, value: unknown): void;
+  destroyResource(name: string): void;
+  readonly passIndex: number;
+}
+```
+
+**Why a render graph?** Hand-rolled pass orchestration scales poorly once the pipeline grows beyond 5–6 passes — temp-texture leaks, double-frees, and ordering bugs dominate. The graph externalises resource lifecycle and ordering, leaving each pass to declare intent only. This mirrors the Frostbite / Unreal RDG / Granite designs and is the foundation the `RenderPipelineManager` orchestrator builds on.
+
+#### `RenderPipelineManager` (`RenderPipelineManager.ts`)
+
+High-level renderer pipeline orchestrator. Selects between three concrete backends and drives their per-frame execution:
+
+| Backend | Class | When to use |
+|---------|-------|-------------|
+| Forward | `WebGL2Renderer` | Default — small light counts, transparent objects, simple scenes. |
+| Deferred | `DeferredRenderer` | Many static lights — lighting cost decoupled from fragment count via G-Buffer. |
+| Forward+ | `ForwardPlusRenderer` | Many lights *and* transparency needed — tiled light culling reduces per-fragment light work without the G-Buffer transparency penalty. |
+
+`setPipeline(name)` switches backend at runtime; `setQualityLevel(level)` tunes per-backend knobs (shadow map size, SSAO sample count, bloom resolution). The manager is an *orchestrator* — it does not call GL directly; it dispatches to the active backend's `render(scene, camera)` and forwards configuration changes. Composes with `RenderGraph` for resource scheduling.
+
+#### `ForwardPlusRenderer` (`ForwardPlusRenderer.ts`)
+
+Forward+ (tiled forward) rendering backend. Improves on plain forward rendering when the scene contains many lights:
+
+1. **Depth pre-pass** — render scene depth only (cheap Z-fill, no shading).
+2. **Light culling compute pass** — partition the screen into tiles (default 16×16), each tile builds a per-tile light list by frustum-testing every light against the tile's depth range.
+3. **Shading pass** — forward render each fragment, sampling the per-tile light list (uniform array) so a fragment only evaluates lights overlapping its tile.
+
+Net effect: per-fragment light work drops from `O(totalLights)` to `O(lightsInTile)` (typically ≤32). Avoids the G-Buffer bandwidth cost of deferred rendering and handles transparency naturally (transparent fragments run the same forward+ path with depth-write disabled).
+
+#### `GPUDrivenRenderer` (`GPUDrivenRenderer.ts`)
+
+GPU-driven rendering pipeline prototype. The traditional CPU-driven loop iterates meshes on the CPU and issues one `drawElements` per mesh — CPU-bound at high mesh counts. `GPUDrivenRenderer` moves the draw-call decisions to the GPU:
+
+- Mesh instance data (per-instance transform, material index, bounding sphere) packed into GPU buffers.
+- A compute pass (or transform-feedback pre-pass) culls invisible instances (frustum + occlusion) and compacts the visible subset.
+- Final draw uses `drawElementsInstanced` / `drawArraysInstanced` with indirect draw parameters (`WebGL2RenderingContext.MULTI_DRAW_INDIRECT_EXT` where available), so a single CPU command dispatches many mesh draws.
+
+The prototype is a forward path — it does not yet replace `WebGL2Renderer` as the default, but demonstrates the path to scaling to tens of thousands of instanced meshes without per-mesh CPU overhead. Pairs with `Acceleration/BVH` for occlusion culling input.
+
 ### 4.4 Materials
 
 **Path:** `src/engine/Materials/`
@@ -546,6 +604,9 @@ The system exposes `setMode(mode)` for runtime switching, `addProbe(probe)` / `r
 | `ShaderChunks/` subdirectory | 10 GLSL fragment string constants (`COMMON_CHUNK`, `LIGHTING_CHUNK`, `FOG_CHUNK` / `FOG_EXP2_CHUNK`, `NORMAL_PACK_CHUNK`, `SHADOW_CHUNK`, `ENVMAP_CHUNK`, `TONEMAP_ACES_CHUNK` / `TONEMAP_REINHARD_CHUNK`, `NOISE_CHUNK`, `UV_TRANSFORM_CHUNK`, `COLOR_SPACE_CHUNK`) + `ShaderChunkRegistry` class (with `shaderChunkRegistry` process-wide singleton) supporting `#include <name>` resolution. `registerBuiltinChunks()` registers all built-ins idempotently. `BUILTIN_SHADER_CHUNKS` is a `Record<string, string>` of all built-in fragments for one-shot registration to a custom registry. |
 | `ShaderLibrary` | Predefined shader template library. Holds 15 built-in `ShaderTemplate`s keyed by name: `unlit` / `lambert` / `blinn-phong` / `pbr` / `normal` / `depth` / `shadow` / `sprite` / `fur` / `matcap` / `toon` / `outline` / `water` / `wireframe` / `fullscreen-quad`. Each template carries `vertexSrc` + `fragmentSrc` GLSL strings + a `uniforms` descriptor (name → type). `getTemplate(name)` returns a cloneable template; `registerTemplate(name, template)` allows users to register custom templates. Eliminates boilerplate for common shading tasks — callers no longer need to hand-write GLSL for standard material types. Pairs with `ShaderCompiler` for one-shot template → program compilation. |
 | `ShaderCompiler` | Shader compiler — preprocesses GLSL source (`#include <name>` resolution via `ShaderChunkRegistry`), injects `ShaderChunk` fragments at include sites, compiles vertex + fragment shaders via `WebGL2RenderingContext.createShader` / `compileShader`, links a `WebGLProgram`, and caches the compiled program by a hash of the preprocessed source. `compile(gl, vertexSrc, fragmentSrc)` returns a cached `ShaderProgram`; `clearCache()` evicts all entries; `getCacheStats()` reports hit / miss counts for debugging. Compile errors are surfaced with the offending GLSL lines annotated. Pairs with `ShaderLibrary` (template → program) and `ShaderChunks` (chunk resolution). |
+| `ShaderVariant` | Shader-variant manager — compiles a base shader under different keyword combinations (`#define HAS_NORMAL_MAP`, `#define USE_SHADOWS`, etc.) and caches each compiled variant in an LRU. `getVariant(keywords)` returns the matching `ShaderProgram`, compiling on miss. Solves the variant-explosion problem that `onBeforeCompile` runs into when many materials inject slightly different chunks: variant keys are explicit and bounded, compile cost is paid once per unique combination. |
+| `AdvancedPBRMaterial` | Advanced PBR material extending `StandardMaterial` with four industry-standard effects unavailable in `MeshPhysicalMaterial`'s simpler anisotropy: **anisotropy** ([-1, 1] + direction in degrees, Burley 2012 anisotropic GGX), **iridescence** ([0, 1] + IOR 1.3–2.0, thin-film interference), **clearcoat** ([0, 1] + clearcoatRoughness, separate GGX lobe), **sheen** (intensity + color, Charlie sheen lobe for fabric). Options: `AdvancedPBRMaterialOptions`. Pairs with the renderer's advanced PBR shader path. |
+| `SubsurfaceScatteringMaterial` | Subsurface scattering (SSS) material for skin / wax / milk. Separates surface shading from subsurface light transport — surface term uses standard PBR; subsurface term approximates light diffusion through the material via screen-space blur (skin-friendly) or preintegrated diffusion texture. Exposes `subsurfaceColor`, `subsurfaceRadius` (RGB diffusion radius), `subsurfaceMix` (0 = pure surface, 1 = pure subsurface). Complements `AdvancedPBRMaterial` (which has no SSS) — typical skin rigs combine both. |
 | `FurMaterial` | Shell-based fur / hair material. Extends `BasicMaterial` (same base as `ToonMaterial` / `OutlineMaterial`) with `furLength`, `furDensity`, `furColor` (`Color`), `furOcclusion` (root darkening, 0..1), `gravity` (`Vector3`), `wind` (`Vector3`), `noiseTexture` (`Texture \| null`), `shellLayer` (0..1, set per shell by `FurShell`), `time` (animation clock). The vertex shader (`FUR_VERT`) displaces vertices along `a_normal` by `shellLayer * furLength`, then offsets by gravity and wind scaled by `shellLayer * furLength` (top shells sway more). The fragment shader (`FUR_FRAG`) samples the noise texture (falling back to a hash-based pseudo-noise), discards fragments below a layer-dependent density threshold (`threshold = furDensity * (1 - layer² * 0.7)` — top shells are sparser), and darkens roots via `mix(1 - furOcclusion, 1.0, layer)`. `transparent` defaults to true; `doubleSided` defaults to true. Pairs with `FurShell` which manages the per-shell `shellLayer` uniform and synchronizes animation uniforms each frame. |
 | `shaders.ts` | Built-in shader source: `STANDARD_VERTEX_SRC` / `STANDARD_FRAGMENT_SRC`, shadow / depth-normal / SSAO / post-processing shaders. |
 
@@ -654,6 +715,7 @@ AnimStateSystem (ECS) ──ticks per frame──→ AnimationStateMachine
 | `CCDSolver` | Cyclic Coordinate Descent IK solver — alternative to FABRIK for stiff chains; per-iteration angle-limited. |
 | `IKHumanoid` | Full biped IK rig — left/right arm, left/right leg, spine chains with side chaining and pole vectors. |
 | `IKSystem` | High-level inverse kinematics system that operates directly on scene-graph `Object3D[]` joint chains (reads / writes node `position` / `rotation` rather than using a self-contained `IKBone` representation). Holds multiple named `IKChainConfig`s (`name` / `joints: Object3D[]` / `target: Vector3` / `poleTarget?` / `constraints?: IKConstraint[]`) and solves them all in `update(dt)`. Two built-in solvers selectable via `setSolver('fabrik' \| 'ccd')`: **FABRIK** (position-space — iterative backward pass (end→root) then forward pass (root→end), projecting joints onto line segments to preserve bone length; fast convergence, supports `poleTarget` for bend direction control) and **CCD** (rotation-space — rotates each joint from end toward root to align the end effector with the target; naturally compatible with hinge-joint rotation constraints). `IKConstraint` (`jointIndex` / `minAngle` / `maxAngle` / `axis`) clamps a joint's rotation about an axis to a range — applied as a post-solve projection on the joint's local rotation. Complements the `Animation/IK/` sub-module (which uses a self-contained `IKBone` class independent of the scene graph); `IKSystem` is the right choice when integrating IK into an existing scene-graph hierarchy where joints already exist as `Object3D` nodes. |
+| `ProceduralAnimation` | Procedural animation system that overlays data-free procedural motion on top of skeletal animation (sine / noise / physics approximation), augmenting rather than replacing `AnimationMixer`. Eight built-in `ProceduralNode` types, each bound to a single bone + `weight` + parameter table: **`headTrack`** (head tracks a target position — smooth yaw/pitch slerp toward look-at direction), **`breathing`** (subtle spine scale / shoulder rotation driven by sine wave), **`walkCycle`** (procedural leg swing + hip bob when moving, no clip needed), **`runCycle`** (faster, higher-amplitude variant of `walkCycle`), **`idleSway`** (low-amplitude noise-driven weight shift when stationary), **`lookAt`** (eye / neck bone slerp toward target), **`reach`** (simplified arm extension toward target; for precise reach use `IKSolver` instead), **`secondaryMotion`** (lagging follow-through on appendages — tail / hair / cape). `update(dt, skeleton)` dispatches per node type; weights do slerp blending so `weight=0` means no effect. Writes to bone LOCAL rotation / position (consistent with `AnimationMixer`; the subsequent `updateMatrixWorld` pass computes world matrices uniformly). Complements `AnimationMixer` — Mixer plays pre-recorded clips; `ProceduralAnimation` generates micro-motion. The two can be chained (Mixer for base locomotion, Procedural for breathing / head-track overlays). |
 
 **`AnimState` name collision:** the animation FSM exposes a *type*
 `AnimMachineState` (a state node) while the ECS exposes a *class*
@@ -923,6 +985,62 @@ as a continuum of many particles differs significantly from rigid
 bodies) — a future `FluidComponent` + `FluidSystem` wrapper could
 integrate it into ECS.
 
+**`CollisionSystem`** (`src/engine/Physics/CollisionSystem.ts`):
+high-fidelity three-stage collision pipeline supplementing the basic
+AABB / Sphere / Capsule narrowphase used by `PhysicsSystems`:
+
+| Stage | Algorithm | Output |
+|-------|-----------|--------|
+| Broadphase | BVH (`Acceleration/MeshBVH`) for mesh colliders; sweep-and-prune for dynamic rigidbodies. | Candidate pair list. |
+| Narrowphase | SAT (Separating Axis Theorem) for box / convex, GJK (Gilbert-Johnson-Keerthi) for arbitrary convex hulls, EPA (Expanding Polytope Algorithm) when GJK reports overlap to recover the contact manifold. Sphere / capsule use closed-form distance tests. | Contact manifold (point / normal / penetration depth). |
+| Resolution | Sequential-impulse solver + Baumgarte stabilization (same scheme as `ConstraintSolver`). | Velocity / position corrections. |
+
+Supports five collider types: `SphereCollider`, `BoxCollider`,
+`CapsuleCollider`, `ConvexHullCollider`, `MeshCollider` (triangle soup,
+accelerated by `MeshBVH`). Complements the simpler narrowphase in
+`PhysicsSystems` (which only handles AABB / Sphere / Capsule) — when
+`CollisionSystem` is registered, it replaces the basic narrowphase for
+higher-fidelity shapes (convex / mesh).
+
+**`ConstraintSystem`** (`src/engine/Physics/ConstraintSystem.ts`):
+runtime constraint / joint manager that operates at the ECS descriptor
+level, complementing the lower-level `ConstraintSolver` (which holds
+`Constraint` subclass instances). Where the Solver is "assemble a
+constraint graph of constraint instances", the System is "manage flat
+`PhysicsConstraint` descriptors at runtime" — letting editors / level
+scripts add / remove / configure / break joints without touching Solver
+internals.
+
+- Holds `Map<id, PhysicsConstraint>` keyed by id.
+- Constraint types: `fixed` / `hinge` / `ball` / `slider` / `spring` /
+  `cone`, plus `ConstraintLimit` (`min` / `max` / `bounciness`).
+- **Breakable constraints:** each descriptor carries `breakForce`; the
+  solver accumulates per-frame applied impulse, and when it exceeds
+  `breakForce` the descriptor is marked `isBroken` and subsequent solve
+  iterations skip it. UI can poll `getBrokenConstraints()` to display
+  fractured joints.
+- `update(dt)` syncs descriptors → `ConstraintSolver` each step, then
+  reads back applied impulses for break detection.
+
+**`RopePhysics`** (`src/engine/Physics/RopePhysics.ts`): Verlet-integration
+chain / rope simulator. A rope is a chain of `RopeNode` particles
+(`position` / `prevPosition` / `pinned` / `mass`) connected by distance
+constraints solved PBD-style with `iterations` per step. Adds two
+constraint types beyond the basic distance constraint:
+
+- **Bending constraint** — three-node angular constraint that resists
+  bending beyond a rest angle, giving the rope stiffness control (0 =
+  fully limp, 1 = rigid rod).
+- **Wind force** — per-node external force (`Vector3`) simulating wind
+  drag, scaled by node velocity relative to wind.
+
+Supports sphere collision (rope wrapping around obstacles) and pinned
+endpoints. `getMeshData()` outputs positions + indices for a tube /
+line-segment mesh; the caller syncs to a `BufferGeometry` each frame.
+Independent of `ClothSimulation` (2D grid) and `ConstraintSolver`
+(rigidbody joints) — rope is a 1D chain with its own constraint topology
+that fits neither the grid nor the rigidbody-pair model.
+
 `PhysicsDemo` (`src/engine/Physics/PhysicsDemo.ts`) ships a 24-body
 scene with random boxes and a particle emitter, exercisable from the
 `PHYSICS` and `PHYS-DBG` toolbar toggles in the inspector.
@@ -937,6 +1055,8 @@ scene with random boxes and a particle emitter, exercisable from the
 | `FlyControls` | Free-fly camera — WASD translate + mouse look with optional roll (Q/E); no up-vector lock. Suited for level-editor-style navigation and cinematic cameras. |
 | `PointerLockControls` | First-person pointer-lock camera — uses the Pointer Lock API; yaw / pitch only, no roll. Suited for 1st-person walkthroughs and FPS-style demos. |
 | `MapControls` | Top-down map pan / zoom — like `OrbitControls` but pan is screen-space (no orbit), giving an orthogonal feel even with a perspective camera. Suited for map / strategy UIs. |
+| `CharacterController` | Kinematic character controller — wraps a `CapsuleCollider` + `Velocity` integration with a non-physics-impulse movement model (Directly-set velocity, swept collision resolution against the scene). Handles step-up / step-down, slope limiting, and ground detection. Pairs with `InputManager` for WASD + jump input. Unlike `Rigidbody` (which is impulse-driven and physics-simulated), the `CharacterController` is *kinematic* — it moves by explicit velocity and pushes dynamic bodies but is not pushed back. Standard FPS / third-person character locomotion model. |
+| `VRController` | WebXR VR / XR controller. `isSessionActive` reports whether an immersive XR session is active; `requestSession(mode)` / `endSession()` manage the XR session lifecycle (`inline` / `immersive-vr` / `immersive-ar`). On each `update(dt)` the controller polls `XRFrame` and exposes: `getPose()` (headset world pose as `Matrix4`), `getEyeParameters(eye)` (`'left'` / `'right'` view + projection matrices for stereoscopic rendering), `getControllerPose(hand)` (`'left'` / `'right'` hand-controller position / orientation / button / axis state). Gracefully degrades in non-WebXR environments — `isSessionActive` stays `false`, all getters return null. **Mutually exclusive with `OrbitControls`:** when an XR session is active, the camera is driven by headset pose and `OrbitControls.update()` should be skipped. Pairs with the renderer's WebXR integration (each frame, the renderer draws the scene twice — once per eye — using the controller-provided view / projection matrices). |
 
 ### 4.12 Geometries
 
@@ -998,6 +1118,8 @@ freely via `PerformanceReport`.
 | `MemoryTracker` | Engine-managed resource allocation ledger (not a JS heap profiler — JS GC is V8's job). `track(type, size, stack?)` returns a numeric id; `untrack(id)` releases it. `getSummary()` returns `byType` grouping + active/total bytes; `getLeaks(minAgeMs)` flags allocations that survived past an age threshold, useful for catching "alloc-then-leak" bugs in BufferGeometry / Texture / typed-array caches. O(1) deletion via swap-with-tail. |
 | `GpuProfiler` | Standalone GPU timer-query wrapper. `beginQuery(gl, id)` / `endQuery(gl, id)` / `getQueryResult(gl, id)`. Internally caches the `EXT_disjoint_timer_query_webgl2` extension; `pollAll(gl)` resolves pending queries non-blockingly and handles `GPU_DISJOINT_EXT` by discarding results. Degrades to CPU-side timing when the extension is unavailable (e.g. Safari). `dispose(gl)` releases all `WebGLQuery` objects. |
 | `PerformanceReport` | Static report generator. `generate(fp?, sp?, mt?)` produces a human-readable text report (frame / systems / memory sections, all optional). `toJSON(...)` produces a `PerformanceReportJson` for tooling / automated regression tracking. |
+| `LODManager` | Level-of-detail selector. Picks a `LOD` level per `Mesh` each frame based on screen-space size (projected bounding sphere / screen height) and / or distance to camera. Screen-size heuristic is the default (more stable under FOV changes than pure distance). Honors `LOD.levels[].distance` / `.hysteresis` to avoid popping at boundaries. Pairs with `Core/LOD` (which holds the level list per mesh); `LODManager` is the per-frame selection driver running as an ECS-style system. Reduces triangle count for distant meshes without manual LOD switching. |
+| `Profiler2` | Next-generation profiler with three semantic levels: **frame** (per-frame totals — FPS / dt / draw calls), **zone** (named CPU regions, nestable via `beginZone(name)` / `endZone(name)` with a thread-local stack), **event** (one-shot timestamped markers via `event(name, payload?)`). Records into a ring buffer (default 10k events) with monotonic timestamps. `exportChromeTrace()` emits the standard `chrome://tracing` JSON schema (`{"traceEvents":[{"name","cat","ph":"B"/"E"/"i","ts","pid","tid"}]}`) for offline analysis in Chrome's trace viewer. Complements the original `Profiler` (which focuses on per-frame mark intervals) — `Profiler2` adds the event-timeline view needed to diagnose "what happened on frame N" rather than "how long did mark X take on average". |
 
 **Why a family instead of one profiler?** Each profiler has a different
 shape (ring buffer vs. map vs. set vs. async-query) and a different
@@ -1067,6 +1189,8 @@ to the active `Camera` (or any `Object3D`) and tracks its world position
 | `AudioLoader` | Decodes `ArrayBuffer` (mp3 / ogg / wav) into `AudioBuffer`s using the WebAudio `decodeAudioData` API. |
 | `AudioAnalyser` | FFT analyser node for visualization — exposes `getFrequencyData()` / `getTimeDomainData()` with configurable FFT size. |
 | `SpatialAudio` | 3D spatial audio extension building on `PositionalAudio` with a richer spatialization model. Three pillars: **HRTF (Head-Related Transfer Function)** panning model — `PannerNode.panningModel = 'HRTF'` uses a measured head-related impulse response for realistic directional audio (sounds behind / above the listener are perceptually distinct, unlike the simpler `equalpower` model); **distance attenuation** — selectable `linear` / `inverse` / `exponential` distance models with `refDistance` / `maxDistance` / `rolloffFactor` knobs; **Doppler effect** — pitch shift based on the relative velocity between source and listener (`dopplerFactor` controls the strength). Suitable for FPS / VR scenarios where accurate audio localization matters. The listener's position / orientation are tracked from the bound `AudioListener` each frame. |
+| `AudioEffects` | WebAudio effect-chain builder — assembles a series of `AudioNode` effects between a source and destination, configurable at runtime. Built-in effects: **reverb** (`ConvolverNode` with a generated impulse response, `wet` / `dry` mix), **equalizer** (multi-band `BiquadFilterNode` — low shelf / peaking / high shelf), **compression** (`DynamicsCompressorNode` with threshold / ratio / attack / release), **low-pass filter** (`BiquadFilterNode` for muffled / behind-wall effects), **echo** (`DelayNode` + feedback gain), **chorus** (modulated delay for ensemble thickness). Each effect exposes `setParam(name, value)` for live tuning. The chain is dynamic — `addEffect(name, effect)` / `removeEffect(name)` re-wires the chain without tearing down the source. Pairs with `Audio` / `PositionalAudio` (which provide the source) — typical usage is `audio.connectInput(effects.inputNode); effects.connectOutput(audioContext.destination);`. |
+| `ProceduralAudio` | Procedural sound synthesis — generates audio waveforms (sine / square / sawtooth / triangle / noise) directly via `AudioBuffer` fill rather than loading a sample file. Configurable `frequency` / `duration` / `sampleRate` / `harmonics` (additive synthesis with per-harmonic amplitude). Useful for retro SFX, UI clicks, debugging audio without asset dependencies, and generated music. Pairs with `Audio` for playback (the generated buffer is fed into the standard audio graph, so it can be spatialized / processed by `AudioEffects` like any sampled sound). |
 
 `AudioContext` management is centralized: a single lazily-created
 context is shared by all listeners / sources, and a mock context is
@@ -1125,6 +1249,8 @@ lookup.
 | `AssetCache` | Synchronous LRU resource instance cache keyed by string. `get(key)` / `set(key, value)` / `has(key)` / `delete(key)` with capacity-based eviction. Used for caching already-decoded / already-constructed resource instances (textures, geometries, materials) that are too expensive to rebuild every frame. |
 | `AssetRegistry` | Resource registry with reference counting. `acquire(key)` returns an `AssetHandle` that holds a reference; `release(handle)` decrements the count and triggers a caller-supplied dispose callback when the count reaches zero. `getDefaultAssetRegistry()` returns the process-wide singleton; `resetDefaultAssetRegistry()` is used in tests. Tracks `AssetRegistryStats` (live / total / peak). |
 | `AssetLoader` | Async resource loader wrapping `AssetManager`. `load(entries)` batches multiple `AssetLoadEntry` requests and returns an `AssetBatchResult` with `success` and `failure` groups, so callers can handle partial failures gracefully. |
+| `AssetBundle` | Packaged asset bundle with a manifest of contained resources + dependencies. `load(manifest)` resolves all entries (parallel where possible) and registers each with `AssetRegistry`; `unload()` releases every acquired handle. Supports cross-bundle dependencies (bundle A can declare it requires bundle B). Pairs with `Loaders/AssetManager` for the actual byte-fetch and with `Assets/AssetRegistry` for refcounted lifecycle. Brings Unity-style asset-bundle workflow to the engine — large worlds can ship as a base bundle + region bundles streamed in via `SceneManager/SceneStreaming`. |
+| `TextureStreaming` | Texture mipmap-tier streaming. Given a `TextureStreamingHandle` (texture + base resolution + available mips), `update(camera)` picks the highest mip level whose on-screen size justifies the bandwidth — distant textures upload only low-mip data, saving VRAM and upload time. Background-fetches higher mips as the camera approaches. Pairs with `Loaders/KTX2Loader` (which decodes per-mip on demand for Basis Universal textures) and the renderer's per-texture `needsUpdate` flag. Without streaming, a 4K texture costs 16 MB VRAM even when shown at 64×64 on screen; with streaming that cost drops to 64 KB until the camera closes in. |
 
 **Why a separate `Assets/` module when `Loaders/AssetManager` exists?**
 The two have different responsibilities:
@@ -1225,6 +1351,8 @@ from the ECS `World` — it reads / writes `Transform`-like state via the
 | `NetworkLerp` | Client-side interpolation / prediction / reconciliation. Buffers snapshots, interpolates remote entity positions / rotations, and reconciles local prediction errors when a server snapshot arrives. |
 | `NetworkSync` | Top-level sync manager. `createNetworkEntity` registers an entity for synchronisation; `update(dt)` ticks snapshot send (server) / receive + interpolate (client). `NetworkSyncOptions` configures send rate, interpolation delay, and ownership. |
 | `StateSync` | Pure-data-layer state synchronisation — the reusable data layer that the higher-level `NetworkSync` is built on, usable standalone for custom sync schemes. Two pillars: **snapshot interpolation** — remote entity state is buffered and sampled at a configurable `renderDelay` (default 100 ms) so that remote motion appears smooth even with jittery packet arrival; the interpolator linearly (or spherically for rotations) blends between the two snapshots bracketing the render time; **Delta compression** — only changed fields are transmitted per snapshot (a per-field dirty bit + a baseline snapshot), reducing bandwidth for entities that change rarely. Decoupled from any transport implementation: the caller wires `StateSync` to a `NetworkTransport` (or any byte pipe), calls `addSnapshot(snapshot)` on receive and `sampleState(renderTime)` on render. `StateSync` does not own entity lifecycle (unlike `NetworkSync`) — it only tracks `Map<entityId, EntityState>` for interpolation. This separation lets callers build custom entity registries (e.g. pooling, level-of-detail culling) while reusing the interpolation + delta-compression logic. |
+| `LagCompensation` | Server-side lag compensation for hit-registration in fast-paced multiplayer. The server maintains a per-entity history buffer of past transforms (`LagCompensationHistory`) covering the maximum plausible round-trip time (default 1 s). When a client fires a hit-check, the server: (1) determines the client's RTT, (2) **rewinds** every relevant entity to its historical position at `now − RTT − interpDelay`, (3) runs the hit-test against the rewound state, (4) restores current positions. This ensures a client aiming at where it *saw* an enemy actually lands the hit, even though the server's current authoritative state has moved on. Client-side interpolation (handled by `NetworkLerp` / `StateSync`) presents the same past-frame view the server will rewind to. Optional "favor the shooter" tolerance window (`maxLagMs`) lets the server accept hits slightly outside the buffer to cover network jitter spikes. |
+| `NetworkSession` | Lobby + match lifecycle state machine layered on top of `NetworkSync`. Tracks a session through five states: `lobby` (players joining, host can configure) → `loading` (all clients loading the scene, sync barrier) → `playing` (live match, `NetworkSync` active) → `paused` (host can freeze the simulation) → `ended` (results screen, return to lobby). Each state has a `update(dt)` handler and transition validation (`canTransition`). `slots: Slot[]` tracks per-client connection state (id / displayName / isHost / isReady / pingMs); the host has authority over state transitions and slot management. `NetworkSessionOptions` configures `maxSlots`, the loading-timeout, and the per-state update hooks. Decoupled from any specific game mode — the host wires `NetworkSession` state changes to gameplay systems (e.g. spawn players on `loading → playing`). |
 
 ### 4.25 SaveSystem
 
@@ -1253,6 +1381,7 @@ store subscription.
 |--------|------|
 | `SceneManager` | Scene registry (`Map<name, Scene>`). `register(name, scene)` / `unregister` / `get`. `switchTo(name, transition?)` swaps the active scene and runs an optional `SceneTransition`. `current` exposes the active `Scene` (or null). |
 | `SceneTransition` | Visual transition between scenes — `Fade` / `Crossfade` / `Slide` / `Wipe` / `None`. `update(dt)` advances an internal `t` (0..1) with an easing function; `isDone()` reports completion; the renderer reads `alpha` / `offset` to blend the outgoing and incoming scenes. Configurable duration. |
+| `SceneStreaming` | Chunked scene streaming — load / unload sub-scenes as the camera moves through a world partition. The world is divided into `StreamingChunk`s (configurable size, default 64×64 units in XZ). `update(cameraPosition)` determines which chunks intersect the camera's `loadRadius` (load + activate) and which are outside `unloadRadius` (deactivate + unload). Hysteresis between load / unload radii prevents thrashing at boundaries. Each chunk holds a `Scene` payload loaded via `SceneManager` / `AssetBundle`; the streaming layer manages async load queues (foreground for blocking-on-player chunks, background for prefetch) and ties into `Assets/TextureStreaming` so distant chunks load at low mip first. Solves the "open-world problem" — a single `Scene` cannot hold an entire continent's worth of geometry in memory; chunked streaming lets the engine present a seamless world while only ever holding a bounded working set. |
 
 ### 4.27 AI
 
@@ -1284,9 +1413,12 @@ Atmospheric and weather environment systems for outdoor scenes. Decoupled from t
 |--------|------|
 | `WeatherSystem` | Weather state machine — `Clear` / `Cloudy` / `Rain` / `Snow` / `Storm`. `setWeather(type, transitionDuration)` initiates a smooth transition; `update(dt)` advances the transition factor. Exposes current `fogDensity` / `cloudCover` / `precipitationIntensity` for downstream consumers. |
 | `SkySystem` | Procedural sky + day/night cycle. `setTimeOfDay(t)` (0..24 hours) computes the sun position via solar elevation / azimuth; `update(dt)` advances time. Produces `sunDirection` / `sunColor` / `skyTopColor` / `skyHorizonColor` with an atmospheric scattering approximation. The renderer reads these to shade the sky dome and directional light. |
+| `ProceduralSky` | Procedural sky shader companion to `SkySystem` — implements the **Preetham analytic atmospheric scattering** model. Given sun direction + turbidity (atmospheric haze) it computes the sky's RGB radiance as a function of view direction, returning both zenith color and horizon color. Cheaper than a full volumetric atmosphere and matches the look of the classic Preetham paper, so it's the default sky shader. Pairs with `SkySystem` which supplies the time-of-day → sun-direction conversion; `ProceduralSky` does the actual scattering maths. |
 | `CloudSystem` | Procedural cloud layer — noise-texture animation with configurable `altitude` / `coverage` / `windDirection` / `windSpeed`. `update(dt)` scrolls the noise offset; produces a `cloudOpacity` for the sky shader. |
+| `VolumetricClouds` | Volumetric cloud renderer — screen-space ray-marched clouds with physically-based lighting. A full-screen pass marches a ray through a 3D noise field (Perlin + Worley FBM) sampled along the view direction; at each step the Beer-Lambert transmittance `T = exp(−σ·ds)` accumulates to compute how much cloud blocks the sun / sky. Two lighting terms: forward-scatter (sun direction through the cloud) and back-scatter (sky ambient), blended by the phase function. Self-shadowing uses a secondary ray-march toward the sun to compute in-cloud extinction. Configurable: `coverage` (0..1 cloud density), `altitude`, `thickness`, `windSpeed`, `windDirection`, `steps` (ray-march sample count, trades quality vs. cost). Complements `CloudSystem` (which is a flat 2D noise-texture layer) — `VolumetricClouds` produces true 3D parallax and self-shadowing at the cost of more GPU time. |
 | `PrecipitationSystem` | Precipitation particles (rain / snow) driven by a particle system with wind influence. `setIntensity(n)` controls spawn rate; `update(dt)` advances the particle simulation. Pairs with `Particles/ParticleSystem2` for rendering. |
 | `VegetationSystem` | Large-scale vegetation rendering. Partitions the terrain into `VegetationPatch` blocks, each holding an `InstancedMesh`. Within a patch, samples points by `baseDensity`, queries `TerrainGeometry.getHeightAt` + surface normal slope to decide placement, and picks a `VegetationType` by weighted probability. LOD by camera distance (`lodDistances[i]` selects level `i`; far patches `visible=false`, mid-distance lowers instance count). Optional `densityMap` multiplies `baseDensity`. Deterministic `mulberry32` PRNG — `setSeed` gives reproducible scatter. `getStats()` returns `VegetationStats { patchCount, instanceCount, visibleInstanceCount, visiblePatchCount }`. |
+| `VegetationRenderer` | Rendering-side companion to `VegetationSystem`. Per-frame `update(dt, camera)` batches the visible `InstancedMesh`es, applies **LOD swap** (near = full mesh, mid = simplified mesh, far = impostor billboard), and pushes per-instance **wind sway** (sinusoidal offset driven by `windStrength` + `windDirection` + per-instance phase) and **seasonal tint** (lerp between summer / autumn / winter / spring colors by `season` 0..1) uniforms. The renderer reads the instanced draw list and issues one `drawElementsInstanced` per (patch × vegetation type × LOD level). Pairs with `VegetationSystem` (placement) — `VegetationSystem` decides *where* instances go; `VegetationRenderer` decides *how to draw* them this frame. |
 | `WaterSimulation` | 2D water ripple simulator — solves the wave equation `∂²h/∂t² = c²∇²h − d·∂h/∂t` via explicit finite differences on a `resolution×resolution` grid. Three rotating buffers (`heightField` / `previousField` / `next`). Fixed `dt=0.5` satisfies the CFL condition (`c·dt/dx ≤ 1/√2`); the caller passes simulated `dt` and the integrator accumulates sub-steps. `addRipple(x, y, strength)` injects an instantaneous height pulse. Consumed by `WaterSystem` for surface displacement, or independently for game mechanics (buoyancy, ripple triggers). |
 | `WaterSystem` | Scene-level water — owns a `waterMesh` (rotated `PlaneGeometry`) bound to a `WaterMaterial`. `create(size, resolution)` builds the surface grid; `update(dt)` advances `time` (read by the material's `time` uniform via `userData`). Optional `attachSimulation(sim)` feeds a `WaterSimulation` height field as a displacement uniform. `isUnderwater(point)` tests `point.y < waterLevel`; `getUnderwaterFog(point)` returns `{ color, density }` for the renderer's underwater fog pass. Exposes wave / flow / colour / transparency knobs directly on the material instance. |
 
@@ -1399,9 +1531,12 @@ Procedural content generators. Complements `Terrain/` (which is height-field–f
 |--------|------|
 | `NoiseGenerator` | Noise sampling base class with four algorithms: `Perlin` (gradient noise), `Simplex` (improved gradient, no directional artefacts), `Worley` (cellular noise, suited to terrain partitioning), `FBM` (fractal Brownian motion, multi-octave summation). Unified `noise2D(x, y)` / `noise3D(x, y, z)` interface; configurable `seed` / `lacunarity` / `persistence`. Deterministic — same seed → same output. |
 | `BuildingGenerator` | Procedural buildings: floors + window arrays + roof. Output is a merged `BufferGeometry`. Configurable `width` / `height` / `floorCount` / `windowDensity` / `roofType` (flat / gabled / hip) / `buildingStyle`. |
+| `BuildingGenerator2` | Second-generation procedural building generator — superset of `BuildingGenerator` with style variety and interior support. Five named styles: `modern` (flat roof, glass facade), `classical` (columns, pitched roof, cornices), `asian` (curved roof, pagoda tiers), `industrial` (corrugated metal, exposed framing), `futuristic` (asymmetric, neon strips). Four roof types: `flat` / `gabled` / `hip` / `curved`. Configurable: `width` / `depth` / `floorCount` / `floorHeight` / `windowDensity` / `style` / `roofType` / `seed` / `withInterior` (when true, emits interior floor slabs, room partitions, and doorway cutouts as a separate `interior` geometry). Output `BuildingResult2 { exterior: BufferGeometry, interior?: BufferGeometry, decorations: BufferGeometry, metadata: BuildingMetadata }`. Seeded — `mulberry32` PRNG gives reproducible buildings. Complements `BuildingGenerator` (which is simpler and unstyled); `BuildingGenerator2` is the production path for cityscapes that need visual variety. |
 | `CityGenerator` | City layout: grid + noise perturbation generates blocks / roads / plot metadata. Output `CityResult { buildings: CityBuilding[], parks: CityPark[], stats: CityStats }` — coordinates only; the caller instantiates `BuildingGenerator` per plot. |
 | `DungeonGenerator` | Dungeon generation via BSP (binary space partition) or random-walk rooms + corridor connection. Output `DungeonResult { rooms: DungeonRoom[], corridors: DungeonCorridor[], doors: DungeonDoor[], tileMap }`. Tile constants `TILE_EMPTY` / `TILE_WALL` / `TILE_ROOM` / `TILE_CORRIDOR` / `TILE_DOOR` for grid representation. Configurable `minRoomSize` / `maxRooms` / `density`. |
 | `TreeGenerator` | Procedural trees: L-system–style recursive branching + leaf point cloud. Output `TreeResult { trunk: BufferGeometry, branches: BufferGeometry, leaves: MeshData }`. Configurable `maxDepth` / `branchAngle` / `leafCount`. |
+| `RoadGenerator` | Procedural road network — generates road segments as Catmull-Rom splines through control points, with terrain-following (samples `TerrainGeometry.getHeightAt` per segment vertex so roads hug the landscape) and intersection handling (T-junctions / 4-way intersections emit junction meshes; merging spline endpoints within a `junctionRadius` produces a connected network). Each `RoadSegment` carries a centerline polyline + `width` + `laneCount`; `getMeshData()` produces a ribbon geometry (two edge polylines triangulated as a strip). Optional `bridges` flag emits bridge geometry where the road's sampled terrain height deviates more than `bridgeThreshold` from the spline interpolation (i.e. across ravines / water). Complements `CityGenerator` (which produces block / plot metadata) — `RoadGenerator` is the road-rendering companion. |
+| `CharacterGenerator` | Procedural humanoid character generator — assembles a character from a set of morphological presets. Five races: `human` / `elf` / `dwarf` / `orc` / `halfling`, each with race-specific proportions (height, limb ratios, head shape). Four body types: `slim` / `average` / `athletic` / `heavy`, each scaling limb / torso girth. Each character emits: `body: BufferGeometry` (assembled from limb capsules + torso box + head sphere), `clothing: BufferGeometry` (race + body-type-appropriate tunic / armor / robe), plus optional `accessories` (belts, pauldrons). Includes a simplified `Skeleton` (`Bone[]` hierarchy) suitable for binding to `SkinnedMesh` — joints placed at limb midpoints / endpoints, so the generated character can be posed or animated immediately. Seeded (`mulberry32`) for reproducible characters. Output `CharacterResult { body, clothing, accessories, skeleton, metadata }`. Pairs with `Animation/IK/IKHumanoid` (which targets a standard humanoid rig) — the generated skeleton matches the IKHumanoid rig convention so characters can immediately run IK. |
 
 **Why a separate module?** PCG involves layout, rules, and random seeds — a different shape from analytic `Geometries/`. Isolating it makes it easy to extend (L-system vegetation, Wave Function Collapse, etc.) and keeps the output contract narrow (geometry + metadata, no scene coupling).
 
@@ -1819,6 +1954,22 @@ for the full table. Key points:
   Zustand stores that the engine adapters populate each frame.
 - `BlocklyPanel.tsx` is the Blockly workspace host with Run / Stop /
   Save / Load buttons.
+- `EngineModulesPanel.tsx` catalogues all 34 top-level engine modules with quick links; `PerformanceMonitor.tsx` renders an SVG FPS / frame-time / memory / draw-call chart fed by `profilerStore` history.
+
+### Editor UI components (`src/components/editor/`)
+
+A cyberpunk-themed editor component family under `src/components/editor/`, parallel to the viewer HUD family. Each component is a self-contained panel that the page can mount independently:
+
+| Component | Role |
+|-----------|------|
+| `SceneHierarchy` | Scene-tree panel — hierarchical object list with expand / collapse, multi-select (Ctrl-click), rename inline, drag-to-reparent. Reads the active `Scene` and emits selection changes via `inspectorStore`. Visual style: neon-cyan tree lines + magenta selection highlight. |
+| `InspectorPanel` | Object property inspector — binds to `inspectorStore.selected`, renders Transform / Material / Mesh / Light / Camera sections dynamically based on the selected object's type. Each row is a labelled input with neon focus ring; vectors show X / Y / Z sub-fields. Edits are pushed back to the live object via two-way binding. |
+| `EngineConsole` | In-app log console — subscribes to `lib/logger.ts` log sink, shows timestamped entries with level-colored badges (info = cyan, warn = amber, error = magenta). Filter by module tag + level; supports command input (forwards to a registered command handler). Replaces `alert()` / `console.log()` debugging with a styled in-scene panel. |
+| `AssetBrowser` | File-system browser — shows the project asset tree (public/, imported assets, .vreen packages). Thumbnail grid for textures / GLB previews; double-click imports into the active scene. Pairs with `Loaders/` for parsing and `Assets/AssetRegistry` for refcounted lifecycle. |
+| `MaterialEditor` | Material editor — node-graph UI for assembling `ShaderMaterial` chunks; exposes uniform sliders, texture slots, live preview on a sample mesh. Edits serialize to a `MaterialJSON` via `Serialization/MaterialSerializer`. |
+| `LevelEditor` | Level editor — top-down / perspective gizmo for placing / transforming objects in the scene; wraps `Editor/TransformGizmo` + `Editor/SelectionSystem` + `Editor/UndoRedoSystem`. Supports grid / angle snapping via `Editor/SnapSystem`. |
+| `AnimationEditor` | Animation editor — timeline UI for editing `AnimationClip` keyframe tracks; supports add / move / delete keyframes, scrub preview, export to JSON. Pairs with `Animation/AnimationMixer` for live preview on a bound `SkinnedMesh`. |
+| `ParticleEditor` | Particle editor — configures `Particles/ParticleSystem2` parameters (emitter shape, modifiers, curves) with live preview; exports to JSON for runtime instantiation. |
 
 ### i18n
 

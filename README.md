@@ -63,14 +63,14 @@ VREEN is positioned as a **lightweight Web game engine** — comparable in scope
 
 | Category | Capability |
 |----------|-----------|
-| **Engine kernel** | Self-developed WebGL2 renderer with PBR, IBL, real-time shadows, post-processing (Bloom, chromatic aberration, vignette, SMAA, SSAO, color grading, LUT, film grain, afterimage, pixelation, auto-exposure, enhanced DOF, GTAO, motion blur, SSR, SSSS, TAA, velocity, volumetric fog), GPU skinning, morph targets, MRT / GBuffer for deferred rendering + `DeferredRenderer` alternative backend + `ReflectionProbe`/`ReflectionProbeManager` for local IBL + `GlobalIllumination` (light probes SH2 + VXGI simplified) + `ShaderLibrary`/`ShaderCompiler` (#include + chunk injection + cache), path tracing (CPU reference), and a `Renderer` interface for backend pluggability. |
+| **Engine kernel** | Self-developed WebGL2 renderer with PBR, IBL, real-time shadows, post-processing (Bloom, chromatic aberration, vignette, SMAA, SSAO, color grading, LUT, film grain, afterimage, pixelation, auto-exposure, enhanced DOF, GTAO, motion blur, SSR, SSSS, TAA, velocity, volumetric fog), GPU skinning, morph targets, MRT / GBuffer for deferred rendering + `DeferredRenderer` alternative backend + `ForwardPlusRenderer` (tiled light culling) + `ReflectionProbe`/`ReflectionProbeManager` for local IBL + `GlobalIllumination` (light probes SH2 + VXGI simplified) + `GPUDrivenRenderer` (indirect draw) + `RenderGraph` (Frostbite FrameGraph-style) + `RenderPipelineManager` (Forward/Deferred/Forward+ orchestrator) + `ShaderLibrary`/`ShaderCompiler` (#include + chunk injection + cache) + `ShaderVariant` (keyword variants + LRU cache), path tracing (CPU reference), and a `Renderer` interface for backend pluggability. |
 | **Scene graph** | `Object3D` / `Scene` / `Mesh` / `Group` / `Bone` / `Skeleton` / `SkinnedMesh` / `BufferGeometry` / `BufferAttribute` / `InstancedBufferAttribute` / `Texture` / `InstancedMesh` / `LOD` / `Sprite` / `Text` / `BitmapText` / `TextAtlas` + `ModuleRegistry` (Gem-style engine module registry, inspired by O3DE Gems). |
 | **Math library** | `Vector2/3/4`, `Matrix3/4`, `Quaternion`, `Euler`, `Box3`, `Sphere`, `Plane`, `Ray`, `Line3`, `Triangle`, `Frustum`, `Color`, `MathUtils`. |
 | **ECS** | `World`, `ComponentType` registry, `QueryBuilder` with caching, `Prefab` templates, `Broadphase` acceleration, and POJO components for serializability. |
-| **Physics** | Fixed-step semi-implicit Euler integration, quaternion rotation integration, broadphase + narrowphase collision, impulse response with Baumgarte stabilization, AABB / Sphere / Capsule colliders, 5 joint constraints (Ball / Hinge / Slider / Fixed / Distance) + `ConstraintSolver`, `ClothSimulation` Verlet soft body, `FluidSimulation` (SPH), `DestructionSystem` + `VoronoiFracture`, CPU particle system with emitters. |
-| **Animation** | `AnimationClip`, `AnimationAction`, `AnimationMixer`, `AnimationStateMachine` (Idle / Walk / Run auto-transitions), `BlendSpace1D`, `Humanoid` rig, `KeyframeTrack`, animation event callbacks, `MorphTargets` + `MorphTargetAnimation` for facial / shape animation, animation layers / masks / additive blend / sync, IK subsystem (`IKBone` / `IKChain` / `IKSolver` FABRIK / `CCDSolver` / `IKHumanoid`) + high-level `IKSystem` driving scene-graph joints directly. |
+| **Physics** | Fixed-step semi-implicit Euler integration, quaternion rotation integration, broadphase + narrowphase collision, impulse response with Baumgarte stabilization, AABB / Sphere / Capsule colliders, 5 joint constraints (Ball / Hinge / Slider / Fixed / Distance) + `ConstraintSolver` + `ConstraintSystem` (runtime config + breakable), `CollisionSystem` (BVH / SAT / GJK / EPA pipeline with sphere / box / capsule / convex / mesh colliders), `ClothSimulation` Verlet soft body, `RopePhysics` Verlet chain (distance + bending constraints + wind), `FluidSimulation` (SPH), `DestructionSystem` + `VoronoiFracture`, CPU particle system with emitters. |
+| **Animation** | `AnimationClip`, `AnimationAction`, `AnimationMixer`, `AnimationStateMachine` (Idle / Walk / Run auto-transitions), `BlendSpace1D`, `Humanoid` rig, `KeyframeTrack`, animation event callbacks, `MorphTargets` + `MorphTargetAnimation` for facial / shape animation, animation layers / masks / additive blend / sync, IK subsystem (`IKBone` / `IKChain` / `IKSolver` FABRIK / `CCDSolver` / `IKHumanoid`) + high-level `IKSystem` driving scene-graph joints directly + `ProceduralAnimation` (8 procedural node types: head-track / breathing / walk-cycle / run-cycle / idle-sway / look-at / reach / secondary-motion). |
 | **Loaders** | 12 loaders (`GLBLoader`, `OBJLoader`, `FBXLoader`, `HDRLoader` per-channel RLE RGBE, `KTX2Loader`, `STLLoader`, `PLYLoader`, `TGALoader`, `MTLLoader`, `EXRLoader`, `TextureLoader`, `DracoDecoder`) + 4 exporters (`OBJExporter`, `GLTFExporter`, `STLExporter`, `PLYExporter`) + `AssetManager` LRU cache + `GLTFExtensionLoader` (DRACO / KTX2 + KHR/EXT extension registry). |
-| **Materials** | `StandardMaterial` (PBR), `MeshPhysicalMaterial` (clearcoat / transmission), `MeshBasicMaterial`, `MeshPhongMaterial`, `MeshNormalMaterial`, `ShadowMaterial`, `SpriteMaterial`, `ShaderMaterial` with `onBeforeCompile` GLSL injection, `ShaderChunks/` subdirectory (10 GLSL fragments + `ShaderChunkRegistry` with `#include` resolution) + `ShaderLibrary` (15 predefined shader templates) + `ShaderCompiler` (preprocess + chunk injection + compile + cache). Special-purpose: `FurMaterial`, `MatcapMaterial`, `ToonMaterial`, `OutlineMaterial`, `WaterMaterial`, `WireframeMaterial`. |
+| **Materials** | `StandardMaterial` (PBR), `MeshPhysicalMaterial` (clearcoat / transmission), `MeshBasicMaterial`, `MeshPhongMaterial`, `MeshNormalMaterial`, `ShadowMaterial`, `SpriteMaterial`, `ShaderMaterial` with `onBeforeCompile` GLSL injection, `ShaderChunks/` subdirectory (10 GLSL fragments + `ShaderChunkRegistry` with `#include` resolution) + `ShaderLibrary` (15 predefined shader templates) + `ShaderCompiler` (preprocess + chunk injection + compile + cache) + `ShaderVariant` (keyword variants + LRU cache). Advanced: `AdvancedPBRMaterial` (anisotropy + iridescence + clearcoat + sheen), `SubsurfaceScatteringMaterial` (SSS). Special-purpose: `FurMaterial`, `MatcapMaterial`, `ToonMaterial`, `OutlineMaterial`, `WaterMaterial`, `WireframeMaterial`. |
 | **Resource management** | `Assets/` module — `AssetCache` (LRU), `AssetRegistry` (reference counting), `AssetLoader` (async batched). |
 | **Serialization** | `Serialization/` module — `SceneSerializer` / `GeometrySerializer` / `MaterialSerializer` round-trip Scene / Geometry / Material ↔ JSON. |
 | **Cameras** | `PerspectiveCamera` / `OrthographicCamera` + `CinematicCamera` (shot sequence with `cut` / `fade` / `dolly` / `orbit` transitions, DOF, Perlin shake, timeline import/export) + `CameraRig` (crane / dolly / orbit / fixed modes with damping follow). |
@@ -83,11 +83,13 @@ VREEN is positioned as a **lightweight Web game engine** — comparable in scope
 | **Audio** | `AudioListener` / `Audio` / `PositionalAudio` / `AudioLoader` / `AudioAnalyser` + `SpatialAudio` (HRTF + distance attenuation + Doppler effect). |
 | **Terrain** | `TerrainGeometry` / `HeightmapGenerator` / `TerrainSplat` / `TerrainLayer` + `TerrainErosion` (thermal / hydraulic / wind erosion). |
 | **AI** | `NavMesh` + `PathFinder` (A*) + `SteeringBehavior` (Reynolds) + `Agent` + `BehaviorTree` / `BTNode` / `BTAction` / `BTComposite` / `BTCondition` / `BTDecorator` + `Blackboard` + `CrowdSystem` (large-scale crowd调度 + Reynolds separation) + `SpatialGrid` (2D XZ neighbourhood acceleration). |
-| **Network** | `NetworkSync` (server-authoritative) + `Snapshot` (binary serialization) + `NetworkTransport` (WebSocket/Mock) + `NetworkLerp` (interpolation + prediction + reconciliation) + `StateSync` (snapshot interpolation + Delta compression, pure data layer). |
+| **Network** | `NetworkSync` (server-authoritative) + `Snapshot` (binary serialization) + `NetworkTransport` (WebSocket/Mock) + `NetworkLerp` (interpolation + prediction + reconciliation) + `StateSync` (snapshot interpolation + Delta compression, pure data layer) + `LagCompensation` (server rewind + hit-check, client interpolation) + `NetworkSession` (lobby / loading / playing / paused / ended state machine, host-authoritative, slot management). |
 | **Geometries** | 15 primitives (Box / Sphere / Cylinder / Cone / Torus / Plane / Circle / Ring / Capsule / TorusKnot / Lathe / Extrude / Shape / Wireframe / Edges) + `InstancedGeometry` (instanced geometry, modeled after three.js `InstancedBufferGeometry`). |
-| **PCG** | Procedural Content Generation — `NoiseGenerator` (Perlin / Simplex / Worley / FBM), `BuildingGenerator`, `CityGenerator`, `DungeonGenerator` (BSP / random walk), `TreeGenerator` (L-system). |
+| **PCG** | Procedural Content Generation — `NoiseGenerator` (Perlin / Simplex / Worley / FBM), `BuildingGenerator`, `BuildingGenerator2` (5 styles + 4 roofs + decorations + interior), `CityGenerator`, `DungeonGenerator` (BSP / random walk), `TreeGenerator` (L-system), `RoadGenerator` (Catmull-Rom spline + terrain follow + intersections), `CharacterGenerator` (5 races + 4 body types + clothing + simplified Skeleton). |
 | **Pipeline** | Asset pipeline — `AssetPipeline` (step sequence), `TextureProcessor` (resize / compress / mipmap), `GeometryProcessor` (merge / optimize / weld / LOD), `ImportPipeline` (load → parse → optimize → register). |
 | **Gameplay** | RPG gameplay primitives — `DialogueSystem` + `DialogueTree` + `DialogueParticipant` (NPC dialogue with options / conditions), `QuestSystem` (objectives / prerequisites / state machine), `InventorySystem` (stackable items / currency / slots). |
+| **VR/XR** | `VRController` — WebXR VR/XR support (headset pose + dual-eye view params + hand-controller tracking), graceful degradation in non-WebXR environments. Complementary to `OrbitControls` (non-immersive) — the two are mutually exclusive. |
+| **Editor UI** | Cyberpunk-themed editor components under `src/components/editor/` — `SceneHierarchy`, `InspectorPanel`, `EngineConsole`, `AssetBrowser`, `MaterialEditor`, `LevelEditor`, `AnimationEditor`, `ParticleEditor`. Plus `EngineModulesPanel` (all 34 engine modules catalog) and `PerformanceMonitor` (FPS / frame-time / memory / draw-call SVG charts) under `src/components/viewer/`. |
 
 ---
 
@@ -164,19 +166,19 @@ vreen/
 │   │   ├── viewer/             # 3D inspector core (see below)
 │   │   ├── three/              # Mini-canvas helpers (BackgroundScene / PresetPreview / SafeEnvironment)
 │   │   └── hud/                # Reusable HUD widgets (HudPanel / TopBar / LangSwitcher)
-│   ├── engine/                 # Self-developed WebGL2 engine (mirrored to packages/engine/src) — 34 top-level modules, 378 source files (non-test) + 236 test files
+│   ├── engine/                 # Self-developed WebGL2 engine (mirrored to packages/engine/src) — 34 top-level modules, 393 source files (non-test) + 251 test files
 │   │   ├── Core/               # Scene graph primitives + Sprite/Text/BitmapText/TextAtlas + texture family (Cube/Data/DataArray/Depth/Video/Canvas/Compressed) + Source + MorphTargets/MorphTargetAnimation + InstancedBufferAttribute + Fog/FogExp2 + Raycaster + DirtyFlag/SceneGraphProcessor/FrustumCuller/SceneStats + ModuleRegistry (Gem-style module registry)
 │   │   ├── Math/               # Vector2/3/4, Matrix3/4, Quaternion, Euler, Color, Box3, Sphere, Plane, Ray, Line3, Triangle, Frustum, MathUtils
 │   │   ├── Cameras/            # Perspective / Orthographic cameras + CinematicCamera (shot sequence) + CameraRig (crane/dolly/orbit/fixed)
-│   │   ├── Controls/           # Orbit / Fly / PointerLock / Map controls + CharacterController (kinematic)
+│   │   ├── Controls/           # Orbit / Fly / PointerLock / Map controls + CharacterController (kinematic) + VRController (WebXR VR/XR support)
 │   │   ├── Lights/             # Ambient / Directional / Point / Spot / Hemisphere / RectArea + ShadowMapManager
 │   │   ├── Geometries/         # Box / Sphere / Cylinder / Cone / Torus / Plane / Circle / Ring / Capsule / TorusKnot / Lathe / Extrude / Shape / Wireframe / Edges + InstancedGeometry
-│   │   ├── Materials/          # Standard / Physical / Basic / Phong / Normal / Shadow / Sprite materials + ShaderMaterial + ShaderChunks/ subdirectory (10 GLSL fragments + ShaderChunkRegistry) + ShaderLibrary (15 templates) + ShaderCompiler (#include + cache) + ShaderVariant (keyword variants + LRU cache) + onBeforeCompile + special: Fur / Matcap / Toon / Outline / Water / Wireframe
-│   │   ├── Renderer/           # WebGL2Renderer, ShaderProgram, RenderPass, ShadowMapManager + MRTTarget / GBuffer (deferred) + DeferredRenderer alternative + ReflectionProbe / ReflectionProbeManager + GlobalIllumination (lightprobes SH2 + VXGI) + GPUDrivenRenderer (indirect draw) + ContactShadowsPass + GTAOPass + post-FX (basic: SSAO / FXAA / ToneMapping / Gamma / DOF; enhanced PostProcess/: ColorGrading / LUT / FilmGrain / Afterimage / Pixelation; advanced: AutoExposure / DOFEnhanced / GTAO / MotionBlur / SSR / SSSS / TAA / Velocity / VolumetricFog) + PathTracer
+│   │   ├── Materials/          # Standard / Physical / Basic / Phong / Normal / Shadow / Sprite materials + ShaderMaterial + ShaderChunks/ subdirectory (10 GLSL fragments + ShaderChunkRegistry) + ShaderLibrary (15 templates) + ShaderCompiler (#include + cache) + ShaderVariant (keyword variants + LRU cache) + AdvancedPBRMaterial (anisotropy + iridescence + clearcoat + sheen) + SubsurfaceScatteringMaterial (SSS) + onBeforeCompile + special: Fur / Matcap / Toon / Outline / Water / Wireframe
+│   │   ├── Renderer/           # WebGL2Renderer, ShaderProgram, RenderPass, ShadowMapManager + MRTTarget / GBuffer (deferred) + DeferredRenderer alternative + ForwardPlusRenderer (tiled light culling) + ReflectionProbe / ReflectionProbeManager + GlobalIllumination (lightprobes SH2 + VXGI) + GPUDrivenRenderer (indirect draw) + RenderGraph (Frostbite FrameGraph-style) + RenderPipelineManager (Forward/Deferred/Forward+ orchestrator + quality levels) + ContactShadowsPass + GTAOPass + post-FX (basic: SSAO / FXAA / ToneMapping / Gamma / DOF; enhanced PostProcess/: ColorGrading / LUT / FilmGrain / Afterimage / Pixelation; advanced: AutoExposure / DOFEnhanced / GTAO / MotionBlur / SSR / SSSS / TAA / Velocity / VolumetricFog) + PathTracer
 │   │   ├── Loaders/            # GLB / OBJ / FBX / HDR / KTX2 / STL / PLY / TGA / MTL / EXR / Draco / AssetManager + 4 exporters (OBJ / GLTF / STL / PLY) + GLTFExtensionLoader (DRACO/KTX2 + KHR/EXT extension registry)
 │   │   ├── Animation/          # Clips, Mixer, StateMachine, BlendSpace1D, Humanoid + layers / masks / additive blend + IK (FABRIK / CCD / IKHumanoid) + IKSystem (high-level scene-graph IK driver) + ProceduralAnimation (gait/breathing/head-track/secondary motion)
 │   │   ├── ECS/                # World, ComponentType, Systems, Physics, Prefab, QueryBuilder + Constraint subsystem
-│   │   ├── Physics/            # PhysicsDemo + ConstraintSolver + Joint constraints (Ball/Hinge/Slider/Fixed/Distance) + ConstraintSystem (runtime constraint config + breakable) + ClothSimulation (Verlet) + FluidSimulation (SPH) + DestructionSystem + VoronoiFracture
+│   │   ├── Physics/            # PhysicsDemo + ConstraintSolver + Joint constraints (Ball/Hinge/Slider/Fixed/Distance) + ConstraintSystem (runtime constraint config + breakable) + CollisionSystem (BVH/SAT/GJK/EPA pipeline) + ClothSimulation (Verlet) + RopePhysics (Verlet chain) + FluidSimulation (SPH) + DestructionSystem + VoronoiFracture
 │   │   ├── Helpers/            # Grid / Grid3D / Axes / Box / Camera / Arrow helpers + PhysicsDebugRenderer
 │   │   ├── Audio/              # AudioListener / PositionalAudio / Audio / AudioLoader / AudioAnalyser + SpatialAudio (HRTF + distance attenuation + Doppler) + AudioEffects (offline DSP chain: reverb/echo/chorus/distortion/compressor)
 │   │   ├── Terrain/            # TerrainGeometry / HeightmapGenerator / TerrainSplat / TerrainLayer + TerrainErosion (thermal/hydraulic/wind)
@@ -186,17 +188,17 @@ vreen/
 │   │   ├── Events/             # EventBus / EventQueue / GameEvent (typed pub/sub)
 │   │   ├── Scripting/          # ScriptComponent / ScriptSystem / ScriptRegistry / CoroutineSystem + VisualScriptComponent (Script Canvas-style node graph)
 │   │   ├── Particles/          # ParticleSystem2 / ParticleEmitter / ParticleModifier / ParticleCurve / TrailModule
-│   │   ├── Network/            # NetworkSync / Snapshot / NetworkTransport (WebSocket/Mock) / NetworkLerp — server-authoritative sync + StateSync (snapshot interpolation + Delta compression, pure data layer)
+│   │   ├── Network/            # NetworkSync / Snapshot / NetworkTransport (WebSocket/Mock) / NetworkLerp — server-authoritative sync + StateSync (snapshot interpolation + Delta compression) + LagCompensation (rewind + hit-check) + NetworkSession (lobby/playing state machine)
 │   │   ├── SaveSystem/         # SaveSystem (multi-slot + auto-save) / SaveSerializer / LocalStorageAdapter
 │   │   ├── SceneManager/       # SceneManager / SceneTransition (Fade/Crossfade/Slide/Wipe/None) + SceneStreaming (chunked streaming load/unload)
 │   │   ├── Input/              # InputManager / KeyboardState / MouseState / TouchState / GamepadState / InputAction / InputMap
-│   │   ├── Tools/              # Profiler / FrameProfiler / SystemProfiler / MemoryTracker / GpuProfiler / PerformanceReport + LODManager (distance/screen-space LOD + HLOD)
+│   │   ├── Tools/              # Profiler / FrameProfiler / SystemProfiler / MemoryTracker / GpuProfiler / PerformanceReport + LODManager (distance/screen-space LOD + HLOD) + Profiler2 (frame/zone/event + Chrome Trace export)
 │   │   ├── AI/                 # NavMesh (navigation mesh) + PathFinder (A*) + SteeringBehavior (Reynolds) + Agent + BehaviorTree + Blackboard + CrowdSystem (large-scale crowd + Reynolds separation) + SpatialGrid (2D XZ neighbourhood acceleration)
-│   │   ├── Environment/        # WeatherSystem + SkySystem (day/night) + ProceduralSky (Preetham atmosphere) + CloudSystem + PrecipitationSystem + VegetationSystem + VegetationRenderer (instanced + wind + season) + WaterSimulation + WaterSystem
+│   │   ├── Environment/        # WeatherSystem + SkySystem (day/night) + ProceduralSky (Preetham atmosphere) + CloudSystem + VolumetricClouds (ray-march + 3D noise) + PrecipitationSystem + VegetationSystem + VegetationRenderer (instanced + wind + season) + WaterSimulation + WaterSystem
 │   │   ├── Timeline/           # TimelineClip + TimelineTrack + EventTrack + PropertyTrack + TimelineSequencer (play/pause/seek/loop/export/import)
 │   │   ├── Voxel/              # VoxelChunk 16³ + VoxelWorld (multi-chunk) + VoxelMesher (greedy meshing) + VoxelRaycaster (DDA) + VoxelPalette
 │   │   ├── Editor/             # SelectionSystem (pick/select/hover) + TransformGizmo (translate/rotate/scale) + UndoRedoSystem (with beginGroup/endGroup) + EditorCommands (Move/Rotate/Scale/Add/Remove/Property) + SnapSystem (grid/angle/scale snap)
-│   │   ├── PCG/                # Procedural Content Generation — NoiseGenerator (Perlin/Simplex/Worley/FBM) + BuildingGenerator + CityGenerator + DungeonGenerator + TreeGenerator
+│   │   ├── PCG/                # Procedural Content Generation — NoiseGenerator (Perlin/Simplex/Worley/FBM) + BuildingGenerator + BuildingGenerator2 (5 styles + 4 roofs + decorations) + CityGenerator + DungeonGenerator + TreeGenerator + RoadGenerator (Catmull-Rom spline + terrain follow) + CharacterGenerator (5 races + 4 body types + simplified skeleton)
 │   │   ├── Pipeline/           # Asset pipeline — AssetPipeline (step sequence) + TextureProcessor + GeometryProcessor + ImportPipeline
 │   │   ├── Gameplay/           # RPG gameplay — DialogueSystem + DialogueTree + DialogueParticipant + QuestSystem + InventorySystem
 │   │   └── ecsDemo.ts          # ECS demo entry
@@ -254,6 +256,9 @@ vreen/
 | `FreeCameraController.tsx` | Free-camera input handling. |
 | `ColorField.tsx` | Color picker widget. |
 | `VreenInspectorPanel.tsx` | `.vreen` package introspection panel. |
+| `EngineFeaturesPanel.tsx` | Engine feature toggle panel — exposes 8 runtime subsystems (physics, IK, particles, post-FX, etc.) as on/off switches. |
+| `EngineModulesPanel.tsx` | Engine modules catalog — lists all 34 top-level engine modules grouped by category (rendering / scene / animation / physics / architecture / gameplay / profiling / UI), each card expandable to show core classes + descriptions. Pairs with `EngineFeaturesPanel` (the former shows all modules for inspection; the latter exposes the switchable subset). |
+| `PerformanceMonitor.tsx` | Real-time performance panel — 4 stat cards (FPS / frame-time / memory / draw-calls) + SVG sparkline charts fed by `profilerStore` history. Complements `ProfilerHUD` (which is a floating overlay with tab-based CPU/GPU/System/Draws views); `PerformanceMonitor` is a panel-style component focused on the 4 core metrics with trend charts. |
 
 ### State stores (`src/stores/`)
 
@@ -891,40 +896,44 @@ npm run test:coverage     # coverage report
 
 ### Coverage
 
-Unit tests cover the engine foundation (4626+ tests across 243 test files, 34 top-level modules):
+Unit tests cover the engine foundation (4700+ tests across 251 test files, 34 top-level modules):
 
 | Area | Test files |
 |------|-----------|
 | Math | `Vector2/3/4`, `Matrix3/4`, `Quaternion`, `Euler`, `Box3`, `Sphere`, `Plane`, `Ray`, `Line3`, `Triangle`, `Frustum`, `Color` |
-| Core | `InstancedMesh`, `LOD`, `InstancedBufferAttribute`, `Sprite`, `TextAtlas`, `MorphTargets`, `CubeTexture`, `DataTexture`, `DataArrayTexture`, `DepthTexture`, `VideoTexture`, `CanvasTexture`, `CompressedTexture`, `Source`, `Fog`, `FogExp2`, `Raycaster`, `FrustumCuller`, `SceneGraphProcessor`, `SceneStats` |
+| Core | `InstancedMesh`, `LOD`, `InstancedBufferAttribute`, `Sprite`, `TextAtlas`, `MorphTargets`, `CubeTexture`, `DataTexture`, `DataArrayTexture`, `DepthTexture`, `VideoTexture`, `CanvasTexture`, `CompressedTexture`, `Source`, `Fog`, `FogExp2`, `Raycaster`, `FrustumCuller`, `SceneGraphProcessor`, `SceneStats`, `ModuleRegistry`, `FurShell` |
 | Geometries | `Box`, `Sphere`, `Plane`, `Cylinder`, `Cone`, `Capsule`, `Circle`, `Ring`, `Torus`, `TorusKnot`, `Lathe`, `Extrude`, `Shape`, `Wireframe`, `Edges` |
 | ECS | `World`, `Prefab`, `QueryBuilder`, `Broadphase`, `PhysicsSystems`, `PhysicsBenchmark` |
-| Animation | `Animation`, `AnimationEvents`, `BlendSpace1D`, `AnimationLayer`, `AvatarMask`, `BoneMask`, `AdditiveBlend`, `IKBone`, `IKChain`, `IKSolver`, `CCDSolver` |
+| Animation | `Animation`, `AnimationEvents`, `BlendSpace1D`, `AnimationLayer`, `AvatarMask`, `BoneMask`, `AdditiveBlend`, `IKBone`, `IKChain`, `IKSolver`, `CCDSolver`, `IKSystem`, `ProceduralAnimation` |
 | Loaders | `GLBLoader`, `HDRLoader`, `FBXLoader`, `KTX2Loader`, `STLLoader`, `PLYLoader`, `TGALoader`, `AssetManager`, `OBJExporter`, `GLTFExporter`, `STLExporter`, `PLYExporter` |
-| Renderer | `Renderer`, `RenderPass`, `ShadowMapManager`, `MRTTarget`, `PostProcessPasses`, `PathTracer`, `DeferredRenderer`, `ReflectionProbe`, `ReflectionProbeManager`, `AutoExposurePass`, `DOFEnhancedPass`, `GTAOPass`, `MotionBlurPass`, `SSRPass`, `SSSSPass`, `TAAPass`, `VelocityPass`, `VolumetricFogPass` |
+| Renderer | `Renderer`, `RenderPass`, `ShadowMapManager`, `MRTTarget`, `GBuffer`, `PostProcessPasses`, `PathTracer`, `DeferredRenderer`, `ReflectionProbe`, `ReflectionProbeManager`, `GlobalIllumination`, `ForwardPlusRenderer`, `RenderGraph`, `RenderPipelineManager`, `GPUDrivenRenderer`, `ContactShadowsPass`, `GTAOPass`, `AutoExposurePass`, `DOFEnhancedPass`, `MotionBlurPass`, `SSRPass`, `SSSSPass`, `TAAPass`, `VelocityPass`, `VolumetricFogPass` |
 | Lights | `AmbientLight`, `DirectionalLight`, `PointLight`, `SpotLight`, `HemisphereLight`, `RectAreaLight` |
-| Materials | `MeshBasicMaterial`, `MeshNormalMaterial`, `MeshPhongMaterial`, `MeshPhysicalMaterial`, `ShadowMaterial`, `SpriteMaterial`, `ShaderChunkRegistry`, `chunks`, `FurMaterial`, `MatcapMaterial`, `ToonMaterial`, `OutlineMaterial`, `WaterMaterial`, `WireframeMaterial` |
-| Controls | `FlyControls`, `MapControls`, `PointerLockControls`, `CharacterController` |
+| Materials | `MeshBasicMaterial`, `MeshNormalMaterial`, `MeshPhongMaterial`, `MeshPhysicalMaterial`, `ShadowMaterial`, `SpriteMaterial`, `ShaderChunkRegistry`, `chunks`, `ShaderLibrary`, `ShaderCompiler`, `ShaderVariant`, `AdvancedPBRMaterial`, `SubsurfaceScatteringMaterial`, `FurMaterial`, `MatcapMaterial`, `ToonMaterial`, `OutlineMaterial`, `WaterMaterial`, `WireframeMaterial` |
+| Controls | `FlyControls`, `MapControls`, `PointerLockControls`, `CharacterController`, `VRController` |
 | Helpers | `AxesHelper`, `BoxHelper`, `CameraHelper`, `ArrowHelper`, `GridHelper3D` |
-| Audio | `Audio`, `AudioAnalyser`, `AudioContext`, `AudioListener`, `AudioLoader`, `PositionalAudio` |
-| Terrain | `TerrainGeometry`, `HeightmapGenerator`, `TerrainLayer`, `TerrainSplat` |
+| Audio | `Audio`, `AudioAnalyser`, `AudioContext`, `AudioListener`, `AudioLoader`, `PositionalAudio`, `SpatialAudio`, `AudioEffects` |
+| Terrain | `TerrainGeometry`, `HeightmapGenerator`, `TerrainLayer`, `TerrainSplat`, `TerrainErosion` |
 | Acceleration | `BVH`, `MeshBVH` |
-| Physics | `ClothSimulation`, `Constraints`, `FluidSimulation`, `DestructionSystem`, `VoronoiFracture` |
-| Assets | `AssetCache`, `AssetRegistry` |
+| Physics | `ClothSimulation`, `Constraints`, `FluidSimulation`, `DestructionSystem`, `VoronoiFracture`, `CollisionSystem`, `ConstraintSystem`, `RopePhysics` |
+| Assets | `AssetCache`, `AssetRegistry`, `AssetLoader`, `AssetBundle`, `TextureStreaming` |
 | Serialization | `GeometrySerializer`, `SceneSerializer` |
 | Events | `EventBus`, `EventQueue`, `GameEvent` |
-| Scripting | `Coroutine`, `ScriptRegistry` |
-| Tools | `FrameProfiler`, `SystemProfiler`, `MemoryTracker` |
+| Scripting | `Coroutine`, `ScriptRegistry`, `VisualScriptComponent` |
+| Tools | `FrameProfiler`, `SystemProfiler`, `MemoryTracker`, `LODManager`, `Profiler2` |
 | Particles | `ParticleSystem2`, `ParticleEmitter`, `ParticleModifier`, `ParticleCurve`, `ParticleData`, `TrailModule` |
 | Input | `KeyboardState`, `MouseState`, `InputAction`, `InputMap`, `InputManager` |
-| AI | `Agent`, `NavMesh`, `PathFinder`, `SteeringBehavior`, `BehaviorTree`, `Blackboard` |
-| Environment | `SkySystem`, `WeatherSystem`, `VegetationSystem`, `WaterSimulation`, `WaterSystem` |
+| AI | `Agent`, `NavMesh`, `PathFinder`, `SteeringBehavior`, `BehaviorTree`, `Blackboard`, `CrowdSystem`, `SpatialGrid` |
+| Environment | `SkySystem`, `WeatherSystem`, `VegetationSystem`, `WaterSimulation`, `WaterSystem`, `ProceduralSky`, `VolumetricClouds`, `VegetationRenderer` |
 | Timeline | `TimelineSequencer`, `TimelineTrack`, `EventTrack`, `PropertyTrack` |
 | Voxel | `VoxelChunk`, `VoxelWorld`, `VoxelPalette`, `VoxelRaycaster` |
-| Editor | `SelectionSystem`, `UndoRedoSystem`, `SnapSystem` |
-| PCG | `NoiseGenerator`, `BuildingGenerator`, `DungeonGenerator`, `TreeGenerator` |
-| Pipeline | `AssetPipeline`, `GeometryProcessor` |
+| Editor | `SelectionSystem`, `UndoRedoSystem`, `SnapSystem`, `TransformGizmo`, `EditorCommands` |
+| PCG | `NoiseGenerator`, `BuildingGenerator`, `BuildingGenerator2`, `DungeonGenerator`, `TreeGenerator`, `RoadGenerator`, `CharacterGenerator` |
+| Pipeline | `AssetPipeline`, `GeometryProcessor`, `TextureProcessor`, `ImportPipeline` |
 | Gameplay | `DialogueSystem`, `DialogueTree`, `QuestSystem`, `InventorySystem` |
+| Network | `NetworkSync`, `Snapshot`, `NetworkTransport`, `NetworkLerp`, `StateSync`, `LagCompensation`, `NetworkSession` |
+| Cameras | `PerspectiveCamera`, `OrthographicCamera`, `CinematicCamera`, `CameraRig` |
+| SceneManager | `SceneManager`, `SceneTransition`, `SceneStreaming` |
+| SaveSystem | `SaveSystem`, `SaveSerializer`, `LocalStorageAdapter` |
 | Lib | `vreenPack`, `vreenPublish`, `blocklyScriptStore`, `ecsScriptApi` (animsm / material / base), `vreenBlockly.tick` |
 
 Tests live alongside source files as `*.test.ts` and are picked up automatically by Vitest's default glob.
@@ -1034,7 +1043,7 @@ npm run electron:build
 | Scripting | ScriptComponent + CoroutineSystem + ScriptRegistry | None |
 | Export | GLTF / OBJ / STL / PLY (4 exporters) | None |
 | i18n | 5 languages (en/zh/ja/ko/es) | 2 languages (en/zh) |
-| Testing | 4626+ unit tests (243 test files, 378 source files non-test, 130K+ LOC, 34 top-level modules) | None |
+| Testing | 4700+ unit tests (251 test files, 393 source files non-test, 165K+ LOC, 34 top-level modules) | None |
 | Visual Scripting | Blockly integration | None |
 | Package Format | .vreen (ZIP + delta diff) | None |
 

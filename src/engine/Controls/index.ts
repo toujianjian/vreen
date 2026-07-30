@@ -19,3 +19,14 @@ export type {
   CharacterControllerOptions,
   GroundSampleFn,
 } from './CharacterController';
+
+// VRController — WebXR VR/XR 支持 (手柄追踪 + 双眼渲染位姿提取)。
+export { VRController } from './VRController';
+export type {
+  XRReferenceSpaceType,
+  VREyeParams,
+  VRHandController,
+  VRControllerStats,
+  VRSessionOptions,
+  VRHeadsetPose,
+} from './VRController';

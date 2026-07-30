@@ -32,3 +32,15 @@ export {
   type AudioEffectType,
   type AudioEffectStats,
 } from './AudioEffects';
+// ProceduralAudio — 程序化音效生成 (振荡器 + 噪声 + ADSR 包络 + 滤波 + AM/FM 调制 + 混合 + 预设音效)。
+export {
+  ProceduralAudio,
+  DEFAULT_ENVELOPE,
+  DEFAULT_MODULATION,
+  type OscillatorType,
+  type NoiseType,
+  type ProceduralFilterType,
+  type Envelope,
+  type Modulation,
+  type ProceduralAudioStats,
+} from './ProceduralAudio';
