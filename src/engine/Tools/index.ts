@@ -1,6 +1,7 @@
 // Tools barrel — 性能分析工具家族。
 //
 // - `Profiler`                — 早期 ring-buffer 帧分析器(带 mark / GPU query 集成)。
+// - `Profiler2`               — 增强版帧/区域/事件分析器(Chrome Trace 导出 + FPS 曲线)。
 // - `FrameProfiler`           — 帧级 FPS / draw calls / triangles 聚合。
 // - `SystemProfiler`          — ECS 系统耗时跟踪。
 // - `MemoryTracker`           — 引擎显式分配 / 释放跟踪与泄漏检测。
@@ -9,6 +10,17 @@
 // - `LODManager`              — LOD 管理系统(距离 LOD / 屏幕占比 LOD / HLOD)。
 
 export { Profiler, type FrameSample, type ProfilerMark, type DrawCallSample } from './Profiler';
+export {
+  Profiler2,
+  type ProfileCategory,
+  type ProfileEvent,
+  type ProfileZone,
+  type MemoryUsage as ProfilerMemoryUsage,
+  type Profiler2Options,
+  type ProfilerStats,
+  type ChromeTraceEvent,
+  type ChromeTrace,
+} from './Profiler2';
 export {
   FrameProfiler,
   type FrameSample as FrameProfilerSample,

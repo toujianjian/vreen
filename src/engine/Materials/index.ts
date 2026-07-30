@@ -45,6 +45,13 @@ export {
   FUR_VERT,
   FUR_FRAG,
 } from './FurMaterial';
+// 次表面散射材质(皮肤/蜡/玉石/牛奶等)。
+export {
+  SubsurfaceScatteringMaterial,
+  type SubsurfaceScatteringMaterialOptions,
+  SSS_VERT,
+  SSS_FRAG,
+} from './SubsurfaceScatteringMaterial';
 export {
   PBR_VERT,
   PBR_FRAG,

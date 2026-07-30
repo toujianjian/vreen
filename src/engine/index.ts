@@ -108,6 +108,7 @@ export {
 } from './Particles';
 export {
   Profiler,
+  Profiler2,
   FrameProfiler,
   SystemProfiler,
   MemoryTracker,
@@ -117,6 +118,14 @@ export {
   type FrameSample,
   type ProfilerMark,
   type DrawCallSample,
+  type ProfileCategory,
+  type ProfileEvent,
+  type ProfileZone,
+  type ProfilerMemoryUsage,
+  type Profiler2Options,
+  type ProfilerStats,
+  type ChromeTraceEvent,
+  type ChromeTrace,
   type FrameMetrics,
   type FrameStats,
   type SystemTiming,

@@ -17,6 +17,15 @@ export {
   type BuildingResult,
 } from './BuildingGenerator';
 export {
+  BuildingGenerator2,
+  type BuildingStyle2,
+  type RoofType2,
+  type WindowSize,
+  type BuildingPartInfo,
+  type BuildingGenerator2Result,
+  type BuildingStats,
+} from './BuildingGenerator2';
+export {
   CityGenerator,
   type CityOptions,
   type CityBuilding,
