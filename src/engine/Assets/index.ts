@@ -6,6 +6,7 @@
 //   - AssetLoader       — 异步资源加载器（封装 AssetManager）
 //   - AssetBundle       — 资源打包 / 加载系统（manifest + 依赖 + 并发限流）
 //   - TextureStreaming  — 纹理流式加载（mip 按需调度 + 内存上限 LRU 驱逐）
+//   - HotReloader       — 资源热重载系统（文件监视 + 防抖 + 状态保持/恢复）
 
 export { AssetCache, type AssetCacheOptions } from './AssetCache';
 export {
@@ -43,3 +44,14 @@ export {
   type LoadMipCallback,
   type UnloadMipCallback,
 } from './TextureStreaming';
+// 资源热重载系统 (文件监视 + 防抖聚合 + 状态保持/恢复)。
+// 与 AssetLoader/AssetRegistry 互补: 它们关注加载与生命周期,HotReloader 关注变化检测与重载调度。
+export {
+  HotReloader,
+  getDefaultHotReloader,
+  resetDefaultHotReloader,
+  type FileWatcher,
+  type LoadedResource,
+  type PendingReload,
+  type HotReloaderStats,
+} from './HotReloader';

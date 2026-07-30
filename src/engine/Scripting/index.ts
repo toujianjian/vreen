@@ -29,4 +29,15 @@ export {
   type CoroutineHandle,
   type CoroutineYield,
 } from './Coroutine';
+export {
+  ScriptBindings,
+  getDefaultScriptBindings,
+  resetDefaultScriptBindings,
+  type ScriptBinding,
+  type ScriptBindingType,
+  type ScriptAPIInfo,
+  type ScriptAPIDocCategory,
+  type ScriptAPIDocumentation,
+  type ScriptBindingsStats,
+} from './ScriptBindings';
 export { type CollisionInfo, type TriggerInfo } from './ScriptSystem';

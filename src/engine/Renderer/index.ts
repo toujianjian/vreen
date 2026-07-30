@@ -127,6 +127,19 @@ export {
   INDIRECT_COMMAND_UINTS,
   INDIRECT_COMMAND_FLOATS,
 } from './GPUDrivenRenderer';
+// 多线程渲染支持(Web Worker + 命令缓冲 + 同步)。
+// 不绑定 GL 上下文:本类是"命令编排器",把 CPU 侧命令准备/排序工作放到
+// worker,主线程消费 getSortedCommands() 的输出做实际 GL 提交。
+// Worker 不可用时(Node/无头测试)自动降级为主线程同步模式,API 行为一致。
+export {
+  ThreadedRenderer,
+  type RenderCommand,
+  type RenderCommandType,
+  type DrawCommandData,
+  type UpdateBufferCommandData,
+  type UpdateTextureCommandData,
+  type ThreadedRendererStats,
+} from './ThreadedRenderer';
 // CPU 侧时间抗锯齿 Pass(基于 Float32Array 历史缓冲,不依赖 WebGL)。
 // 与 PostProcess/TAAPass.ts(GPU 纹理版)互补:本类用于离线 / 无头环境,
 // 提供 Halton 抖动 + 重投影 + 邻域夹紧(AABB/Catmull-Rom)+ 方差裁剪 +
