@@ -127,4 +127,37 @@ export {
   INDIRECT_COMMAND_UINTS,
   INDIRECT_COMMAND_FLOATS,
 } from './GPUDrivenRenderer';
+// CPU 侧时间抗锯齿 Pass(基于 Float32Array 历史缓冲,不依赖 WebGL)。
+// 与 PostProcess/TAAPass.ts(GPU 纹理版)互补:本类用于离线 / 无头环境,
+// 提供 Halton 抖动 + 重投影 + 邻域夹紧(AABB/Catmull-Rom)+ 方差裁剪 +
+// 历史混合 + 可选锐化,与 MotionBlurPass.ts(CPU 版)同构。
+// 注意:本目录的 `TAAPass` 指 CPU 版;GPU 版需从 `./PostProcess/TAAPass`
+// 显式导入(其 TAAPassOptions 与本类的 TAAOptions 不同名,无类型冲突)。
+export {
+  TAAPass,
+  TAAPass as CpuTAAPass,
+  type TAAOptions,
+  type TAAInput,
+  type TAACamera,
+  type TAAStats,
+  type Vec2 as TAAVec2,
+} from './TAAPass';
+// 渲染图系统(资源依赖管理 + Pass 调度 + 自动资源回收)。
+// 不绑定具体 GL 资源类型:资源用 string 名标识,实际分配/释放由节点 execute
+// 回调通过 RenderGraphContext 完成。支持拓扑排序 / 资源生命周期分析 /
+// 未使用节点剔除 / 循环 / 冲突检测 / JSON 导入导出。
+export {
+  RenderGraph,
+  type RenderGraphNode,
+  type RenderGraphEdge,
+  type RenderGraphResource,
+  type CompiledPass,
+  type ResourceLifetime,
+  type RenderGraphStats,
+  type RenderGraphExportData,
+  type RenderGraphContext,
+  type RenderGraphNodeKind,
+  type RenderGraphResourceType,
+  type RenderGraphResourceLifetime,
+} from './RenderGraph';
 
