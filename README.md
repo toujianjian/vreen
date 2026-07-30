@@ -63,22 +63,28 @@ VREEN is positioned as a **lightweight Web game engine** — comparable in scope
 
 | Category | Capability |
 |----------|-----------|
-| **Engine kernel** | Self-developed WebGL2 renderer with PBR, IBL, real-time shadows, post-processing (Bloom, chromatic aberration, vignette, SMAA, SSAO, color grading, LUT, film grain, afterimage, pixelation, auto-exposure, enhanced DOF, GTAO, motion blur, SSR, SSSS, TAA, velocity, volumetric fog), GPU skinning, morph targets, MRT / GBuffer for deferred rendering + `DeferredRenderer` alternative backend + `ReflectionProbe`/`ReflectionProbeManager` for local IBL, path tracing (CPU reference), and a `Renderer` interface for backend pluggability. |
-| **Scene graph** | `Object3D` / `Scene` / `Mesh` / `Group` / `Bone` / `Skeleton` / `SkinnedMesh` / `BufferGeometry` / `BufferAttribute` / `InstancedBufferAttribute` / `Texture` / `InstancedMesh` / `LOD` / `Sprite` / `Text` / `BitmapText` / `TextAtlas`. |
+| **Engine kernel** | Self-developed WebGL2 renderer with PBR, IBL, real-time shadows, post-processing (Bloom, chromatic aberration, vignette, SMAA, SSAO, color grading, LUT, film grain, afterimage, pixelation, auto-exposure, enhanced DOF, GTAO, motion blur, SSR, SSSS, TAA, velocity, volumetric fog), GPU skinning, morph targets, MRT / GBuffer for deferred rendering + `DeferredRenderer` alternative backend + `ReflectionProbe`/`ReflectionProbeManager` for local IBL + `GlobalIllumination` (light probes SH2 + VXGI simplified) + `ShaderLibrary`/`ShaderCompiler` (#include + chunk injection + cache), path tracing (CPU reference), and a `Renderer` interface for backend pluggability. |
+| **Scene graph** | `Object3D` / `Scene` / `Mesh` / `Group` / `Bone` / `Skeleton` / `SkinnedMesh` / `BufferGeometry` / `BufferAttribute` / `InstancedBufferAttribute` / `Texture` / `InstancedMesh` / `LOD` / `Sprite` / `Text` / `BitmapText` / `TextAtlas` + `ModuleRegistry` (Gem-style engine module registry, inspired by O3DE Gems). |
 | **Math library** | `Vector2/3/4`, `Matrix3/4`, `Quaternion`, `Euler`, `Box3`, `Sphere`, `Plane`, `Ray`, `Line3`, `Triangle`, `Frustum`, `Color`, `MathUtils`. |
 | **ECS** | `World`, `ComponentType` registry, `QueryBuilder` with caching, `Prefab` templates, `Broadphase` acceleration, and POJO components for serializability. |
-| **Physics** | Fixed-step semi-implicit Euler integration, quaternion rotation integration, broadphase + narrowphase collision, impulse response with Baumgarte stabilization, AABB / Sphere / Capsule colliders, 5 joint constraints (Ball / Hinge / Slider / Fixed / Distance) + `ConstraintSolver`, `ClothSimulation` Verlet soft body, CPU particle system with emitters. |
-| **Animation** | `AnimationClip`, `AnimationAction`, `AnimationMixer`, `AnimationStateMachine` (Idle / Walk / Run auto-transitions), `BlendSpace1D`, `Humanoid` rig, `KeyframeTrack`, animation event callbacks, `MorphTargets` + `MorphTargetAnimation` for facial / shape animation, animation layers / masks / additive blend / sync. |
-| **Loaders** | 12 loaders (`GLBLoader`, `OBJLoader`, `FBXLoader`, `HDRLoader` per-channel RLE RGBE, `KTX2Loader`, `STLLoader`, `PLYLoader`, `TGALoader`, `MTLLoader`, `EXRLoader`, `TextureLoader`, `DracoDecoder`) + 4 exporters (`OBJExporter`, `GLTFExporter`, `STLExporter`, `PLYExporter`) + `AssetManager` LRU cache. |
-| **Materials** | `StandardMaterial` (PBR), `MeshPhysicalMaterial` (clearcoat / transmission), `MeshBasicMaterial`, `MeshPhongMaterial`, `MeshNormalMaterial`, `ShadowMaterial`, `SpriteMaterial`, `ShaderMaterial` with `onBeforeCompile` GLSL injection, `ShaderChunks/` subdirectory (10 GLSL fragments + `ShaderChunkRegistry` with `#include` resolution). Special-purpose: `FurMaterial`, `MatcapMaterial`, `ToonMaterial`, `OutlineMaterial`, `WaterMaterial`, `WireframeMaterial`. |
+| **Physics** | Fixed-step semi-implicit Euler integration, quaternion rotation integration, broadphase + narrowphase collision, impulse response with Baumgarte stabilization, AABB / Sphere / Capsule colliders, 5 joint constraints (Ball / Hinge / Slider / Fixed / Distance) + `ConstraintSolver`, `ClothSimulation` Verlet soft body, `FluidSimulation` (SPH), `DestructionSystem` + `VoronoiFracture`, CPU particle system with emitters. |
+| **Animation** | `AnimationClip`, `AnimationAction`, `AnimationMixer`, `AnimationStateMachine` (Idle / Walk / Run auto-transitions), `BlendSpace1D`, `Humanoid` rig, `KeyframeTrack`, animation event callbacks, `MorphTargets` + `MorphTargetAnimation` for facial / shape animation, animation layers / masks / additive blend / sync, IK subsystem (`IKBone` / `IKChain` / `IKSolver` FABRIK / `CCDSolver` / `IKHumanoid`) + high-level `IKSystem` driving scene-graph joints directly. |
+| **Loaders** | 12 loaders (`GLBLoader`, `OBJLoader`, `FBXLoader`, `HDRLoader` per-channel RLE RGBE, `KTX2Loader`, `STLLoader`, `PLYLoader`, `TGALoader`, `MTLLoader`, `EXRLoader`, `TextureLoader`, `DracoDecoder`) + 4 exporters (`OBJExporter`, `GLTFExporter`, `STLExporter`, `PLYExporter`) + `AssetManager` LRU cache + `GLTFExtensionLoader` (DRACO / KTX2 + KHR/EXT extension registry). |
+| **Materials** | `StandardMaterial` (PBR), `MeshPhysicalMaterial` (clearcoat / transmission), `MeshBasicMaterial`, `MeshPhongMaterial`, `MeshNormalMaterial`, `ShadowMaterial`, `SpriteMaterial`, `ShaderMaterial` with `onBeforeCompile` GLSL injection, `ShaderChunks/` subdirectory (10 GLSL fragments + `ShaderChunkRegistry` with `#include` resolution) + `ShaderLibrary` (15 predefined shader templates) + `ShaderCompiler` (preprocess + chunk injection + compile + cache). Special-purpose: `FurMaterial`, `MatcapMaterial`, `ToonMaterial`, `OutlineMaterial`, `WaterMaterial`, `WireframeMaterial`. |
 | **Resource management** | `Assets/` module — `AssetCache` (LRU), `AssetRegistry` (reference counting), `AssetLoader` (async batched). |
 | **Serialization** | `Serialization/` module — `SceneSerializer` / `GeometrySerializer` / `MaterialSerializer` round-trip Scene / Geometry / Material ↔ JSON. |
+| **Cameras** | `PerspectiveCamera` / `OrthographicCamera` + `CinematicCamera` (shot sequence with `cut` / `fade` / `dolly` / `orbit` transitions, DOF, Perlin shake, timeline import/export) + `CameraRig` (crane / dolly / orbit / fixed modes with damping follow). |
 | **Inspection UI** | 9 camera presets (Free / Iso / Front / Back / Side / Top / 1st-person / 3rd-person / Cinematic), real-time material lab, HDRI environments, post-FX toggles, PNG capture, drag-and-drop upload. |
 | **Debug tooling** | Physics debug renderer (collider / contact / velocity channels), `EntityGraph` relationship visualizer, profiler family — `Profiler` (CPU/GPU marks) / `FrameProfiler` (FPS aggregation) / `SystemProfiler` (ECS hot systems) / `MemoryTracker` (leak detection) / `GpuProfiler` (timer queries) / `PerformanceReport` (text + JSON) — surfaced through `FrameChart` and `ProfilerHUD`. |
-| **Visual scripting** | Blockly block editor with Camera / Animation / Scene / Renderer / Physics / Control categories, bound to the live ECS World via `EcsScriptAPI`, with Tick-callback registration. |
+| **Visual scripting** | Blockly block editor with Camera / Animation / Scene / Renderer / Physics / Control categories, bound to the live ECS World via `EcsScriptAPI`, with Tick-callback registration. Complemented by `VisualScriptComponent` (Script-Canvas-style node graph component, inspired by O3DE Script Canvas). |
 | **Package format** | `.vreen` ZIP container (manifest + scene + world + embedded assets), `.vreen-delta` incremental diffs, multi-language SDKs, `vreen` CLI for pack / unpack / validate / diff. |
 | **Desktop** | Electron 43 + electron-builder producing a single-file portable Windows `.exe`. |
 | **i18n** | First-class zh / en / ja / ko / es via i18next; all user-facing strings flow through translation keys. |
+| **Audio** | `AudioListener` / `Audio` / `PositionalAudio` / `AudioLoader` / `AudioAnalyser` + `SpatialAudio` (HRTF + distance attenuation + Doppler effect). |
+| **Terrain** | `TerrainGeometry` / `HeightmapGenerator` / `TerrainSplat` / `TerrainLayer` + `TerrainErosion` (thermal / hydraulic / wind erosion). |
+| **AI** | `NavMesh` + `PathFinder` (A*) + `SteeringBehavior` (Reynolds) + `Agent` + `BehaviorTree` / `BTNode` / `BTAction` / `BTComposite` / `BTCondition` / `BTDecorator` + `Blackboard` + `CrowdSystem` (large-scale crowd调度 + Reynolds separation) + `SpatialGrid` (2D XZ neighbourhood acceleration). |
+| **Network** | `NetworkSync` (server-authoritative) + `Snapshot` (binary serialization) + `NetworkTransport` (WebSocket/Mock) + `NetworkLerp` (interpolation + prediction + reconciliation) + `StateSync` (snapshot interpolation + Delta compression, pure data layer). |
+| **Geometries** | 15 primitives (Box / Sphere / Cylinder / Cone / Torus / Plane / Circle / Ring / Capsule / TorusKnot / Lathe / Extrude / Shape / Wireframe / Edges) + `InstancedGeometry` (instanced geometry, modeled after three.js `InstancedBufferGeometry`). |
 | **PCG** | Procedural Content Generation — `NoiseGenerator` (Perlin / Simplex / Worley / FBM), `BuildingGenerator`, `CityGenerator`, `DungeonGenerator` (BSP / random walk), `TreeGenerator` (L-system). |
 | **Pipeline** | Asset pipeline — `AssetPipeline` (step sequence), `TextureProcessor` (resize / compress / mipmap), `GeometryProcessor` (merge / optimize / weld / LOD), `ImportPipeline` (load → parse → optimize → register). |
 | **Gameplay** | RPG gameplay primitives — `DialogueSystem` + `DialogueTree` + `DialogueParticipant` (NPC dialogue with options / conditions), `QuestSystem` (objectives / prerequisites / state machine), `InventorySystem` (stackable items / currency / slots). |
@@ -158,34 +164,34 @@ vreen/
 │   │   ├── viewer/             # 3D inspector core (see below)
 │   │   ├── three/              # Mini-canvas helpers (BackgroundScene / PresetPreview / SafeEnvironment)
 │   │   └── hud/                # Reusable HUD widgets (HudPanel / TopBar / LangSwitcher)
-│   ├── engine/                 # Self-developed WebGL2 engine (mirrored to packages/engine/src)
-│   │   ├── Core/               # Scene graph primitives + Sprite/Text/BitmapText/TextAtlas + texture family (Cube/Data/DataArray/Depth/Video/Canvas/Compressed) + Source + MorphTargets/MorphTargetAnimation + InstancedBufferAttribute + Fog/FogExp2 + Raycaster + DirtyFlag/SceneGraphProcessor/FrustumCuller/SceneStats
+│   ├── engine/                 # Self-developed WebGL2 engine (mirrored to packages/engine/src) — 34 top-level modules, 410+ source files
+│   │   ├── Core/               # Scene graph primitives + Sprite/Text/BitmapText/TextAtlas + texture family (Cube/Data/DataArray/Depth/Video/Canvas/Compressed) + Source + MorphTargets/MorphTargetAnimation + InstancedBufferAttribute + Fog/FogExp2 + Raycaster + DirtyFlag/SceneGraphProcessor/FrustumCuller/SceneStats + ModuleRegistry (Gem-style module registry)
 │   │   ├── Math/               # Vector2/3/4, Matrix3/4, Quaternion, Euler, Color, Box3, Sphere, Plane, Ray, Line3, Triangle, Frustum, MathUtils
-│   │   ├── Cameras/            # Perspective / Orthographic cameras
+│   │   ├── Cameras/            # Perspective / Orthographic cameras + CinematicCamera (shot sequence) + CameraRig (crane/dolly/orbit/fixed)
 │   │   ├── Controls/           # Orbit / Fly / PointerLock / Map controls + CharacterController (kinematic)
 │   │   ├── Lights/             # Ambient / Directional / Point / Spot / Hemisphere / RectArea + ShadowMapManager
-│   │   ├── Geometries/         # Box / Sphere / Cylinder / Cone / Torus / Plane / Circle / Ring / Capsule / TorusKnot / Lathe / Extrude / Shape / Wireframe / Edges
-│   │   ├── Materials/          # Standard / Physical / Basic / Phong / Normal / Shadow / Sprite materials + ShaderMaterial + ShaderChunks/ subdirectory (10 GLSL fragments + ShaderChunkRegistry) + onBeforeCompile + special: Fur / Matcap / Toon / Outline / Water / Wireframe
-│   │   ├── Renderer/           # WebGL2Renderer, ShaderProgram, RenderPass, ShadowMapManager + MRTTarget / GBuffer (deferred) + DeferredRenderer alternative + ReflectionProbe / ReflectionProbeManager + post-FX (basic: SSAO / FXAA / ToneMapping / Gamma / DOF; enhanced PostProcess/: ColorGrading / LUT / FilmGrain / Afterimage / Pixelation; advanced: AutoExposure / DOFEnhanced / GTAO / MotionBlur / SSR / SSSS / TAA / Velocity / VolumetricFog) + PathTracer
-│   │   ├── Loaders/            # GLB / OBJ / FBX / HDR / KTX2 / STL / PLY / TGA / MTL / EXR / Draco / AssetManager + 4 exporters (OBJ / GLTF / STL / PLY)
-│   │   ├── Animation/          # Clips, Mixer, StateMachine, BlendSpace1D, Humanoid + layers / masks / additive blend + IK (FABRIK / CCD / IKHumanoid)
+│   │   ├── Geometries/         # Box / Sphere / Cylinder / Cone / Torus / Plane / Circle / Ring / Capsule / TorusKnot / Lathe / Extrude / Shape / Wireframe / Edges + InstancedGeometry
+│   │   ├── Materials/          # Standard / Physical / Basic / Phong / Normal / Shadow / Sprite materials + ShaderMaterial + ShaderChunks/ subdirectory (10 GLSL fragments + ShaderChunkRegistry) + ShaderLibrary (15 templates) + ShaderCompiler (#include + cache) + onBeforeCompile + special: Fur / Matcap / Toon / Outline / Water / Wireframe
+│   │   ├── Renderer/           # WebGL2Renderer, ShaderProgram, RenderPass, ShadowMapManager + MRTTarget / GBuffer (deferred) + DeferredRenderer alternative + ReflectionProbe / ReflectionProbeManager + GlobalIllumination (lightprobes SH2 + VXGI) + post-FX (basic: SSAO / FXAA / ToneMapping / Gamma / DOF; enhanced PostProcess/: ColorGrading / LUT / FilmGrain / Afterimage / Pixelation; advanced: AutoExposure / DOFEnhanced / GTAO / MotionBlur / SSR / SSSS / TAA / Velocity / VolumetricFog) + PathTracer
+│   │   ├── Loaders/            # GLB / OBJ / FBX / HDR / KTX2 / STL / PLY / TGA / MTL / EXR / Draco / AssetManager + 4 exporters (OBJ / GLTF / STL / PLY) + GLTFExtensionLoader (DRACO/KTX2 + KHR/EXT extension registry)
+│   │   ├── Animation/          # Clips, Mixer, StateMachine, BlendSpace1D, Humanoid + layers / masks / additive blend + IK (FABRIK / CCD / IKHumanoid) + IKSystem (high-level scene-graph IK driver)
 │   │   ├── ECS/                # World, ComponentType, Systems, Physics, Prefab, QueryBuilder + Constraint subsystem
-│   │   ├── Physics/            # PhysicsDemo + ConstraintSolver + Joint constraints (Ball/Hinge/Slider/Fixed/Distance) + ClothSimulation (Verlet)
+│   │   ├── Physics/            # PhysicsDemo + ConstraintSolver + Joint constraints (Ball/Hinge/Slider/Fixed/Distance) + ClothSimulation (Verlet) + FluidSimulation (SPH) + DestructionSystem + VoronoiFracture
 │   │   ├── Helpers/            # Grid / Grid3D / Axes / Box / Camera / Arrow helpers + PhysicsDebugRenderer
-│   │   ├── Audio/              # AudioListener / PositionalAudio / Audio / AudioLoader / AudioAnalyser
-│   │   ├── Terrain/            # TerrainGeometry / HeightmapGenerator / TerrainSplat / TerrainLayer
+│   │   ├── Audio/              # AudioListener / PositionalAudio / Audio / AudioLoader / AudioAnalyser + SpatialAudio (HRTF + distance attenuation + Doppler)
+│   │   ├── Terrain/            # TerrainGeometry / HeightmapGenerator / TerrainSplat / TerrainLayer + TerrainErosion (thermal/hydraulic/wind)
 │   │   ├── Acceleration/       # BVH / BVHBuilder / MeshBVH
 │   │   ├── Assets/             # AssetCache (LRU) / AssetRegistry (ref-counting) / AssetLoader (async) — resource lifecycle
 │   │   ├── Serialization/      # SerializerRegistry / GeometrySerializer / MaterialSerializer / SceneSerializer — Scene/Geometry/Material ↔ JSON
 │   │   ├── Events/             # EventBus / EventQueue / GameEvent (typed pub/sub)
-│   │   ├── Scripting/          # ScriptComponent / ScriptSystem / ScriptRegistry / CoroutineSystem
+│   │   ├── Scripting/          # ScriptComponent / ScriptSystem / ScriptRegistry / CoroutineSystem + VisualScriptComponent (Script Canvas-style node graph)
 │   │   ├── Particles/          # ParticleSystem2 / ParticleEmitter / ParticleModifier / ParticleCurve / TrailModule
-│   │   ├── Network/            # NetworkSync / Snapshot / NetworkTransport (WebSocket/Mock) / NetworkLerp — server-authoritative sync
+│   │   ├── Network/            # NetworkSync / Snapshot / NetworkTransport (WebSocket/Mock) / NetworkLerp — server-authoritative sync + StateSync (snapshot interpolation + Delta compression, pure data layer)
 │   │   ├── SaveSystem/         # SaveSystem (multi-slot + auto-save) / SaveSerializer / LocalStorageAdapter
 │   │   ├── SceneManager/       # SceneManager / SceneTransition (Fade/Crossfade/Slide/Wipe/None)
 │   │   ├── Input/              # InputManager / KeyboardState / MouseState / TouchState / GamepadState / InputAction / InputMap
 │   │   ├── Tools/              # Profiler / FrameProfiler / SystemProfiler / MemoryTracker / GpuProfiler / PerformanceReport
-│   │   ├── AI/                 # NavMesh (navigation mesh) + PathFinder (A*) + SteeringBehavior (Reynolds) + Agent + BehaviorTree + Blackboard
+│   │   ├── AI/                 # NavMesh (navigation mesh) + PathFinder (A*) + SteeringBehavior (Reynolds) + Agent + BehaviorTree + Blackboard + CrowdSystem (large-scale crowd + Reynolds separation) + SpatialGrid (2D XZ neighbourhood acceleration)
 │   │   ├── Environment/        # WeatherSystem + SkySystem (day/night) + CloudSystem + PrecipitationSystem + VegetationSystem + WaterSimulation + WaterSystem
 │   │   ├── Timeline/           # TimelineClip + TimelineTrack + EventTrack + PropertyTrack + TimelineSequencer (play/pause/seek/loop/export/import)
 │   │   ├── Voxel/              # VoxelChunk 16³ + VoxelWorld (multi-chunk) + VoxelMesher (greedy meshing) + VoxelRaycaster (DDA) + VoxelPalette
@@ -326,6 +332,7 @@ A complete math library with scratch-object reuse to minimize per-frame allocati
 | Post-processing passes (advanced, `PostProcess/`) | `AutoExposurePass` (luminance-based auto exposure), `DOFEnhancedPass` (bokeh + circle-of-confusion), `GTAOPass` (ground-truth AO), `MotionBlurPass` (consumes `VelocityPass`), `SSRPass` (screen-space reflections), `SSSSPass` (screen-space subsurface scattering), `TAAPass` (temporal AA, needs `VelocityPass`), `VelocityPass` (per-pixel motion vectors), `VolumetricFogPass` (volumetric fog / light shafts). All implement the `RenderPass` interface. |
 | `DeferredRenderer` | Alternative deferred-rendering backend — G-Buffer pass (4 attachments: position / normal / albedo / material) → fullscreen lighting pass. Light count decoupled from fragment work; suitable for many-light scenes. Trade-offs: no native transparency, no native MSAA, fixed material attribute set. |
 | `ReflectionProbe` / `ReflectionProbeManager` | Local IBL probes — `ReflectionProbe` captures a cube-map snapshot at a position with a bounding range; `ReflectionProbeManager` registers probes, finds the camera-position-weighted active probe, and blends between probes for smooth transitions. |
+| `GlobalIllumination` | Global illumination system with two modes: `'lightprobes'` (second-order spherical harmonics SH2, 9 coefficients × RGB = 27 floats per probe, baked irradiance at sampled positions) and `'vxgi'` (simplified voxel global illumination — scene voxelized into a 3D texture for fragment sampling; v1 holds the data structure only, voxelization is caller-supplied). Supplements the PBR pipeline's ambient / indirect light. |
 | `PathTracer` | CPU-simplified path tracer for reference / validation rendering — progressive accumulation with `frameCount`, configurable `maxBounces` (default 8) and `samplesPerPixel` (default 4). Möller–Trumbore ray-triangle intersection, direct + indirect lighting, Russian-roulette path termination. `render(scene, camera)` traces one pass per call; `accumulate()` is an alias; `getResult()` returns the accumulated `Uint8ClampedArray`; `reset()` clears the buffer. Slow but useful for ground-truth comparison against the WebGL2 PBR pipeline. |
 
 ### Materials (`src/engine/Materials/`)
@@ -341,6 +348,8 @@ A complete math library with scratch-object reuse to minimize per-frame allocati
 | `SpriteMaterial` | Sprite material — extends `BasicMaterial` with color, map, opacity, rotation, `sizeAttenuation` (perspective near-big-far-small), depth test/write, render order. Pairs with `Sprite`; renderer uses a separate sprite shader path implementing billboard orientation. |
 | `ShaderMaterial` | Custom-shader material accepting GLSL strings and a uniform descriptor. Supports `onBeforeCompile` for injecting GLSL snippets into the built-in shaders without rewriting them. |
 | `ShaderChunks/` subdirectory | 10 GLSL fragment string constants (`COMMON_CHUNK`, `LIGHTING_CHUNK`, `FOG_CHUNK` / `FOG_EXP2_CHUNK`, `NORMAL_PACK_CHUNK`, `SHADOW_CHUNK`, `ENVMAP_CHUNK`, `TONEMAP_ACES_CHUNK` / `TONEMAP_REINHARD_CHUNK`, `NOISE_CHUNK`, `UV_TRANSFORM_CHUNK`, `COLOR_SPACE_CHUNK`) + `ShaderChunkRegistry` (singleton `shaderChunkRegistry`) supporting `#include <name>` resolution. `registerBuiltinChunks()` registers all built-ins idempotently. |
+| `ShaderLibrary` | Predefined shader template library — 15 built-in shader templates (unlit / lambert / blinn-phong / PBR / normal / depth / shadow / sprite / fur / matcap / toon / outline / water / wireframe / fullscreen-quad) keyed by name. `getTemplate(name)` returns a `ShaderTemplate` with vertex/fragment source + uniform descriptors; `registerTemplate` allows user extension. Eliminates boilerplate for common shading tasks. |
+| `ShaderCompiler` | Shader compiler — preprocesses GLSL source (`#include <name>` resolution via `ShaderChunkRegistry`), injects `ShaderChunk` fragments, compiles vertex + fragment shaders via `WebGL2RenderingContext`, links a `WebGLProgram`, and caches the compiled program by source hash. `compile(gl, vertexSrc, fragmentSrc)` returns a cached `ShaderProgram`; `clearCache()` evicts entries. Pairs with `ShaderLibrary` for one-shot template → program compilation. |
 | `FurMaterial` | Shell-based fur / hair material — vertex displacement along `a_normal` by `shellLayer * furLength` + gravity / wind offset; fragment discard by density threshold + root occlusion. Pairs with `FurShell`. |
 | `MatcapMaterial` | Material Capture — pre-baked sphere normal→color texture, no lighting; popular in 3D sculpting tools. |
 | `ToonMaterial` | Cel-shaded cartoon material — quantises N·L into discrete bands. Pair with `OutlineMaterial` for anime-style outlines. |
@@ -368,6 +377,11 @@ The renderer collects lights per-scene via `_collectLights(scene)` with change d
 
 `Camera` base, `PerspectiveCamera` (FOV / aspect / near / far), `OrthographicCamera`. Both produce view-projection matrices consumed by the renderer and the `Frustum` culler.
 
+| Export | Purpose |
+|--------|---------|
+| `CinematicCamera` | Cinematic-grade camera driving a `PerspectiveCamera` through a shot sequence (`CameraShot[]` — position / lookAt / fov / duration / transition). Four transition types: `cut` (hard), `fade`, `dolly` (smoothstep), `orbit` (half-revolution around lookAt during transition). DOF fields (`dofEnabled` / `focusDistance` / `aperture` / `focalLength`) feed downstream DOF passes; Perlin-style `shake` adds noise to position/orientation with `shakeDuration` decay. `exportTimeline()` / `importTimeline()` round-trip JSON. Complements `CameraRig` (sequence-driven vs. follow-driven). |
+| `CameraRig` | Camera jib / dolly system that follows an `Object3D` target in real time. Four motion modes: `crane` (jib, camera hoisted above target by `height`, swing around vertical axis), `dolly` (track, constant-speed XZ translation), `orbit` (revolve around target at `radius` with angular `speed`), `fixed` (static offset). `damping` controls position-follow smoothness (0 = instant, larger = smoother). Always `lookAt` target + `lookAtOffset`. Unlike `OrbitControls` (user-input driven, interactive), `CameraRig` drives the camera by preset rules (cinematic / cutscene). Composable with `CinematicCamera` (Rig follows the protagonist, Cinematic takes the Rig's camera for shot switching). |
+
 ### Loaders (`src/engine/Loaders/`)
 
 | Export | Purpose |
@@ -388,6 +402,7 @@ The renderer collects lights per-scene via `_collectLights(scene)` with change d
 | `TextureLoader` | Image texture loading. |
 | `DracoDecoder` | `draco3d` wrapper. |
 | `AssetManager` | LRU cache with hit / miss / eviction logging and cache-key truncation. |
+| `GLTFExtensionLoader` | Enhanced GLTF loader built on top of `GLBLoader` (modeled after three.js `GLTFLoader`). Adds an extension registry (`registerExtension` accepts `KHR_*` / `EXT_*` handlers), DRACO decoder injection (`setDRACODecoder`), and KTX2 decoder injection (`setKTX2Decoder`). Each registered extension's `beforeRoot` / `afterRoot` / `mesh` / `material` / `texture` / `node` hooks are dispatched during parsing, enabling custom mesh / material / texture / node handling without forking the core loader. |
 
 ### Animation (`src/engine/Animation/`)
 
@@ -401,6 +416,7 @@ The renderer collects lights per-scene via `_collectLights(scene)` with change d
 | `Humanoid` | Humanoid rig definitions. |
 | Animation events | Time-anchored callbacks (e.g. footstep triggers). |
 | IK subsystem | `IKBone`, `IKChain`, `IKSolver` (FABRIK), `CCDSolver` (Cyclic Coordinate Descent), `IKHumanoid` — full biped IK rig with joint constraints and side chaining. |
+| `IKSystem` | High-level inverse kinematics system that drives scene-graph `Object3D[]` joint chains directly (reads / writes node `position` / `rotation`). Built-in solvers: FABRIK (position-space, fast convergence, supports `poleTarget` for bend direction) and CCD (rotation-space, naturally compatible with rotation constraints). Supports `IKConstraint` hinge-joint constraints (axis + angle range). Complements the `Animation/IK/` sub-module (which uses a self-contained `IKBone` class independent of the scene graph); `IKSystem` is the right choice when integrating IK into an existing scene-graph hierarchy. |
 
 ### ECS (`src/engine/ECS/`)
 
@@ -450,6 +466,7 @@ Procedural primitive geometry generators. Each produces a `BufferGeometry` with 
 | `Shape` | 2D contour builder (moveTo, lineTo, quadraticCurveTo, bezierCurveTo, absarc, holes) used by `ExtrudeGeometry` / `LatheGeometry`. |
 | `WireframeGeometry` | Edge-only geometry derived from a source `BufferGeometry` — for debug wireframe rendering. |
 | `EdgesGeometry` | Hard-edge-only geometry (crenellation threshold) — for CAD-style edge highlighting. |
+| `InstancedGeometry` | Instanced geometry wrapper (modeled after three.js `InstancedBufferGeometry`) — binds a base `BufferGeometry` plus per-instance attributes (`instanceMatrix` / `instanceColor` / custom). `setInstanceCount(n)` controls draw count; `setMatrixAt(i, m)` / `getMatrixAt(i)` mutate the instance matrix buffer. Renderer draws via `gl.drawElementsInstanced`. Pairs with `InstancedMesh` for vegetation / crowds / repeated props. |
 
 `Primitives.ts` re-exports all of the above for convenience.
 
@@ -477,6 +494,7 @@ WebAudio-based spatial audio subsystem.
 | `PositionalAudio` | 3D positional sound with panner-node distance / cone attenuation. |
 | `AudioLoader` | Decode `ArrayBuffer` (mp3 / ogg / wav) into `AudioBuffer`s. |
 | `AudioAnalyser` | FFT analyser for visualization (frequency data, waveform). |
+| `SpatialAudio` | 3D spatial audio extension — HRTF (Head-Related Transfer Function) panning model for realistic directional audio, distance attenuation (linear / inverse / exponential models), and Doppler effect (pitch shift based on relative velocity between source and listener). Builds on `PositionalAudio` with a richer spatialization model; suitable for FPS / VR scenarios where accurate audio localization matters. |
 
 ### Terrain (`src/engine/Terrain/`)
 
@@ -488,6 +506,7 @@ Procedural terrain system for outdoor scenes.
 | `HeightmapGenerator` | Procedural heightmap generators — fractal noise, ridged, hydraulic erosion. |
 | `TerrainSplat` | Splat-map based texture blending — up to N layers with alpha masks. |
 | `TerrainLayer` | Per-layer metadata (albedo texture, normal texture, tiling, metallic / roughness). |
+| `TerrainErosion` | Terrain erosion simulator — three erosion algorithms: **thermal** (gravity-driven material redistribution on steep slopes, produces talus aprons), **hydraulic** (water-drop simulation — rain drops flow downhill carrying sediment, depositing on gentle slopes, carves realistic river valleys), **wind** (Aeolian erosion — wind transports sediment with preferential deposition in wind shadows). Each algorithm reads / writes a heightmap `Float32Array` and is configurable (iteration count, erosion strength, deposition rate). Decoupled from `TerrainGeometry` — output heightmap is fed back via `TerrainGeometry.setHeightAt`. |
 
 ### Acceleration (`src/engine/Acceleration/`)
 
@@ -585,6 +604,18 @@ Advanced CPU particle system — separate from the legacy ECS `ParticleSystem`. 
 | `TrailModule` | Optional ribbon-trail renderer attachment — records particle positions over time and produces `TrailRenderData` for the renderer. Supports multiple color modes (`TrailColorMode`). |
 | `ParticleData` | Per-particle state struct (position / velocity / size / color / lifetime / etc). |
 
+### Network (`src/engine/Network/`)
+
+Server-authoritative network synchronisation foundation. Decoupled from the ECS `World` — reads / writes `Transform`-like state via the `NetworkEntity` handle, so it can layer on top of any entity system.
+
+| Export | Purpose |
+|--------|---------|
+| `NetworkTransport` | Transport contract (`send` / `onMessage` / `connect` / `close`). Built-in implementations: `WebSocketTransport` (browser) and `MockTransport` (in-process loopback for tests). |
+| `Snapshot` | Binary snapshot serialisation — packs per-entity transform + component state into a compact buffer with optional compression. The wire format is versioned for forward compatibility. |
+| `NetworkLerp` | Client-side interpolation / prediction / reconciliation. Buffers snapshots, interpolates remote entity positions / rotations, and reconciles local prediction errors when a server snapshot arrives. |
+| `NetworkSync` | Top-level sync manager. `createNetworkEntity` registers an entity for synchronisation; `update(dt)` ticks snapshot send (server) / receive + interpolate (client). `NetworkSyncOptions` configures send rate, interpolation delay, and ownership. |
+| `StateSync` | Pure-data-layer state synchronisation — snapshot interpolation (buffered remote state sampled at a configurable render delay) + Delta compression (only changed fields are transmitted, reducing bandwidth). Decoupled from any transport implementation: the caller wires `StateSync` to a `NetworkTransport` and feeds received snapshots in. Complements the higher-level `NetworkSync` (which owns the entity lifecycle) — `StateSync` is the reusable data layer that `NetworkSync` is built on, and can be used standalone for custom sync schemes. |
+
 ### AI (`src/engine/AI/`)
 
 AI navigation + behavior-tree subsystem for game agents.
@@ -598,6 +629,8 @@ AI navigation + behavior-tree subsystem for game agents.
 | `BehaviorTree` | Tree-shaped decision structure — root node evaluated each tick, returns `Success` / `Failure` / `Running`. Complements navigation (which solves "how to move") by deciding "what to do". |
 | `BTNode` / `BTAction` / `BTComposite` / `BTCondition` / `BTDecorator` | Behavior-tree node taxonomy: `BTAction` (execute), `BTComposite` (Sequence / Selector / Parallel), `BTCondition` (predicate), `BTDecorator` (Inverter / Repeater / RetryUntilSuccess). |
 | `Blackboard` | Shared key-value store (any typed value) read/written by BT nodes — decouples node-to-node data flow. Supports `get` / `set` / `has` / `unset` + change listeners. |
+| `CrowdSystem` | Large-scale crowd simulation — schedules many `Agent`s with Reynolds **separation** steering (local avoidance between nearby agents), NavMesh-based pathfinding, and per-agent path-cache throttling (re-path only every N frames or on target move). Supports agent radius / max speed / avoidance radius. Scales to hundreds of agents by reusing one `NavMesh` and amortizing pathfinding cost. Complements single-agent `Agent` + `SteeringBehavior` (which lacks local avoidance). |
+| `SpatialGrid` | 2D (XZ-plane) uniform spatial hash grid for neighbourhood queries. `insert(id, x, z)` / `remove(id)` / `update(id, x, z)` maintain the cell buckets; `query(x, z)` returns ids in the same cell; `queryRadius(x, z, r)` returns ids within a circular range. Cell size is configurable (default 1). Used by `CrowdSystem` for O(1) neighbour lookup instead of O(n²) all-pairs scans; also reusable for broadphase collision culling and proximity triggers. |
 
 ### Environment (`src/engine/Environment/`)
 
@@ -858,7 +891,7 @@ npm run test:coverage     # coverage report
 
 ### Coverage
 
-Unit tests cover the engine foundation (3361+ tests across 200+ engine test files, 42+ modules):
+Unit tests cover the engine foundation (3361+ tests across 219+ engine test files, 42+ modules):
 
 | Area | Test files |
 |------|-----------|
@@ -970,6 +1003,8 @@ npm run electron:build
 
 ## Comparison with Other Engines
 
+> A more detailed comparison (including feature-by-feature breakdowns, design-philosophy contrasts, and target-audience analysis) is maintained in [`docs/SOUP3D_COMPARISON.md`](./docs/SOUP3D_COMPARISON.md).
+
 ### VREEN vs soup3D
 
 [soup3D](https://github.com/OrenLiu/soup3D) is a Python + pygame + OpenGL 3D engine designed for beginners. VREEN is built on a different foundation — TypeScript + WebGL2 — targeting professional-grade 3D game development with a complete engine architecture.
@@ -979,15 +1014,15 @@ npm run electron:build
 | Language | TypeScript (WebGL2) | Python (OpenGL + pygame) |
 | Runtime | Browser-native + Electron desktop | Desktop only (pygame) |
 | Architecture | Full ECS (Entity-Component-System) | Procedural API |
-| Rendering | PBR + IBL + Shadow + Post-processing (23+ passes) + MRT/GBuffer deferred + `DeferredRenderer` alternative backend + `ReflectionProbe`/`ReflectionProbeManager` local IBL + `PathTracer` CPU reference | Fixed-function + basic shaders |
+| Rendering | PBR + IBL + Shadow + Post-processing (23+ passes) + MRT/GBuffer deferred + `DeferredRenderer` alternative backend + `ReflectionProbe`/`ReflectionProbeManager` local IBL + `GlobalIllumination` (SH2 + VXGI) + `PathTracer` CPU reference | Fixed-function + basic shaders |
 | Physics | Rigid body + Collision + 5 Joint constraints + ConstraintSolver + Cloth (Verlet) + Fluid (SPH) + Destruction (Voronoi) | None |
-| Animation | Clip/Mixer/StateMachine + IK (FABRIK/CCD/Humanoid) + Layer blending + Morph Targets + BlendSpace1D | Basic skeleton |
-| Geometry | 15 primitives + Terrain + BVH acceleration | Basic primitives |
-| Materials | PBR/Physical/Basic/Phong/Normal/Shadow/Sprite + Shader(onBeforeCompile) + Fur/Matcap/Toon/Outline/Water/Wireframe + ShaderChunks registry | Single material |
+| Animation | Clip/Mixer/StateMachine + IK (FABRIK/CCD/Humanoid + IKSystem) + Layer blending + Morph Targets + BlendSpace1D | Basic skeleton |
+| Geometry | 15 primitives + InstancedGeometry + Terrain + BVH acceleration | Basic primitives |
+| Materials | PBR/Physical/Basic/Phong/Normal/Shadow/Sprite + Shader(onBeforeCompile) + Fur/Matcap/Toon/Outline/Water/Wireframe + ShaderChunks registry + ShaderLibrary + ShaderCompiler | Single material |
 | Particles | 7-module system (Emitter/Modifier/Curve/Trail) | None |
-| Audio | 3D spatial audio + FFT analyser | None |
+| Audio | 3D spatial audio + FFT analyser + SpatialAudio (HRTF + Doppler) | None |
 | Text & Sprites | Text/BitmapText/TextAtlas + Sprite (billboard) | None |
-| AI Navigation | NavMesh + A* PathFinder + SteeringBehavior + Agent + BehaviorTree + Blackboard | None |
+| AI Navigation | NavMesh + A* PathFinder + SteeringBehavior + Agent + BehaviorTree + Blackboard + CrowdSystem + SpatialGrid | None |
 | Environment | Weather + Sky (day/night) + Clouds + Precipitation + Vegetation + Water | None |
 | Timeline | Multi-track Sequencer (Clips/Events/Property keyframes) | None |
 | Voxel | VoxelChunk 16³ + VoxelWorld + Greedy meshing + DDA raycast | None |
@@ -999,7 +1034,7 @@ npm run electron:build
 | Scripting | ScriptComponent + CoroutineSystem + ScriptRegistry | None |
 | Export | GLTF / OBJ / STL / PLY (4 exporters) | None |
 | i18n | 5 languages (en/zh/ja/ko/es) | 2 languages (en/zh) |
-| Testing | 3361+ unit tests (200+ test files, 390+ source files, 56K+ LOC, 42+ modules) | None |
+| Testing | 3361+ unit tests (219+ test files, 410+ source files, 63K+ LOC, 42+ modules) | None |
 | Visual Scripting | Blockly integration | None |
 | Package Format | .vreen (ZIP + delta diff) | None |
 

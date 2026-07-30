@@ -1,34 +1,43 @@
-// DestructionSystem — 网格破碎系统(切割 / 碎裂 + 碎片物理)。
+// DestructionSystem — 物体破坏系统(切片 / 碎裂 / 形变 + 碎片物理)。
 //
 // 设计:
-//   - shatter(geometry, position, impactForce, fragmentCount):
-//     用 VoronoiFracture 把 geometry 破碎成 fragmentCount 块,每块获得初始速度
-//     方向 = (站点 - 冲击点) 归一化,大小 ∝ impactForce
-//   - slice(geometry, plane):用平面把 geometry 切成两半,返回 [inside, outside]
-//     inside = 平面法线指向的负侧(dist<=0),outside = 正侧(dist>0)
-//   - update(dt):每帧推进碎片物理(重力 + 线速度 + 角速度)+ lifetime 衰减
-//   - applyForce(i, F):对碎片 i 累加力(下次 update 时转成加速度)
+//   * destructibles: Map<id, Destructible> 管理可破坏物体(血量 / 破坏阈值 / 几何)
+//   * applyDamage / applyForce 累积伤害或冲击,达到阈值时自动 breakObject
+//   * breakObject / shatter 用 VoronoiFracture 把 mesh 破碎成碎片,每片获得
+//     初始速度(方向 = 站点 - 冲击点,大小 = 冲击力)
+//   * slice 用平面把 mesh 切成内侧 / 外侧两块,各自成为碎片
+//   * deform 就地推移 mesh 顶点(不破碎),模拟凹陷
+//   * update(dt) 推进碎片物理(重力 + 线速度 + 角速度积分四元数)+ 寿命衰减
 //
 // 与引擎的集成:
-//   - Fragment.mesh 是 BufferGeometry(仅 position,调用方可 computeVertexNormals)
-//   - Fragment.position / rotation 是世界变换,调用方据此构造 Matrix4 渲染
-//   - 系统不直接渲染,只产出几何 + 变换状态
+//   * Destructible.mesh / Fragment.mesh 是 BufferGeometry(仅 position)
+//   * 系统不直接渲染,只产出几何 + 变换状态,调用方据此构造 Matrix4 渲染
+//   * 与 ClothSimulation / FluidSimulation 互补,三者都是独立物理子系统
 //
-// 与 ClothSimulation / FluidSimulation 的关系:
-//   三者都是独立物理子系统(布料/流体/破碎),通过 BufferGeometry 接口与引擎解耦。
-//   后续可包装为 DestructionComponent + DestructionSystem(ECS)接入主物理管线。
+// 与 VoronoiFracture 的关系:
+//   DestructionSystem 内部委托 VoronoiFracture 做几何碎裂,自身负责
+//   物体注册 / 伤害判定 / 碎片物理积分 / 生命周期管理。
 
 import { BufferGeometry } from '../Core/BufferGeometry';
 import { BufferAttribute } from '../Core/BufferAttribute';
 import { Vector3 } from '../Math/Vector3';
 import { Quaternion } from '../Math/Quaternion';
-import { Plane } from '../Math/Plane';
 import { VoronoiFracture } from './VoronoiFracture';
 
-/** 单个碎片。 */
+/** 切片平面:normal · point + distance <= 0 为内侧。 */
+export interface SlicePlane {
+  /** 平面法线(建议归一化)。 */
+  normal: Vector3;
+  /** 平面到原点的有符号距离。 */
+  distance: number;
+}
+
+/** 单个碎片。
+ *  注:rotation 为物理积分所需字段(角速度积分目标),虽不在最小字段清单中但为
+ *  update(dt) 角动量推进所必需。 */
 export interface Fragment {
-  /** 碎片几何(非索引化,仅 position)。 */
-  mesh: BufferGeometry;
+  /** 碎片唯一 id。 */
+  id: number;
   /** 当前世界位置(由 update 推进)。 */
   position: Vector3;
   /** 当前世界旋转(由 update 推进,基于角速度)。 */
@@ -37,40 +46,51 @@ export interface Fragment {
   velocity: Vector3;
   /** 角速度(轴-角形式,rad/s;方向 = 旋转轴,模长 = 角速率)。 */
   angularVelocity: Vector3;
-  /** 质量(kg)。 */
-  mass: number;
+  /** 均匀缩放。 */
+  scale: number;
   /** 剩余寿命(s);<= 0 表示过期。 */
   lifetime: number;
-  /** 初始寿命(用于归一化)。 */
-  maxLifetime: number;
-  /** 初始位置(冲击点的相对偏移基准)。 */
-  originalPosition: Vector3;
-  /** 累积力(由 applyForce 写入,update 后清零)。 */
-  force: Vector3;
-  /** 是否活跃(false = 已过期或被移除,不再参与 update)。 */
-  active: boolean;
+  /** 碎片几何(非索引化,仅 position)。 */
+  mesh: BufferGeometry;
+  /** 质量(kg)。 */
+  mass: number;
 }
 
-export interface DestructionOptions {
-  /** 最大碎片数(超过则丢弃多余的);默认 256。 */
-  maxFragments?: number;
-  /** 重力加速度(m/s²);默认 (0,-9.8,0)。 */
-  gravity?: Vector3;
-  /** 默认碎片寿命(s);默认 5。 */
-  defaultLifetime?: number;
-  /** 默认碎片质量(kg);默认 1。 */
-  defaultMass?: number;
-  /** VoronoiFracture 实例(可注入用于确定性测试)。 */
-  fracture?: VoronoiFracture;
+/** 可破坏物体。 */
+export interface Destructible {
+  /** 物体 id(由调用方指定)。 */
+  id: number;
+  /** 原始几何。 */
+  mesh: BufferGeometry;
+  /** 世界位置。 */
+  position: Vector3;
+  /** 当前血量。 */
+  health: number;
+  /** 最大血量。 */
+  maxHealth: number;
+  /** 破坏所需冲击力阈值(与系统 breakThreshold 取较大值生效)。 */
+  breakForce: number;
+  /** 材质标识(由调用方解释,系统不消费)。 */
+  material: string;
+  /** 是否已破碎。 */
+  isBroken: boolean;
+  /** 该物体破碎后产生的碎片(历史记录,不过滤过期)。 */
+  fragments: Fragment[];
 }
 
+/** 破坏系统统计。 */
 export interface DestructionStats {
-  total: number;
-  active: number;
-  expired: number;
+  /** 已注册可破坏物体数。 */
+  destructibles: number;
+  /** 已破碎物体数。 */
+  broken: number;
+  /** 系统当前碎片总数(含过期未清理)。 */
+  fragments: number;
+  /** 活跃碎片数(lifetime > 0)。 */
+  activeFragments: number;
 }
 
-/** 切片结果:[内侧(法线负侧), 外侧(法线正侧)]。任一侧可能为 null(完全在一侧)。 */
+/** 切片结果:[内侧(法线负侧), 外侧(法线正侧)]。任一侧可能为 null。 */
 export type SliceResult = [BufferGeometry | null, BufferGeometry | null];
 
 /** 三角形顶点(仅位置)。 */
@@ -80,141 +100,165 @@ interface Tri {
   cx: number; cy: number; cz: number;
 }
 
+/** 默认破碎碎片数。 */
+const DEFAULT_FRAGMENT_COUNT = 4;
+/** 默认碎片寿命(s)。 */
+const DEFAULT_FRAGMENT_LIFETIME = 5;
+/** 默认碎片质量(kg)。 */
+const DEFAULT_FRAGMENT_MASS = 1;
+/** 默认破坏力阈值。 */
+const DEFAULT_BREAK_THRESHOLD = 10;
+/** 默认最大碎片数。 */
+const DEFAULT_MAX_FRAGMENTS = 256;
+
 export class DestructionSystem {
+  /** 已注册的可破坏物体(id → Destructible)。 */
+  destructibles: Map<number, Destructible> = new Map();
+  /** 系统级活跃碎片列表(由 update 推进,过期后移除)。 */
   fragments: Fragment[] = [];
-  /** 最大碎片数。 */
+  /** 最大碎片数(超过则丢弃新增)。 */
   maxFragments: number;
-  /** 重力加速度。 */
+  /** 当前切片平面(可被 slice 复用,null 表示无)。 */
+  slicePlane: SlicePlane | null = null;
+  /** 系统级破坏力阈值(applyForce 冲击力 >= max(breakThreshold, breakForce) 时破碎)。 */
+  breakThreshold: number;
+  /** 重力加速度(m/s²)。 */
   gravity: Vector3;
-  /** 默认寿命(s)。 */
-  defaultLifetime: number;
-  /** 默认质量(kg)。 */
-  defaultMass: number;
   /** Voronoi 破碎器(懒构造)。 */
-  private _fracture: VoronoiFracture | null;
+  private _fracture: VoronoiFracture | null = null;
+  /** 碎片 id 自增计数器。 */
+  private _fragmentId = 0;
 
-  constructor(opts: DestructionOptions = {}) {
-    this.maxFragments = opts.maxFragments ?? 256;
-    this.gravity = opts.gravity ?? new Vector3(0, -9.8, 0);
-    this.defaultLifetime = opts.defaultLifetime ?? 5;
-    this.defaultMass = opts.defaultMass ?? 1;
-    this._fracture = opts.fracture ?? null;
+  constructor() {
+    this.maxFragments = DEFAULT_MAX_FRAGMENTS;
+    this.breakThreshold = DEFAULT_BREAK_THRESHOLD;
+    this.gravity = new Vector3(0, -9.8, 0);
   }
 
-  /** 获取 / 懒构造 VoronoiFracture 实例。 */
-  private _getFracture(): VoronoiFracture {
-    if (!this._fracture) this._fracture = new VoronoiFracture();
-    return this._fracture;
+  /** 注册可破坏物体。若 id 已存在则覆盖。 */
+  registerDestructible(id: number, destructible: Destructible): this {
+    this.destructibles.set(id, destructible);
+    return this;
   }
 
-  /** 把 geometry 在 position 处以 impactForce 碎裂成 fragmentCount 块。
-   *  每块初始速度方向 = (站点 - position) 归一化,大小 = impactForce。
-   *  返回新增碎片数(若达到 maxFragments 可能小于 fragmentCount)。 */
-  shatter(
-    geometry: BufferGeometry,
-    position: Vector3,
-    impactForce: number,
-    fragmentCount: number,
-  ): number {
+  /** 注销可破坏物体(不清理其产生的碎片)。 */
+  unregisterDestructible(id: number): this {
+    this.destructibles.delete(id);
+    return this;
+  }
+
+  /** 施加伤害:health -= damage,血量归零时自动破碎。
+   *  point: 冲击点(世界坐标)。 */
+  applyDamage(id: number, damage: number, point: Vector3): this {
+    const d = this.destructibles.get(id);
+    if (!d || d.isBroken || damage <= 0) return this;
+    d.health -= damage;
+    if (d.health <= 0) {
+      d.health = 0;
+      this.breakObject(id, point, new Vector3(0, 0, 0));
+    }
+    return this;
+  }
+
+  /** 施加力:冲击力 >= max(breakThreshold, breakForce) 时自动破碎。
+   *  point: 冲击点(世界坐标)。 */
+  applyForce(id: number, force: Vector3, point: Vector3): this {
+    const d = this.destructibles.get(id);
+    if (!d || d.isBroken) return this;
+    const mag = force.length();
+    const threshold = Math.max(this.breakThreshold, d.breakForce);
+    if (mag >= threshold) {
+      this.breakObject(id, point, force);
+    }
+    return this;
+  }
+
+  /** 破碎物体(生成 Voronoi 碎片)。force 决定碎片初始速度大小。
+   *  已破碎或未注册的物体调用此方法为空操作。 */
+  breakObject(id: number, point: Vector3, force: Vector3): this {
+    const d = this.destructibles.get(id);
+    if (!d || d.isBroken) return this;
+    d.isBroken = true;
+    this._shatterInternal(d, point, force.length(), DEFAULT_FRAGMENT_COUNT);
+    return this;
+  }
+
+  /** 切片破坏:用平面把 mesh 切成内侧 / 外侧两块,各自成为碎片。
+   *  plane: 切片平面。 */
+  slice(id: number, plane: SlicePlane): this {
+    const d = this.destructibles.get(id);
+    if (!d || d.isBroken) return this;
+    d.isBroken = true;
+    const [inside, outside] = this._sliceGeometry(d.mesh, plane);
+    const forceMag = 2; // 切片时给碎片一个小的分离速度
+    const normal = plane.normal.clone();
+    if (normal.lengthSq() > 0) normal.normalize();
+    if (inside) {
+      this._addFragment(d, inside, d.position.clone(), normal.clone().multiplyScalar(-forceMag));
+    }
+    if (outside) {
+      this._addFragment(d, outside, d.position.clone(), normal.clone().multiplyScalar(forceMag));
+    }
+    return this;
+  }
+
+  /** 碎裂:把物体破碎成 fragmentCount 块。force 决定碎片初始速度大小。
+   *  已破碎或未注册的物体调用此方法为空操作。 */
+  shatter(id: number, point: Vector3, fragmentCount: number): this {
+    const d = this.destructibles.get(id);
+    if (!d || d.isBroken) return this;
     if (fragmentCount <= 0) {
       throw new Error(`DestructionSystem.shatter: fragmentCount must be > 0 (got ${fragmentCount})`);
     }
-    if (impactForce < 0) {
-      throw new Error(`DestructionSystem.shatter: impactForce must be >= 0 (got ${impactForce})`);
-    }
-    const fracture = this._getFracture();
-    const sites = fracture.generateSites(geometry, fragmentCount);
-    const pieces = fracture.fracture(geometry, sites);
-    let added = 0;
-    for (let i = 0; i < pieces.length; i++) {
-      if (this.fragments.length >= this.maxFragments) break;
-      const piece = pieces[i];
-      const site = sites[i];
-      // 站点 → 初始速度方向
-      const dir = new Vector3().subVectors(site.position, position);
-      const len = dir.length();
-      if (len > 1e-9) dir.divideScalar(len);
-      else dir.set(0, 1, 0); // 站点正好在冲击点 → 默认向上
-      const vel = dir.multiplyScalar(impactForce);
-      // 加点随机角速度(围绕随机轴)
-      const angVel = new Vector3(
-        (Math.random() - 0.5) * 2,
-        (Math.random() - 0.5) * 2,
-        (Math.random() - 0.5) * 2,
-      ).multiplyScalar(impactForce * 0.5);
-      const frag: Fragment = {
-        mesh: piece,
-        position: site.position.clone(),
-        rotation: new Quaternion(),
-        velocity: vel,
-        angularVelocity: angVel,
-        mass: this.defaultMass,
-        lifetime: this.defaultLifetime,
-        maxLifetime: this.defaultLifetime,
-        originalPosition: site.position.clone(),
-        force: new Vector3(),
-        active: true,
-      };
-      this.fragments.push(frag);
-      added++;
-    }
-    return added;
+    d.isBroken = true;
+    this._shatterInternal(d, point, 0, fragmentCount);
+    return this;
   }
 
-  /** 用平面切割 geometry,返回 [内侧, 外侧]。
-   *  内侧 = 平面 dist<=0 一侧(法线负侧),外侧 = dist>0 一侧。
-   *  完全在一侧时,另一侧返回 null。 */
-  slice(geometry: BufferGeometry, plane: Plane): SliceResult {
-    const tris = this._extractTriangles(geometry);
-    if (tris.length === 0) return [null, null];
-    const inside: Tri[] = [];
-    const outside: Tri[] = [];
-    const nx = plane.normal.x;
-    const ny = plane.normal.y;
-    const nz = plane.normal.z;
-    const d = plane.constant;
-    for (const t of tris) {
-      const da = nx * t.ax + ny * t.ay + nz * t.az + d;
-      const db = nx * t.bx + ny * t.by + nz * t.bz + d;
-      const dc = nx * t.cx + ny * t.cy + nz * t.cz + d;
-      const insideA = da <= 0;
-      const insideB = db <= 0;
-      const insideC = dc <= 0;
-      const insideCount = (insideA ? 1 : 0) + (insideB ? 1 : 0) + (insideC ? 1 : 0);
-      const outsideCount = 3 - insideCount;
-      if (insideCount === 3) {
-        inside.push(t);
-      } else if (outsideCount === 3) {
-        outside.push(t);
-      } else {
-        // 跨平面:分裂成 inside / outside 两部分
-        this._splitTriangleByPlane(t, da, db, dc, inside, outside);
+  /** 形变:就地推移 mesh 顶点(不破碎)。force 决定形变范围与深度。 */
+  deform(id: number, point: Vector3, force: Vector3): this {
+    const d = this.destructibles.get(id);
+    if (!d || d.isBroken) return this;
+    const pos = d.mesh.attributes.position;
+    if (!pos) return this;
+    const arr = pos.array;
+    const forceMag = force.length();
+    if (forceMag <= 0) return this;
+    const radius = 0.5 + forceMag * 0.1;
+    const strength = forceMag * 0.05;
+    // 把冲击点转换到几何局部坐标(几何默认在原点,position 为世界偏移)
+    const px = point.x - d.position.x;
+    const py = point.y - d.position.y;
+    const pz = point.z - d.position.z;
+    for (let i = 0; i < arr.length; i += 3) {
+      const dx = arr[i] - px;
+      const dy = arr[i + 1] - py;
+      const dz = arr[i + 2] - pz;
+      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (dist < radius && dist > 1e-6) {
+        const factor = (1 - dist / radius) * strength;
+        arr[i] += (dx / dist) * factor;
+        arr[i + 1] += (dy / dist) * factor;
+        arr[i + 2] += (dz / dist) * factor;
       }
     }
-    const insideGeo = inside.length > 0 ? this._buildGeometry(inside) : null;
-    const outsideGeo = outside.length > 0 ? this._buildGeometry(outside) : null;
-    return [insideGeo, outsideGeo];
+    pos.needsUpdate = true;
+    d.mesh.computeBoundingBox();
+    d.mesh.computeBoundingSphere();
+    return this;
   }
 
-  /** 推进一帧:对每个活跃碎片执行物理积分 + 寿命衰减。
-   *  • 加速度 = (force + gravity * mass) / mass
-   *  • 半隐式 Euler: v += a*dt, x += v*dt
-   *  • 角速度积分四元数:q *= quat(axis, |ω|*dt)
-   *  • lifetime -= dt,<= 0 标记 active=false */
+  /** 更新:推进碎片物理(重力 + 速度积分 + 角速度积分)+ 寿命衰减,移除过期碎片。 */
   update(dt: number): void {
+    if (dt < 0) dt = 0;
     const step = Math.min(dt, 1 / 30);
     const g = this.gravity;
+    const alive: Fragment[] = [];
     for (const f of this.fragments) {
-      if (!f.active) continue;
-      // 加速度 = (force + m*g) / m = force/m + g
-      const invM = f.mass > 0 ? 1 / f.mass : 0;
-      const ax = f.force.x * invM + g.x;
-      const ay = f.force.y * invM + g.y;
-      const az = f.force.z * invM + g.z;
-      // v += a*dt
-      f.velocity.x += ax * step;
-      f.velocity.y += ay * step;
-      f.velocity.z += az * step;
+      // 加速度 = g(质量统一,重力加速度与质量无关)
+      f.velocity.x += g.x * step;
+      f.velocity.y += g.y * step;
+      f.velocity.z += g.z * step;
       // x += v*dt
       f.position.x += f.velocity.x * step;
       f.position.y += f.velocity.y * step;
@@ -230,64 +274,168 @@ export class DestructionSystem {
         const dq = new Quaternion().setFromAxisAngle(axis, angMag * step);
         f.rotation.premultiply(dq);
       }
-      // 力清零
-      f.force.set(0, 0, 0);
       // 寿命衰减
       f.lifetime -= step;
-      if (f.lifetime <= 0) {
-        f.lifetime = 0;
-        f.active = false;
+      if (f.lifetime > 0) {
+        alive.push(f);
       }
     }
+    this.fragments = alive;
   }
 
-  /** 对碎片 i 累加力(下次 update 时积分)。 */
-  applyForce(fragmentIndex: number, force: Vector3): this {
-    if (fragmentIndex < 0 || fragmentIndex >= this.fragments.length) {
-      throw new Error(`DestructionSystem.applyForce: index out of range (${fragmentIndex})`);
-    }
-    const f = this.fragments[fragmentIndex];
-    if (!f.active) return this;
-    f.force.add(force);
-    return this;
+  /** 获取可破坏物体(未注册返回 undefined)。 */
+  getDestructible(id: number): Destructible | undefined {
+    return this.destructibles.get(id);
   }
 
-  /** 移除碎片(swap-with-tail O(1),不保证顺序)。 */
-  removeFragment(index: number): this {
-    if (index < 0 || index >= this.fragments.length) {
-      throw new Error(`DestructionSystem.removeFragment: index out of range (${index})`);
-    }
-    const last = this.fragments.length - 1;
-    if (index !== last) {
-      this.fragments[index] = this.fragments[last];
-    }
-    this.fragments.pop();
-    return this;
+  /** 获取系统当前所有活跃碎片。 */
+  getFragments(): Fragment[] {
+    return this.fragments;
   }
 
-  /** 获取所有活跃碎片(过滤已过期/已移除)。 */
-  getActiveFragments(): Fragment[] {
-    return this.fragments.filter((f) => f.active);
+  /** 获取系统当前碎片数。 */
+  getFragmentCount(): number {
+    return this.fragments.length;
   }
 
-  /** 清除所有碎片。 */
-  clear(): this {
+  /** 清除系统所有碎片,并清空各可破坏物体的碎片记录。 */
+  clearFragments(): this {
     this.fragments = [];
+    for (const d of this.destructibles.values()) {
+      d.fragments = [];
+    }
     return this;
   }
 
-  /** 返回统计:总数 / 活跃 / 过期。 */
-  getStats(): DestructionStats {
-    let active = 0;
-    let expired = 0;
-    for (const f of this.fragments) {
-      if (f.active) active++;
-      else expired++;
-    }
-    return { total: this.fragments.length, active, expired };
+  /** 设置系统级破坏力阈值。 */
+  setBreakThreshold(threshold: number): this {
+    this.breakThreshold = Math.max(0, threshold);
+    return this;
   }
 
-  // ---------- 内部辅助:与 VoronoiFracture 平行的三角形裁剪 ----------
+  /** 设置最大碎片数。 */
+  setMaxFragments(max: number): this {
+    this.maxFragments = Math.max(0, Math.floor(max));
+    return this;
+  }
+
+  /** 获取统计。 */
+  getStats(): DestructionStats {
+    let broken = 0;
+    let activeFragments = 0;
+    for (const f of this.fragments) {
+      if (f.lifetime > 0) activeFragments++;
+    }
+    for (const d of this.destructibles.values()) {
+      if (d.isBroken) broken++;
+    }
+    return {
+      destructibles: this.destructibles.size,
+      broken,
+      fragments: this.fragments.length,
+      activeFragments,
+    };
+  }
+
+  // ---------- 内部辅助 ----------
+
+  /** 获取 / 懒构造 VoronoiFracture 实例。 */
+  private _getFracture(): VoronoiFracture {
+    if (!this._fracture) this._fracture = new VoronoiFracture();
+    return this._fracture;
+  }
+
+  /** 内部碎裂:用 VoronoiFracture 把 destructible.mesh 破碎成 count 块。 */
+  private _shatterInternal(
+    d: Destructible,
+    point: Vector3,
+    impactForce: number,
+    count: number,
+  ): void {
+    const fracture = this._getFracture();
+    const sites = fracture.generateSites(d.mesh, count);
+    const pieces = fracture.fracture(d.mesh, sites);
+    for (let i = 0; i < pieces.length; i++) {
+      if (this.fragments.length >= this.maxFragments) break;
+      const piece = pieces[i];
+      const site = sites[i];
+      // 站点 → 初始速度方向(站点相对于冲击点的世界偏移)
+      const worldSite = new Vector3(
+        site.position.x + d.position.x,
+        site.position.y + d.position.y,
+        site.position.z + d.position.z,
+      );
+      const dir = new Vector3().subVectors(worldSite, point);
+      const len = dir.length();
+      if (len > 1e-9) dir.divideScalar(len);
+      else dir.set(0, 1, 0);
+      const vel = dir.multiplyScalar(impactForce);
+      // 随机角速度
+      const angVel = new Vector3(
+        (Math.random() - 0.5) * 2,
+        (Math.random() - 0.5) * 2,
+        (Math.random() - 0.5) * 2,
+      ).multiplyScalar(impactForce * 0.5 + 1);
+      this._addFragment(d, piece, worldSite, vel, angVel);
+    }
+  }
+
+  /** 创建并添加一个碎片到系统 + destructible。 */
+  private _addFragment(
+    d: Destructible,
+    mesh: BufferGeometry,
+    worldPos: Vector3,
+    velocity: Vector3,
+    angularVelocity: Vector3 = new Vector3(),
+  ): Fragment | null {
+    if (this.fragments.length >= this.maxFragments) return null;
+    const frag: Fragment = {
+      id: ++this._fragmentId,
+      position: worldPos.clone(),
+      rotation: new Quaternion(),
+      velocity: velocity.clone(),
+      angularVelocity: angularVelocity.clone(),
+      scale: 1,
+      lifetime: DEFAULT_FRAGMENT_LIFETIME,
+      mesh,
+      mass: DEFAULT_FRAGMENT_MASS,
+    };
+    this.fragments.push(frag);
+    d.fragments.push(frag);
+    return frag;
+  }
+
+  /** 用平面切割 geometry,返回 [内侧, 外侧]。 */
+  private _sliceGeometry(geometry: BufferGeometry, plane: SlicePlane): SliceResult {
+    const tris = this._extractTriangles(geometry);
+    if (tris.length === 0) return [null, null];
+    const inside: Tri[] = [];
+    const outside: Tri[] = [];
+    const nx = plane.normal.x;
+    const ny = plane.normal.y;
+    const nz = plane.normal.z;
+    const dist = plane.distance;
+    for (const t of tris) {
+      const da = nx * t.ax + ny * t.ay + nz * t.az + dist;
+      const db = nx * t.bx + ny * t.by + nz * t.bz + dist;
+      const dc = nx * t.cx + ny * t.cy + nz * t.cz + dist;
+      const insideA = da <= 0;
+      const insideB = db <= 0;
+      const insideC = dc <= 0;
+      const insideCount = (insideA ? 1 : 0) + (insideB ? 1 : 0) + (insideC ? 1 : 0);
+      const outsideCount = 3 - insideCount;
+      if (insideCount === 3) {
+        inside.push(t);
+      } else if (outsideCount === 3) {
+        outside.push(t);
+      } else {
+        this._splitTriangleByPlane(t, da, db, dc, inside, outside);
+      }
+    }
+    const insideGeo = inside.length > 0 ? this._buildGeometry(inside) : null;
+    const outsideGeo = outside.length > 0 ? this._buildGeometry(outside) : null;
+    return [insideGeo, outsideGeo];
+  }
 
   /** 把 BufferGeometry 解码为三角形列表(展开索引)。 */
   private _extractTriangles(geometry: BufferGeometry): Tri[] {
@@ -323,8 +471,7 @@ export class DestructionSystem {
     return tris;
   }
 
-  /** 把跨平面的三角形分裂成内侧 + 外侧两组三角形,追加到对应数组。
-   *  da/db/dc 为三顶点到平面的有符号距离。 */
+  /** 把跨平面的三角形分裂成内侧 + 外侧两组三角形,追加到对应数组。 */
   private _splitTriangleByPlane(
     t: Tri,
     da: number, db: number, dc: number,
@@ -339,8 +486,8 @@ export class DestructionSystem {
     const lerp = (ax: number, ay: number, az: number,
                   bx: number, by: number, bz: number,
                   da: number, db: number): [number, number, number] => {
-      const t = da / (da - db);
-      return [ax + t * (bx - ax), ay + t * (by - ay), az + t * (bz - az)];
+      const tt = da / (da - db);
+      return [ax + tt * (bx - ax), ay + tt * (by - ay), az + tt * (bz - az)];
     };
 
     if (insideCount === 1) {
@@ -348,109 +495,42 @@ export class DestructionSystem {
       if (insideA) {
         const [px, py, pz] = lerp(t.ax, t.ay, t.az, t.bx, t.by, t.bz, da, db);
         const [qx, qy, qz] = lerp(t.ax, t.ay, t.az, t.cx, t.cy, t.cz, da, dc);
-        // inside: (a, p, q)
         insideOut.push({ ax: t.ax, ay: t.ay, az: t.az, bx: px, by: py, bz: pz, cx: qx, cy: qy, cz: qz });
-        // outside: (p, b, c) + (p, c, q)
-        outsideOut.push({
-          ax: px, ay: py, az: pz,
-          bx: t.bx, by: t.by, bz: t.bz,
-          cx: t.cx, cy: t.cy, cz: t.cz,
-        });
-        outsideOut.push({
-          ax: px, ay: py, az: pz,
-          bx: t.cx, by: t.cy, bz: t.cz,
-          cx: qx, cy: qy, cz: qz,
-        });
+        outsideOut.push({ ax: px, ay: py, az: pz, bx: t.bx, by: t.by, bz: t.bz, cx: t.cx, cy: t.cy, cz: t.cz });
+        outsideOut.push({ ax: px, ay: py, az: pz, bx: t.cx, by: t.cy, bz: t.cz, cx: qx, cy: qy, cz: qz });
       } else if (insideB) {
         const [px, py, pz] = lerp(t.bx, t.by, t.bz, t.ax, t.ay, t.az, db, da);
         const [qx, qy, qz] = lerp(t.bx, t.by, t.bz, t.cx, t.cy, t.cz, db, dc);
         insideOut.push({ ax: t.bx, ay: t.by, az: t.bz, bx: px, by: py, bz: pz, cx: qx, cy: qy, cz: qz });
-        outsideOut.push({
-          ax: px, ay: py, az: pz,
-          bx: t.ax, by: t.ay, bz: t.az,
-          cx: t.cx, cy: t.cy, cz: t.cz,
-        });
-        outsideOut.push({
-          ax: px, ay: py, az: pz,
-          bx: t.cx, by: t.cy, bz: t.cz,
-          cx: qx, cy: qy, cz: qz,
-        });
+        outsideOut.push({ ax: px, ay: py, az: pz, bx: t.ax, by: t.ay, bz: t.az, cx: t.cx, cy: t.cy, cz: t.cz });
+        outsideOut.push({ ax: px, ay: py, az: pz, bx: t.cx, by: t.cy, bz: t.cz, cx: qx, cy: qy, cz: qz });
       } else {
         const [px, py, pz] = lerp(t.cx, t.cy, t.cz, t.ax, t.ay, t.az, dc, da);
         const [qx, qy, qz] = lerp(t.cx, t.cy, t.cz, t.bx, t.by, t.bz, dc, db);
         insideOut.push({ ax: t.cx, ay: t.cy, az: t.cz, bx: px, by: py, bz: pz, cx: qx, cy: qy, cz: qz });
-        outsideOut.push({
-          ax: px, ay: py, az: pz,
-          bx: t.ax, by: t.ay, bz: t.az,
-          cx: t.bx, cy: t.by, cz: t.bz,
-        });
-        outsideOut.push({
-          ax: px, ay: py, az: pz,
-          bx: t.bx, by: t.by, bz: t.bz,
-          cx: qx, cy: qy, cz: qz,
-        });
+        outsideOut.push({ ax: px, ay: py, az: pz, bx: t.ax, by: t.ay, bz: t.az, cx: t.bx, cy: t.by, cz: t.bz });
+        outsideOut.push({ ax: px, ay: py, az: pz, bx: t.bx, by: t.by, bz: t.bz, cx: qx, cy: qy, cz: qz });
       }
     } else {
       // 2 内:内侧得 2 三角形(quad),外侧得 1 三角形
       if (!insideA) {
-        // b, c 内
         const [pbx, pby, pbz] = lerp(t.bx, t.by, t.bz, t.ax, t.ay, t.az, db, da);
         const [pcx, pcy, pcz] = lerp(t.cx, t.cy, t.cz, t.ax, t.ay, t.az, dc, da);
-        // inside: (b, c, pc) + (b, pc, pb)
-        insideOut.push({
-          ax: t.bx, ay: t.by, az: t.bz,
-          bx: t.cx, by: t.cy, bz: t.cz,
-          cx: pcx, cy: pcy, cz: pcz,
-        });
-        insideOut.push({
-          ax: t.bx, ay: t.by, az: t.bz,
-          bx: pcx, by: pcy, bz: pcz,
-          cx: pbx, cy: pby, cz: pbz,
-        });
-        // outside: (a, pb, pc)
-        outsideOut.push({
-          ax: t.ax, ay: t.ay, az: t.az,
-          bx: pbx, by: pby, bz: pbz,
-          cx: pcx, cy: pcy, cz: pcz,
-        });
+        insideOut.push({ ax: t.bx, ay: t.by, az: t.bz, bx: t.cx, by: t.cy, bz: t.cz, cx: pcx, cy: pcy, cz: pcz });
+        insideOut.push({ ax: t.bx, ay: t.by, az: t.bz, bx: pcx, by: pcy, bz: pcz, cx: pbx, cy: pby, cz: pbz });
+        outsideOut.push({ ax: t.ax, ay: t.ay, az: t.az, bx: pbx, by: pby, bz: pbz, cx: pcx, cy: pcy, cz: pcz });
       } else if (!insideB) {
-        // a, c 内
         const [pax, pay, paz] = lerp(t.ax, t.ay, t.az, t.bx, t.by, t.bz, da, db);
         const [pcx, pcy, pcz] = lerp(t.cx, t.cy, t.cz, t.bx, t.by, t.bz, dc, db);
-        insideOut.push({
-          ax: t.ax, ay: t.ay, az: t.az,
-          bx: t.cx, by: t.cy, bz: t.cz,
-          cx: pcx, cy: pcy, cz: pcz,
-        });
-        insideOut.push({
-          ax: t.ax, ay: t.ay, az: t.az,
-          bx: pcx, by: pcy, bz: pcz,
-          cx: pax, cy: pay, cz: paz,
-        });
-        outsideOut.push({
-          ax: t.bx, ay: t.by, az: t.bz,
-          bx: pax, by: pay, bz: paz,
-          cx: pcx, cy: pcy, cz: pcz,
-        });
+        insideOut.push({ ax: t.ax, ay: t.ay, az: t.az, bx: t.cx, by: t.cy, bz: t.cz, cx: pcx, cy: pcy, cz: pcz });
+        insideOut.push({ ax: t.ax, ay: t.ay, az: t.az, bx: pcx, by: pcy, bz: pcz, cx: pax, cy: pay, cz: paz });
+        outsideOut.push({ ax: t.bx, ay: t.by, az: t.bz, bx: pax, by: pay, bz: paz, cx: pcx, cy: pcy, cz: pcz });
       } else {
-        // !insideC: a, b 内
         const [pax, pay, paz] = lerp(t.ax, t.ay, t.az, t.cx, t.cy, t.cz, da, dc);
         const [pbx, pby, pbz] = lerp(t.bx, t.by, t.bz, t.cx, t.cy, t.cz, db, dc);
-        insideOut.push({
-          ax: t.ax, ay: t.ay, az: t.az,
-          bx: t.bx, by: t.by, bz: t.bz,
-          cx: pbx, cy: pby, cz: pbz,
-        });
-        insideOut.push({
-          ax: t.ax, ay: t.ay, az: t.az,
-          bx: pbx, by: pby, bz: pbz,
-          cx: pax, cy: pay, cz: paz,
-        });
-        outsideOut.push({
-          ax: t.cx, ay: t.cy, az: t.cz,
-          bx: pax, by: pay, bz: paz,
-          cx: pbx, cy: pby, cz: pbz,
-        });
+        insideOut.push({ ax: t.ax, ay: t.ay, az: t.az, bx: t.bx, by: t.by, bz: t.bz, cx: pbx, cy: pby, cz: pbz });
+        insideOut.push({ ax: t.ax, ay: t.ay, az: t.az, bx: pbx, by: pby, bz: pbz, cx: pax, cy: pay, cz: paz });
+        outsideOut.push({ ax: t.cx, ay: t.cy, az: t.cz, bx: pax, by: pay, bz: paz, cx: pbx, cy: pby, cz: pbz });
       }
     }
   }

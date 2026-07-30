@@ -14,10 +14,10 @@ VREEN 是一个基于**自研 WebGL2 渲染引擎**的可视化 3D 模型检视�
 
 ## 📊 项目统计
 
-- **代码行数**: 56K+ (含引擎 + 应用 + 测试)
-- **测试数量**: 3361+ (200+ 个测试文件)
+- **代码行数**: 63K+ (含引擎 + 应用 + 测试)
+- **测试数量**: 3361+ (219+ 个测试文件)
 - **引擎模块**: 34 个顶层模块
-- **源码文件**: 390+ (`src/engine/`)
+- **源码文件**: 410+ (`src/engine/`)
 - **零运行时依赖**: `@vreen/engine` 仅 Draco 为可选 peer
 
 ## 🗂️ 源码结构
@@ -53,33 +53,33 @@ src/
 │       ├── VreenInspectorPanel.tsx # .vreen 包内省面板
 │       └── ...
 ├── engine/                  # 自研 WebGL2 引擎 (@vreen/engine)
-│   ├── Core/                # 场景图 (Object3D/Scene/Group/Mesh/SkinnedMesh/Bone/Skeleton/BufferGeometry/BufferAttribute/InstancedBufferAttribute/Material/InstancedMesh/LOD/Sprite/Text/BitmapText/TextAtlas) + 纹理家族 (Texture/CubeTexture/DataTexture/DataArrayTexture/DepthTexture/VideoTexture/CanvasTexture/CompressedTexture) + Source + MorphTargets/MorphTargetAnimation + Fog/FogExp2 + Raycaster + DirtyFlag/SceneGraphProcessor/FrustumCuller/SceneStats
-│   ├── Renderer/            # WebGL2Renderer, ShaderProgram, RenderPass, ShadowMapManager + MRTTarget/GBuffer (延迟渲染) + DeferredRenderer (替代延迟后端) + ReflectionProbe/ReflectionProbeManager (IBL 探针) + 后处理 (基础: Bloom/ChromaticAberration/Vignette/SSAO/FXAA/ToneMapping/Gamma/DOF; PostProcess/ 增强: ColorGrading/LUT/FilmGrain/Afterimage/Pixelation/AutoExposure/DOFEnhanced/GTAO/MotionBlur/SSR/SSSS/TAA/Velocity/VolumetricFog) + PathTracer (CPU 参考路径追踪)
-│   ├── Materials/           # StandardMaterial, MeshPhysicalMaterial, MeshBasicMaterial, MeshPhongMaterial, MeshNormalMaterial, ShadowMaterial, SpriteMaterial, ShaderMaterial (+onBeforeCompile), ShaderChunks/ 子目录 (10 GLSL 片段 + ShaderChunkRegistry), 特殊材质: FurMaterial/MatcapMaterial/ToonMaterial/OutlineMaterial/WaterMaterial/WireframeMaterial
+│   ├── Core/                # 场景图 (Object3D/Scene/Group/Mesh/SkinnedMesh/Bone/Skeleton/BufferGeometry/BufferAttribute/InstancedBufferAttribute/Material/InstancedMesh/LOD/Sprite/Text/BitmapText/TextAtlas) + 纹理家族 (Texture/CubeTexture/DataTexture/DataArrayTexture/DepthTexture/VideoTexture/CanvasTexture/CompressedTexture) + Source + MorphTargets/MorphTargetAnimation + Fog/FogExp2 + Raycaster + DirtyFlag/SceneGraphProcessor/FrustumCuller/SceneStats + ModuleRegistry (Gem 风格模块注册)
+│   ├── Renderer/            # WebGL2Renderer, ShaderProgram, RenderPass, ShadowMapManager + MRTTarget/GBuffer (延迟渲染) + DeferredRenderer (替代延迟后端) + ReflectionProbe/ReflectionProbeManager (IBL 探针) + GlobalIllumination (光探针 SH2 + VXGI 简化版) + 后处理 (基础: Bloom/ChromaticAberration/Vignette/SSAO/FXAA/ToneMapping/Gamma/DOF; PostProcess/ 增强: ColorGrading/LUT/FilmGrain/Afterimage/Pixelation/AutoExposure/DOFEnhanced/GTAO/MotionBlur/SSR/SSSS/TAA/Velocity/VolumetricFog) + PathTracer (CPU 参考路径追踪)
+│   ├── Materials/           # StandardMaterial, MeshPhysicalMaterial, MeshBasicMaterial, MeshPhongMaterial, MeshNormalMaterial, ShadowMaterial, SpriteMaterial, ShaderMaterial (+onBeforeCompile), ShaderChunks/ 子目录 (10 GLSL 片段 + ShaderChunkRegistry), ShaderLibrary (15 预定义着色器模板), ShaderCompiler (#include 预处理 + chunk 注入 + 编译 + 缓存), 特殊材质: FurMaterial/MatcapMaterial/ToonMaterial/OutlineMaterial/WaterMaterial/WireframeMaterial
 │   ├── Math/                # Vector2/3/4, Matrix3/4, Quaternion, Euler, Color, Box3, Sphere, Plane, Ray, Line3, Triangle, Frustum, MathUtils
-│   ├── Cameras/             # PerspectiveCamera, OrthographicCamera
+│   ├── Cameras/             # PerspectiveCamera, OrthographicCamera, CinematicCamera (电影级镜头序列), CameraRig (摇臂/轨道跟随)
 │   ├── Lights/              # Ambient/Directional/Point/Spot/Hemisphere/RectArea + DirectionalLightShadow + ShadowMapManager
-│   ├── Loaders/             # GLB/OBJ/FBX/HDR/KTX2/STL/PLY/TGA/MTL/EXR Loader + TextureLoader + DracoDecoder + AssetManager + 4 导出器 (OBJExporter/GLTFExporter/STLExporter/PLYExporter)
-│   ├── Animation/           # AnimationMixer/AnimationClip/AnimationAction/AnimationStateMachine/BlendSpace1D/Humanoid + AnimationLayer/AnimationLayerMixer/BoneMask/AvatarMask/AdditiveBlend/AnimationSync + IK (IKBone/IKChain/IKSolver(FABRIK)/CCDSolver/IKHumanoid)
+│   ├── Loaders/             # GLB/OBJ/FBX/HDR/KTX2/STL/PLY/TGA/MTL/EXR Loader + TextureLoader + DracoDecoder + AssetManager + 4 导出器 (OBJExporter/GLTFExporter/STLExporter/PLYExporter) + GLTFExtensionLoader (扩展加载器,支持 DRACO/KTX2 + KHR/EXT 扩展注册)
+│   ├── Animation/           # AnimationMixer/AnimationClip/AnimationAction/AnimationStateMachine/BlendSpace1D/Humanoid + AnimationLayer/AnimationLayerMixer/BoneMask/AvatarMask/AdditiveBlend/AnimationSync + IK (IKBone/IKChain/IKSolver(FABRIK)/CCDSolver/IKHumanoid) + IKSystem (高层逆运动学,直接操作 Object3D 关节链)
 │   ├── ECS/                 # World, ComponentType, Components, Systems, PhysicsComponents (含 Constraint: Ball/Hinge/Slider/Fixed/Distance), PhysicsSystems (含 ConstraintSolver), Prefab, QueryBuilder, Broadphase
 │   ├── Controls/            # OrbitControls, FlyControls, PointerLockControls, MapControls, CharacterController (kinematic 角色)
-│   ├── Geometries/          # Box/Sphere/Cylinder/Cone/Torus/Plane/Circle/Ring/Capsule/TorusKnot/Lathe/Extrude/Shape/Wireframe/Edges + Primitives barrel
+│   ├── Geometries/          # Box/Sphere/Cylinder/Cone/Torus/Plane/Circle/Ring/Capsule/TorusKnot/Lathe/Extrude/Shape/Wireframe/Edges + InstancedGeometry (实例化几何体) + Primitives barrel
 │   ├── Helpers/             # GridHelper, GridHelper3D, AxesHelper, BoxHelper, CameraHelper, ArrowHelper, LineHelper, PhysicsDebugRenderer
 │   ├── Events/              # EventBus, EventQueue, GameEvent (CollisionEvent/TriggerEvent/SpawnEvent/DestroyEvent/ScoreEvent/CustomEvent) - 类型化 pub/sub
-│   ├── Scripting/           # ScriptComponent/ScriptC, ScriptSystem, ScriptRegistry, CoroutineSystem - 代码驱动脚本层 (与 Blockly 互补)
+│   ├── Scripting/           # ScriptComponent/ScriptC, ScriptSystem, ScriptRegistry, CoroutineSystem - 代码驱动脚本层 (与 Blockly 互补) + VisualScriptComponent (Script Canvas 风格可视化脚本组件)
 │   ├── Particles/           # ParticleSystem2, ParticleEmitter, ParticleModifier (Force/Vortex/Turbulence/ColorOverLife/SizeOverLife/VelocityOverLife/SubEmitters), ParticleCurve (Constant/Linear/Bezier/Random), TrailModule, ParticleData - 高级 CPU 粒子系统 (与 ECS ParticleSystem 分离)
-│   ├── Audio/               # AudioListener, Audio, PositionalAudio, AudioLoader, AudioAnalyser
-│   ├── Terrain/             # TerrainGeometry, HeightmapGenerator, TerrainSplat, TerrainLayer
+│   ├── Audio/               # AudioListener, Audio, PositionalAudio, AudioLoader, AudioAnalyser, SpatialAudio (HRTF + 距离衰减 + 多普勒效应)
+│   ├── Terrain/             # TerrainGeometry, HeightmapGenerator, TerrainSplat, TerrainLayer, TerrainErosion (热力/水力/风力侵蚀)
 │   ├── Acceleration/        # BVH, BVHBuilder, MeshBVH
 │   ├── Assets/              # AssetCache (LRU), AssetRegistry (引用计数), AssetLoader (异步加载) - 资源生命周期管理 (与 Loaders/AssetManager 互补)
 │   ├── Serialization/       # SerializerRegistry, GeometrySerializer, MaterialSerializer, SceneSerializer - 场景/几何体/材质 ↔ JSON 往返
 │   ├── Tools/               # Profiler (CPU/GPU mark), FrameProfiler (帧级 FPS), SystemProfiler (ECS 系统耗时), MemoryTracker (分配/泄漏), GpuProfiler (timer query), PerformanceReport (文本/JSON 报告)
 │   ├── Physics/             # PhysicsDemo + ConstraintSolver + Joint 约束 (Ball/Hinge/Slider/Fixed/Distance) + ClothSimulation (Verlet 布料) + FluidSimulation (SPH 流体) + DestructionSystem + VoronoiFracture
-│   ├── Network/             # NetworkSync (服务器权威同步) + Snapshot (二进制快照序列化/压缩) + NetworkTransport (WebSocket/Mock 传输抽象) + NetworkLerp (位置/旋转插值 + 预测 + 和解)
+│   ├── Network/             # NetworkSync (服务器权威同步) + Snapshot (二进制快照序列化/压缩) + NetworkTransport (WebSocket/Mock 传输抽象) + NetworkLerp (位置/旋转插值 + 预测 + 和解) + StateSync (快照插值 + Delta 压缩,纯数据层)
 │   ├── SaveSystem/          # SaveSystem (多槽位 + 自动保存) + SaveSerializer (Scene+World ↔ SaveData,含压缩) + LocalStorageAdapter (localStorage/内存兜底)
 │   ├── SceneManager/        # SceneManager (多场景注册/加载/切换) + SceneTransition (Fade/Crossfade/Slide/Wipe/None 过渡)
 │   ├── Input/               # InputManager (统一键盘/鼠标/触摸/手柄) + KeyboardState/MouseState/TouchState/GamepadState + InputAction (动作映射) + InputMap (JSON 配置往返)
-│   ├── AI/                  # AI 导航 + 行为树 (NavMesh 导航网格 + A* PathFinder 寻路 + SteeringBehavior 转向行为 + Agent 代理) + 行为树 (BehaviorTree/BTAction/BTComposite/BTCondition/BTDecorator/BTNode + Blackboard 黑板)
+│   ├── AI/                  # AI 导航 + 行为树 (NavMesh 导航网格 + A* PathFinder 寻路 + SteeringBehavior 转向行为 + Agent 代理) + 行为树 (BehaviorTree/BTAction/BTComposite/BTCondition/BTDecorator/BTNode + Blackboard 黑板) + CrowdSystem (大规模人群调度 + Reynolds separation 避障) + SpatialGrid (2D XZ 邻域加速)
 │   ├── Environment/         # 环境系统 (WeatherSystem 天气 + SkySystem 天空/日夜循环 + CloudSystem 云层 + PrecipitationSystem 降水 + VegetationSystem/VegetationType 植被 + WaterSimulation/WaterSystem 水体)
 │   ├── Timeline/            # 时间轴/Sequencer (TimelineClip 片段 + TimelineTrack 轨道 + EventTrack 事件 + PropertyTrack 属性关键帧 + TimelineSequencer 序列器,支持 play/pause/seek/loop/export/import)
 │   ├── Voxel/               # VoxelChunk 16³ + VoxelWorld 多块管理 + VoxelMesher 贪婪网格合并 + VoxelRaycaster DDA + VoxelPalette 类型表
@@ -153,6 +153,7 @@ src/
 - 输入按相机朝向转换到世界空间 (WASD 自由漫游)
 - `BlendSpace1D` — 1D 动画混合 (Idle ↔ Walk ↔ Run)
 - IK 子系统 — `IKSolver`(FABRIK) / `CCDSolver` / `IKHumanoid`(双足 IK rig)，含关节约束与极向量
+- `IKSystem` — 高层逆运动学系统,直接操作 `Object3D[]` 关节链(读写场景图节点 position/rotation);内置 FABRIK(位置空间求解,收敛快)与 CCD(旋转空间求解,天然兼容旋转约束)两种求解器,支持 `poleTarget` 极向量与 `IKConstraint` hinge 关节约束;与 `Animation/IK/` 子模块互补(IK/ 子模块用自研 IKBone 类独立于场景图,IKSystem 直接驱动场景图节点)
 
 ### 物理系统
 
@@ -183,10 +184,12 @@ src/
 
 - `GLBLoader` / `OBJLoader` / `FBXLoader` / `HDRLoader`(per-channel RLE RGBE) / `KTX2Loader`(Basis Universal) / `STLLoader` / `PLYLoader` / `TGALoader` / `MTLLoader` / `EXRLoader` / `TextureLoader` / `DracoDecoder`(可选 peer) / `AssetManager`(LRU 缓存)
 - 导出器 (4 个): `OBJExporter`(Wavefront OBJ 字符串) / `GLTFExporter`(glTF-GLB 二进制,含嵌入 buffer/image,与 `GLBLoader` 往返) / `STLExporter`(ASCII/二进制 STL) / `PLYExporter`(ASCII/二进制 PLY)
+- `GLTFExtensionLoader` — 增强版 GLTF 加载器 (参考 three.js GLTFLoader):在 `GLBLoader` 之上叠加扩展注册机制 (`registerExtension` 支持 KHR_*/EXT_* 处理器) + DRACO 解码器注入 (`setDRACODecoder`) + KTX2 解码器注入 (`setKTX2Decoder`) + URL→场景缓存 + 细粒度 parse* API;实际 JSON+BIN 解析仍委托 `GLBLoader.parseGLB` + `buildFromGltf`
 
 ### 几何体 (Geometries/)
 
 - 15 个程序化基元 — Box / Sphere / Cylinder / Cone / Torus / Plane / Circle / Ring / Capsule / TorusKnot / Lathe / Extrude / Shape(2D 轮廓) / Wireframe / Edges
+- `InstancedGeometry` — 实例化几何体 (参考 three.js InstancedBufferGeometry):在 `BufferGeometry` 之上叠加 per-instance `instanceMatrix`(16 float column-major mat4) / `instanceColor`(RGBA) / `customAttributes`(Map<name, Float32Array>);显式 `allocate(n)` / `setInstanceMatrix` / `getInstanceMatrix` API;与 `Core/InstancedMesh` 的差异:InstancedMesh 是场景对象(Mesh + raycast),InstancedGeometry 是纯几何数据(缓冲分配/读写/序列化),渲染器从中读取并配置 `vertexAttribDivisor`
 - `Primitives.ts` 统一 barrel 导出
 
 ### 控制器 (Controls/)
@@ -200,11 +203,13 @@ src/
 ### 音频 (Audio/)
 
 - `AudioListener` / `Audio`(非空间) / `PositionalAudio`(3D 空间) / `AudioLoader` / `AudioAnalyser`(FFT)
+- `SpatialAudio` — 3D 空间音频 (HRTF + 距离衰减 + 多普勒效应):与 `PositionalAudio`(把空间化交给浏览器 PannerNode 黑盒)不同,本类自行计算 ITD(双耳时间差,Woodworth 公式) + ILD(双耳强度差) + 多普勒频移(`dopplerShift = c/(c + dopplerFactor·vRadial)`),显式驱动 gain / playbackRate / StereoPannerNode.pan;节点链 `source → filters → stereoPanner → gain → listener`;「白盒空间化」便于测试与离线渲染复现,`lastHRTF` 等字段暴露每帧结果;支持 linear/inverse/exponential 三种距离衰减模型
 - 共享 `AudioContext`，测试用 `audioContextMock.ts`
 
 ### 地形 (Terrain/)
 
 - `TerrainGeometry`(高度场网格) / `HeightmapGenerator`(分形噪声/水力侵蚀) / `TerrainSplat`(splat 贴图混合) / `TerrainLayer`(层元数据)
+- `TerrainErosion` — 程序化地形侵蚀系统:在已有高度图上叠加自然侵蚀效果,三种机制互补 — 热力侵蚀(thermal,重力驱动松散物蠕动,坡脚堆积,超休止角部分转移给最低邻居) / 水力侵蚀(hydraulic,雨滴沿最陡下降路径流动,沿途侵蚀与沉积,Particle-based Hydraulic Erosion 简化版) / 风力侵蚀(wind,沿风向搬运表层物质,顺风下坡搬运,迎风坡风影效应);不依赖 `TerrainGeometry`,输入仅为 `Float32Array` 高度图 + 宽高;`erosionMap` 同步记录净侵蚀量;`mulberry32` PRNG 保证种子可控
 - 与渲染器解耦，产出标准 `BufferGeometry` / `StandardMaterial` / `DataTexture`
 
 ### 加速结构 (Acceleration/)
@@ -223,6 +228,7 @@ src/
 - `ScriptSystem` — 每帧 tick 所有 `ScriptComponent` 实体,分发 collision/trigger 事件
 - `ScriptRegistry` — 名称 → `ScriptFactory` 注册表;`scriptRegistry` 为进程级单例(组件存脚本名而非实例,便于序列化)
 - `CoroutineSystem` — 协作式协程调度器,`startCoroutine(generator)` 返回 `CoroutineHandle`,协程 yield `CoroutineYield`(帧数/秒数/predicate)后下次匹配 tick 恢复;用于剧情/延迟特效/多步 spawn
+- `VisualScriptComponent` — Script Canvas 风格可视化脚本组件 (参考 o3de Gems/ScriptCanvas):持有 `ScriptNode` 图(`event`/`action`/`condition`/`variable`/`function` 节点类型,经 `ScriptPin` 连接);`start()`/`stop()`/`update(dt)` 触发命名事件,`handleEvent(name, args)` 从匹配的 event 节点沿 exec-output 链执行(function 节点调 `registerFunction` 回调,variable 节点 get/set 共享 `variables`,condition 节点路由到 true/false 分支,action 节点调自定义 handler);带环检测;`exportGraph()`/`importGraph()` 往返 JSON (数据驱动,可序列化进 `.vreen`);与代码驱动的 `ScriptComponent` 互补 (前者面向非程序员,后者处理复杂逻辑)
 - 与 Blockly 视觉脚本互补,二者最终都操作同一 ECS `World`
 
 ### 高级粒子系统 (Particles/)
@@ -286,6 +292,13 @@ src/
 - `Fog` / `FogExp2` — 线性雾 / 指数雾
 - `Raycaster` / `intersectGeometry` — 射线场景求交 (优先使用 `MeshBVH`)
 
+### 模块注册系统 (Core/ModuleRegistry)
+
+- `ModuleRegistry` — Gem 风格引擎模块注册系统 (参考 [O3DE Gems](https://github.com/o3de/o3de/tree/development/Gems)):每个 `EngineModule` 声明 `name` / `version` / `description` / `dependencies` + `onLoad` / `onUnload` 生命周期回调 (对应 Gem 的 Activate/Deactivate)
+- `registerModule` / `loadModule` / `unloadModule` 管理依赖图 — `loadModule` 递归先加载未满足的依赖,拒绝卸载仍被其他已加载模块依赖的模块
+- `exportManifest` / `importManifest` 序列化活跃模块集到/从 JSON (对应项目的 active-Gem 列表);`getDefaultModuleRegistry()` 进程级单例
+- 与 `Assets/AssetRegistry` 互补且正交:AssetRegistry 管理资源实例生命周期 (引用计数),ModuleRegistry 管理引擎模块生命周期 (依赖图 + Activate/Deactivate)
+
 ### 网络同步 (Network/)
 
 - 服务器权威模型 + 客户端插值/预测;`NetworkSync` 管理同步实体注册与每帧 tick
@@ -293,6 +306,7 @@ src/
 - `Snapshot` — 二进制快照序列化 (实体 Transform + 组件状态),支持压缩以降低带宽
 - `NetworkLerp` — 位置/旋转插值 + 客户端预测 + 服务器和解 (reconciliation),平滑远程实体运动
 - `createNetworkEntity` 工厂 — 注册同步实体并返回 `NetworkEntity` 句柄
+- `StateSync` — 纯数据层网络状态同步 (快照插值 + Delta 压缩):与 `NetworkSync` 不同,不依赖 `NetworkTransport`,上层负责投递 `packSnapshot` 结果 / 喂入 `unpackSnapshot`;服务器/客户端对称(`isServer` 区分),服务器 `createSnapshot` 产出权威快照 + `packSnapshot` 做紧凑+Delta 压缩(只打包 `dirty=true` 实体,数值数组格式节省 ~50% 键名开销),客户端 `applySnapshot` 写入 `remoteEntities` + 推入 snapshots 环形缓冲,`update(dt)` 推进插值/外推(渲染时刻 = now - interpolationDelay,超 `next.ts` 沿 velocity 外推,有最大外推时间限制);实体 id 为 number(与 `NetworkSync` 的 string id 区分)
 
 ### 存档系统 (SaveSystem/)
 
@@ -409,6 +423,13 @@ src/
 - `Blackboard` — 共享键值存储 (任意类型值),节点读写以解耦节点间数据流;支持 `get`/`set`/`has`/`unset` + 监听器
 - 与 `Scripting/` 互补:行为树是数据驱动的有限状态决策,Scripting 是代码驱动的生命周期钩子;二者都可操作同一 ECS `World`
 
+### 人群系统 (AI/CrowdSystem + SpatialGrid)
+
+- `CrowdSystem` — 大规模 AI 代理群体调度器,与 `AI/Agent` 互补(Agent 是单代理导航实体,CrowdSystem 是群体调度器);`CrowdAgent` 是轻量数据结构(position/velocity/target/radius/maxSpeed/state),不持 SteeringBehavior 实例,由 CrowdSystem 共享一个 behavior 完成所有转向
+- 算法(每帧 update):① 重建 spatial grid(清空+全量插入);② 对每个代理:若有 navMesh 且距上次寻路 > `pathFindInterval` 重算 path(默认 0.5s,路径缓存节流避免每帧重算 A*);沿 path 下一 waypoint 求 arrive 力;若 avoidance 开启查询 spatial grid 邻居求 separation 力(Reynolds 避障);累加力→半隐式 Euler 积分→截断速度→推进位置;到达目标 → state='arrived';③ 更新代理在 spatial grid 中位置(移除旧+插入新)
+- 可选 NavMesh 寻路:若设置则代理按 nav 路径走,否则直线 seek 目标;与 ECS 独立,调用方可把 CrowdAgent 同步到 ECS 实体 Transform 或直接读 positions 渲染 instanced mesh
+- `SpatialGrid` — 2D XZ 平面邻域查询加速结构:把 XZ 平面划分为 `cellSize × cellSize` 方格,每格维护索引数组;O(1) 插入/移除,O(k) 查询(k=半径覆盖格数,远优于 O(n²));仅 2D(Y 不参与网格划分,人群/避障主要在水平面);网格键 `${cx},${cz}` 字符串 Map 查询,负坐标 floor 处理统一;API: `insert(id, pos)` / `remove(id, pos)` / `query(pos, radius)` / `queryRadius`;与 `Acceleration/BVH` 互补:BVH 关注三角形级射线求交,SpatialGrid 关注点云级邻域
+
 ### 环境增强 (Environment/VegetationSystem + WaterSystem)
 
 - `VegetationSystem` + `VegetationType` — 程序化植被分布:基于地形/噪声密度图采样植被位置,按 `VegetationType`(草/灌木/树)实例化 mesh;支持 impostor billboard 远距渲染
@@ -422,6 +443,14 @@ src/
 - `ReflectionProbe` — 局部 IBL 探针,捕获场景立方体贴图快照 (位置/范围/捕获频率);运行时按相机位置加权混合
 - `ReflectionProbeManager` — 探针注册表 + 相机位置查询最近探针 + 跨探针平滑过渡
 - 与 `GBuffer`/`MRTTarget` 协作:G-Buffer 是延迟渲染的几何输入;ReflectionProbe 是 IBL 输入;二者都是 FBO/纹理生命周期管理类
+
+### 全局光照 (Renderer/GlobalIllumination)
+
+- `GlobalIllumination` — 全局光照系统 (光探针 SH2 + VXGI 简化版),提供运行时全局辐照度采样,补充 PBR 材质的环境光/间接光
+- 两种模式:`'lightprobes'` 基于二阶球谐 (SH2,9 系数,每系数 RGB 共 27 floats) 的光探针,在指定位置烘焙辐照度;`'vxgi'` 简化版体素全局光照,把场景体素化为 3D 纹理供片元采样 (v1 只持数据结构,体素化由调用方灌入)
+- `updateProbes(scene)` 遍历场景光源与 mesh emissive 简单辐照度累积 (不做光线追踪,参考 Light Propagation Volumes Lite 简化模型);`getShaderUniforms()` 返回扁平 `Float32Array` 供 renderer 上传到 `u_giProbes`
+- 与 `ReflectionProbe`/`ReflectionProbeManager` 互补:ReflectionProbe 解决 specular IBL(立方体反射),GlobalIllumination 解决 diffuse IBL(球谐辐照度)
+- 不变量:lightProbes 数量上限 16 (避免 uniform 数组过大);`removeProbe(index)` 越界静默返回 false;`setEnabled(false)` 后 `getShaderUniforms` 返回空数组
 
 ### 高级后处理 Pass (Renderer/PostProcess/ 扩展)
 
@@ -447,15 +476,21 @@ src/
   - `WireframeMaterial` — 风格化线框,与标准材质的 `wireframe: true` 区别:可着色 + 可深度衰减
 - 多数继承 `BasicMaterial` 基类 (复用 uniform/texture 基础设施 + 自定义 shader)
 
+### 着色器库与编译器 (Materials/ShaderLibrary + ShaderCompiler)
+
+- `ShaderLibrary` — 预定义着色器模板库:集中管理命名 GLSL 着色器模板 (15 个:unlit/diffuse/phong/pbr 等),每模板含 `vertexSource` / `fragmentSource` / `uniforms`(声明列表 name+type) / `attributes` / `tags`;`get(name)` 按名取模板,`createVariant(name, overrides)` 生成变体 (覆盖源码或 uniform);与 `ShaderChunks` 的区别:ShaderChunks 是 GLSL *片段*(可拼接子字符串),ShaderLibrary 是完整 *着色器*(顶点+片段+元数据,可直接编译);与 `StandardMaterial` 的关系:ShaderLibrary 的 `'pbr'` 模板作为参考实现/验证基线,与 StandardMaterial 内部 shader 等价但不绑定到材质类 (纯字符串模板,供 ShaderMaterial 使用)
+- `ShaderCompiler` — 着色器编译器 (预处理 #include + 注入 chunk + 编译 + 缓存):`preprocess(source)` 委托 `ShaderChunkRegistry` 解析 `#include <name>` (纯字符串处理,无 GL 环境可用);`injectChunks(source, chunkNames)` 显式注入多个片段到源码顶部;`compile(gl, vert, frag, defines)` 编译 GLSL 为 `WebGLProgram` 并缓存 (key = FNV-1a hash(vertexSource | fragmentSource | defines));反射 uniform/attribute 位置;与 `ShaderProgram`/`WebGL2Renderer.getProgram` 的关系:ShaderProgram 是低级包装(直接编译+收集 location),renderer 内置 programCache 只对预设 key 缓存,ShaderCompiler 是面向用户的「自带预处理+缓存」编译器,可被 ShaderMaterial/工具脚本直接使用,不依赖 renderer 实例;`clearCache()` 释放缓存,`dispose()` = clearCache + 置空 registry 引用;编译失败抛 Error(含 GL info log)
+
 ### 相机预设与电影相机 (Cameras/ + 预设)
 
 - 检视器内置 9 个相机预设 (Free / Iso / Front / Back / Side / Top / 1st-person / 3rd-person / Cinematic),通过 `viewerStore` 切换
-- `CinematicCamera` 不是一个独立模块,而是 Cinematic 预设对应的相机配置:慢速轨道 + FOV 呼吸 + 景深联动 + 后处理过冲,通过组合 `PerspectiveCamera` + `OrbitControls` + 后处理 Pass 实现
-- 底层仅 `PerspectiveCamera` / `OrthographicCamera` 两个具体相机类
+- 底层相机类:`PerspectiveCamera` / `OrthographicCamera` 两个基础相机 + `CinematicCamera` / `CameraRig` 两个高级相机
+- `CinematicCamera` — 电影级摄像机系统 (镜头序列叙事):持有 `PerspectiveCamera` 实例,按镜头序列 (shots) 驱动其位置/朝向/FOV;镜头切换支持四种过渡类型 — `cut`(硬切) / `fade`(淡入淡出) / `dolly`(推拉,smoothstep 缓动) / `orbit`(轨道,切换期间绕 lookAt 旋转半圈);过渡发生在镜头开头 `transitionDuration` 秒内;景深 (DOF) 字段 `dofEnabled`/`focusDistance`/`aperture`/`focalLength` 供渲染器/后处理 DOF Pass 读取;镜头震动 (shake) 叠加 Perlin 风格噪声到位置与朝向,`shakeDuration` 控制衰减;`exportTimeline()`/`importTimeline()` 往返 JSON 便于存档与编辑器联动
+- `CameraRig` — 摄像机摇臂/轨道系统 (实时跟随目标):与 `CinematicCamera` 互补 (Cinematic 关注预定镜头序列叙事,CameraRig 关注实时跟随 Object3D);四种运动模式 — `crane`(摇臂,摄像机吊在 target 上方 height 处可绕垂轴摆动) / `dolly`(轨道,沿 XZ 平面以 speed 匀速移动) / `orbit`(轨道环绕,绕 target 在 radius 上以 speed 角速度旋转) / `fixed`(固定偏移);`damping` 控制位置跟随平滑度 (0=瞬跟,越大越平滑);摄像机始终 `lookAt` target.position + lookAtOffset;与 `OrbitControls` 的区别:OrbitControls 接收用户输入驱动相机 (交互式),CameraRig 按预设规则自动驱动相机 (电影/过场式);二者可组合 (Rig 跟随主角,Cinematic 取 Rig 的相机做镜头切换)
 
 ### 计划中模块 (未实现)
 
-- `CrowdSystem` — 群体避障 (基于 RVO/ORCA + SteeringBehavior 上层封装),计划在 AI/ 子目录下实现,目前尚未落地;现有 Agent + SteeringBehavior 已可处理小规模群体
+- `CrowdSystem` 的高级避障算法 (RVO/ORCA) 当前为 Reynolds separation 简化版,后续可升级到 ORCA 最优避障;现有 CrowdSystem + SpatialGrid 已可处理大规模群体调度
 - 见 `ROADMAP.md` Phase 4/5 了解未来模块规划
 
 ### 代码规范
@@ -482,6 +517,6 @@ src/
 
 - `npm test` / `npm run test:watch` / `npm run test:coverage`
 - Vitest 4 + @vitest/coverage-v8;测试文件与源码同目录 `*.test.ts`
-- 当前测试数量:**3361+**(200+ 个测试文件,覆盖 Math / Core / ECS / Animation / Physics / Renderer / Loaders / Materials / Particles / Audio / Terrain / Network / SaveSystem / SceneManager / Input / AI / Environment / Timeline / Voxel / Editor / PCG / Pipeline / Gameplay 等 42+ 模块)
+- 当前测试数量:**3361+**(219+ 个测试文件,覆盖 Math / Core / ECS / Animation / Physics / Renderer / Loaders / Materials / Particles / Audio / Terrain / Network / SaveSystem / SceneManager / Input / AI / Environment / Timeline / Voxel / Editor / PCG / Pipeline / Gameplay 等 42+ 模块)
 
 ## 📌&#x20;

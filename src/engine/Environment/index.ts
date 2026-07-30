@@ -13,7 +13,9 @@
 export {
   WeatherSystem,
   type WeatherType,
-  type WeatherData,
+  type WeatherFogColor,
+  type WeatherParams,
+  type WeatherShaderUniforms,
 } from './WeatherSystem';
 export { SkySystem, type DayPhase } from './SkySystem';
 export {

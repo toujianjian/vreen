@@ -49,11 +49,12 @@ export {
   type VoronoiSite,
 } from './VoronoiFracture';
 
-// 破坏系统(几何切割 / 碎裂 + 碎片物理)
+// 破坏系统(可破坏物体注册 / 切片 / 碎裂 / 形变 + 碎片物理)
 export {
   DestructionSystem,
   type Fragment,
-  type DestructionOptions,
+  type Destructible,
+  type SlicePlane,
   type DestructionStats,
   type SliceResult,
 } from './DestructionSystem';

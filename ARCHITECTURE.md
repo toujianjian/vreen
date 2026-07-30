@@ -291,6 +291,7 @@ following deliberate deviations:
 | `MorphTargets` | Morph target deformation (facial expressions / shape animation). Stores `morphTargets: Map<string, Float32Array>` (absolute vertex positions), `morphInfluences: number[]` (weights, default 0), and `morphTargetDictionary: Map<string, number>` (name → index lookup). Application rule: `result[i] = base[i] + Σ_j (target_j[i] - base[i]) * influence_j`. Mounted on `mesh.morphTargets`; the renderer calls `update(geometry)` before each draw to write back the blended positions and bump `geometry.version` for GPU VBO re-upload. Caches `_basePositions` on first apply to avoid clobbering the original base. |
 | `MorphTargetAnimation` | Morph target animation driver. Holds a `MorphTargets` instance + multiple `MorphTargetTrack`s (`name` + `times: Float32Array` + `values: Float32Array` scalar weight sequences). `update(dt)` advances time, binary-searches each track, linearly interpolates the weight, and writes it back to `morphTargets.morphInfluences`. Complements `AnimationMixer` — the mixer drives skeleton bone matrices (overall pose) while morph animation drives scalar weights (facial / local detail). Deliberately does not reuse `KeyframeTrack` to avoid a reverse dependency on `Object3D` / `TrackTarget`. |
 | `FurShell` | Multi-layer shell fur rendering wrapper. Generates N concentric `Mesh` shells sharing the base `BufferGeometry`, each bound to a `FurMaterial` whose `shellLayer` (0..1) is set per shell. `generate()` builds the shell set (attached as children of the base mesh by default, or standalone), `update(dt)` advances the `time` uniform and re-synchronizes gravity / wind / fur-length / fur-color / density / occlusion / noise texture from the master `furMaterial` to every shell material, `setShellCount(n)` re-generates with a new layer count, `dispose()` releases per-shell materials and detaches shells. Each shell sets `castShadow = false` and an increasing `renderOrder` (100 + i) so the renderer draws them back-to-front. Pairs with `FurMaterial` for layered shell-based fur / hair rendering. |
+| `ModuleRegistry` | **Gem-style engine module registry** (inspired by [O3DE Gems](https://github.com/o3de/o3de/tree/development/Gems)). Each `EngineModule` declares `name` / `version` / `description` / `dependencies` plus `onLoad` / `onUnload` lifecycle callbacks (analogous to a Gem's `Activate` / `Deactivate`). `registerModule` / `loadModule(name)` / `unloadModule(name)` manage the dependency graph — `loadModule` recursively loads unmet dependencies first, and refuses to unload a module still depended on by another loaded module. `exportManifest()` / `importManifest(json)` serialize the active module set to / from JSON (analogous to a project's active-Gem list). `getDefaultModuleRegistry()` returns the process-wide singleton. Complements `Assets/AssetRegistry` (resource lifecycle) — the two are orthogonal and composable: `AssetRegistry` tracks resource instances, `ModuleRegistry` tracks code modules. |
 
 **Design note — versioned invalidation:** the renderer does not poll
 attributes every frame. Each `BufferAttribute` and `Texture` carries a
@@ -515,6 +516,19 @@ vector. The output is *not* tonemapped — callers can post-process the
 > performance cost is acceptable for the small reference images used in
 > tests.
 
+#### `GlobalIllumination` (`GlobalIllumination.ts`)
+
+Global illumination system providing runtime global irradiance sampling to supplement the PBR pipeline's ambient / indirect light. Two modes, selectable at construction:
+
+| Mode | Algorithm | Use case |
+|------|-----------|----------|
+| `'lightprobes'` | Second-order spherical harmonics (SH2) — 9 coefficients × RGB = 27 floats per probe. Each `LightProbe` stores SH coefficients baked at a sampled position; the renderer evaluates the SH polynomial at the fragment's normal to recover indirect irradiance. | Outdoor scenes with smooth indirect variation; cheap to evaluate. |
+| `'vxgi'` | Simplified Voxel Global Illumination — the scene is voxelized into a 3D texture (R8 / RGBA8) and fragments sample the voxel volume along the normal / reflection direction to gather indirect radiance. v1 holds the data structure only; the actual voxelization pass is caller-supplied (a future pass will populate the volume from scene geometry). | Scenes with strong indirect colour bleeding (e.g. coloured walls reflecting onto nearby objects). |
+
+The system exposes `setMode(mode)` for runtime switching, `addProbe(probe)` / `removeProbe(name)` for light-probe management, `setVoxelVolume(volume)` for VXGI data injection, and `sampleIrradiance(position, normal)` for downstream consumers (typically the renderer's lighting pass). Complements `ReflectionProbe` (which captures specular IBL via cube maps) — `GlobalIllumination` focuses on the diffuse indirect term.
+
+**Why two modes?** Light probes are cheap (SH evaluation is a few multiplies) but lose high-frequency detail; VXGI captures directional colour bleeding but requires a voxelization pass that is expensive to update per frame. Exposing both lets the caller trade quality vs. cost per scene.
+
 ### 4.4 Materials
 
 **Path:** `src/engine/Materials/`
@@ -530,6 +544,8 @@ vector. The output is *not* tonemapped — callers can post-process the
 | `SpriteMaterial` | Sprite material — extends `BasicMaterial` with `color` (linear RGB, multiplied with `map`), `map` (optional color texture), `opacity`, `rotation` (radians, applied in shader around sprite center), `sizeAttenuation` (whether perspective cameras apply near-big-far-small, default true), `depthTest` / `depthWrite`, `wireframe`, `renderOrder`. Pairs with `Sprite`; the renderer uses a separate sprite shader path that implements billboard orientation in the vertex shader. `transparent` defaults to true (sprites usually have alpha). |
 | `ShaderMaterial` | Custom-shader material. Accepts `vertexSrc` / `fragmentSrc` (GLSL ES 3.0 strings) and a `uniforms` descriptor. The renderer injects `u_time`, `u_model`, `u_view`, `u_projection`, `u_normalMatrix`, `u_cameraPos` automatically. Supports `onBeforeCompile(shader)` for injecting GLSL snippets into the built-in shaders without rewriting them — used by `MeshPhysicalMaterial` for clearcoat / transmission extensions. |
 | `ShaderChunks/` subdirectory | 10 GLSL fragment string constants (`COMMON_CHUNK`, `LIGHTING_CHUNK`, `FOG_CHUNK` / `FOG_EXP2_CHUNK`, `NORMAL_PACK_CHUNK`, `SHADOW_CHUNK`, `ENVMAP_CHUNK`, `TONEMAP_ACES_CHUNK` / `TONEMAP_REINHARD_CHUNK`, `NOISE_CHUNK`, `UV_TRANSFORM_CHUNK`, `COLOR_SPACE_CHUNK`) + `ShaderChunkRegistry` class (with `shaderChunkRegistry` process-wide singleton) supporting `#include <name>` resolution. `registerBuiltinChunks()` registers all built-ins idempotently. `BUILTIN_SHADER_CHUNKS` is a `Record<string, string>` of all built-in fragments for one-shot registration to a custom registry. |
+| `ShaderLibrary` | Predefined shader template library. Holds 15 built-in `ShaderTemplate`s keyed by name: `unlit` / `lambert` / `blinn-phong` / `pbr` / `normal` / `depth` / `shadow` / `sprite` / `fur` / `matcap` / `toon` / `outline` / `water` / `wireframe` / `fullscreen-quad`. Each template carries `vertexSrc` + `fragmentSrc` GLSL strings + a `uniforms` descriptor (name → type). `getTemplate(name)` returns a cloneable template; `registerTemplate(name, template)` allows users to register custom templates. Eliminates boilerplate for common shading tasks — callers no longer need to hand-write GLSL for standard material types. Pairs with `ShaderCompiler` for one-shot template → program compilation. |
+| `ShaderCompiler` | Shader compiler — preprocesses GLSL source (`#include <name>` resolution via `ShaderChunkRegistry`), injects `ShaderChunk` fragments at include sites, compiles vertex + fragment shaders via `WebGL2RenderingContext.createShader` / `compileShader`, links a `WebGLProgram`, and caches the compiled program by a hash of the preprocessed source. `compile(gl, vertexSrc, fragmentSrc)` returns a cached `ShaderProgram`; `clearCache()` evicts all entries; `getCacheStats()` reports hit / miss counts for debugging. Compile errors are surfaced with the offending GLSL lines annotated. Pairs with `ShaderLibrary` (template → program) and `ShaderChunks` (chunk resolution). |
 | `FurMaterial` | Shell-based fur / hair material. Extends `BasicMaterial` (same base as `ToonMaterial` / `OutlineMaterial`) with `furLength`, `furDensity`, `furColor` (`Color`), `furOcclusion` (root darkening, 0..1), `gravity` (`Vector3`), `wind` (`Vector3`), `noiseTexture` (`Texture \| null`), `shellLayer` (0..1, set per shell by `FurShell`), `time` (animation clock). The vertex shader (`FUR_VERT`) displaces vertices along `a_normal` by `shellLayer * furLength`, then offsets by gravity and wind scaled by `shellLayer * furLength` (top shells sway more). The fragment shader (`FUR_FRAG`) samples the noise texture (falling back to a hash-based pseudo-noise), discards fragments below a layer-dependent density threshold (`threshold = furDensity * (1 - layer² * 0.7)` — top shells are sparser), and darkens roots via `mix(1 - furOcclusion, 1.0, layer)`. `transparent` defaults to true; `doubleSided` defaults to true. Pairs with `FurShell` which manages the per-shell `shellLayer` uniform and synchronizes animation uniforms each frame. |
 | `shaders.ts` | Built-in shader source: `STANDARD_VERTEX_SRC` / `STANDARD_FRAGMENT_SRC`, shadow / depth-normal / SSAO / post-processing shaders. |
 
@@ -569,9 +585,14 @@ Phase 2.2.
 | `Camera` | Base class. Holds `viewMatrix` / `projectionMatrix` / `viewProjectionMatrix`. |
 | `PerspectiveCamera` | FOV / aspect / near / far. `updateProjectionMatrix()` recomputes perspective. |
 | `OrthographicCamera` | left / right / top / bottom / near / far. |
+| `CinematicCamera` | Cinematic-grade camera that drives an internal `PerspectiveCamera` through a shot sequence (`CameraShot[]`). Each shot carries `position` / `lookAt` / `fov` / `duration` / `transitionType`. Four transition types: `cut` (hard switch), `fade` (interpolate through black), `dolly` (smoothstep-eased translation + lookAt), `orbit` (half-revolution around `lookAt` during the transition). Optional DOF fields (`dofEnabled` / `focusDistance` / `aperture` / `focalLength`) feed downstream `DOFPass` / `DOFEnhancedPass`. Perlin-style `shake` adds procedural noise to position/orientation with `shakeDuration` decay for handheld / explosion effects. `exportTimeline()` / `importTimeline(json)` round-trip the shot sequence as JSON — pairs with the `Timeline/` sequencer for cutscene authoring. Complements `CameraRig` (sequence-driven vs. follow-driven). |
+| `CameraRig` | Camera jib / dolly system that follows an `Object3D` target in real time. Four motion modes selectable via `type`: `crane` (jib — camera hoisted above target by `height`, swing around vertical axis), `dolly` (track — constant-speed XZ translation), `orbit` (revolve around target at `radius` with angular `speed`), `fixed` (static offset, no motion). `damping` controls position-follow smoothness (0 = instant snap, larger = smoother lag). Always `lookAt` target + `lookAtOffset`. `update(dt)` advances the rig motion and re-positions the bound camera. Unlike `OrbitControls` (user-input driven, interactive), `CameraRig` drives the camera by preset rules — suitable for cinematic / cutscene camera work. Composable with `CinematicCamera` (Rig follows the protagonist, Cinematic takes the Rig's camera for shot switching). |
 
 Both produce a view-projection matrix consumed by the renderer and by
-`Frustum.setFromMatrix()` for culling.
+`Frustum.setFromMatrix()` for culling. `CinematicCamera` and `CameraRig`
+extend the base camera model with higher-level shot / follow semantics
+that the renderer consumes transparently (they update the underlying
+`PerspectiveCamera`'s transform each frame).
 
 ### 4.7 Loaders & Asset Pipeline
 
@@ -596,6 +617,7 @@ Both produce a view-projection matrix consumed by the renderer and by
 | `EXRLoader` | OpenEXR float image import for HDR textures and IBL; supports scanline and tiled variants. |
 | `TextureLoader` | Image texture loading. |
 | `DracoDecoder` | `draco3d` wrapper. `getDracoModule()`, `decodeDraco(...)`. Optional peer dependency. |
+| `GLTFExtensionLoader` | Enhanced GLTF loader built on top of `GLBLoader` (modeled after three.js `GLTFLoader`). Adds an extension registry: `registerExtension(name, handler)` accepts `KHR_*` / `EXT_*` handlers; `setDRACODecoder(decoder)` / `setKTX2Decoder(decoder)` inject decoders for compressed geometry / textures. Each registered extension exposes lifecycle hooks (`beforeRoot` / `afterRoot` / `mesh` / `material` / `texture` / `node`) that the loader dispatches during parsing, enabling custom mesh / material / texture / node handling without forking the core `GLBLoader`. Built-in extension stubs cover common cases (DRACO mesh compression, KHR_materials_pbrSpecularGlossiness, KHR_texture_basisu); users register additional extensions for project-specific KHR / EXT specs. |
 
 **Draco is an optional peer dependency.** If `draco3d` is not installed,
 Draco-compressed GLBs raise a clear error rather than failing silently.
@@ -631,6 +653,7 @@ AnimStateSystem (ECS) ──ticks per frame──→ AnimationStateMachine
 | `IKBone` / `IKChain` / `IKSolver` | Inverse Kinematics — `IKChain` is a sequence of `IKBone`s with joint constraints; `IKSolver` implements Forward And Backward Reaching Inverse Kinematics (FABRIK) for general chains. |
 | `CCDSolver` | Cyclic Coordinate Descent IK solver — alternative to FABRIK for stiff chains; per-iteration angle-limited. |
 | `IKHumanoid` | Full biped IK rig — left/right arm, left/right leg, spine chains with side chaining and pole vectors. |
+| `IKSystem` | High-level inverse kinematics system that operates directly on scene-graph `Object3D[]` joint chains (reads / writes node `position` / `rotation` rather than using a self-contained `IKBone` representation). Holds multiple named `IKChainConfig`s (`name` / `joints: Object3D[]` / `target: Vector3` / `poleTarget?` / `constraints?: IKConstraint[]`) and solves them all in `update(dt)`. Two built-in solvers selectable via `setSolver('fabrik' \| 'ccd')`: **FABRIK** (position-space — iterative backward pass (end→root) then forward pass (root→end), projecting joints onto line segments to preserve bone length; fast convergence, supports `poleTarget` for bend direction control) and **CCD** (rotation-space — rotates each joint from end toward root to align the end effector with the target; naturally compatible with hinge-joint rotation constraints). `IKConstraint` (`jointIndex` / `minAngle` / `maxAngle` / `axis`) clamps a joint's rotation about an axis to a range — applied as a post-solve projection on the joint's local rotation. Complements the `Animation/IK/` sub-module (which uses a self-contained `IKBone` class independent of the scene graph); `IKSystem` is the right choice when integrating IK into an existing scene-graph hierarchy where joints already exist as `Object3D` nodes. |
 
 **`AnimState` name collision:** the animation FSM exposes a *type*
 `AnimMachineState` (a state node) while the ECS exposes a *class*
@@ -820,6 +843,86 @@ the caller (e.g. `CustomStage` / physics demo) syncs the data to
 `Mesh.geometry` each frame. Future ECS integration could wrap this as a
 `ClothComponent` + `ClothSystem`.
 
+**Voronoi fracture** (`src/engine/Physics/VoronoiFracture.ts`): geometry
+fracturing utility that splits a `BufferGeometry` into multiple convex
+fragments using a Voronoi diagram. `generateSites(geometry, count)`
+samples `count` uniformly-distributed seed points inside the geometry's
+AABB; `fracture(geometry, sites)` clips the source mesh against the
+perpendicular-bisector planes of every other site (Sutherland-Hodgman
+3D polygon clipping) to produce one `BufferGeometry` per Voronoi cell.
+Each output fragment is non-indexed (position-only); the caller can
+`computeVertexNormals()` to recover shading. A site's cell is defined
+mathematically as `{ x : |x − s_i| ≤ |x − s_j|, ∀ j ≠ i }`, which
+expands to the plane `normal = (s_j − s_i)`,
+`constant = −(|s_j|² − |s_i|²)/2`, retaining the `dist ≤ 0` side. RNG
+is injectable (`rand` constructor arg) for deterministic fracture
+patterns in tests / replays. Decoupled from `DestructionSystem` —
+`VoronoiFracture` is pure geometry maths, `DestructionSystem` orchestrates
+damage / lifecycle on top.
+
+**Destruction system** (`src/engine/Physics/DestructionSystem.ts`):
+object destruction subsystem that manages destructible objects plus
+their fragment physics. `destructibles: Map<id, Destructible>` tracks
+each `Destructible` (`id` / `mesh` / `position` / `health` /
+`maxHealth` / `breakForce` / `material` / `isBroken` / `fragments[]`).
+Damage API:
+
+- `applyDamage(id, amount)` — accumulates damage; auto-triggers
+  `breakObject(id)` when `health ≤ 0`.
+- `applyForce(id, point, force)` — accumulates impact; auto-triggers
+  `breakObject(id, impactPoint, force)` when `force ≥ breakForce`
+  (clamped by the system-wide `breakThreshold`).
+- `breakObject(id, impactPoint?, force?)` — delegates to
+  `VoronoiFracture.fracture` to split the mesh; each fragment receives
+  an initial velocity (direction = site − impactPoint, magnitude ∝
+  impact force).
+- `slice(id, plane)` — cuts the mesh with a `SlicePlane` (`normal` +
+  `distance`) into inside / outside halves, each becoming a fragment.
+- `deform(id, point, strength)` — in-place vertex displacement (no
+  fracture), simulating surface denting.
+- `shatter(id, impactPoint, force, fragmentCount)` — explicit shatter
+  entry point (used by `breakObject` internally).
+- `update(dt)` — advances fragment physics: gravity integration,
+  linear velocity → position, angular velocity → quaternion rotation,
+  lifetime decay. Fragments with `lifetime ≤ 0` are removed.
+
+Each `Fragment` carries `position` / `rotation` (`Quaternion`) /
+`velocity` / `angularVelocity` (axis-angle, rad/s) / `scale` / `lifetime`
+/ `mesh` (`BufferGeometry`, position-only) / `mass`. The system does
+**not** render — it produces geometry + transform state; the caller
+builds a `Matrix4` per fragment for rendering. Pairs with
+`ConstraintSolver` for transient inter-fragment adhesion (e.g.
+`DistanceJointConstraint` simulating sticky debris). Complements
+`ClothSimulation` (soft-body) and `FluidSimulation` (fluid) — all three
+are independent physics subsystems whose shapes differ too much from
+rigid bodies to fold into the ECS `PhysicsSystems`.
+
+**Fluid simulation** (`src/engine/Physics/FluidSimulation.ts`): SPH
+(Smoothed Particle Hydrodynamics) incompressible-fluid simulator. Each
+`FluidParticle` stores `position` / `velocity` / `density` / `pressure`
+/ `force` / `mass`. One `update(dt)` step runs the classic SPH pipeline:
+
+1. `computeDensity` — Poly6 kernel `W_poly6(r, h) = 315/(64πh⁹) (h² − r²)³`.
+2. `computePressure` — equation of state `P = k(ρ − ρ₀)`, clamped to 0
+   when `ρ < ρ₀` to avoid attractive forces.
+3. `computeForces` — pressure force via Spiky kernel gradient
+   `∇W_spiky = −45/(πh⁶) (h − r)² r̂` + viscosity force via viscosity
+   kernel Laplacian `∇²W_visc = 45/(πh⁶) (h − r)`.
+4. `integrate` — semi-implicit Euler step on velocity / position +
+   AABB boundary collision with a `restitution` coefficient.
+
+A spatial-hash neighbour search avoids the O(n²) all-pairs scan. Kernel
+constants are pre-computed per `smoothingRadius` (`SphKernels` cache).
+`getMeshData()` returns flattened `positions` / `velocities` for
+point-cloud or instanced rendering; the caller (`CustomStage` / physics
+demo) syncs the data to a `Mesh` each frame. Configurable via
+`FluidOptions` (`smoothingRadius` / `restDensity` (default 1000 = water)
+/ `gasConstant` / `viscosity` / `gravity` / `bounds` / `restitution` /
+`mass` / `maxParticles`). Independent of the ECS `PhysicsSystems` (fluid
+as a continuum of many particles differs significantly from rigid
+bodies) — a future `FluidComponent` + `FluidSystem` wrapper could
+integrate it into ECS.
+
 `PhysicsDemo` (`src/engine/Physics/PhysicsDemo.ts`) ships a 24-body
 scene with random boxes and a particle emitter, exercisable from the
 `PHYSICS` and `PHYS-DBG` toolbar toggles in the inspector.
@@ -859,6 +962,7 @@ Procedural primitive geometry generators. Each produces a
 | `Shape` | 2D contour builder — `moveTo`, `lineTo`, `quadraticCurveTo`, `bezierCurveTo`, `absarc`, `absellipse`, `holes[]`. Used by `ExtrudeGeometry` / `LatheGeometry`. |
 | `WireframeGeometry` | Edge-only geometry derived from a source `BufferGeometry` — one line segment per triangle edge, including diagonals. |
 | `EdgesGeometry` | Hard-edge-only geometry (crenellation threshold, default 1°) — excludes coplanar diagonals for CAD-style edge highlighting. |
+| `InstancedGeometry` | Instanced geometry wrapper (modeled after three.js `InstancedBufferGeometry`) — binds a base `BufferGeometry` plus per-instance vertex attributes. The canonical per-instance attribute is `instanceMatrix` (a `Matrix4` per instance, 16 floats), with optional `instanceColor` (RGBA) and arbitrary user-defined per-instance attributes. `setInstanceCount(n)` controls the draw count; `setMatrixAt(i, matrix)` / `getMatrixAt(i, out)` mutate the instance matrix buffer; `setColorAt(i, color)` mutates the instance color buffer. The renderer draws via `gl.drawElementsInstanced(mode, count, type, offset, instanceCount)` with `gl.vertexAttribDivisor(loc, 1)` on per-instance attributes. Pairs with `Core/InstancedMesh` (which owns the matrix array and exposes the same API at the mesh level); `InstancedGeometry` is the lower-level geometry-only abstraction for cases where the caller manages the mesh wrapper themselves (e.g. custom renderers, GPU-driven pipelines). |
 
 `Primitives.ts` re-exports all of the above for convenience.
 
@@ -924,6 +1028,7 @@ Both ultimately operate on the same ECS `World`.
 | Export | Role |
 |--------|------|
 | `ScriptComponent` | ECS component holding a script instance plus lifecycle hooks (`onCreate` / `onUpdate` / `onDestroy` / `onCollision` / `onTrigger`). Registered as `ScriptC` ComponentType so it round-trips through `World.toJSON()`. |
+| `VisualScriptComponent` | **Script-Canvas-style visual scripting component** (inspired by [O3DE Script Canvas](https://github.com/o3de/o3de/tree/development/Gems/ScriptCanvas)). Holds a `scriptGraph` of `ScriptNode`s (`event` / `action` / `condition` / `variable` / `function` types) wired together through `ScriptPin` connections (`exec` pins carry control flow, data pins carry values). `start()` / `stop()` / `update(dt)` fire named events (`'start'` / `'stop'` / `'update'` / `'tick'`); `handleEvent(name, args)` walks the exec-output chain from each matching `event` node, executing `function` nodes (calling `registerFunction` callbacks), `variable` nodes (get/set shared `variables` map), `condition` nodes (routing to `true` / `false` branch exec pins), and `action` nodes (custom `data.handler`). Cycle-guarded via a visited-set per `handleEvent` call. `addNode` / `removeNode` / `connect` / `disconnect` build the graph; `exportGraph()` / `importGraph(json)` round-trip the graph as JSON — **data-driven, serializes into `.vreen`** (unlike the code-driven `ScriptComponent`). Complements `ScriptComponent` (the former for non-programmers / designers, the latter for complex imperative logic); both ultimately operate on the same ECS `World`. Also complements the Blockly block editor (which generates JS code at edit time); `VisualScriptComponent` is a runtime data structure that can be authored by any UI, saved, and reloaded. |
 | `ScriptSystem` | ECS system that ticks all `ScriptComponent` entities each frame, dispatches collision / trigger events from `EventQueue`, and manages script lifecycle. |
 | `ScriptRegistry` | Factory registry mapping a string name → `ScriptFactory`. `scriptRegistry` is the process-wide singleton; scripts look themselves up by name for serialization (the component stores the script name, not the instance). |
 | `CoroutineSystem` | Cooperative coroutine scheduler. `startCoroutine(generator)` returns a `CoroutineHandle`; coroutines yield `CoroutineYield` values (frame count / seconds / predicate) and resume on the next matching tick. Used for sequenced gameplay logic — cutscenes, delayed effects, multi-step spawns. |
@@ -961,6 +1066,7 @@ to the active `Camera` (or any `Object3D`) and tracks its world position
 | `PositionalAudio` | 3D positional sound — adds a `PannerNode` between the source and the listener; supports distance model, ref distance, max distance, cone inner / outer angle. |
 | `AudioLoader` | Decodes `ArrayBuffer` (mp3 / ogg / wav) into `AudioBuffer`s using the WebAudio `decodeAudioData` API. |
 | `AudioAnalyser` | FFT analyser node for visualization — exposes `getFrequencyData()` / `getTimeDomainData()` with configurable FFT size. |
+| `SpatialAudio` | 3D spatial audio extension building on `PositionalAudio` with a richer spatialization model. Three pillars: **HRTF (Head-Related Transfer Function)** panning model — `PannerNode.panningModel = 'HRTF'` uses a measured head-related impulse response for realistic directional audio (sounds behind / above the listener are perceptually distinct, unlike the simpler `equalpower` model); **distance attenuation** — selectable `linear` / `inverse` / `exponential` distance models with `refDistance` / `maxDistance` / `rolloffFactor` knobs; **Doppler effect** — pitch shift based on the relative velocity between source and listener (`dopplerFactor` controls the strength). Suitable for FPS / VR scenarios where accurate audio localization matters. The listener's position / orientation are tracked from the bound `AudioListener` each frame. |
 
 `AudioContext` management is centralized: a single lazily-created
 context is shared by all listeners / sources, and a mock context is
@@ -980,6 +1086,7 @@ blender for multi-layer surface materials.
 | `HeightmapGenerator` | Procedural heightmap generators — fractal noise (Diamond-Square / value noise), ridged multifractal, and hydraulic-erosion post-process. |
 | `TerrainSplat` | Splat-map based texture blender — up to N layers, each with an alpha mask sampled from a `DataTexture`. Renderer samples the splat in the fragment shader to blend per-layer albedo / normal. |
 | `TerrainLayer` | Per-layer metadata — albedo texture, normal texture, tiling scale, metallic / roughness, blend sharpness. |
+| `TerrainErosion` | Terrain erosion simulator with three algorithms, each operating on a heightmap `Float32Array` (read + write): **thermal erosion** — gravity-driven material redistribution; on each iteration, for each cell, material flows from higher to lower neighbours if the slope exceeds a `talusAngle` threshold, producing talus aprons at cliff bases; **hydraulic erosion** — water-drop simulation; rain drops are spawned at random positions, flow downhill following the steepest gradient, carry a `sedimentCapacity` proportional to velocity, erode sediment from the terrain when carrying less than capacity, and deposit sediment when carrying more (or when velocity drops to zero); carves realistic river valleys and deposits alluvial fans; **wind (Aeolian) erosion** — wind transports sediment from exposed cells and deposits it in wind-shadow regions (cells where the wind direction is blocked by upwind terrain); produces dunes / sand-blast patterns. Each algorithm is configurable (iteration count, erosion strength, deposition rate, drop count for hydraulic). Decoupled from `TerrainGeometry` — the caller runs `TerrainErosion.thermal(heightmap, ...)` etc. then feeds the eroded heightmap back via `TerrainGeometry.setHeightAt(x, y, value)` or rebuilds the geometry. Complements `HeightmapGenerator` (which generates *initial* terrain) — `TerrainErosion` adds *weathering* realism on top. |
 
 The terrain subsystem is decoupled from the renderer — it produces
 standard `BufferGeometry` and `StandardMaterial` / `DataTexture` objects
@@ -1117,6 +1224,7 @@ from the ECS `World` — it reads / writes `Transform`-like state via the
 | `Snapshot` | Binary snapshot serialisation — packs per-entity transform + component state into a compact buffer with optional compression. The wire format is versioned for forward compatibility. |
 | `NetworkLerp` | Client-side interpolation / prediction / reconciliation. Buffers snapshots, interpolates remote entity positions / rotations, and reconciles local prediction errors when a server snapshot arrives. |
 | `NetworkSync` | Top-level sync manager. `createNetworkEntity` registers an entity for synchronisation; `update(dt)` ticks snapshot send (server) / receive + interpolate (client). `NetworkSyncOptions` configures send rate, interpolation delay, and ownership. |
+| `StateSync` | Pure-data-layer state synchronisation — the reusable data layer that the higher-level `NetworkSync` is built on, usable standalone for custom sync schemes. Two pillars: **snapshot interpolation** — remote entity state is buffered and sampled at a configurable `renderDelay` (default 100 ms) so that remote motion appears smooth even with jittery packet arrival; the interpolator linearly (or spherically for rotations) blends between the two snapshots bracketing the render time; **Delta compression** — only changed fields are transmitted per snapshot (a per-field dirty bit + a baseline snapshot), reducing bandwidth for entities that change rarely. Decoupled from any transport implementation: the caller wires `StateSync` to a `NetworkTransport` (or any byte pipe), calls `addSnapshot(snapshot)` on receive and `sampleState(renderTime)` on render. `StateSync` does not own entity lifecycle (unlike `NetworkSync`) — it only tracks `Map<entityId, EntityState>` for interpolation. This separation lets callers build custom entity registries (e.g. pooling, level-of-detail culling) while reusing the interpolation + delta-compression logic. |
 
 ### 4.25 SaveSystem
 
@@ -1161,6 +1269,8 @@ AI navigation + decision-making subsystem for game agents. Decoupled from the EC
 | `BehaviorTree` | Tree-shaped decision structure. Root node evaluated each tick; returns `Success` / `Failure` / `Running`. Complements navigation (which solves "how to move") by deciding "what to do" — pick targets, switch states, gate actions. |
 | `BTNode` / `BTAction` / `BTComposite` / `BTCondition` / `BTDecorator` | Behavior-tree node taxonomy. `BTNode` is the abstract base. `BTAction` performs a leaf action (move-to, attack, play animation). `BTComposite` groups children with semantics: `Sequence` (succeed-all), `Selector` (succeed-first), `Parallel` (run-all). `BTCondition` is a predicate leaf. `BTDecorator` wraps a child with a modifier: `Inverter`, `Repeater`, `RetryUntilSuccess`. |
 | `Blackboard` | Shared key-value store (any typed value) read/written by BT nodes — decouples node-to-node data flow. API: `get(key)` / `set(key, value)` / `has(key)` / `unset(key)` + change-listener registration. Used to pass target entity / last-known-position / cooldown timers between nodes without explicit wiring. |
+| `CrowdSystem` | Large-scale crowd simulation — schedules many `Agent`s with local avoidance, reusing one shared `NavMesh` to amortize pathfinding cost. Each agent runs Reynolds **separation** steering (push away from nearby agents within an `avoidanceRadius`) on top of its path-following locomotion, preventing agents from clumping / overlapping. Per-agent **path-cache throttling**: instead of re-pathing every frame (expensive A* on the NavMesh), each agent caches its current path and only re-paths when (a) the target moves beyond a `repathThreshold`, or (b) a `repathInterval` has elapsed. Configurable per-agent: `radius`, `maxSpeed`, `avoidanceRadius`, `repathInterval`. Scales to hundreds of agents by sharing the NavMesh and bounding neighbour queries via `SpatialGrid`. Complements the single-agent `Agent` + `SteeringBehavior` (which has no local-avoidance awareness and would cause agents to walk through each other in dense crowds). |
+| `SpatialGrid` | 2D (XZ-plane) uniform spatial hash grid for neighbourhood queries — the acceleration structure powering `CrowdSystem`'s separation steering. `insert(id, x, z)` / `remove(id)` / `update(id, x, z)` maintain per-cell id buckets; `query(x, z)` returns ids in the same cell; `queryRadius(x, z, r)` returns ids within a circular range (iterating the cells overlapping the circle). `cellSize` is configurable (default 1.0 world unit); smaller cells = tighter neighbour sets but more cells to iterate, larger cells = coarser but fewer cells. O(1) insert / remove / query vs. O(n²) all-pairs scans. Reusable beyond crowds: broadphase collision culling, proximity triggers, spatial audio source culling. Decoupled from `CrowdSystem` — any system needing neighbourhood queries can use it. |
 
 **Design note:** The AI module is intentionally separate from the ECS `PhysicsSystems`. Steering behaviors produce kinematic velocity; the caller decides whether to feed that into a `Rigidbody` (ECS physics) or apply it directly to a `Transform` (kinematic motion). This mirrors the Unity / Unreal split where navigation and physics are independent systems. Behavior trees are likewise decoupled — they observe ECS state (via the caller) and produce decisions, but do not directly mutate `World`. The `Scripting/` module is the code-driven counterpart: `ScriptComponent` hooks are imperative, `BehaviorTree` is declarative.
 
