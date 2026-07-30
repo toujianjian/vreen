@@ -110,4 +110,14 @@ export {
   type ContactShadowsPassOptions,
   type ContactShadowsStats,
 } from './ContactShadowsPass';
+// GPU 驱动渲染(间接绘制 indirect draw + 视锥/遮挡剔除 + 排序 + indirect buffer 打包)。
+// 与 WebGL2Renderer(前向)/ DeferredRenderer(延迟)互补:适合海量实例的批量提交。
+export {
+  GPUDrivenRenderer,
+  type DrawCommand,
+  type GPUDrivenRendererOptions,
+  type GPUDrivenRendererStats,
+  INDIRECT_COMMAND_UINTS,
+  INDIRECT_COMMAND_FLOATS,
+} from './GPUDrivenRenderer';
 

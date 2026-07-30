@@ -27,6 +27,16 @@ export { DistanceJointConstraint } from './DistanceJointConstraint';
 // 求解器
 export { ConstraintSolver } from './ConstraintSolver';
 
+// 高层约束管理器 (扁平 PhysicsConstraint 描述符 + 运行时增删 / 断裂检测)
+export {
+  ConstraintSystem,
+  type ConstraintType,
+  type PhysicsConstraint,
+  type ConstraintLimit,
+  type ConstraintConfig,
+  type ConstraintSystemStats,
+} from './ConstraintSystem';
+
 // 布料模拟(Verlet 积分 + 距离约束,与 ECS PhysicsSystems 解耦)
 export {
   ClothSimulation,

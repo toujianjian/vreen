@@ -18,6 +18,15 @@ export {
   type WeatherShaderUniforms,
 } from './WeatherSystem';
 export { SkySystem, type DayPhase } from './SkySystem';
+// ProceduralSky — 程序化天空 (Preetham 大气散射近似 + 太阳/月亮/星星/云)
+// 与 SkySystem 互补:SkySystem 用关键帧调色;ProceduralSky 基于物理近似,可对接 shader uniform。
+export {
+  ProceduralSky,
+  type SkyRGB,
+  type AtmosphereSample,
+  type ProceduralSkyStats,
+  type ProceduralSkyUniforms,
+} from './ProceduralSky';
 export {
   CloudSystem,
   type Cloud,
