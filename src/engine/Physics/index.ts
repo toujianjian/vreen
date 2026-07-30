@@ -37,14 +37,23 @@ export {
   type ConstraintSystemStats,
 } from './ConstraintSystem';
 
-// 布料模拟(Verlet 积分 + 距离约束,与 ECS PhysicsSystems 解耦)
+// 布料模拟(Verlet 积分 + 距离约束 + 风力 + 自碰撞,与 ECS PhysicsSystems 解耦)
 export {
   ClothSimulation,
   type ClothParticle,
   type ClothConstraint,
-  type ClothSphere,
+  type ClothConstraintType,
   type ClothOptions,
+  type ClothStats,
 } from './ClothSimulation';
+
+// 绳索物理(Verlet 链 + 距离约束 + 弯曲约束 + 风力 + 碰撞,与 ClothSimulation 互补)
+export {
+  RopePhysics,
+  type RopeSegment,
+  type RopeOptions,
+  type RopeStats,
+} from './RopePhysics';
 
 // SPH 流体模拟(Poly6/Spiky/Viscosity 核 + SpatialGrid 邻居搜索 + 边界反弹)
 export {
