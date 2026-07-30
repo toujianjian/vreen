@@ -36,11 +36,13 @@ export {
   type ClothOptions,
 } from './ClothSimulation';
 
-// SPH 流体模拟(Poly6/Spiky/Viscosity 核 + 边界反弹)
+// SPH 流体模拟(Poly6/Spiky/Viscosity 核 + SpatialGrid 邻居搜索 + 边界反弹)
 export {
   FluidSimulation,
   type FluidParticle,
+  type FluidParticleColor,
   type FluidOptions,
+  type FluidStats,
 } from './FluidSimulation';
 
 // Voronoi 破碎(基于 Voronoi 图的几何碎裂)

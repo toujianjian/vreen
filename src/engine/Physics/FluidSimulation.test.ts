@@ -351,3 +351,343 @@ describe('FluidSimulation — fillBox', () => {
     expect(() => f.fillBox(new Vector3(), new Vector3(1, 1, 1), -1)).toThrow(/must be > 0/);
   });
 });
+
+// ===========================================================================
+// 新增 API 测试:spatialGrid / pressure / density Float32Array / acceleration
+// / color / getParticles / getParticleCount / getDensity / getPressure /
+// setViscosity / setGravity / setBounds / getStats / kernel* / handleBounds
+// ===========================================================================
+
+describe('FluidSimulation — spatialGrid 集成', () => {
+  it('spatialGrid 默认初始化,cellSize = smoothingRadius', () => {
+    const f = new FluidSimulation({ smoothingRadius: 0.7 });
+    expect(f.spatialGrid).toBeDefined();
+    expect(f.spatialGrid.cellSize).toBeCloseTo(0.7, 5);
+  });
+
+  it('setSmoothingRadius 同步更新 spatialGrid.cellSize', () => {
+    const f = new FluidSimulation({ smoothingRadius: 0.5 });
+    f.setSmoothingRadius(2.5);
+    expect(f.spatialGrid.cellSize).toBeCloseTo(2.5, 5);
+  });
+
+  it('computeDensity 后 spatialGrid 含所有粒子', () => {
+    const f = new FluidSimulation({ smoothingRadius: 1.0 });
+    f.addParticle(new Vector3(0, 0, 0));
+    f.addParticle(new Vector3(0.5, 0, 0));
+    f.addParticle(new Vector3(5, 0, 0));
+    f.computeDensity();
+    // 3 个粒子分布在 2 个格子(0,0) 和 (5,0)
+    expect(f.spatialGrid.getItemCount()).toBe(3);
+    expect(f.spatialGrid.getCellCount()).toBeGreaterThanOrEqual(2);
+  });
+
+  it('clear 清空 spatialGrid', () => {
+    const f = new FluidSimulation();
+    f.addParticle(new Vector3(0, 0, 0));
+    f.computeDensity();
+    expect(f.spatialGrid.getItemCount()).toBe(1);
+    f.clear();
+    expect(f.spatialGrid.getItemCount()).toBe(0);
+    expect(f.spatialGrid.getCellCount()).toBe(0);
+  });
+});
+
+describe('FluidSimulation — pressure / density Float32Array', () => {
+  it('density 数组在 computeDensity 后与 particles 同步', () => {
+    const f = new FluidSimulation({ smoothingRadius: 1.0, mass: 1.0 });
+    f.addParticle(new Vector3(0, 0, 0));
+    f.addParticle(new Vector3(0.5, 0, 0));
+    f.computeDensity();
+    expect(f.density.length).toBe(2);
+    expect(f.density[0]).toBeCloseTo(f.particles[0].density, 5);
+    expect(f.density[1]).toBeCloseTo(f.particles[1].density, 5);
+  });
+
+  it('pressure 数组在 computePressure 后与 particles 同步', () => {
+    const f = new FluidSimulation({ restDensity: 100, gasConstant: 50 });
+    f.addParticle(new Vector3());
+    f.particles[0].density = 200;
+    f.computePressure();
+    expect(f.pressure.length).toBe(1);
+    expect(f.pressure[0]).toBeCloseTo(50 * (200 - 100), 5);
+    expect(f.pressure[0]).toBeCloseTo(f.particles[0].pressure, 5);
+  });
+
+  it('初始 pressure/density 为空数组', () => {
+    const f = new FluidSimulation();
+    expect(f.pressure.length).toBe(0);
+    expect(f.density.length).toBe(0);
+  });
+
+  it('clear 清空 pressure/density 数组', () => {
+    const f = new FluidSimulation();
+    f.addParticle(new Vector3());
+    f.computeDensity();
+    f.computePressure();
+    expect(f.density.length).toBe(1);
+    f.clear();
+    expect(f.density.length).toBe(0);
+    expect(f.pressure.length).toBe(0);
+  });
+});
+
+describe('FluidSimulation — acceleration 与 color', () => {
+  it('addParticle 初始化 acceleration 为零向量', () => {
+    const f = new FluidSimulation();
+    f.addParticle(new Vector3());
+    expect(f.particles[0].acceleration.lengthSq()).toBe(0);
+  });
+
+  it('computeForces 写入 acceleration = F/m', () => {
+    const f = new FluidSimulation({
+      gravity: new Vector3(0, -10, 0),
+      mass: 2,
+    });
+    f.addParticle(new Vector3());
+    f.particles[0].density = 1000;
+    f.computeForces();
+    // F = m*g = 2*(-10) = -20, a = F/m = -10
+    expect(f.particles[0].acceleration.y).toBeCloseTo(-10, 5);
+  });
+
+  it('integrate 写入 acceleration', () => {
+    const f = new FluidSimulation({ mass: 1 });
+    f.addParticle(new Vector3());
+    f.particles[0].force.set(0, 5, 0);
+    f.integrate(0.1);
+    // a = F/m = 5
+    expect(f.particles[0].acceleration.y).toBeCloseTo(5, 5);
+  });
+
+  it('color 字段可选,默认未设置', () => {
+    const f = new FluidSimulation();
+    f.addParticle(new Vector3());
+    expect(f.particles[0].color).toBeUndefined();
+  });
+
+  it('可手动设置 color', () => {
+    const f = new FluidSimulation();
+    f.addParticle(new Vector3());
+    f.particles[0].color = { r: 1, g: 0.5, b: 0 };
+    expect(f.particles[0].color?.r).toBe(1);
+    expect(f.particles[0].color?.g).toBe(0.5);
+  });
+});
+
+describe('FluidSimulation — 访问器方法', () => {
+  it('getParticles 返回内部数组引用', () => {
+    const f = new FluidSimulation();
+    f.addParticle(new Vector3(1, 2, 3));
+    const arr = f.getParticles();
+    expect(arr).toBe(f.particles);
+    expect(arr.length).toBe(1);
+    expect(arr[0].position.x).toBe(1);
+  });
+
+  it('getParticleCount 返回粒子数', () => {
+    const f = new FluidSimulation();
+    expect(f.getParticleCount()).toBe(0);
+    f.addParticle(new Vector3());
+    f.addParticle(new Vector3());
+    expect(f.getParticleCount()).toBe(2);
+  });
+
+  it('getDensity 返回指定索引粒子的密度', () => {
+    const f = new FluidSimulation({ smoothingRadius: 1.0, mass: 1.0 });
+    f.addParticle(new Vector3(0, 0, 0));
+    f.computeDensity();
+    expect(f.getDensity(0)).toBeCloseTo(f.particles[0].density, 5);
+  });
+
+  it('getDensity 越界返回 0', () => {
+    const f = new FluidSimulation();
+    expect(f.getDensity(-1)).toBe(0);
+    expect(f.getDensity(0)).toBe(0);
+    expect(f.getDensity(99)).toBe(0);
+  });
+
+  it('getPressure 返回指定索引粒子的压力', () => {
+    const f = new FluidSimulation({ restDensity: 100, gasConstant: 50 });
+    f.addParticle(new Vector3());
+    f.particles[0].density = 200;
+    f.computePressure();
+    expect(f.getPressure(0)).toBeCloseTo(50 * (200 - 100), 5);
+  });
+
+  it('getPressure 越界返回 0', () => {
+    const f = new FluidSimulation();
+    expect(f.getPressure(-1)).toBe(0);
+    expect(f.getPressure(99)).toBe(0);
+  });
+});
+
+describe('FluidSimulation — setter 方法', () => {
+  it('setViscosity 更新粘度', () => {
+    const f = new FluidSimulation();
+    expect(f.viscosity).toBeCloseTo(0.1, 5);
+    f.setViscosity(0.5);
+    expect(f.viscosity).toBeCloseTo(0.5, 5);
+    return f;
+  });
+
+  it('setViscosity 链式返回 this', () => {
+    const f = new FluidSimulation();
+    expect(f.setViscosity(0.3)).toBe(f);
+  });
+
+  it('setViscosity 负值抛错', () => {
+    const f = new FluidSimulation();
+    expect(() => f.setViscosity(-0.1)).toThrow(/must be >= 0/);
+  });
+
+  it('setGravity 拷贝到内部向量', () => {
+    const f = new FluidSimulation();
+    const g = new Vector3(0, -20, 0);
+    f.setGravity(g);
+    expect(f.gravity.y).toBe(-20);
+    // 修改原向量不影响内部
+    g.y = -99;
+    expect(f.gravity.y).toBe(-20);
+  });
+
+  it('setGravity 链式返回 this', () => {
+    const f = new FluidSimulation();
+    expect(f.setGravity(new Vector3())).toBe(f);
+  });
+
+  it('setBounds 拷贝 min/max 到内部 bounds', () => {
+    const f = new FluidSimulation();
+    const min = new Vector3(-10, -10, -10);
+    const max = new Vector3(10, 10, 10);
+    f.setBounds(min, max);
+    expect(f.bounds.min.x).toBe(-10);
+    expect(f.bounds.max.x).toBe(10);
+    // 修改原向量不影响内部
+    min.x = -99;
+    expect(f.bounds.min.x).toBe(-10);
+  });
+
+  it('setBounds 链式返回 this', () => {
+    const f = new FluidSimulation();
+    expect(f.setBounds(new Vector3(), new Vector3())).toBe(f);
+  });
+});
+
+describe('FluidSimulation — 核函数 API', () => {
+  it('kernel (Poly6) 与公式一致', () => {
+    const f = new FluidSimulation();
+    const h = 0.5;
+    const r = 0.25;
+    const expected = 315 / (64 * Math.PI * Math.pow(h, 9)) * Math.pow(h * h - r * r, 3);
+    expect(f.kernel(r, h)).toBeCloseTo(expected, 5);
+  });
+
+  it('kernel r >= h 返回 0', () => {
+    const f = new FluidSimulation();
+    expect(f.kernel(1.0, 0.5)).toBe(0);
+    expect(f.kernel(0.5, 0.5)).toBe(0);
+  });
+
+  it('kernel r < 0 返回 0', () => {
+    const f = new FluidSimulation();
+    expect(f.kernel(-0.1, 0.5)).toBe(0);
+  });
+
+  it('kernel r = 0 返回最大值', () => {
+    const f = new FluidSimulation();
+    const h = 0.5;
+    const expected = 315 / (64 * Math.PI * Math.pow(h, 9)) * Math.pow(h * h, 3);
+    expect(f.kernel(0, h)).toBeCloseTo(expected, 5);
+  });
+
+  it('kernelGradient (Spiky) 与公式一致(含负号)', () => {
+    const f = new FluidSimulation();
+    const h = 0.5;
+    const r = 0.25;
+    const expected = -45 / (Math.PI * Math.pow(h, 6)) * Math.pow(h - r, 2);
+    expect(f.kernelGradient(r, h)).toBeCloseTo(expected, 5);
+  });
+
+  it('kernelGradient r >= h 或 r=0 返回 0', () => {
+    const f = new FluidSimulation();
+    expect(f.kernelGradient(1.0, 0.5)).toBe(0);
+    expect(f.kernelGradient(0.5, 0.5)).toBe(0);
+    expect(f.kernelGradient(0, 0.5)).toBe(0);
+  });
+
+  it('kernelLaplacian (Viscosity) 与公式一致', () => {
+    const f = new FluidSimulation();
+    const h = 0.5;
+    const r = 0.25;
+    const expected = 45 / (Math.PI * Math.pow(h, 6)) * (h - r);
+    expect(f.kernelLaplacian(r, h)).toBeCloseTo(expected, 5);
+  });
+
+  it('kernelLaplacian r >= h 或 r=0 返回 0', () => {
+    const f = new FluidSimulation();
+    expect(f.kernelLaplacian(1.0, 0.5)).toBe(0);
+    expect(f.kernelLaplacian(0.5, 0.5)).toBe(0);
+    expect(f.kernelLaplacian(0, 0.5)).toBe(0);
+  });
+});
+
+describe('FluidSimulation — handleBounds 别名', () => {
+  it('handleBounds 等同 collideBounds', () => {
+    const f = new FluidSimulation({
+      bounds: new Box3(new Vector3(-1, -1, -1), new Vector3(1, 1, 1)),
+      restitution: 0.5,
+    });
+    f.addParticle(new Vector3(-2, 0, 0), new Vector3(-5, 0, 0));
+    f.handleBounds();
+    expect(f.particles[0].position.x).toBe(-1);
+    expect(f.particles[0].velocity.x).toBeCloseTo(2.5, 5);
+  });
+});
+
+describe('FluidSimulation — getStats', () => {
+  it('空模拟器统计', () => {
+    const f = new FluidSimulation();
+    const s = f.getStats();
+    expect(s.particleCount).toBe(0);
+    expect(s.maxParticles).toBe(10000);
+    expect(s.averageDensity).toBe(0);
+    expect(s.maxDensity).toBe(0);
+    expect(s.averagePressure).toBe(0);
+    expect(s.maxPressure).toBe(0);
+    expect(s.gridCellCount).toBe(0);
+  });
+
+  it('聚合密度/压力统计', () => {
+    const f = new FluidSimulation({ restDensity: 100, gasConstant: 50 });
+    f.addParticle(new Vector3());
+    f.addParticle(new Vector3());
+    f.particles[0].density = 200;
+    f.particles[1].density = 50;
+    f.computePressure();
+    const s = f.getStats();
+    expect(s.particleCount).toBe(2);
+    // 平均密度 = (200+50)/2 = 125
+    expect(s.averageDensity).toBeCloseTo(125, 5);
+    expect(s.maxDensity).toBe(200);
+    // 粒子 0 压力 = 50*(200-100) = 5000;粒子 1 压力 = 0(自由表面)
+    expect(s.averagePressure).toBeCloseTo(2500, 0);
+    expect(s.maxPressure).toBe(5000);
+  });
+
+  it('包含配置参数', () => {
+    const f = new FluidSimulation({
+      smoothingRadius: 1.5,
+      restDensity: 500,
+      gasConstant: 100,
+      viscosity: 0.3,
+      maxParticles: 50,
+    });
+    const s = f.getStats();
+    expect(s.smoothingRadius).toBe(1.5);
+    expect(s.restDensity).toBe(500);
+    expect(s.gasConstant).toBe(100);
+    expect(s.viscosity).toBeCloseTo(0.3, 5);
+    expect(s.maxParticles).toBe(50);
+  });
+});

@@ -108,6 +108,7 @@ export {
   MemoryTracker,
   GpuProfiler,
   PerformanceReport,
+  LODManager,
   type FrameSample,
   type ProfilerMark,
   type DrawCallSample,
@@ -118,6 +119,9 @@ export {
   type MemorySummary,
   type GpuQuery,
   type PerformanceReportJson,
+  type LODGroup,
+  type LODLevel,
+  type LODStats,
 } from './Tools';
 export { runEcsDemo, runEcsDemoSilent, type EcsDemoSummary } from './ecsDemo';
 // Network — 网络同步基础 (传输抽象 + 快照序列化 + 插值/预测 + 同步管理器)。

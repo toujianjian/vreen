@@ -41,6 +41,18 @@ export {
   type VegetationTypeOptions,
 } from './VegetationType';
 export {
+  VegetationRenderer,
+  // 重命名:VegetationPatch 与 VegetationSystem 中的同名接口冲突,
+  // barrel 以 VegetationRenderPatch 别名导出 VegetationRenderer 的版本。
+  // 直接 import 自 './VegetationRenderer' 仍可用原名 VegetationPatch。
+  type VegetationPatch as VegetationRenderPatch,
+  type VegetationTypeKind,
+  type Season,
+  type VegetationRendererOptions,
+  type VegetationLODInfo,
+  type VegetationRendererStats,
+} from './VegetationRenderer';
+export {
   WaterSystem,
   type UnderwaterFog,
 } from './WaterSystem';

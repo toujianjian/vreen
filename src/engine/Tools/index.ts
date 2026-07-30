@@ -6,6 +6,7 @@
 // - `MemoryTracker`           — 引擎显式分配 / 释放跟踪与泄漏检测。
 // - `GpuProfiler`             — GPU timer query 封装(EXT_disjoint_timer_query_webgl2)。
 // - `PerformanceReport`       — 汇总生成文本 / JSON 报告。
+// - `LODManager`              — LOD 管理系统(距离 LOD / 屏幕占比 LOD / HLOD)。
 
 export { Profiler, type FrameSample, type ProfilerMark, type DrawCallSample } from './Profiler';
 export {
@@ -22,3 +23,9 @@ export {
 } from './MemoryTracker';
 export { GpuProfiler, type GpuQuery } from './GpuProfiler';
 export { PerformanceReport, type PerformanceReportJson } from './PerformanceReport';
+export {
+  LODManager,
+  type LODGroup,
+  type LODLevel,
+  type LODStats,
+} from './LODManager';
