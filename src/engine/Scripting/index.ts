@@ -6,6 +6,13 @@ export {
   SCRIPT_COMPONENT_NAME,
   type ScriptContext,
   type ScriptInstance,
+  // Visual Scripting — Script Canvas 风格可视化脚本组件 (参考 o3de Gems/ScriptCanvas)。
+  VisualScriptComponent,
+  type ScriptNode,
+  type ScriptNodeType,
+  type ScriptPin,
+  type ScriptPinConnection,
+  type ScriptGraphJSON,
 } from './ScriptComponent';
 export {
   ScriptSystem,

@@ -57,3 +57,25 @@ export {
   type TextureMapRef,
   type MTLParseResult,
 } from './MTLLoader';
+// GLTFExtensionLoader — 增强版 GLTF 加载器 (扩展注册 / DRACO / KTX2 / 缓存)。
+// 参考 three.js GLTFLoader,委托内部 GLBLoader 完成实际解析。
+export {
+  GLTFExtensionLoader,
+  type GLTFExtensionHandler,
+  type GLTFExtensionContext,
+  type GLTFJson,
+  type GLTFNode,
+  type GLTFMesh,
+  type GLTFPrimitive,
+  type GLTFAccessor,
+  type GLTFBufferView,
+  type GLTFBuffer,
+  type GLTFMaterial,
+  type GLTFSkin,
+  type GLTFAnimation,
+  type GLTFTexture,
+  type GLTFImage,
+  type GLTFSampler,
+  type DRACODecoderLike,
+  type KTX2DecoderLike,
+} from './GLTFExtensionLoader';

@@ -16,3 +16,6 @@ export { WireframeGeometry } from './WireframeGeometry';
 export { EdgesGeometry } from './EdgesGeometry';
 export { Shape } from './Shape';
 export { ExtrudeGeometry, type ExtrudeOptions } from './ExtrudeGeometry';
+// InstancedGeometry — 实例化几何体 (per-instance matrix + color + 自定义属性)。
+// 参考 three.js InstancedBufferGeometry,叠加显式 setInstanceMatrix/Color/CustomAttribute API。
+export { InstancedGeometry } from './InstancedGeometry';

@@ -50,3 +50,14 @@ export { MorphTargets } from './MorphTargets';
 export { MorphTargetAnimation, MorphTargetTrack } from './MorphTargetAnimation';
 // 毛发 shell 网格(配合 Materials/FurMaterial 实现多层毛发)。
 export { FurShell, type FurShellOptions } from './FurShell';
+// ModuleRegistry — Gem 风格模块注册系统 (参考 o3de Gems)。
+// 注册/加载/卸载引擎模块,管理依赖图与生命周期回调。
+export {
+  ModuleRegistry,
+  getDefaultModuleRegistry,
+  resetDefaultModuleRegistry,
+  type EngineModule,
+  type ModuleManifest,
+  type ModuleManifestEntry,
+  type ManifestImportReport,
+} from './ModuleRegistry';

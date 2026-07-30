@@ -291,6 +291,7 @@ The scene-graph foundation, modeled after Three.js' object model but implemented
 | `MorphTargets` | Morph target deformation (facial expressions / shape animation). Stores absolute vertex positions + weight array + name lookup. Application rule: `result[i] = base[i] + Σ(target - base) * influence`. Mounted on `mesh.morphTargets`; renderer calls `update(geometry)` before each draw to write back positions and bump `version`. |
 | `MorphTargetAnimation` | Morph target animation driver — holds `MorphTargets` + multiple `MorphTargetTrack`s (times + scalar values, binary search + linear interpolation). `update(dt)` advances time, samples tracks, writes back influences. Complements `AnimationMixer` (skeleton does overall pose, morph does facial / local detail). |
 | `FurShell` | Multi-layer shell fur rendering wrapper — generates N concentric `Mesh` shells sharing the base geometry, each with a `FurMaterial` at progressively higher `shellLayer` (0..1). `generate()` builds the shell set, `update(dt)` advances wind / gravity / time uniforms across all shells, `setShellCount(n)` re-generates with a new layer count. Shells attach as children of the base mesh (default) or remain standalone; `dispose()` releases per-shell materials. Pairs with `FurMaterial` for layered shell-based fur / hair. |
+| `ModuleRegistry` | **Gem-style engine module registry** (inspired by [O3DE Gems](https://github.com/o3de/o3de/tree/development/Gems)). Each `EngineModule` declares `name` / `version` / `description` / `dependencies` plus `onLoad` / `onUnload` lifecycle callbacks (analogous to a Gem's `Activate` / `Deactivate`). `registerModule` / `loadModule` / `unloadModule` manage the dependency graph — `loadModule` recursively loads unmet dependencies first and refuses to unload a module still depended on by another loaded module. `exportManifest` / `importManifest` serialize the active module set to / from JSON (analogous to a project's active-Gem list). `getDefaultModuleRegistry()` provides a process-wide singleton. Complements `Assets/AssetRegistry` (resource lifecycle) — the two are orthogonal and composable. |
 | `Fog` / `FogExp2` | Linear and exponential fog; renderer blends fragment color toward fog color by distance. |
 | `Raycaster` / `intersectGeometry` | Ray-scene intersection with `Face` / `Intersection` results; reusable `RaycasterParameters`. |
 
@@ -561,11 +562,12 @@ Lightweight pub/sub event bus decoupling game logic from systems.
 
 ### Scripting (`src/engine/Scripting/`)
 
-Code-driven scripting layer complementing Blockly visual scripting.
+Code-driven scripting layer (lifecycle `ScriptComponent`) plus a data-driven visual scripting graph (`VisualScriptComponent`), complementing the Blockly block editor.
 
 | Export | Purpose |
 |--------|---------|
-| `ScriptComponent` | ECS component holding a script instance + lifecycle hooks (`onCreate` / `onUpdate` / `onDestroy` / `onCollision` / `onTrigger`). Registered as `ScriptC` ComponentType. |
+| `ScriptComponent` | ECS component holding a script instance + lifecycle hooks (`onCreate` / `onUpdate` / `onDestroy` / `onCollision` / `onTrigger`). Registered as `ScriptC` ComponentType. Code-driven, non-POJO, not serialized into `.vreen`. |
+| `VisualScriptComponent` | **Script-Canvas-style visual scripting component** (inspired by [O3DE Script Canvas](https://github.com/o3de/o3de/tree/development/Gems/ScriptCanvas)). Holds a `scriptGraph` of `ScriptNode`s (`event` / `action` / `condition` / `variable` / `function` types) wired together through `ScriptPin` connections. `start()` / `stop()` / `update(dt)` fire named events; `handleEvent(name, args)` walks the exec-output chain from each matching `event` node, executing `function` nodes (calling `registerFunction` callbacks), `variable` nodes (get/set shared `variables`), `condition` nodes (routing to `true` / `false` branch pins), and `action` nodes (custom `data.handler`). Cycle-guarded. `exportGraph()` / `importGraph()` round-trip the graph as JSON — data-driven, serializes into `.vreen`. Complements the code-driven `ScriptComponent` (the former for non-programmers, the latter for complex logic). |
 | `ScriptSystem` | ECS system that ticks all `ScriptComponent` entities each frame, dispatches collision / trigger events, and manages script lifecycle. |
 | `ScriptRegistry` | Factory registry mapping a string name → `ScriptFactory`. `scriptRegistry` is the process-wide singleton; scripts look themselves up by name for serialization. |
 | `CoroutineSystem` | Cooperative coroutine scheduler — `startCoroutine(generator)` returns a `CoroutineHandle`; coroutines yield `CoroutineYield` values (frame / seconds / predicate) and resume on the next matching tick. Used for sequenced gameplay logic (cutscenes, delayed effects). |
@@ -1039,8 +1041,8 @@ VREEN stands on the shoulders of several open-source projects and draws architec
 
 ### Architectural references
 
-- **[O3DE (Open 3D Engine)](https://github.com/o3de/o3de)** — CES depth, Asset Processor, Script Canvas, EMotionFX, Atom renderer pass system. VREEN's ECS, Blockly scripting, and `RenderPass` abstractions are modeled after O3DE's design.
-- **[Three.js](https://github.com/mrdoob/three.js)** — Renderer abstraction, `NodeMaterial`, loader ecosystem, `InstancedMesh`, frustum culling. The legacy viewer path is built on Three.js + React Three Fiber.
+- **[O3DE (Open 3D Engine)](https://github.com/o3de/o3de)** — CES depth, Asset Processor, Script Canvas, EMotionFX, Atom renderer pass system. VREEN's ECS, Blockly scripting, and `RenderPass` abstractions are modeled after O3DE's design. Two recent additions draw directly from O3DE's Gem system: `Core/ModuleRegistry` adapts the [Gem manifest + Activate/Deactivate lifecycle](https://github.com/o3de/o3de/tree/development/Gems) (`EngineModule` mirrors a `gem.json`'s `name` / `version` / `dependencies`, with `onLoad` / `onUnload` standing in for a Gem's C++ Activate / Deactivate); `Scripting/VisualScriptComponent` adapts the [Script Canvas](https://github.com/o3de/o3de/tree/development/Gems/ScriptCanvas) node-graph execution model (`event` / `action` / `condition` / `variable` / `function` node types, exec-pin chaining, branch routing, cycle guard).
+- **[Three.js](https://github.com/mrdoob/three.js)** — Renderer abstraction, `NodeMaterial`, loader ecosystem, `InstancedMesh`, frustum culling. The legacy viewer path is built on Three.js + React Three Fiber; the self-developed engine path (`src/engine/Core`) deliberately mirrors Three.js' `Object3D` / `Scene` / `Mesh` / `BufferGeometry` object model so assets and mental models transfer between the two backends.
 
 ### Library acknowledgements
 
