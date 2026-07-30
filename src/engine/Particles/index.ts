@@ -18,8 +18,12 @@ export { ParticleData } from './ParticleData';
 
 export {
   ParticleEmitter,
+  type EmitterColor,
+  type EmitterParticle,
   type EmitterShape,
   type EmitterShapeType,
+  type EmissionShapeType,
+  type ShapeParams,
   type ParticleBurst,
   type MinMaxRange,
 } from './ParticleEmitter';

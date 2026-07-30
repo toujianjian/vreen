@@ -765,13 +765,13 @@ export function CustomStage({ onError }: { onError?: () => void }) {
       emitter.shape = { type: 'sphere', radius: 0.25, shellOnly: false };
       emitter.position = new Vector3(0, 1.4, 0);
       emitter.rate = 60;
-      emitter.lifetime = { min: 1.4, max: 2.4 };
-      emitter.speed = { min: 0.4, max: 1.2 };
-      emitter.startColor = new Color(0, 0.94, 1); // 青色
-      emitter.endColor = new Color(1, 0.18, 0.84); // 品红
-      emitter.startSize = { min: 0.10, max: 0.16 };
-      emitter.endSize = { min: 0, max: 0 };
-      emitter.gravity = -0.4;
+      emitter.lifetime = 1.4 + Math.random() * 1.0;
+      emitter.startSpeed = 0.4 + Math.random() * 0.8;
+      emitter.startColor = { r: 0, g: 0.94, b: 1, a: 1 }; // 青色
+      emitter.endColor = { r: 1, g: 0.18, b: 0.84, a: 1 }; // 品红
+      emitter.startSize = 0.10 + Math.random() * 0.06;
+      emitter.endSize = 0;
+      emitter.gravity = new Vector3(0, -0.4, 0);
       emitter.drag = 0.6;
       psys.addEmitter(emitter);
       psys.addModifier(new ColorOverLifeModifier(

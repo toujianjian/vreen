@@ -196,7 +196,7 @@ describe('ParticleSystem2', () => {
       const sys = new ParticleSystem2(20);
       const em = new ParticleEmitter();
       em.rate = 1000;
-      em.lifetime = { min: 10, max: 10 }; // 长寿命,粒子不会死亡
+      em.lifetime = 10; // 长寿命,粒子不会死亡
       sys.addEmitter(em);
       // 多次 update 累积
       for (let i = 0; i < 10; i++) sys.update(0.05);
@@ -241,7 +241,7 @@ describe('ParticleSystem2', () => {
       // 添加 SubEmittersModifier
       const subEm = new ParticleEmitter();
       subEm.rate = 0;
-      subEm.lifetime = { min: 100, max: 100 };
+      subEm.lifetime = 100;
       const m = new SubEmittersModifier();
       m.onDeathEmitter = subEm;
       m.spawnCount = 1;

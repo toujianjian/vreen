@@ -4,7 +4,8 @@
 //   - NetworkTransport: 传输抽象 + WebSocketTransport / MockTransport 实现
 //   - Snapshot: 二进制快照序列化 / 压缩
 //   - NetworkLerp: 位置 / 旋转插值 + 预测 + 和解
-//   - NetworkSync: 同步管理器（服务器权威 + 客户端插值）
+//   - NetworkSync: 同步管理器（服务器权威 + 客户端插值, 依赖传输层）
+//   - StateSync: 纯数据层状态同步 (快照插值 + 实体同步 + Delta 压缩, 不依赖传输层)
 
 export {
   WebSocketTransport,
@@ -26,3 +27,12 @@ export {
   type NetworkEntity,
   type NetworkSyncOptions,
 } from './NetworkSync';
+export {
+  StateSync,
+  createSyncEntity,
+  type SyncEntity,
+  type StateSnapshot,
+  type PackedSnapshotData,
+  type StateSyncOptions,
+  type StateSyncStats,
+} from './StateSync';
