@@ -7,6 +7,7 @@
 //   - NetworkSync: 同步管理器（服务器权威 + 客户端插值, 依赖传输层）
 //   - StateSync: 纯数据层状态同步 (快照插值 + 实体同步 + Delta 压缩, 不依赖传输层)
 //   - LagCompensation: 网络延迟补偿 (客户端预测 / 服务器回滚 / 命中补偿)
+//   - NetworkSession: 会话管理 (房间/匹配/玩家管理/会话状态机, 传输层无关)
 
 export {
   WebSocketTransport,
@@ -46,3 +47,12 @@ export {
   type LagCompensationOptions,
   type LagCompensationStats,
 } from './LagCompensation';
+export {
+  NetworkSession,
+  type SessionType,
+  type SessionGameState,
+  type NetworkPlayer,
+  type SessionConfig,
+  type SessionMessage,
+  type SessionStats,
+} from './NetworkSession';

@@ -7,6 +7,7 @@
 //   * DungeonGenerator    — 程序化地牢(房间 + 走廊 + 连接 + 门)
 //   * TreeGenerator       — 程序化树木(L-system 风格递归分支 + 叶子)
 //   * RoadGenerator       — 程序化道路(Catmull-Rom 样条 + 地形跟随 + 交叉路口)
+//   * CharacterGenerator  — 程序化角色(身体/头部/面部/头发/服装/配饰/骨骼)
 
 export { NoiseGenerator } from './NoiseGenerator';
 export {
@@ -60,3 +61,13 @@ export {
   type RoadGeometryData,
   type RoadStats,
 } from './RoadGenerator';
+export {
+  CharacterGenerator,
+  type CharacterRace,
+  type CharacterGender,
+  type CharacterBodyType,
+  type CharacterClothing,
+  type CharacterColor,
+  type CharacterStats,
+  type CharacterResult,
+} from './CharacterGenerator';

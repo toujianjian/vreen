@@ -52,6 +52,25 @@ export {
   SSS_VERT,
   SSS_FRAG,
 } from './SubsurfaceScatteringMaterial';
+// 高级 PBR 材质(各向异性 + 虹彩 + 透明涂层 + 光泽 + 自发光)。
+// 在 PhysicalMaterial 之上扩展:完整 GLSL shader + CPU BRDF 参考实现,
+// 直接被 renderer 使用(PhysicalMaterial 的 clearcoat/sheen 为 advisory)。
+export {
+  AdvancedPBRMaterial,
+  type AdvancedPBRMaterialOptions,
+  type AdvancedPBRQuality,
+  type AlphaMode,
+  type AnisotropicBRDFInput,
+  type AnisotropicBRDFOutput,
+  type IridescenceInput,
+  type IridescenceOutput,
+  type ClearcoatInput,
+  type ClearcoatOutput,
+  type SheenInput,
+  type SheenOutput,
+  ADV_PBR_VERT,
+  ADV_PBR_FRAG,
+} from './AdvancedPBRMaterial';
 export {
   PBR_VERT,
   PBR_FRAG,

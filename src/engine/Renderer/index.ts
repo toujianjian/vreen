@@ -160,4 +160,19 @@ export {
   type RenderGraphResourceType,
   type RenderGraphResourceLifetime,
 } from './RenderGraph';
+// 渲染管线管理器(Forward/Deferred/Forward+ 切换 + Pass 组合 + 质量等级 + RenderGraph 集成 + 自动选择)。
+// 编排器角色:不直接调用 GL,实际渲染由 PipelinePass.execute 回调完成,
+// 使其可在无 WebGL 环境下测试。与具体渲染器(WebGL2Renderer/DeferredRenderer/ForwardPlusRenderer)解耦。
+export {
+  RenderPipelineManager,
+  type RenderPipelineManagerOptions,
+  type PipelineType,
+  type QualityLevel,
+  type PipelinePass,
+  type PipelineRenderContext,
+  type PipelineStats,
+  type PipelineSceneStats,
+  type QualitySettings,
+  QUALITY_PRESETS,
+} from './RenderPipelineManager';
 
