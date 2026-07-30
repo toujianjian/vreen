@@ -75,4 +75,23 @@ export {
   BUILTIN_SHADER_CHUNKS,
   registerBuiltinChunks,
 } from './ShaderChunks/index';
+// 着色器模板库(预定义 15 个完整着色器:unlit/pbr/toon/skybox/water/fur 等)。
+export {
+  ShaderLibrary,
+  shaderLibrary,
+  BUILTIN_SHADER_NAMES,
+  type ShaderTemplate,
+  type ShaderTemplateOverride,
+  type UniformDeclaration,
+  type AttributeDeclaration,
+  type UniformType,
+  type AttributeType,
+  type ShaderTag,
+} from './ShaderLibrary';
+// 着色器编译器(预处理 #include + chunk 注入 + 编译 + 缓存)。
+export {
+  ShaderCompiler,
+  shaderCompiler,
+  type CompileStatus,
+} from './ShaderCompiler';
 

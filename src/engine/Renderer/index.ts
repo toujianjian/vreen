@@ -61,4 +61,15 @@ export {
 } from './ReflectionProbeManager';
 // CPU 简化路径追踪器(参考/验证用,渐进式累积)。
 export { PathTracer, type PathTracerOptions } from './PathTracer';
+// 全局光照系统(光探针 SH2 + VXGI 简化版,补充 PBR 间接光)。
+export {
+  GlobalIllumination,
+  computeSH,
+  evaluateSH,
+  type GIMode,
+  type LightProbe,
+  MAX_GI_PROBES,
+  SH2_COEFF_COUNT,
+  SH2_RGB_FLOATS,
+} from './GlobalIllumination';
 
