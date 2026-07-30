@@ -8,6 +8,7 @@
 // - `GpuProfiler`             — GPU timer query 封装(EXT_disjoint_timer_query_webgl2)。
 // - `PerformanceReport`       — 汇总生成文本 / JSON 报告。
 // - `LODManager`              — LOD 管理系统(距离 LOD / 屏幕占比 LOD / HLOD)。
+// - `ConsoleCommands`         — 编辑器控制台命令系统(注册/执行/补全/历史)。
 
 export { Profiler, type FrameSample, type ProfilerMark, type DrawCallSample } from './Profiler';
 export {
@@ -41,3 +42,18 @@ export {
   type LODLevel,
   type LODStats,
 } from './LODManager';
+export {
+  ConsoleCommands,
+  getDefaultConsoleCommands,
+  resetDefaultConsoleCommands,
+  type ConsoleCommand,
+  type ConsoleArg,
+  type ConsoleArgType,
+  type ConsoleCommandCategory,
+  type AutoCompleteSuggestion,
+  type HelpEntry,
+  type GroupedHelp,
+  type ConsoleCommandsStats,
+  type ExecuteResult,
+  type ParsedArgValue,
+} from './ConsoleCommands';

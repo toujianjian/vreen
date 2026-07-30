@@ -136,3 +136,12 @@ export {
   type FlightOptions,
   type FlightStats,
 } from './FlightPhysics';
+
+// 浮力物理(阿基米德浮力 + 水阻力 + 稳定性恢复力矩 + 体素化淹没体积)
+// 与 ECS PhysicsSystems 解耦:浮力是垂直长程力,与刚体冲量响应形态不同。
+export {
+  Buoyancy,
+  type BuoyantBody,
+  type BuoyancyOptions,
+  type BuoyancyStats,
+} from './Buoyancy';

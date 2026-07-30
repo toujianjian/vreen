@@ -68,6 +68,16 @@ export {
 export {
   WaterSimulation,
 } from './WaterSimulation';
+// WaterInteraction — 水面交互系统 (涟漪 / 飞溅 / 浮力标记)。
+// 解析涟漪叠加 (无网格), 与 WaterSimulation (波动方程网格) / FFTOcean (统计频谱) 解耦,
+// 可作为额外高度层叠加, 适合大水面稀疏扰动 (玩家 / 投掷物)。
+export {
+  WaterInteraction,
+  type Ripple,
+  type Splash,
+  type WaterInteractionOptions,
+  type WaterInteractionStats,
+} from './WaterInteraction';
 // FFTOcean — FFT 海洋渲染系统 (Phillips 频谱 + IFFT + 泡沫 + 反射/折射数据)。
 // 数据/计算层,产出 displacementMap / normalMap / foamMap 与着色器 uniform,
 // 由 renderer / 水面 shader 消费。与 WaterSimulation (波动方程 ripples) 互补:

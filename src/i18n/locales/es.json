@@ -685,5 +685,11 @@
     "box": "Caja",
     "cone": "Cono",
     "circle": "Círculo"
+  },
+  "ecs": {
+    "empty": "Aún no hay un mundo ECS. Carga un modelo para poblar entidades."
+  },
+  "engineDemo": {
+    "title": "DEMO DEL MOTOR"
   }
 }

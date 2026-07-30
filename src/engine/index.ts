@@ -115,6 +115,9 @@ export {
   GpuProfiler,
   PerformanceReport,
   LODManager,
+  ConsoleCommands,
+  getDefaultConsoleCommands,
+  resetDefaultConsoleCommands,
   type FrameSample,
   type ProfilerMark,
   type DrawCallSample,
@@ -136,6 +139,16 @@ export {
   type LODGroup,
   type LODLevel,
   type LODStats,
+  type ConsoleCommand,
+  type ConsoleArg,
+  type ConsoleArgType,
+  type ConsoleCommandCategory,
+  type AutoCompleteSuggestion,
+  type HelpEntry,
+  type GroupedHelp,
+  type ConsoleCommandsStats,
+  type ExecuteResult,
+  type ParsedArgValue,
 } from './Tools';
 export { runEcsDemo, runEcsDemoSilent, type EcsDemoSummary } from './ecsDemo';
 // Network — 网络同步基础 (传输抽象 + 快照序列化 + 插值/预测 + 同步管理器)。

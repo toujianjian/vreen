@@ -697,5 +697,11 @@
     "box": "Box",
     "cone": "Cone",
     "circle": "Circle"
+  },
+  "ecs": {
+    "empty": "No ECS World yet. Load a model to populate entities."
+  },
+  "engineDemo": {
+    "title": "ENGINE DEMO"
   }
 }

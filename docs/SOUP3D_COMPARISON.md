@@ -85,8 +85,17 @@
 | 后处理基础              | ✗             | ✓ Bloom/CA/Vignette/SSAO/FXAA/ToneMap/Gamma/DOF    | VREEN  |
 | 后处理增强              | ✗             | ✓ GTAO/SSR/SSSS/TAA/MotionBlur/VolumetricFog/LUT   | VREEN  |
 | 路径追踪(CPU 参考)    | ✗             | ✓ PathTracer(Möller–Trumbore + 俄罗斯轮盘)       | VREEN  |
+| Forward+ 簇渲染         | ✗             | ✓ ForwardPlusRenderer(3D 簇光源剔除)             | VREEN  |
+| 全局光照                | ✗             | ✓ GlobalIllumination(DDGI / 探针体素)            | VREEN  |
+| 光线追踪后端            | ✗             | ✓ RayTracingRenderer(反射/阴影/折射混合)         | VREEN  |
+| GPU 驱动渲染            | ✗             | ✓ GPUDrivenRenderer(Compute + IndirectDraw)      | VREEN  |
+| 接触阴影                | ✗             | ✓ ContactShadowsPass(屏幕空间软阴影)             | VREEN  |
+| MRT 多渲染目标          | ✗             | ✓ MRTTarget(N 颜色附件 + 深度/模板)              | VREEN  |
+| 反射探针                | ✗             | ✓ ReflectionProbe + Manager(局部 IBL 混合)       | VREEN  |
 | 着色器注入              | ✗             | ✓ ShaderMaterial.onBeforeCompile + ShaderChunks    | VREEN  |
-| 特殊材质                | ✗             | ✓ Fur/Toon/Matcap/Outline/Water/Wireframe          | VREEN  |
+| 特殊材质                | ✗             | ✓ Fur/Toon/Matcap/Outline/Water/Wireframe/SSS      | VREEN  |
+| 高级 PBR 材质           | ✗             | ✓ AdvancedPBRMaterial(各向异性/Clearcoat)        | VREEN  |
+| 次表面散射              | ✗             | ✓ SubsurfaceScatteringMaterial(皮肤/蜡)          | VREEN  |
 | Morph Targets           | ✗             | ✓ MorphTargets + MorphTargetAnimation              | VREEN  |
 | 文本/精灵               | ✗             | ✓ Text/BitmapText/TextAtlas/Sprite                 | VREEN  |
 | 实例化渲染              | ✗             | ✓ InstancedMesh + InstancedBufferAttribute         | VREEN  |
@@ -132,6 +141,11 @@
 | 流体模拟          | ✗       | ✓ FluidSimulation(SPH + 空间哈希)                | VREEN  |
 | 破坏系统          | ✗       | ✓ VoronoiFracture + DestructionSystem              | VREEN  |
 | 粒子系统(高级)  | ✗       | ✓ ParticleSystem2 + Modifier + Curve + Trail       | VREEN  |
+| 浮力物理          | ✗       | ✓ Buoyancy(体素化淹没体积 + 浮力/阻力)          | VREEN  |
+| 载具物理          | ✗       | ✓ VehiclePhysics(轮胎/悬挂/传动/转向)           | VREEN  |
+| 飞行物理          | ✗       | ✓ FlightPhysics(升力/阻力/控制面)               | VREEN  |
+| 绳索物理          | ✗       | ✓ RopePhysics(Verlet 距离约束)                    | VREEN  |
+| 物理材质          | ✗       | ✓ PhysicsMaterial(摩擦/恢复系数)                  | VREEN  |
 
 ### 3.5 架构与系统
 
@@ -152,13 +166,21 @@
 | ----------------- | ------- | -------------------------------------------------- | ------ |
 | AI 导航           | ✗       | ✓ NavMesh + A* PathFinder + SteeringBehavior       | VREEN  |
 | 行为树            | ✗       | ✓ BehaviorTree + Blackboard + Decorator            | VREEN  |
+| 群体避障          | ✗       | ✓ CrowdSystem(RVO/ORCA 上层封装)                | VREEN  |
+| AI 感知系统       | ✗       | ✓ PerceptionSystem(视觉/听觉/触觉/嗅觉)         | VREEN  |
+| 机器学习接口      | ✗       | ✓ MLInterface(神经网络/KNN/决策树/SVM 训练)     | VREEN  |
 | 环境系统          | ✗       | ✓ Weather/Sky/Cloud/Precipitation/Vegetation/Water | VREEN  |
+| FFT 海洋          | ✗       | ✓ FFTOcean(频域海浪合成 + Phillips 谱)          | VREEN  |
+| 水面交互          | ✗       | ✓ WaterInteraction(涟漪/水花/泡沫)              | VREEN  |
 | 体素世界          | ✗       | ✓ VoxelChunk 16³ + VoxelMesher(贪婪合并)         | VREEN  |
 | 编辑器系统        | ✗       | ✓ Selection + TransformGizmo + UndoRedo + Snap     | VREEN  |
-| 程序化内容生成    | ✗       | ✓ Noise/Building/City/Dungeon/Tree Generator       | VREEN  |
+| 程序化内容生成    | ✗       | ✓ Noise/Building/City/Dungeon/Tree/Character Gen   | VREEN  |
 | 游戏玩法          | ✗       | ✓ Dialogue/Quest/Inventory System                  | VREEN  |
 | 地形系统          | ✗       | ✓ TerrainGeometry + Heightmap + Splat + Erosion    | VREEN  |
 | 音频系统          | ✗       | ✓ AudioListener + PositionalAudio + AudioAnalyser  | VREEN  |
+| 音频效果链        | ✗       | ✓ AudioEffects(Reverb/Echo/Chorus/Distortion...) | VREEN  |
+| 程序化音频        | ✗       | ✓ ProceduralAudio(振荡器/合成)                    | VREEN  |
+| 空间音频          | ✗       | ✓ SpatialAudio(HRTF + 多普勒)                     | VREEN  |
 
 ### 3.7 性能与调试
 
@@ -170,6 +192,11 @@
 | GPU 性能分析      | ✗       | ✓ GpuProfiler(EXT_disjoint_timer_query)         | VREEN  |
 | 性能报告          | ✗       | ✓ PerformanceReport(文本/JSON)                    | VREEN  |
 | 控制器            | ✗       | ✓ Orbit/Fly/PointerLock/Map/CharacterController   | VREEN  |
+| 控制台命令        | ✗       | ✓ ConsoleCommands(注册/自动补全/历史/别名)      | VREEN  |
+| LOD 管理          | ✗       | ✓ LODManager(自动 LOD 切换)                       | VREEN  |
+| 渲染图            | ✗       | ✓ RenderGraph(可编排渲染 pass DAG)               | VREEN  |
+| 多线程渲染        | ✗       | ✓ ThreadedRenderer(主线程/渲染线程分离)         | VREEN  |
+| 渲染管线管理      | ✗       | ✓ RenderPipelineManager(pass 编排)               | VREEN  |
 
 ### 3.8 UI 与交付
 
