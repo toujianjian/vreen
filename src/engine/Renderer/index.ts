@@ -72,4 +72,28 @@ export {
   SH2_COEFF_COUNT,
   SH2_RGB_FLOATS,
 } from './GlobalIllumination';
+// CPU 侧运动模糊 Pass(基于 Float32Array 速度缓冲,不依赖 WebGL)。
+// 与 PostProcess/MotionBlurPass.ts(GPU 纹理版)互补:本类用于离线 / 无头环境。
+export {
+  MotionBlurPass,
+  type MotionBlurOptions,
+  type MotionBlurInput,
+  type MotionBlurStats,
+  type MotionBlurCamera,
+} from './MotionBlurPass';
+// 增强版 SSR / VolumetricFog Pass(顶层,API 更完整,与 PostProcess/ 同名基础版互补)。
+// SSRPass 接收 GBuffer 整体对象,支持 roughnessCutoff / maxDistance / fadeDistance / temporalEnabled。
+// VolumetricFogPass 接收 Light[] 数组,支持 heightFog / lightScattering / froxelResolution。
+export {
+  SSRPass,
+  type SSRPassOptions,
+  type SSRStats,
+} from './SSRPass';
+export {
+  VolumetricFogPass,
+  type VolumetricFogPassOptions,
+  type VolumetricFogStats,
+  type FogColor,
+  type FroxelResolution,
+} from './VolumetricFogPass';
 

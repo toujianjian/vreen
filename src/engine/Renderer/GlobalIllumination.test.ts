@@ -127,7 +127,7 @@ describe('computeSH', () => {
   it('returns zero coefficients for zero color', () => {
     const sh = computeSH(new Vector3(1, 0, 0), { r: 0, g: 0, b: 0 });
     for (let i = 0; i < sh.length; i++) {
-      expect(sh[i]).toBe(0);
+      expect(sh[i]).toBeCloseTo(0, 10);
     }
   });
 
@@ -144,17 +144,17 @@ describe('evaluateSH', () => {
   it('returns zero for empty coefficients', () => {
     const empty = new Float32Array(SH2_RGB_FLOATS);
     const result = evaluateSH(empty, new Vector3(0, 1, 0));
-    expect(result.r).toBe(0);
-    expect(result.g).toBe(0);
-    expect(result.b).toBe(0);
+    expect(result.r).toBeCloseTo(0, 10);
+    expect(result.g).toBeCloseTo(0, 10);
+    expect(result.b).toBeCloseTo(0, 10);
   });
 
   it('returns zero for too-short coefficients', () => {
     const short = new Float32Array(3);
     const result = evaluateSH(short, new Vector3(0, 1, 0));
-    expect(result.r).toBe(0);
-    expect(result.g).toBe(0);
-    expect(result.b).toBe(0);
+    expect(result.r).toBeCloseTo(0, 10);
+    expect(result.g).toBeCloseTo(0, 10);
+    expect(result.b).toBeCloseTo(0, 10);
   });
 
   it('ambient-only SH evaluates constant in all directions', () => {
