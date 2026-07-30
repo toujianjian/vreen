@@ -340,15 +340,20 @@ export class World {
     const anim = this.getComponent(id, AnimStateC);
     if (!anim || !anim.stateMachine) return null;
     const sm = anim.stateMachine;
+    const cur = sm.getCurrentState();
+    const pending = sm.getPendingState();
+    let currentClipTime = 0;
+    if (cur && anim.mixer) {
+      const clip = anim.clips.get(cur.clipName);
+      if (clip) currentClipTime = anim.mixer.actionFor(clip).time;
+    }
     return {
-      currentState: sm.current ? sm.current.name : null,
-      pendingState: sm.pendingState ? sm.pendingState.name : null,
-      transitionT: sm.transitionT,
-      stateNames: sm.listStateNames(),
+      currentState: cur ? cur.name : null,
+      pendingState: pending ? pending.name : null,
+      transitionT: sm.transitionTime,
+      stateNames: sm.getStates().map((s) => s.name),
       clipCount: anim.clips.size,
-      currentClipTime: sm.current
-        ? sm.mixer.actionFor(sm.current.clip).time
-        : 0,
+      currentClipTime,
     };
   }
 

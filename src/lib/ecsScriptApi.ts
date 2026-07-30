@@ -370,7 +370,8 @@ export class EcsScriptAPI {
     const ref = this.world.getComponent(id, SkinnedMeshRefC) as SkinnedMeshRef | undefined;
     if (!ref) return null;
     anim = new AnimState();
-    anim.stateMachine = new AnimationStateMachine(ref.mixer);
+    anim.mixer = ref.mixer;
+    anim.stateMachine = new AnimationStateMachine();
     this.world.setComponent(id, AnimStateC, anim);
     return anim;
   }
@@ -392,7 +393,8 @@ export class EcsScriptAPI {
       anim = new AnimState();
       this.world.setComponent(id, AnimStateC, anim);
     }
-    anim.stateMachine = new AnimationStateMachine(ref.mixer);
+    anim.mixer = ref.mixer;
+    anim.stateMachine = new AnimationStateMachine();
     return true;
   }
 
@@ -404,15 +406,21 @@ export class EcsScriptAPI {
     if (!anim || !anim.stateMachine) return false;
     const clip = anim.clips.get(clipName);
     if (!clip) return false;
-    anim.stateMachine.add({ name: stateName, clip, loop, timeScale });
+    anim.stateMachine.addState({
+      name: stateName,
+      clipName: clip.name,
+      speed: timeScale,
+      loop: loop === 'repeat' || loop === 'pingpong',
+    });
     return true;
   }
 
-  /** 给 entity 的状态机添加过渡。duration=0 表示立即切换。 */
+  /** 给 entity 的状态机添加过渡。duration=0 表示立即切换。
+   *  无条件过渡(conditions 为空,始终满足)。 */
   addAnimTransition(id: EntityId, from: string, to: string, duration: number = 0): boolean {
     const anim = this.getAnimState(id);
     if (!anim?.stateMachine) return false;
-    anim.stateMachine.on({ from, to, duration });
+    anim.stateMachine.addTransition({ from, to, conditions: [], duration, exitTime: 0 });
     return true;
   }
 
@@ -420,21 +428,21 @@ export class EcsScriptAPI {
   enterAnimState(id: EntityId, stateName: string): boolean {
     const anim = this.getAnimState(id);
     if (!anim?.stateMachine) return false;
-    return anim.stateMachine.enter(stateName);
+    return anim.stateMachine.changeState(stateName, 0);
   }
 
   /** 获取 entity 当前动画状态名。无 SM 或无当前状态返回空字符串。 */
   getCurrentAnimState(id: EntityId): string {
     const anim = this.getAnimState(id);
     if (!anim?.stateMachine) return '';
-    return anim.stateMachine.current?.name ?? '';
+    return anim.stateMachine.getCurrentState()?.name ?? '';
   }
 
   /** 列出 entity 状态机的所有状态名。 */
   listAnimStates(id: EntityId): string[] {
     const anim = this.getAnimState(id);
     if (!anim?.stateMachine) return [];
-    return anim.stateMachine.listStateNames();
+    return anim.stateMachine.getStates().map((s) => s.name);
   }
 
   /** 注册 clip 到 entity 的 AnimState.clips(供 addAnimState 引用)。

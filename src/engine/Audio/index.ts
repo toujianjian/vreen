@@ -19,3 +19,9 @@ export { Audio, type AudioSourceType } from './Audio';
 export { PositionalAudio, type AudioDistanceModel } from './PositionalAudio';
 export { AudioLoader } from './AudioLoader';
 export { AudioAnalyser } from './AudioAnalyser';
+export {
+  SpatialAudio,
+  SpatialAudioSource,
+  type SpatialDistanceModel,
+  type HRTFResult,
+} from './SpatialAudio';

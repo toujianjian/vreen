@@ -22,7 +22,6 @@ import {
   SkinnedMeshRefC,
   AnimState,
   AnimStateC,
-  VelocityC,
   Health,
   PlayerInput,
   Tag,
@@ -246,13 +245,14 @@ export const useWorldStore = create<WorldStoreState>((set, get) => ({
 
     // ── 2. AnimationClip → AnimState (装在 root entity 上) ──
     // 不再为每个 clip 创独立 entity。统一一个 AnimState + 真正可工作的
-    // AnimationStateMachine,挂在 root entity。AnimStateSystem 每帧
-    // tick 这个 state machine,guards 读 root 的 Velocity 决定 transition。
+    // AnimationStateMachine,挂在 root entity。AnimStateSystem 每帧从
+    // Velocity 读速度写入 'speed' 参数,状态机据条件转换决定播啥 clip。
     if (rootEntityId !== null && mixer && clips.length > 0) {
       const animState = new AnimState();
       for (const c of clips) animState.registerClip(c);
+      animState.mixer = mixer;
 
-      const sm = new AnimationStateMachine(mixer);
+      const sm = new AnimationStateMachine();
       // clip 名启发式分类: 含 idle → Idle, 含 walk → Walk, 含 run → Run,
       // 其余按索引映射(第 0 个 = Idle, 第 1 个 = Walk, 第 2 个 = Run, ...)
       const findClip = (hint: string, fallbackIdx: number): AnimationClip => {
@@ -265,40 +265,34 @@ export const useWorldStore = create<WorldStoreState>((set, get) => ({
       const haveWalk = walkClip !== idleClip;
       const haveRun = runClip !== walkClip && runClip !== idleClip;
 
-      sm.add({ name: 'Idle', clip: idleClip, loop: 'repeat' });
-      const speed = (id: EntityId): number => {
-        const v = w.getComponent(id, VelocityC);
-        return v ? Math.hypot(v.linear[0], v.linear[1], v.linear[2]) : 0;
-      };
+      sm.addState({ name: 'Idle', clipName: idleClip.name, speed: 1, loop: true });
       if (haveWalk) {
-        sm.add({ name: 'Walk', clip: walkClip, loop: 'repeat' });
-        sm.on({
-          from: 'Idle', to: 'Walk',
-          guard: (_world, eid) => speed(eid) > 0.1,
+        sm.addState({ name: 'Walk', clipName: walkClip.name, speed: 1, loop: true });
+        sm.addTransition({
+          from: 'Idle', to: 'Walk', duration: 0, exitTime: 0,
+          conditions: [{ parameter: 'speed', operator: '>', value: 0.1 }],
         });
-        sm.on({
-          from: 'Walk', to: 'Idle',
-          guard: (_world, eid) => speed(eid) < 0.05,
+        sm.addTransition({
+          from: 'Walk', to: 'Idle', duration: 0, exitTime: 0,
+          conditions: [{ parameter: 'speed', operator: '<', value: 0.05 }],
         });
       }
       if (haveRun) {
-        sm.add({ name: 'Run', clip: runClip, loop: 'repeat' });
-        sm.on({
-          from: 'Walk', to: 'Run',
-          guard: (_world, eid) => speed(eid) > 2.0,
-          duration: 0.15,
+        sm.addState({ name: 'Run', clipName: runClip.name, speed: 1, loop: true });
+        sm.addTransition({
+          from: 'Walk', to: 'Run', duration: 0.15, exitTime: 0,
+          conditions: [{ parameter: 'speed', operator: '>', value: 2.0 }],
         });
-        sm.on({
-          from: 'Run', to: 'Walk',
-          guard: (_world, eid) => speed(eid) < 1.5,
-          duration: 0.15,
+        sm.addTransition({
+          from: 'Run', to: 'Walk', duration: 0.15, exitTime: 0,
+          conditions: [{ parameter: 'speed', operator: '<', value: 1.5 }],
         });
       }
 
-      // 初始 state 选 Idle (如果 idleClip 存在, 否则 clips[0])
-      sm.enter('Idle');
+      // 初始 state 选 Idle
+      sm.changeState('Idle', 0);
       // 同步 AnimState.clip 给 UI
-      animState.clip = sm.current ? sm.current.name : null;
+      animState.clip = sm.getCurrentState()?.clipName ?? null;
       animState.stateMachine = sm;
       w.setComponent(rootEntityId, AnimStateC, animState);
       clipEntityIds.push(rootEntityId);

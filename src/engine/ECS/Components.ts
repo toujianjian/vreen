@@ -67,16 +67,19 @@ export const SkinnedMeshRefC = new ComponentType<SkinnedMeshRef>('SkinnedMeshRef
  *  Phase 2 之后:AnimStateSystem 每帧�?stateMachine.tick(),状态机�? *  guards 读其他组�?(Velocity / PlayerInput) 来决�?transition�? *
  *  ⚠️ 这是�?POJO 组件:持有 AnimationStateMachine 引用(内含 mixer)�? *  不进 .vreen 序列化。世界反序列化后会丢 state machine 引用,需�? *  重新 setComponent(AnimStateC, new AnimState()) + 重新构�?SM�?*/
 export class AnimState {
-  /** 当前 state �?(�?state machine 同步过来,只读). */
+  /** 当前 state 名(从 state machine 同步过来,只读). */
   clip: string | null = null;
-  /** 播放速率 1.0 = 原�?写回 SM 中所�?action.timeScale�?*/
+  /** 播放速率 1.0 = 原速。 */
   speed: number = 1;
-  /** 注册的全部可�?clip。state machine 不强制使用它(可自�?add())�?   *  �?SceneContents 加载完模型后会把 clips 塞进�?+ 默认构�?SM�?*/
+  /** 注册的全部可用 clip。state machine 不强制使用它(可自己 addState())。
+   *  由 SceneContents 加载完模型后把 clips 塞进来 + 默认构建 SM。 */
   clips: Map<string, AnimationClip> = new Map();
-  /** 真正驱动状态切换的有限状态机。null = �?entity 不参与动画状态机�?*/
+  /** 真正驱动状态切换的有限状态机。null = 该 entity 不参与动画状态机。 */
   stateMachine: AnimationStateMachine | null = null;
+  /** 关联的 AnimationMixer,供 AnimStateSystem 在状态切换时播放 clip。 */
+  mixer: AnimationMixer | null = null;
 
-  /** �?AnimationClip 加入可选集�?*/
+  /** 将 AnimationClip 加入可选集合。 */
   registerClip(clip: AnimationClip): void {
     this.clips.set(clip.name, clip);
   }

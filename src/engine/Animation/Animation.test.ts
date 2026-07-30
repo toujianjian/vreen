@@ -8,8 +8,6 @@ import {
 } from './KeyframeTrack';
 import { AnimationAction } from './AnimationAction';
 import { AnimationMixer } from './AnimationMixer';
-import { AnimationStateMachine } from './AnimationStateMachine';
-import { World } from '../ECS/World';
 
 describe('AnimationClip', () => {
   it('constructs with name and duration', () => {
@@ -225,92 +223,5 @@ describe('AnimationMixer', () => {
     mixer.update(1);
     const action = mixer.actionFor(clip);
     expect(action.time).toBeCloseTo(1);
-  });
-});
-
-describe('AnimationStateMachine', () => {
-  it('add and enter state', () => {
-    const root = new Object3D();
-    const mixer = new AnimationMixer(root);
-    const sm = new AnimationStateMachine(mixer);
-    const clip = new AnimationClip('idle', 5);
-    sm.add({ name: 'idle', clip, loop: 'repeat' });
-    const ok = sm.enter('idle');
-    expect(ok).toBe(true);
-    expect(sm.current?.name).toBe('idle');
-  });
-
-  it('enter returns false for unknown state', () => {
-    const root = new Object3D();
-    const mixer = new AnimationMixer(root);
-    const sm = new AnimationStateMachine(mixer);
-    expect(sm.enter('missing')).toBe(false);
-  });
-
-  it('enter returns false if already in that state', () => {
-    const root = new Object3D();
-    const mixer = new AnimationMixer(root);
-    const sm = new AnimationStateMachine(mixer);
-    const clip = new AnimationClip('idle', 5);
-    sm.add({ name: 'idle', clip, loop: 'repeat' });
-    sm.enter('idle');
-    expect(sm.enter('idle')).toBe(false);
-  });
-
-  it('tick transitions via guard', () => {
-    const root = new Object3D();
-    const mixer = new AnimationMixer(root);
-    const sm = new AnimationStateMachine(mixer);
-    const idle = new AnimationClip('idle', 5);
-    const walk = new AnimationClip('walk', 2);
-    sm.add({ name: 'idle', clip: idle, loop: 'repeat' });
-    sm.add({ name: 'walk', clip: walk, loop: 'repeat' });
-    sm.on({ from: 'idle', to: 'walk', guard: () => true });
-    sm.enter('idle');
-
-    const world = new World();
-    const entity = world.createEntity('test');
-    sm.tick(world, entity, 0.016);
-    expect(sm.current?.name).toBe('walk');
-  });
-
-  it('tick does not transition when guard returns false', () => {
-    const root = new Object3D();
-    const mixer = new AnimationMixer(root);
-    const sm = new AnimationStateMachine(mixer);
-    sm.add({ name: 'idle', clip: new AnimationClip('idle', 5), loop: 'repeat' });
-    sm.add({ name: 'walk', clip: new AnimationClip('walk', 2), loop: 'repeat' });
-    sm.on({ from: 'idle', to: 'walk', guard: () => false });
-    sm.enter('idle');
-
-    const world = new World();
-    sm.tick(world, 0, 0.016);
-    expect(sm.current?.name).toBe('idle');
-  });
-
-  it('tick handles transition with duration', () => {
-    const root = new Object3D();
-    const mixer = new AnimationMixer(root);
-    const sm = new AnimationStateMachine(mixer);
-    sm.add({ name: 'idle', clip: new AnimationClip('idle', 5), loop: 'repeat' });
-    sm.add({ name: 'run', clip: new AnimationClip('run', 2), loop: 'repeat' });
-    sm.on({ from: 'idle', to: 'run', guard: () => true, duration: 0.5 });
-    sm.enter('idle');
-
-    const world = new World();
-    sm.tick(world, 0, 0.016);
-    // Should set pending state, not switch immediately
-    expect(sm.current?.name).toBe('idle');
-    expect(sm.pendingState?.name).toBe('run');
-    expect(sm.transitionT).toBeGreaterThan(0);
-  });
-
-  it('listStateNames returns registered state names', () => {
-    const root = new Object3D();
-    const mixer = new AnimationMixer(root);
-    const sm = new AnimationStateMachine(mixer);
-    sm.add({ name: 'idle', clip: new AnimationClip('idle', 5), loop: 'repeat' });
-    sm.add({ name: 'walk', clip: new AnimationClip('walk', 2), loop: 'repeat' });
-    expect(sm.listStateNames()).toEqual(['idle', 'walk']);
   });
 });

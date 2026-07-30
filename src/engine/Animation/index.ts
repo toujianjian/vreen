@@ -4,7 +4,16 @@ export { KeyframeTrack, NumberKeyframeTrack, VectorKeyframeTrack, QuaternionKeyf
 export { AnimationClip, type AnimationEvent } from './AnimationClip';
 export { AnimationAction, type LoopMode, type AnimationEventCallback } from './AnimationAction';
 export { AnimationMixer } from './AnimationMixer';
-export { AnimationStateMachine, type AnimMachineState, type AnimTransition } from './AnimationStateMachine';
+export {
+  AnimationStateMachine,
+  type AnimState,
+  type AnimTransition,
+  type TransitionCondition,
+  type BlendTree,
+  type BlendNode,
+  type AnimStateMachineGraph,
+} from './AnimationStateMachine';
+export { IKSystem, type IKChainConfig, type IKConstraint } from './IKSystem';
 export { BlendSpace1D, type BlendSpaceSample } from './BlendSpace1D';
 export { buildHumanoid, type HumanoidBundle } from './Humanoid';
 // Animation Layer subsystem (masks, additive blend, layering, sync).

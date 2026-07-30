@@ -66,18 +66,37 @@ export class AnimationTickSystem extends System {
  *   再让 AnimationTickSystem 推进 mixer)。
  *
  *  每个 entity 的 AnimState 可选地持一个 stateMachine;有就跑
- *  stateMachine.tick(world, id, dt),并把 current state 名写回
- *  AnimState.clip 供 UI / Inspector 读。 */
+ *  stateMachine.update(dt)。系统会从 Velocity 读取速度写入 'speed'
+ *  参数,供条件转换使用。状态切换时自动在 mixer 上播放新 clip。 */
 export class AnimStateSystem extends System {
   constructor() { super('AnimStateSystem', 150); }
   override update(world: World, dt: number): void {
     world.queryWith(AnimStateC, (id, state) => {
       if (!state.stateMachine) return;
-      // 让 state machine 自己评估 guards + 推进过渡
-      state.stateMachine.tick(world, id, dt);
-      // 同步回 AnimState.clip (只读快照,UI 用)
-      const cur = state.stateMachine.current;
-      state.clip = cur ? cur.name : state.clip;
+      // 从 Velocity 组件写入 speed 参数(约定:locomotion 用 'speed')
+      const vel = world.getComponent(id, VelocityC);
+      if (vel) {
+        const speed = Math.hypot(vel.linear[0], vel.linear[1], vel.linear[2]);
+        state.stateMachine.setParameter('speed', speed);
+      }
+      // 记录切换前的 clip 名,用于检测状态变化
+      const prevClip = state.clip;
+      // 推进状态机
+      state.stateMachine.update(dt);
+      // 同步当前 clip 名 + 在 mixer 上播放
+      const cur = state.stateMachine.getCurrentState();
+      const newClip = cur ? cur.clipName : null;
+      if (newClip !== prevClip && newClip && cur && state.mixer) {
+        const clip = state.clips.get(newClip);
+        if (clip) {
+          state.mixer.stopAll();
+          state.mixer.play(clip, {
+            loop: cur.loop ? 'repeat' : 'once',
+            timeScale: cur.speed,
+          });
+        }
+      }
+      state.clip = newClip;
     });
   }
 }
