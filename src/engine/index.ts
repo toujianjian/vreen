@@ -45,6 +45,8 @@ export {
   IKHumanoid,
   // IKSystem (Object3D-based, higher-level)
   IKSystem,
+  // ProceduralAnimation — 程序化动画系统 (步态生成/头部追踪/二次运动/呼吸/待机摇摆)
+  ProceduralAnimation,
   type IKConstraint as IKConstraintBase,
   // ASM types — renamed to avoid conflict with ECS AnimState class
   type AnimState as AnimStateNode,
@@ -63,6 +65,9 @@ export {
   type IKSolverOptions,
   type Side,
   type HumanoidRestPose,
+  type ProceduralNodeType,
+  type ProceduralNode,
+  type ProceduralAnimationStats,
 } from './Animation';
 export * from './ECS';
 export * from './Physics';

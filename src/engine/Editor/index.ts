@@ -16,7 +16,9 @@ export {
   TransformGizmo,
   type GizmoMode,
   type GizmoAxis,
-  type GizmoMeshData,
+  type GizmoColor,
+  type GizmoDragStart,
+  type GizmoRenderData,
 } from './TransformGizmo';
 export {
   UndoRedoSystem,

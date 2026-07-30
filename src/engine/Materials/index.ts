@@ -94,4 +94,14 @@ export {
   shaderCompiler,
   type CompileStatus,
 } from './ShaderCompiler';
+// 着色器变体系统(关键字组合 + 变体缓存 + LRU 驱逐)。
+export {
+  ShaderVariant,
+  type ShaderKeyword,
+  type ShaderVariantEntry,
+  type ShaderVariantCacheStats,
+  type ShaderVariantOptions,
+  type ShaderVariantCompiler,
+  type VariantQuery,
+} from './ShaderVariant';
 

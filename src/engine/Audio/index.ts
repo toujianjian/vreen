@@ -25,3 +25,10 @@ export {
   type SpatialDistanceModel,
   type HRTFResult,
 } from './SpatialAudio';
+// AudioEffects — 离线音频效果链(纯 DSP,reverb/echo/chorus/distortion/lowpass/highpass/compressor/flanger)。
+export {
+  AudioEffects,
+  type AudioEffect,
+  type AudioEffectType,
+  type AudioEffectStats,
+} from './AudioEffects';
