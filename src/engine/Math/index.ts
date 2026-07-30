@@ -23,6 +23,10 @@ export { Line3 } from './Line3';
 export { Triangle } from './Triangle';
 export { Frustum } from './Frustum';
 
+// 球/柱坐标
+export { Spherical } from './Spherical';
+export { Cylindrical } from './Cylindrical';
+
 // 颜色
 export { Color, type HSL } from './Color';
 

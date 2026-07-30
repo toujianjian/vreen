@@ -10,6 +10,9 @@ export * from './Core';
 export * from './Cameras';
 export * from './Controls';
 export * from './Lights';
+// 显式重导出 LightProbe 类,解决 ./Lights (class) 与 ./Renderer (interface)
+// 之间的命名冲突。显式 re-export 优先于 `export *`。
+export { LightProbe, SphericalHarmonics3, AmbientLightProbe, HemisphereLightProbe } from './Lights';
 export * from './Materials';
 export * from './Geometries';
 export * from './Loaders';
@@ -175,3 +178,44 @@ export * from './Pipeline';
 // Gameplay — 游戏玩法系统 (DialogueSystem 对话 + DialogueTree 对话树 + DialogueParticipant 参与者 + QuestSystem 任务 + InventorySystem 物品栏)。
 // 与 Events/Scripting 互补,提供 RPG/NPC 玩法层。
 export * from './Gameplay';
+// SurfaceData — 表面数据系统 (SurfaceTag 标签 + SurfacePoint 采样点 + Provider 注册表 +
+// SurfaceDataSystem 查询 + TerrainSurfaceProvider 地形适配)。参考 o3de Gems/SurfaceData。
+export * from './SurfaceData';
+// Shapes — 形状组件 (Box/Sphere/Capsule/Cylinder/Disk/Quad/Tube/Compound),供碰撞拾取、
+// SurfaceData 采样、ECS 触发器复用。参考 o3de Gems/LmbrCentral/Shape。
+// 注意:./Shapes 与 ./Geometries 都导出 `Shape` (前者是抽象形状基类,后者是路径几何)。
+// 显式 re-export Geometries.Shape 优先于 export *,避免歧义导致根 barrel 的 Shape 静默消失
+// (与上方 LightProbe 处理 ./Lights ↔ ./Renderer 冲突的写法一致)。
+export * from './Shapes';
+export { Shape } from './Geometries';
+// Curves — 曲线/路径系统 (Curve 抽象基类 + CurvePath 集合 + CatmullRom/CubicBezier/QuadraticBezier/
+// LineCurve3/EllipseCurve/SplineCurve 具体曲线 + Path 2D 路径构建器 + Shape 带 holes 形状 +
+// ShapeUtils 三角剖分 + Earcut)。参考 three.js src/extras/。
+// 注意:./Curves 也导出 `Shape` (2D 路径形状),与 ./Geometries `Shape` 同名。
+// 此处显式列出 Curves 的全部导出(除 Shape 外),避免与上方 Geometries.Shape 冲突。
+export {
+  Curve,
+  CurvePath,
+  LineCurve3,
+  QuadraticBezierCurve3,
+  CubicBezierCurve3,
+  CatmullRomCurve3,
+  LineCurve,
+  QuadraticBezierCurve,
+  CubicBezierCurve,
+  SplineCurve,
+  EllipseCurve,
+  Path,
+  ShapeUtils,
+  Earcut,
+  CatmullRom,
+  QuadraticBezier,
+  CubicBezier,
+  type CurvePoint,
+  type FrenetFrames,
+  type CatmullRomCurveType,
+  type ExtractPointsResult,
+} from './Curves';
+// Animation — Root Motion 提取器 (参考 o3de EMotionFX RepositioningLayerPass)。
+// 从根骨节提取相对位移/旋转增量,应用到角色世界变换而非骨节,修复滑步。
+export { RootMotionExtractor, DEFAULT_ROOT_MOTION_CONFIG, type RootMotionConfig } from './Animation';

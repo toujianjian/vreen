@@ -19,10 +19,11 @@
    ┌───────────┬───────────┬─────────────┼─────────────┬───────────┬───────────┐
    ▼           ▼           ▼             ▼             ▼           ▼           ▼
  Math        Core       Cameras       Lights       Materials    Geometries   Loaders
- Vector·Mtx  Scene·Mesh  Persp·Ortho   7 light     Standard·PBR  15 prim     GLB·FBX·
+ Vector·Mtx  Scene·Mesh  Persp·Ortho   7 light     Standard·PBR  18 prim     GLB·FBX·
  Quat·Box    Texture·    Cinematic     types +     Toon·Fur·      + Shape    OBJ·STL·
- Frustum     Skeleton    CameraRig     shadows      SSS·Water                PLY·HDR
+ Frustum     Skeleton    CameraRig     shadows      SSS·Water  Convex·Decal  PLY·HDR
              Morph                                  + ShaderChunks
+ Spher·Cyl                              LightProbe
    │           │           │             │             │           │           │
    ▼           ▼           ▼             ▼             ▼           ▼           ▼
  Renderer   Helpers     Controls      ECS           Animation    Audio        Particles
@@ -32,6 +33,7 @@
  PathTracer Renderer    VRController  Prefab·       CCD)·        Analyzer     Curve·Trail
  PostProcess             QueryBuilder  Physics       Procedural                SubEmitters
                          Broadphase    Systems       Animation
+           PolarGrid·                              RootMotion
    │           │           │             │             │           │           │
    ▼           ▼           ▼             ▼             ▼           ▼           ▼
  Physics    Scripting    Events         AI            Environment Timeline     Voxel
@@ -58,6 +60,14 @@
  Streaming·      LagComp·         Touch·           Inventory       Splat·Layer    City·
                  StateSync        Gamepad·                                        Dungeon·
                                   Action·Map                                       Tree·Character
+   │
+   ▼
+Curves           SurfaceData             Shapes
+Curve·CurvePath  SurfaceTag·Point        Shape(abs)·Box·Sphere
+CatmullRom·      SurfaceDataProvider     Capsule·Cylinder·Disk
+Bezier·Line·     SurfaceDataSystem       Quad·Tube·Compound
+Ellipse·Spline·  TerrainSurfaceProvider
+Path·Shape·ShapeUtils
 ```
 
 The barrel re-exports **every** module's public surface; users import from a
@@ -73,24 +83,24 @@ import { Scene, PerspectiveCamera, WebGL2Renderer, BoxGeometry, StandardMaterial
 
 | Module | Path | Purpose | README |
 |--------|------|---------|--------|
-| Math | `Math/` | Vector · Matrix · Quaternion · Color · Frustum primitives | [Math/README.md](./Math/README.md) |
+| Math | `Math/` | Vector · Matrix · Quaternion · Color · Frustum · Spherical · Cylindrical primitives | [Math/README.md](./Math/README.md) |
 | Core | `Core/` | Scene graph · Object3D · Mesh · Textures · Morph · Fog · Raycaster | [Core/README.md](./Core/README.md) |
 | Cameras | `Cameras/` | PerspectiveCamera · OrthographicCamera · CinematicCamera · CameraRig | [Cameras/README.md](./Cameras/README.md) |
 | Controls | `Controls/` | Orbit · Fly · PointerLock · Map · CharacterController · VRController | [Controls/README.md](./Controls/README.md) |
-| Lights | `Lights/` | Ambient · Directional · Point · Spot · Hemisphere · RectArea + shadows | [Lights/README.md](./Lights/README.md) |
+| Lights | `Lights/` | Ambient · Directional · Point · Spot · Hemisphere · RectArea · LightProbe · AmbientLightProbe · HemisphereLightProbe · SphericalHarmonics3 + shadows | [Lights/README.md](./Lights/README.md) |
 | Materials | `Materials/` | Standard · Physical · Phong · Toon · Fur · SSS · Water · ShaderChunks | [Materials/README.md](./Materials/README.md) |
-| Geometries | `Geometries/` | 15 procedural primitives + Shape + Extrude + Wireframe + Edges | [Geometries/README.md](./Geometries/README.md) |
+| Geometries | `Geometries/` | 18 procedural primitives + Shape + Extrude + Wireframe + Edges + ConvexGeometry + ParametricGeometry + DecalGeometry | [Geometries/README.md](./Geometries/README.md) |
 | Loaders | `Loaders/` | GLB · OBJ · FBX · STL · PLY · TGA · HDR · KTX2 · EXR + 4 exporters | [Loaders/README.md](./Loaders/README.md) |
 | Audio | `Audio/` | Listener · Positional · Effects · Analyzer · Procedural · Spatial | [Audio/README.md](./Audio/README.md) |
 | Renderer | `Renderer/` | WebGL2 · Deferred · Forward+ · PathTracer · PostProcess · GI · RT | [Renderer/README.md](./Renderer/README.md) |
-| Helpers | `Helpers/` | Grid · Axes · Box · Arrow · Camera · Line · Debug · PhysicsDebug | [Helpers/README.md](./Helpers/README.md) |
+| Helpers | `Helpers/` | Grid · Axes · Box · Arrow · Camera · Line · Debug · PhysicsDebug · PolarGridHelper · Box3Helper · PlaneHelper | [Helpers/README.md](./Helpers/README.md) |
 | Terrain | `Terrain/` | TerrainGeometry · Heightmap · Splat · Layer · Erosion · Editor | [Terrain/README.md](./Terrain/README.md) |
 | Acceleration | `Acceleration/` | BVH · BVHBuilder (SAH) · MeshBVH (Raycaster acceleration) | [Acceleration/README.md](./Acceleration/README.md) |
 | Assets | `Assets/` | AssetCache (LRU) · Registry (refcount) · Loader · Bundle · Streaming | [Assets/README.md](./Assets/README.md) |
 | Serialization | `Serialization/` | Registry · Geometry · Material · Scene ↔ JSON round-trip | [Serialization/README.md](./Serialization/README.md) |
 | SaveSystem | `SaveSystem/` | Multi-slot saves · Auto-save · LocalStorage adapter | [SaveSystem/README.md](./SaveSystem/README.md) |
 | SceneManager | `SceneManager/` | Multi-scene register/switch · Transition · Streaming | [SceneManager/README.md](./SceneManager/README.md) |
-| Animation | `Animation/` | Clip · Mixer · StateMachine · BlendSpace · Layer · IK · Procedural | [Animation/README.md](./Animation/README.md) |
+| Animation | `Animation/` | Clip · Mixer · StateMachine · BlendSpace · Layer · IK · Procedural · RootMotion | [Animation/README.md](./Animation/README.md) |
 | ECS | `ECS/` | World · ComponentType · Systems · QueryBuilder · Broadphase · Prefab | [ECS/README.md](./ECS/README.md) |
 | Physics | `Physics/` | Rigid · Cloth · Fluid · Buoyancy · Vehicle · Flight · Constraints | [Physics/README.md](./Physics/README.md) |
 | Events | `Events/` | EventBus · EventQueue · typed GameEvent hierarchy | [Events/README.md](./Events/README.md) |
@@ -107,6 +117,9 @@ import { Scene, PerspectiveCamera, WebGL2Renderer, BoxGeometry, StandardMaterial
 | PCG | `PCG/` | Noise · Building · City · Dungeon · Road · Tree · Character | [PCG/README.md](./PCG/README.md) |
 | Pipeline | `Pipeline/` | AssetPipeline · TextureProcessor · GeometryProcessor · Import | [Pipeline/README.md](./Pipeline/README.md) |
 | Gameplay | `Gameplay/` | Dialogue · Quest · Inventory · DialogueParticipant | [Gameplay/README.md](./Gameplay/README.md) |
+| Curves | `Curves/` | Curve · CurvePath · CatmullRomCurve3 · CubicBezierCurve3 · QuadraticBezierCurve3 · LineCurve3 · EllipseCurve · SplineCurve · Path · Shape · ShapeUtils | [Curves/README.md](./Curves/README.md) |
+| SurfaceData | `SurfaceData/` | SurfaceTag · SurfacePoint · SurfaceDataProvider · SurfaceDataSystem · TerrainSurfaceProvider | — |
+| Shapes | `Shapes/` | Shape (abstract) · BoxShape · SphereShape · CapsuleShape · CylinderShape · DiskShape · QuadShape · TubeShape · CompoundShape | — |
 
 ---
 

@@ -7,5 +7,8 @@ export { BoxHelper, buildBoxGeometry } from './BoxHelper';
 export { CameraHelper, buildCameraHelperGeometry } from './CameraHelper';
 export { ArrowHelper, buildArrowGeometry, fillArrowVertices } from './ArrowHelper';
 export { GridHelper3D, buildGrid3DGeometry } from './GridHelper3D';
+export { PolarGridHelper, buildPolarGridGeometry } from './PolarGridHelper';
+export { Box3Helper, buildBox3Geometry } from './Box3Helper';
+export { PlaneHelper, buildPlaneHelperGeometry } from './PlaneHelper';
 export { getLineProgram, getVertexColorLineProgram } from './lineShaders';
 export { DebugRenderer } from './DebugRenderer';

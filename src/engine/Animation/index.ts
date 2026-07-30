@@ -23,6 +23,11 @@ export {
   type ProceduralAnimationStats,
 } from './ProceduralAnimation';
 export { BlendSpace1D, type BlendSpaceSample } from './BlendSpace1D';
+// Root motion / motion extraction (adapted from o3de EMotionFX RepositioningLayerPass).
+// Extracts the root bone's per-frame delta from a clip and redirects it to the
+// actor's world transform so in-place walk/run clips drive the character forward.
+export { RootMotionExtractor, DEFAULT_ROOT_MOTION_CONFIG } from './RootMotion';
+export type { RootMotionConfig } from './RootMotion';
 export { buildHumanoid, type HumanoidBundle } from './Humanoid';
 // Animation Layer subsystem (masks, additive blend, layering, sync).
 export { BoneMask } from './BoneMask';

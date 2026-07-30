@@ -14,6 +14,9 @@ export { TorusKnotGeometry } from './TorusKnotGeometry';
 export { LatheGeometry } from './LatheGeometry';
 export { WireframeGeometry } from './WireframeGeometry';
 export { EdgesGeometry } from './EdgesGeometry';
+export { ConvexGeometry } from './ConvexGeometry';
+export { ParametricGeometry, type ParametricFunction } from './ParametricGeometry';
+export { DecalGeometry } from './DecalGeometry';
 export { Shape } from './Shape';
 export { ExtrudeGeometry, type ExtrudeOptions } from './ExtrudeGeometry';
 // InstancedGeometry — 实例化几何体 (per-instance matrix + color + 自定义属性)。
