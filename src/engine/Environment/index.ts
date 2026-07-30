@@ -68,6 +68,17 @@ export {
 export {
   WaterSimulation,
 } from './WaterSimulation';
+// FFTOcean — FFT 海洋渲染系统 (Phillips 频谱 + IFFT + 泡沫 + 反射/折射数据)。
+// 数据/计算层,产出 displacementMap / normalMap / foamMap 与着色器 uniform,
+// 由 renderer / 水面 shader 消费。与 WaterSimulation (波动方程 ripples) 互补:
+// FFTOcean 基于统计频谱,适合大范围开阔海域。
+export {
+  FFTOcean,
+  type OceanRGB,
+  type FFTOceanOptions,
+  type FFTOceanUniforms,
+  type FFTOceanStats,
+} from './FFTOcean';
 // VolumetricClouds — 体积云渲染系统(噪声生成 + 光线步进 + 照明)。
 // 数据/计算层,产出密度场与着色器 uniform,由 renderer / 天空盒 shader 消费。
 export {

@@ -14,6 +14,8 @@
 //   * BehaviorTree      — 行为树主控(tick/interrupt/reset)
 //   * CrowdSystem       — 人群系统 (大规模代理调度 + 避障 + NavMesh 寻路)
 //   * SpatialGrid       — 2D XZ 空间网格 (邻域查询加速,供 CrowdSystem 使用)
+//   * PerceptionSystem  — AI 感知系统 (视觉/听觉/触觉/嗅觉 + 记忆)
+//   * MLInterface       — 机器学习接口 (神经网络/决策树/SVM/KNN + 训练/推理)
 
 export { NavMesh, type NavTriangle, type NavEdge, type NavMeshJSON } from './NavMesh';
 // NavMeshBuilder — Recast 风格导航网格构建器 (体素化 → 可走标记 → 侵蚀 → 区域 → 轮廓 → 多边形网格)。
@@ -59,3 +61,27 @@ export {
   type CrowdSystemOptions,
 } from './CrowdSystem';
 export { SpatialGrid } from './SpatialGrid';
+// PerceptionSystem — AI 感知系统 (视觉/听觉/触觉/嗅觉 + 记忆)。
+// 与 BehaviorTree 互补:PerceptionSystem 提供目标感知,行为树读取后决策。
+export {
+  PerceptionSystem,
+  type SensorType,
+  type Sensor,
+  type PerceptionEvent,
+  type PerceptionTarget,
+  type PerceptionStats,
+  type OcclusionTest,
+} from './PerceptionSystem';
+// MLInterface — 机器学习接口 (神经网络/决策树/SVM/KNN + 训练/推理)。
+// 与 PerceptionSystem 互补:感知系统提供输入特征,ML 模型输出决策。
+export {
+  MLInterface,
+  type MLModel,
+  type MLModelConfig,
+  type MLModelJSON,
+  type MLModelType,
+  type ActivationType,
+  type TrainingSample,
+  type TrainingProgress,
+  type MLStats,
+} from './MLInterface';
