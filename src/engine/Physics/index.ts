@@ -17,6 +17,14 @@ export {
   applyImpulse,
 } from './Constraint';
 
+// 物理材质(摩擦/弹性/密度/断裂/塑性/自定义属性,与渲染材质解耦)
+export {
+  PhysicsMaterial,
+  type PhysicsCombineMode,
+  type PhysicsMaterialOptions,
+  type PhysicsMaterialStats,
+} from './PhysicsMaterial';
+
 // 各类约束
 export { BallJointConstraint } from './BallJointConstraint';
 export { HingeJointConstraint } from './HingeJointConstraint';

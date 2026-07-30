@@ -12,3 +12,12 @@ export { HeightmapGenerator } from './HeightmapGenerator';
 export { TerrainLayer, type TerrainLayerOptions } from './TerrainLayer';
 export { TerrainSplat } from './TerrainSplat';
 export { TerrainErosion, type ErodeOptions, type ErosionStats } from './TerrainErosion';
+// TerrainEditor — 交互式地形笔刷编辑器 (raise/lower/smooth/flatten/paint/noise/erode + undo/redo)。
+// 与 TerrainGeometry 解耦:通过鸭子类型接受任何含 heightmap/width/height/segments 的对象。
+export {
+  TerrainEditor,
+  type BrushShape,
+  type TerrainTool,
+  type TerrainEdit,
+  type TerrainEditorStats,
+} from './TerrainEditor';

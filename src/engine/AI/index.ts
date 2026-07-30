@@ -16,6 +16,16 @@
 //   * SpatialGrid       — 2D XZ 空间网格 (邻域查询加速,供 CrowdSystem 使用)
 
 export { NavMesh, type NavTriangle, type NavEdge, type NavMeshJSON } from './NavMesh';
+// NavMeshBuilder — Recast 风格导航网格构建器 (体素化 → 可走标记 → 侵蚀 → 区域 → 轮廓 → 多边形网格)。
+// 与 NavMesh 互补:NavMesh 持有网格数据;NavMeshBuilder 负责从任意几何体生成 NavMesh。
+export {
+  NavMeshBuilder,
+  type VoxelSpan,
+  type Heightfield,
+  type Contour,
+  type PolyMesh,
+  type NavMeshBuildStats,
+} from './NavMeshBuilder';
 export { PathFinder } from './PathFinder';
 export { SteeringBehavior, type Obstacle } from './SteeringBehavior';
 export { Agent, type AgentOptions } from './Agent';

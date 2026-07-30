@@ -68,6 +68,15 @@ export {
 } from './ReflectionProbeManager';
 // CPU 简化路径追踪器(参考/验证用,渐进式累积)。
 export { PathTracer, type PathTracerOptions } from './PathTracer';
+// 实时光线追踪渲染器(CPU 路径追踪 + BVH 加速 + 蒙特卡洛采样 + 分块 + 降噪)。
+// 与 PathTracer 互补:本类面向准实时渲染,引入 MeshBVH 加速 / 环境贴图 / 分块 / 降噪。
+export {
+  RayTracingRenderer,
+  type RayTracingRendererOptions,
+  type RayTracingStats,
+  type RayTracingHit,
+  type EnvironmentMap,
+} from './RayTracingRenderer';
 // 全局光照系统(光探针 SH2 + VXGI 简化版,补充 PBR 间接光)。
 export {
   GlobalIllumination,
