@@ -537,5 +537,26 @@
     "info": "INFO",
     "warn": "AVISO",
     "error": "ERROR"
+  },
+  "assetBrowser": {
+    "title": "Explorador de Assets",
+    "import": "Importar",
+    "gridView": "Vista de Cuadrícula",
+    "listView": "Vista de Lista",
+    "folder": "Carpeta",
+    "mesh": "Malla",
+    "texture": "Textura",
+    "audio": "Audio",
+    "animation": "Animación",
+    "material": "Material",
+    "scene": "Escena",
+    "thumbnail": "Miniatura",
+    "dragToScene": "Arrastrar a Escena",
+    "file": "Archivo",
+    "search": "buscar assets...",
+    "empty": "Sin assets",
+    "root": "Raíz",
+    "rename": "Renombrar",
+    "delete": "Eliminar"
   }
 }

@@ -53,6 +53,13 @@ export {
   type DeferredRendererStats,
   type DeferredLight,
 } from './DeferredRenderer';
+// Forward+ 渲染器(前向渲染 + 屏幕分块光源剔除,支持大量点光源)。
+export {
+  ForwardPlusRenderer,
+  type ForwardPlusRendererOptions,
+  type ForwardPlusStats,
+  type ForwardPlusLight,
+} from './ForwardPlusRenderer';
 // 反射探针 + 管理器(局部 IBL 立方体贴图捕获)。
 export { ReflectionProbe, type ReflectionProbeOptions } from './ReflectionProbe';
 export {

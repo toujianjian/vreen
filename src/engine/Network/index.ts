@@ -6,6 +6,7 @@
 //   - NetworkLerp: 位置 / 旋转插值 + 预测 + 和解
 //   - NetworkSync: 同步管理器（服务器权威 + 客户端插值, 依赖传输层）
 //   - StateSync: 纯数据层状态同步 (快照插值 + 实体同步 + Delta 压缩, 不依赖传输层)
+//   - LagCompensation: 网络延迟补偿 (客户端预测 / 服务器回滚 / 命中补偿)
 
 export {
   WebSocketTransport,
@@ -36,3 +37,12 @@ export {
   type StateSyncOptions,
   type StateSyncStats,
 } from './StateSync';
+export {
+  LagCompensation,
+  createEntityState,
+  type EntityState,
+  type HistoryEntry,
+  type HitBounds,
+  type LagCompensationOptions,
+  type LagCompensationStats,
+} from './LagCompensation';

@@ -537,5 +537,26 @@
     "info": "情報",
     "warn": "警告",
     "error": "エラー"
+  },
+  "assetBrowser": {
+    "title": "アセットブラウザ",
+    "import": "インポート",
+    "gridView": "グリッドビュー",
+    "listView": "リストビュー",
+    "folder": "フォルダ",
+    "mesh": "メッシュ",
+    "texture": "テクスチャ",
+    "audio": "オーディオ",
+    "animation": "アニメーション",
+    "material": "マテリアル",
+    "scene": "シーン",
+    "thumbnail": "サムネイル",
+    "dragToScene": "シーンにドラッグ",
+    "file": "ファイル",
+    "search": "アセットを検索...",
+    "empty": "アセットなし",
+    "root": "ルート",
+    "rename": "名前変更",
+    "delete": "削除"
   }
 }

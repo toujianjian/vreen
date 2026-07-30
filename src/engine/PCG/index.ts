@@ -6,6 +6,7 @@
 //   * CityGenerator       — 程序化城市(网格街区 + 道路 + 公园)
 //   * DungeonGenerator    — 程序化地牢(房间 + 走廊 + 连接 + 门)
 //   * TreeGenerator       — 程序化树木(L-system 风格递归分支 + 叶子)
+//   * RoadGenerator       — 程序化道路(Catmull-Rom 样条 + 地形跟随 + 交叉路口)
 
 export { NoiseGenerator } from './NoiseGenerator';
 export {
@@ -42,3 +43,11 @@ export {
   type TreeBranch,
   type TreeResult,
 } from './TreeGenerator';
+export {
+  RoadGenerator,
+  type IntersectionType,
+  type RoadIntersection,
+  type TerrainSampler,
+  type RoadGeometryData,
+  type RoadStats,
+} from './RoadGenerator';

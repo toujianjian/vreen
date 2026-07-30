@@ -549,5 +549,26 @@
     "info": "INFO",
     "warn": "WARN",
     "error": "ERROR"
+  },
+  "assetBrowser": {
+    "title": "Asset Browser",
+    "import": "Import",
+    "gridView": "Grid View",
+    "listView": "List View",
+    "folder": "Folder",
+    "mesh": "Mesh",
+    "texture": "Texture",
+    "audio": "Audio",
+    "animation": "Animation",
+    "material": "Material",
+    "scene": "Scene",
+    "thumbnail": "Thumbnail",
+    "dragToScene": "Drag to Scene",
+    "file": "File",
+    "search": "search assets...",
+    "empty": "No assets",
+    "root": "Root",
+    "rename": "Rename",
+    "delete": "Delete"
   }
 }

@@ -549,5 +549,26 @@
     "info": "信息",
     "warn": "警告",
     "error": "错误"
+  },
+  "assetBrowser": {
+    "title": "资源浏览器",
+    "import": "导入",
+    "gridView": "网格视图",
+    "listView": "列表视图",
+    "folder": "文件夹",
+    "mesh": "网格",
+    "texture": "纹理",
+    "audio": "音频",
+    "animation": "动画",
+    "material": "材质",
+    "scene": "场景",
+    "thumbnail": "缩略图",
+    "dragToScene": "拖拽到场景",
+    "file": "文件",
+    "search": "搜索资源...",
+    "empty": "暂无资源",
+    "root": "根目录",
+    "rename": "重命名",
+    "delete": "删除"
   }
 }
