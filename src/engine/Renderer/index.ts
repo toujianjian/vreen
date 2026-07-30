@@ -96,4 +96,18 @@ export {
   type FogColor,
   type FroxelResolution,
 } from './VolumetricFogPass';
+// 增强版 GTAO / ContactShadows Pass(顶层,API 更完整,与 PostProcess/ 同名基础版互补)。
+// GTAOPass 接收 GBuffer 整体对象,支持 directions / samples / colorBleed / temporal / resolutionScale。
+// ContactShadowsPass 仅需 input + camera,基于亮度高度代理做接触处柔和阴影,
+// 支持 gaussian / box 两种模糊核。
+export {
+  GTAOPass,
+  type GTAOPassOptions,
+  type GTAOStats,
+} from './GTAOPass';
+export {
+  ContactShadowsPass,
+  type ContactShadowsPassOptions,
+  type ContactShadowsStats,
+} from './ContactShadowsPass';
 
