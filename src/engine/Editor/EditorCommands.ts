@@ -1,20 +1,28 @@
 // EditorCommands — 编辑器预定义命令工厂。
-// 把常见编辑操作(移动/旋转/缩放/添加/删除/属性修改)封装成 HistoryAction,
+// 把常见编辑操作(移动/旋转/缩放/添加/删除/属性修改)封装成 UndoCommand,
 // 供 UndoRedoSystem.execute() 直接消费。
 //
 // 设计:
-//   * 每个工厂方法返回 HistoryAction(不执行),由调用方决定何时 execute。
-//     execute() 内部会调用 redo() 应用副作用,因此工厂方法不再预执行。
-//   * 命令快照:创建时读取 oldValue,redo 时写入 newValue,undo 时写回 oldValue。
+//   * 每个工厂方法返回 UndoCommand(不执行),由调用方决定何时 execute。
+//     execute() 内部会调用 command.execute() 应用副作用,因此工厂方法不再预执行。
+//   * 命令快照:创建时读取 oldValue,execute 时写入 newValue,undo 时写回 oldValue。
 //   * 添加/删除命令:undo 时反向操作(添加的撤回=删除,删除的撤回=添加)。
 //   * 属性命令:通过 keyof 取对象任意属性,值的拷贝由调用方保证(对 Vector3
 //     等引用类型,调用方应传入 clone())。
 
-import type { HistoryAction } from './UndoRedoSystem';
+import type { UndoCommand } from './UndoRedoSystem';
 import type { Object3D } from '../Core/Object3D';
 import type { Scene } from '../Core/Scene';
 import { Vector3 } from '../Math/Vector3';
 import { Quaternion } from '../Math/Quaternion';
+
+/** 命令 id 自增计数器 (进程级)。 */
+let _nextCommandId = 0;
+
+/** 分配下一个命令 id。 */
+function genId(): number {
+  return ++_nextCommandId;
+}
 
 /**
  * 创建"移动对象"命令。
@@ -26,16 +34,17 @@ export function createMoveCommand(
   object: Object3D,
   oldPos: Vector3,
   newPos: Vector3,
-): HistoryAction {
+): UndoCommand {
   // 复制快照避免外部后续修改影响命令
   const oldV = oldPos.clone();
   const newV = newPos.clone();
   return {
-    name: `Move ${object.name || object.type}`,
+    id: genId(),
+    description: `Move ${object.name || object.type}`,
     undo(): void {
       object.position.copy(oldV);
     },
-    redo(): void {
+    execute(): void {
       object.position.copy(newV);
     },
   };
@@ -51,15 +60,16 @@ export function createRotateCommand(
   object: Object3D,
   oldRot: Quaternion,
   newRot: Quaternion,
-): HistoryAction {
+): UndoCommand {
   const oldQ = oldRot.clone();
   const newQ = newRot.clone();
   return {
-    name: `Rotate ${object.name || object.type}`,
+    id: genId(),
+    description: `Rotate ${object.name || object.type}`,
     undo(): void {
       object.rotation.copy(oldQ);
     },
-    redo(): void {
+    execute(): void {
       object.rotation.copy(newQ);
     },
   };
@@ -75,15 +85,16 @@ export function createScaleCommand(
   object: Object3D,
   oldScale: Vector3,
   newScale: Vector3,
-): HistoryAction {
+): UndoCommand {
   const oldV = oldScale.clone();
   const newV = newScale.clone();
   return {
-    name: `Scale ${object.name || object.type}`,
+    id: genId(),
+    description: `Scale ${object.name || object.type}`,
     undo(): void {
       object.scale.copy(oldV);
     },
-    redo(): void {
+    execute(): void {
       object.scale.copy(newV);
     },
   };
@@ -91,18 +102,19 @@ export function createScaleCommand(
 
 /**
  * 创建"添加对象到场景"命令。
- * undo 时把对象从父节点移除;redo 时重新加回。
+ * undo 时把对象从父节点移除;execute 时重新加回。
  * @param scene   目标场景(对象将被 add 到 scene)
  * @param object  要添加的对象
  */
 export function createAddCommand(
   scene: Scene,
   object: Object3D,
-): HistoryAction {
+): UndoCommand {
   // 记录原始父节点,undo 时还原(支持从其他父节点移动到 scene 的场景)
   const originalParent = object.parent;
   return {
-    name: `Add ${object.name || object.type}`,
+    id: genId(),
+    description: `Add ${object.name || object.type}`,
     undo(): void {
       // 从 scene 移除并还原原父节点(null 表示原本无父节点)
       if (object.parent === scene) {
@@ -112,7 +124,7 @@ export function createAddCommand(
         originalParent.add(object);
       }
     },
-    redo(): void {
+    execute(): void {
       scene.add(object);
     },
   };
@@ -120,7 +132,7 @@ export function createAddCommand(
 
 /**
  * 创建"从场景删除对象"命令。
- * undo 时把对象加回 scene;redo 时再次移除。
+ * undo 时把对象加回 scene;execute 时再次移除。
  * 注意:此命令假设对象当前已在 scene 中。若对象有非 scene 的父节点,
  * 删除后父节点关系丢失,undo 会把它加回 scene(而非原父节点)。
  * @param scene  目标场景
@@ -129,15 +141,16 @@ export function createAddCommand(
 export function createRemoveCommand(
   scene: Scene,
   object: Object3D,
-): HistoryAction {
+): UndoCommand {
   return {
-    name: `Remove ${object.name || object.type}`,
+    id: genId(),
+    description: `Remove ${object.name || object.type}`,
     undo(): void {
       if (object.parent !== scene) {
         scene.add(object);
       }
     },
-    redo(): void {
+    execute(): void {
       if (object.parent === scene) {
         scene.remove(object);
       }
@@ -160,13 +173,14 @@ export function createPropertyCommand<T extends Object3D, K extends keyof T>(
   property: K,
   oldValue: T[K],
   newValue: T[K],
-): HistoryAction {
+): UndoCommand {
   return {
-    name: `Set ${object.name || object.type}.${String(property)}`,
+    id: genId(),
+    description: `Set ${object.name || object.type}.${String(property)}`,
     undo(): void {
       object[property] = oldValue;
     },
-    redo(): void {
+    execute(): void {
       object[property] = newValue;
     },
   };

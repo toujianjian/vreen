@@ -22,8 +22,8 @@ export {
 } from './TransformGizmo';
 export {
   UndoRedoSystem,
-  type HistoryAction,
-  type HistoryEntryView,
+  type UndoCommand,
+  type UndoRedoStats,
 } from './UndoRedoSystem';
 export {
   createMoveCommand,

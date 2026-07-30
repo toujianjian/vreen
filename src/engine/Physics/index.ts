@@ -78,3 +78,23 @@ export {
   createPhysicsDemo,
   syncMeshesFromTransforms,
 } from './PhysicsDemo';
+
+// 碰撞检测系统 (BVH 宽相 + SAT/GJK/EPA 窄相 + 射线检测 + 接触流形)
+// 与 ECS PhysicsSystems 解耦:纯检测,不含积分/冲量响应。
+// 注意:CollisionSystem / Collider / BVHNode 与 ECS PhysicsSystems.CollisionSystem /
+// ECS PhysicsComponents.Collider / Acceleration.BVHNode 同名,这里以 Advanced*/Collision* 别名
+// re-export,避免 engine 顶层 barrel 的 export * 歧义 (与 Particles 的 AdvancedParticleEmitter 同模式)。
+// 直接从 './CollisionSystem' 仍可按原名 CollisionSystem / Collider / BVHNode 导入。
+export {
+  CollisionSystem as AdvancedCollisionSystem,
+  type Collider as CollisionCollider,
+  type ColliderType,
+  type BroadphaseType,
+  type NarrowphaseType,
+  type AABB,
+  type ContactPoint,
+  type ContactManifold,
+  type BVHNode as CollisionBVHNode,
+  type RaycastHit,
+  type CollisionStats,
+} from './CollisionSystem';

@@ -164,35 +164,35 @@ vreen/
 │   │   ├── viewer/             # 3D inspector core (see below)
 │   │   ├── three/              # Mini-canvas helpers (BackgroundScene / PresetPreview / SafeEnvironment)
 │   │   └── hud/                # Reusable HUD widgets (HudPanel / TopBar / LangSwitcher)
-│   ├── engine/                 # Self-developed WebGL2 engine (mirrored to packages/engine/src) — 34 top-level modules, 410+ source files
+│   ├── engine/                 # Self-developed WebGL2 engine (mirrored to packages/engine/src) — 34 top-level modules, 378 source files (non-test) + 236 test files
 │   │   ├── Core/               # Scene graph primitives + Sprite/Text/BitmapText/TextAtlas + texture family (Cube/Data/DataArray/Depth/Video/Canvas/Compressed) + Source + MorphTargets/MorphTargetAnimation + InstancedBufferAttribute + Fog/FogExp2 + Raycaster + DirtyFlag/SceneGraphProcessor/FrustumCuller/SceneStats + ModuleRegistry (Gem-style module registry)
 │   │   ├── Math/               # Vector2/3/4, Matrix3/4, Quaternion, Euler, Color, Box3, Sphere, Plane, Ray, Line3, Triangle, Frustum, MathUtils
 │   │   ├── Cameras/            # Perspective / Orthographic cameras + CinematicCamera (shot sequence) + CameraRig (crane/dolly/orbit/fixed)
 │   │   ├── Controls/           # Orbit / Fly / PointerLock / Map controls + CharacterController (kinematic)
 │   │   ├── Lights/             # Ambient / Directional / Point / Spot / Hemisphere / RectArea + ShadowMapManager
 │   │   ├── Geometries/         # Box / Sphere / Cylinder / Cone / Torus / Plane / Circle / Ring / Capsule / TorusKnot / Lathe / Extrude / Shape / Wireframe / Edges + InstancedGeometry
-│   │   ├── Materials/          # Standard / Physical / Basic / Phong / Normal / Shadow / Sprite materials + ShaderMaterial + ShaderChunks/ subdirectory (10 GLSL fragments + ShaderChunkRegistry) + ShaderLibrary (15 templates) + ShaderCompiler (#include + cache) + onBeforeCompile + special: Fur / Matcap / Toon / Outline / Water / Wireframe
-│   │   ├── Renderer/           # WebGL2Renderer, ShaderProgram, RenderPass, ShadowMapManager + MRTTarget / GBuffer (deferred) + DeferredRenderer alternative + ReflectionProbe / ReflectionProbeManager + GlobalIllumination (lightprobes SH2 + VXGI) + post-FX (basic: SSAO / FXAA / ToneMapping / Gamma / DOF; enhanced PostProcess/: ColorGrading / LUT / FilmGrain / Afterimage / Pixelation; advanced: AutoExposure / DOFEnhanced / GTAO / MotionBlur / SSR / SSSS / TAA / Velocity / VolumetricFog) + PathTracer
+│   │   ├── Materials/          # Standard / Physical / Basic / Phong / Normal / Shadow / Sprite materials + ShaderMaterial + ShaderChunks/ subdirectory (10 GLSL fragments + ShaderChunkRegistry) + ShaderLibrary (15 templates) + ShaderCompiler (#include + cache) + ShaderVariant (keyword variants + LRU cache) + onBeforeCompile + special: Fur / Matcap / Toon / Outline / Water / Wireframe
+│   │   ├── Renderer/           # WebGL2Renderer, ShaderProgram, RenderPass, ShadowMapManager + MRTTarget / GBuffer (deferred) + DeferredRenderer alternative + ReflectionProbe / ReflectionProbeManager + GlobalIllumination (lightprobes SH2 + VXGI) + GPUDrivenRenderer (indirect draw) + ContactShadowsPass + GTAOPass + post-FX (basic: SSAO / FXAA / ToneMapping / Gamma / DOF; enhanced PostProcess/: ColorGrading / LUT / FilmGrain / Afterimage / Pixelation; advanced: AutoExposure / DOFEnhanced / GTAO / MotionBlur / SSR / SSSS / TAA / Velocity / VolumetricFog) + PathTracer
 │   │   ├── Loaders/            # GLB / OBJ / FBX / HDR / KTX2 / STL / PLY / TGA / MTL / EXR / Draco / AssetManager + 4 exporters (OBJ / GLTF / STL / PLY) + GLTFExtensionLoader (DRACO/KTX2 + KHR/EXT extension registry)
-│   │   ├── Animation/          # Clips, Mixer, StateMachine, BlendSpace1D, Humanoid + layers / masks / additive blend + IK (FABRIK / CCD / IKHumanoid) + IKSystem (high-level scene-graph IK driver)
+│   │   ├── Animation/          # Clips, Mixer, StateMachine, BlendSpace1D, Humanoid + layers / masks / additive blend + IK (FABRIK / CCD / IKHumanoid) + IKSystem (high-level scene-graph IK driver) + ProceduralAnimation (gait/breathing/head-track/secondary motion)
 │   │   ├── ECS/                # World, ComponentType, Systems, Physics, Prefab, QueryBuilder + Constraint subsystem
-│   │   ├── Physics/            # PhysicsDemo + ConstraintSolver + Joint constraints (Ball/Hinge/Slider/Fixed/Distance) + ClothSimulation (Verlet) + FluidSimulation (SPH) + DestructionSystem + VoronoiFracture
+│   │   ├── Physics/            # PhysicsDemo + ConstraintSolver + Joint constraints (Ball/Hinge/Slider/Fixed/Distance) + ConstraintSystem (runtime constraint config + breakable) + ClothSimulation (Verlet) + FluidSimulation (SPH) + DestructionSystem + VoronoiFracture
 │   │   ├── Helpers/            # Grid / Grid3D / Axes / Box / Camera / Arrow helpers + PhysicsDebugRenderer
-│   │   ├── Audio/              # AudioListener / PositionalAudio / Audio / AudioLoader / AudioAnalyser + SpatialAudio (HRTF + distance attenuation + Doppler)
+│   │   ├── Audio/              # AudioListener / PositionalAudio / Audio / AudioLoader / AudioAnalyser + SpatialAudio (HRTF + distance attenuation + Doppler) + AudioEffects (offline DSP chain: reverb/echo/chorus/distortion/compressor)
 │   │   ├── Terrain/            # TerrainGeometry / HeightmapGenerator / TerrainSplat / TerrainLayer + TerrainErosion (thermal/hydraulic/wind)
 │   │   ├── Acceleration/       # BVH / BVHBuilder / MeshBVH
-│   │   ├── Assets/             # AssetCache (LRU) / AssetRegistry (ref-counting) / AssetLoader (async) — resource lifecycle
+│   │   ├── Assets/             # AssetCache (LRU) / AssetRegistry (ref-counting) / AssetLoader (async) — resource lifecycle + AssetBundle (pack/load) + TextureStreaming (mipmap streaming)
 │   │   ├── Serialization/      # SerializerRegistry / GeometrySerializer / MaterialSerializer / SceneSerializer — Scene/Geometry/Material ↔ JSON
 │   │   ├── Events/             # EventBus / EventQueue / GameEvent (typed pub/sub)
 │   │   ├── Scripting/          # ScriptComponent / ScriptSystem / ScriptRegistry / CoroutineSystem + VisualScriptComponent (Script Canvas-style node graph)
 │   │   ├── Particles/          # ParticleSystem2 / ParticleEmitter / ParticleModifier / ParticleCurve / TrailModule
 │   │   ├── Network/            # NetworkSync / Snapshot / NetworkTransport (WebSocket/Mock) / NetworkLerp — server-authoritative sync + StateSync (snapshot interpolation + Delta compression, pure data layer)
 │   │   ├── SaveSystem/         # SaveSystem (multi-slot + auto-save) / SaveSerializer / LocalStorageAdapter
-│   │   ├── SceneManager/       # SceneManager / SceneTransition (Fade/Crossfade/Slide/Wipe/None)
+│   │   ├── SceneManager/       # SceneManager / SceneTransition (Fade/Crossfade/Slide/Wipe/None) + SceneStreaming (chunked streaming load/unload)
 │   │   ├── Input/              # InputManager / KeyboardState / MouseState / TouchState / GamepadState / InputAction / InputMap
-│   │   ├── Tools/              # Profiler / FrameProfiler / SystemProfiler / MemoryTracker / GpuProfiler / PerformanceReport
+│   │   ├── Tools/              # Profiler / FrameProfiler / SystemProfiler / MemoryTracker / GpuProfiler / PerformanceReport + LODManager (distance/screen-space LOD + HLOD)
 │   │   ├── AI/                 # NavMesh (navigation mesh) + PathFinder (A*) + SteeringBehavior (Reynolds) + Agent + BehaviorTree + Blackboard + CrowdSystem (large-scale crowd + Reynolds separation) + SpatialGrid (2D XZ neighbourhood acceleration)
-│   │   ├── Environment/        # WeatherSystem + SkySystem (day/night) + CloudSystem + PrecipitationSystem + VegetationSystem + WaterSimulation + WaterSystem
+│   │   ├── Environment/        # WeatherSystem + SkySystem (day/night) + ProceduralSky (Preetham atmosphere) + CloudSystem + PrecipitationSystem + VegetationSystem + VegetationRenderer (instanced + wind + season) + WaterSimulation + WaterSystem
 │   │   ├── Timeline/           # TimelineClip + TimelineTrack + EventTrack + PropertyTrack + TimelineSequencer (play/pause/seek/loop/export/import)
 │   │   ├── Voxel/              # VoxelChunk 16³ + VoxelWorld (multi-chunk) + VoxelMesher (greedy meshing) + VoxelRaycaster (DDA) + VoxelPalette
 │   │   ├── Editor/             # SelectionSystem (pick/select/hover) + TransformGizmo (translate/rotate/scale) + UndoRedoSystem (with beginGroup/endGroup) + EditorCommands (Move/Rotate/Scale/Add/Remove/Property) + SnapSystem (grid/angle/scale snap)
@@ -891,7 +891,7 @@ npm run test:coverage     # coverage report
 
 ### Coverage
 
-Unit tests cover the engine foundation (3361+ tests across 219+ engine test files, 42+ modules):
+Unit tests cover the engine foundation (4626+ tests across 243 test files, 34 top-level modules):
 
 | Area | Test files |
 |------|-----------|
@@ -1034,7 +1034,7 @@ npm run electron:build
 | Scripting | ScriptComponent + CoroutineSystem + ScriptRegistry | None |
 | Export | GLTF / OBJ / STL / PLY (4 exporters) | None |
 | i18n | 5 languages (en/zh/ja/ko/es) | 2 languages (en/zh) |
-| Testing | 3361+ unit tests (219+ test files, 410+ source files, 63K+ LOC, 42+ modules) | None |
+| Testing | 4626+ unit tests (243 test files, 378 source files non-test, 130K+ LOC, 34 top-level modules) | None |
 | Visual Scripting | Blockly integration | None |
 | Package Format | .vreen (ZIP + delta diff) | None |
 
