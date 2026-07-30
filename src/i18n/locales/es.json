@@ -583,6 +583,19 @@
     "presets": "Preajustes",
     "preview": "Vista previa"
   },
+  "shaderEditor": {
+    "title": "Editor de Shaders",
+    "vertexShader": "Shader de Vértices",
+    "fragmentShader": "Shader de Fragmentos",
+    "compile": "Compilar",
+    "compileErrors": "Errores de Compilación",
+    "noErrors": "Sin Errores",
+    "uniform": "Uniform",
+    "saveShader": "Guardar Shader",
+    "loadShader": "Cargar Shader",
+    "shaderPresets": "Presets de Shader",
+    "preview": "Vista Previa"
+  },
   "levelEditor": {
     "title": "Editor de Niveles",
     "saveLevel": "Guardar Nivel",

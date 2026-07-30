@@ -583,6 +583,19 @@
     "presets": "プリセット",
     "preview": "プレビュー"
   },
+  "shaderEditor": {
+    "title": "シェーダーエディタ",
+    "vertexShader": "頂点シェーダー",
+    "fragmentShader": "フラグメントシェーダー",
+    "compile": "コンパイル",
+    "compileErrors": "コンパイルエラー",
+    "noErrors": "エラーなし",
+    "uniform": "Uniform",
+    "saveShader": "シェーダー保存",
+    "loadShader": "シェーダー読込",
+    "shaderPresets": "シェーダープリセット",
+    "preview": "プレビュー"
+  },
   "levelEditor": {
     "title": "レベルエディタ",
     "saveLevel": "レベル保存",

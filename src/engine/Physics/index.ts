@@ -115,3 +115,24 @@ export {
   type RaycastHit,
   type CollisionStats,
 } from './CollisionSystem';
+
+// 车辆物理(轮胎 / 悬挂 / 引擎 / 传动 / 转向 / 制动 + Pacejka 简化轮胎模型)
+// 与 ECS PhysicsSystems 解耦:车辆是多体复合,独立实现。
+export {
+  VehiclePhysics,
+  type Wheel,
+  type Transmission,
+  type VehicleOptions,
+  type VehicleStats,
+  type TireParams,
+} from './VehiclePhysics';
+
+// 飞行物理(升力 / 阻力 / 推力 / 控制面 / 重力 / 失速 + 6DOF 积分)
+// 与 ECS PhysicsSystems 解耦:飞行器是 6DOF 多面体,独立实现。
+export {
+  FlightPhysics,
+  type ControlSurface,
+  type ControlSurfaceType,
+  type FlightOptions,
+  type FlightStats,
+} from './FlightPhysics';

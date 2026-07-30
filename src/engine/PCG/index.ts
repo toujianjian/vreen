@@ -35,6 +35,24 @@ export {
   type CityStats,
 } from './CityGenerator';
 export {
+  CityGenerator2,
+  type Vec3,
+  type Bounds,
+  type CityStyle,
+  type ZoneType,
+  type RoadType,
+  type LandmarkType,
+  type StreetLightType,
+  type CityZone,
+  type CityBuilding as CityBuilding2,
+  type CityRoad,
+  type CityLandmark,
+  type StreetLight,
+  type CityPark2,
+  type CityStats2,
+  type CityData2,
+} from './CityGenerator2';
+export {
   DungeonGenerator,
   type DungeonRoom,
   type DungeonCorridor,

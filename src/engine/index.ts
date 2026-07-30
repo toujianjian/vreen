@@ -153,7 +153,7 @@ export * from './Timeline';
 export * from './Voxel';
 // Editor — 编辑器系统 (SelectionSystem 选择/拾取 + TransformGizmo 变换手柄 + UndoRedoSystem 撤销重做 + EditorCommands 命令工厂 + SnapSystem 吸附)。
 export * from './Editor';
-// PCG — 程序化内容生成 (NoiseGenerator 噪声 + BuildingGenerator 建筑 + CityGenerator 城市 + DungeonGenerator 地牢 + TreeGenerator 树木)。
+// PCG — 程序化内容生成 (NoiseGenerator 噪声 + BuildingGenerator 建筑 + BuildingGenerator2 增强建筑 + CityGenerator 城市 + CityGenerator2 增强城市 + DungeonGenerator 地牢 + TreeGenerator 树木)。
 // 多种 PRG 生成器,产出 BufferGeometry / 网格 / 布局元数据,不绑定 Material / Scene。
 export * from './PCG';
 // Pipeline — 资源管线 (AssetPipeline 步骤序列 + TextureProcessor 纹理处理 + GeometryProcessor 几何体处理 + ImportPipeline 模型导入)。

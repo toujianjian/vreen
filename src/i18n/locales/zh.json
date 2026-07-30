@@ -595,6 +595,19 @@
     "presets": "预设",
     "preview": "预览"
   },
+  "shaderEditor": {
+    "title": "着色器编辑器",
+    "vertexShader": "顶点着色器",
+    "fragmentShader": "片元着色器",
+    "compile": "编译",
+    "compileErrors": "编译错误",
+    "noErrors": "无错误",
+    "uniform": "Uniform",
+    "saveShader": "保存着色器",
+    "loadShader": "加载着色器",
+    "shaderPresets": "着色器预设",
+    "preview": "预览"
+  },
   "levelEditor": {
     "title": "关卡编辑器",
     "saveLevel": "保存关卡",

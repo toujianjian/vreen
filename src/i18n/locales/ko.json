@@ -583,6 +583,19 @@
     "presets": "프리셋",
     "preview": "미리보기"
   },
+  "shaderEditor": {
+    "title": "셰이더 에디터",
+    "vertexShader": "버텍스 셰이더",
+    "fragmentShader": "프래그먼트 셰이더",
+    "compile": "컴파일",
+    "compileErrors": "컴파일 오류",
+    "noErrors": "오류 없음",
+    "uniform": "Uniform",
+    "saveShader": "셰이더 저장",
+    "loadShader": "셰이더 불러오기",
+    "shaderPresets": "셰이더 프리셋",
+    "preview": "미리보기"
+  },
   "levelEditor": {
     "title": "레벨 에디터",
     "saveLevel": "레벨 저장",

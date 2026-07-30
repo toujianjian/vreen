@@ -595,6 +595,19 @@
     "presets": "Presets",
     "preview": "Preview"
   },
+  "shaderEditor": {
+    "title": "Shader Editor",
+    "vertexShader": "Vertex Shader",
+    "fragmentShader": "Fragment Shader",
+    "compile": "Compile",
+    "compileErrors": "Compile Errors",
+    "noErrors": "No Errors",
+    "uniform": "Uniform",
+    "saveShader": "Save Shader",
+    "loadShader": "Load Shader",
+    "shaderPresets": "Shader Presets",
+    "preview": "Preview"
+  },
   "levelEditor": {
     "title": "Level Editor",
     "saveLevel": "Save Level",
