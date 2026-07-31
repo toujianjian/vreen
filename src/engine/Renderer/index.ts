@@ -62,6 +62,15 @@ export {
 } from './ForwardPlusRenderer';
 // 反射探针 + 管理器(局部 IBL 立方体贴图捕获)。
 export { ReflectionProbe, type ReflectionProbeOptions } from './ReflectionProbe';
+// 程序化房间环境贴图(简化版,数据驱动,不依赖 WebGL)。
+// 适配自 three.js RoomEnvironment,生成 6 面 cube 数据用作 PBR IBL 默认光源,
+// 可在无头 / 测试环境下直接采样或喂给 IBL 预过滤 pass。
+export {
+  RoomEnvironment,
+  type RoomEnvironmentOptions,
+  type CubeFaceData,
+  type EnvironmentCubeData,
+} from './RoomEnvironment';
 export {
   ReflectionProbeManager,
   type ReflectionProbeManagerOptions,
