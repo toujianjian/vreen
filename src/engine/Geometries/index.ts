@@ -23,3 +23,11 @@ export { ExtrudeGeometry, type ExtrudeOptions } from './ExtrudeGeometry';
 // InstancedGeometry — 实例化几何体 (per-instance matrix + color + 自定义属性)。
 // 参考 three.js InstancedBufferGeometry,叠加显式 setInstanceMatrix/Color/CustomAttribute API。
 export { InstancedGeometry } from './InstancedGeometry';
+// TextGeometry — 3D 挤压文本几何体 (简化版 FontDefinition,适配自 three.js TextGeometry)。
+export {
+  TextGeometry,
+  type TextGeometryOptions,
+  type FontCharacter,
+  type FontDefinition,
+  createMinimalFont,
+} from './TextGeometry';

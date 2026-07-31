@@ -46,6 +46,10 @@ export {
 // 几何体加载器:STL / PLY
 export { STLLoader, parseSTL } from './STLLoader';
 export { PLYLoader, parsePLY } from './PLYLoader';
+// Collada (.dae) 简化版 XML 加载器
+export { ColladaLoader, parseCollada, type ColladaParseResult } from './ColladaLoader';
+// MagicaVoxel (.vox) 二进制体素加载器
+export { VOXLoader, parseVOX, type VoxVoxel, type VoxModel, type VoxParseResult } from './VOXLoader';
 // 纹理加载器:TGA / EXR
 export { TGALoader, parseTGA, type TGAResult } from './TGALoader';
 export { EXRLoader, parseEXR, type EXRResult } from './EXRLoader';
