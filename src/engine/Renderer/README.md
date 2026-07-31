@@ -24,6 +24,7 @@ Renderer (interface)        ← pluggable backend contract
           ├── ShadowMapManager ← shadow-map FBO/texture lifecycle
           ├── CascadedShadowMap ← CSM/PSSM for large outdoor scenes
           ├── LensFlare ← CPU-side lens flare compositor
+          ├── WeightedBlendedOIT ← order-independent transparency
           ├── DeferredRenderer ← alternative deferred backend
           ├── ReflectionProbe / ReflectionProbeManager ← IBL probes
           └── PathTracer    ← CPU reference path tracer
@@ -226,6 +227,70 @@ const out = lensFlare.render(
 ```
 
 `DEFAULT_FLARES` preset ships 9 elements (1 core + 1 halo + 1 streak + 6 ghosts); replace at runtime via `setFlares()` / `addFlare()` / `clearFlares()`.
+
+### `WeightedBlendedOIT` (`OIT.ts`)
+
+Order-Independent Transparency via the Weighted Blended OIT technique
+(McGuire & Bavoil 2013). Solves the long-standing problem of correctly
+compositing translucent surfaces without sorting fragments by depth.
+Classic alpha blending requires a strict back-to-front draw order; OIT
+decouples correctness from submission order by accumulating every
+transparent fragment into two intermediate buffers and compositing in a
+final pass. CPU-side implementation with zero WebGL dependency — runs
+headless in Node/tests, isomorphic with `LensFlare` / `MotionBlurPass`.
+
+Algorithm (two-buffer weighted blended):
+
+| Buffer | Accumulation rule | Holds |
+|--------|-------------------|-------|
+| `accumulate`  | `Σ (c_rgb · α · w)` | Pre-multiplied colour weighted by `w` |
+| `revealage`  | `Π (1 - α)`        | How much background is revealed (1 = fully visible background, 0 = opaque) |
+
+Depth-weighted function (McGuire Eq. 7, tuned for screen-space depth):
+
+```
+w(α, depth) = α · clamp( scale / (bias + depth^power), min, max )
+```
+
+- `α` ensures nearly-transparent fragments contribute little (avoids
+  the "white fog" artefact of unweighted accumulation).
+- `depth^power` (power default 3) makes closer fragments weigh more,
+  approximating correct back-to-front ordering without an explicit sort.
+- `scale` / `bias` / `min` / `max` clamp the weight to avoid
+  float-precision blowups at extreme depths.
+
+Composite (final pass):
+
+```
+final = (1 - revealage) · scene + accumulate / revealage
+```
+
+| Export | Role |
+|--------|------|
+| `WeightedBlendedOIT` | CPU OIT compositor. Constructor: `(width, height, opts?)`. |
+| `OITFragment` | `{ x, y, color: [r,g,b], alpha, depth }` — one translucent pixel. |
+| `OITOptions` | `{ weightScale?, weightBias?, weightDepthPower?, weightMin?, weightMax? }`. Defaults: `1000 / 1e-5 / 3 / 0.01 / 3000`. |
+
+```ts
+const oit = new WeightedBlendedOIT(1280, 720);
+oit.clear();
+// Submit translucent fragments in ANY order — no sorting required.
+for (const frag of particleFragments) oit.addFragment(frag);
+// Composite over the opaque scene buffer.
+const out = oit.composite(scenePixelData);  // Uint8ClampedArray
+```
+
+Order-independence: two fragments added in opposite orders produce the
+same `accumulate` sum (addition is commutative) and the same `revealage`
+product (multiplication is commutative). The composite is therefore
+identical regardless of submission order — this is the defining property
+of OIT and is verified by the unit tests.
+
+`WeightedBlendedOIT` is a CPU reference / fallback path; the production
+WebGL2 pipeline can implement the same algorithm as a two-target
+render-pass (MRT) for real-time use. The CPU path is used in tests,
+headless rendering, and offline compositing where a GPU context is
+unavailable.
 
 ### `DeferredRenderer` (`DeferredRenderer.ts`)
 

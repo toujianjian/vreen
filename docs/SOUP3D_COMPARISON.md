@@ -84,7 +84,10 @@
 | 阴影贴图                | ✗             | ✓ ShadowMapManager + DirectionalLightShadow          | VREEN  |
 | 级联阴影贴图 (CSM/PSSM) | ✗             | ✓ CascadedShadowMap (log/uniform/practical + texel 稳定) | VREEN  |
 | 镜头光晕 (Lens Flare)   | ✗             | ✓ LensFlare (core/halo/ghost/streak + 遮挡测试)      | VREEN  |
+| 顺序无关透明 (OIT)      | ✗             | ✓ WeightedBlendedOIT (depth-weighted 合成 + revealage) | VREEN  |
 | 几何体工具              | ✗             | ✓ BufferGeometryUtils (merge/weld/tangent/interleave) | VREEN  |
+| 细分曲面 (Catmull-Clark)| ✗             | ✓ SubdivisionModifier (面点/边点 + 内部/边界规则 + UV 插值) | VREEN  |
+| 硬边分裂 (Edge Split)   | ✗             | ✓ EdgeSplitModifier (面法线夹角阈值 + BFS 平滑组)    | VREEN  |
 | 后处理基础              | ✗             | ✓ Bloom/CA/Vignette/SSAO/FXAA/ToneMap/Gamma/DOF    | VREEN  |
 | 后处理增强              | ✗             | ✓ GTAO/SSR/SSSS/TAA/MotionBlur/VolumetricFog/LUT   | VREEN  |
 | 路径追踪(CPU 参考)    | ✗             | ✓ PathTracer(Möller–Trumbore + 俄罗斯轮盘)       | VREEN  |
@@ -363,3 +366,45 @@ VREEN 现已覆盖 o3de 10 项核心系统(SurfaceData/Shapes/RootMotion/Vegetat
 **BufferGeometry 扩展**:`addGroup` / `clearGroups` draw group 支持,配合 mergeGeometries 多材质渲染。
 
 引擎模块总数 42,测试总数超 4200(+92)。
+
+---
+
+## 新增引擎能力(2026-07-31 细分曲面 + 硬边分裂 + OIT)
+
+本批次新增 3 个核心算法实现,94 测试(SubdivisionModifier 32 + EdgeSplitModifier 25 + WeightedBlendedOIT 37)。模块归入既有 `Modifiers` 与 `Renderer` 顶层模块,模块总数维持 42,测试总数 4200 → 4294。
+
+| 能力 | 来源 | soup3D | VREEN |
+|------|------|--------|-------|
+| Catmull-Clark 细分曲面 (面点/边点/顶点新位置 + 边界规则 + UV 同权重插值 + 0–6 迭代) | three.js + o3de Atom | ❌ | ✅ |
+| 硬边分裂 (面法线夹角阈值 + BFS 平滑组 + 顶点复制 + 非索引/索引输入) | three.js + Blender | ❌ | ✅ |
+| 顺序无关透明 Weighted Blended OIT (accumulate/revealage 缓冲 + depth-weighted 合成 + 无序合成) | McGuire & Bavoil 2013 | ❌ | ✅ |
+
+**关键算法**:
+
+- `SubdivisionModifier` 经典 Catmull-Clark (1978):
+  - 面点 = 面顶点质心;边点 = (端点中点 + 相邻面点平均) / 2 (内部) 或 端点中点 (边界)
+  - 内部顶点新位置 `(Q + 2R + (n-3)S) / n` (Q=相邻面点平均, R=相邻边中点平均, S=原位置, n=顶点价)
+  - 边界顶点新位置 `3/4·S + 1/8·(m₁+m₂)` (m 为前后边中点),保留硬边
+  - 每个原始三角形分裂为 3 四边形 → 6 三角形 (面点 F + 3 边点 + 3 原顶点)
+  - UV 按相同权重线性插值;`iterations=0` 返回深拷贝;`iterations` 上限 6 防止内存爆炸
+
+- `EdgeSplitModifier` 硬边保留:
+  - 收集每条无向边的相邻面 (1 面 = 边界, 2 面 = 内部)
+  - 内部边计算相邻面法线夹角 `acos(dot(n1,n2))`;`angle > threshold` 标记为 sharp
+  - BFS 平滑组:从每个面出发,跨过非 sharp 边扩散,同组面共享顶点副本
+  - 每个平滑组对组内面法线取平均,赋给组顶点副本 → 硬边两侧法线不同
+  - `threshold=0` 全分裂 (除共面对角线),`threshold=π` 不分裂
+  - `keepExistingNormals=true` 保留原法线,仅分裂顶点
+
+- `WeightedBlendedOIT` 顺序无关透明 (McGuire & Bavoil 2013):
+  - 双缓冲:`accumulate` (RGB·α·w 累加) + `revealage` (1-α 累乘)
+  - depth-weighted 权重 `w = α · clamp(scale / (bias + depth^power), min, max)`
+  - 合成 `final = (1 - revealage) · scene + accumulate / revealage`
+  - 无需排序:fragment 以任意顺序累加,合成结果近似正确
+  - CPU 端实现,零 WebGL 依赖,可在 Node/tests/headless 环境运行
+
+**BufferGeometry 扩展**:`clone()` 深拷贝方法 (新 typed array + groups + userData + bounding volumes),供 `SubdivisionModifier` 的 `iterations=0` 短路与 `EdgeSplitModifier` 输入保护使用。
+
+**soup3D 对比**:soup3D 无任何细分曲面、硬边分裂、OIT 能力,其着色器为入门级 Blinn-Phong 且无透明排序处理。VREEN 的细分曲面可用于从粗 cage 生成有机平滑网格,硬边分裂可修复导入资源的法线,OIT 解决粒子/植被/半透明材质的排序伪影,三者均为产品级引擎的标志性能力。
+
+引擎模块总数 42,测试总数 4294(+94)。

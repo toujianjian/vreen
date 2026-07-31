@@ -9,7 +9,7 @@
 > attributes and returns a fresh `BufferGeometry` with the processed
 > attribute streams.
 
-The module currently exposes two complementary operators:
+The module currently exposes four complementary operators:
 
 - `TessellateModifier` refines a mesh by splitting long edges until every
   edge falls under a length budget. Use it to densify coarse input meshes
@@ -17,9 +17,23 @@ The module currently exposes two complementary operators:
 - `SimplifyModifier` reduces vertex count by collapsing the shortest edges
   first. Use it to generate LOD (level-of-detail) proxies or to strip
   redundant geometry from imported assets.
+- `SubdivisionModifier` applies Catmull-Clark subdivision surfaces to
+  smooth a mesh. Each iteration adds face points (centroids), edge points
+  (midpoint + adjacent face-point average), and repositions original
+  vertices via the `(Q + 2R + (n-3)S) / n` interior rule or the
+  `3/4·S + 1/8·(m₁+m₂)` boundary rule. UV attributes are interpolated
+  with the same weights; normals are recomputed as smooth vertex normals.
+  Use it to produce organic, smooth shapes from coarse cages.
+- `EdgeSplitModifier` splits edges where the angle between adjacent face
+  normals exceeds a threshold, duplicating vertices at sharp edges to
+  produce hard-edge normals. Faces sharing a non-sharp edge at a vertex
+  are grouped via BFS (smooth groups); each group gets its own averaged
+  normal. Use it to add hard-surface detail to smooth-shaded meshes or
+  to repair normals on imported assets.
 
-Both modifiers are ported from the `three.js` `examples/jsm/modifiers/`
-folder and adapted to VREEN's zero-dependency `BufferGeometry` /
+All modifiers are ported from the `three.js` `examples/jsm/modifiers/`
+folder (and Blender / o3de Atom for the subdivision and edge-split
+algorithms) and adapted to VREEN's zero-dependency `BufferGeometry` /
 `BufferAttribute` core. The algorithms favour simplicity and predictable
 output over peak numerical optimality, mirroring the upstream behaviour.
 

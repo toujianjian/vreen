@@ -69,6 +69,15 @@ export {
   type LensFlareCamera,
   type OccluderSphere,
 } from './LensFlare';
+// Weighted Blended Order-Independent Transparency (OIT) — CPU 侧合成。
+// 适配 McGuire & Bavoil 2013 (GPU Pro 5) / three.js / o3de Atom。
+// accumulate + revealage 双缓冲,深度加权,顺序无关。
+// 不依赖 WebGL,可在 Node/无头环境运行 (与 LensFlare/MotionBlurPass 同构)。
+export {
+  WeightedBlendedOIT,
+  type OITFragment,
+  type OITOptions,
+} from './OIT';
 // 多渲染目标(MRT)+ 几何缓冲(GBuffer,延迟渲染用)。
 export { MRTTarget, type MRTSetupOptions } from './MRTTarget';
 export { GBuffer, type GBufferOptions } from './GBuffer';

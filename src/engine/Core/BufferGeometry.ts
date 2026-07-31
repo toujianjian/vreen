@@ -204,6 +204,38 @@ export class BufferGeometry {
     this.boundingSphere = null;
   }
 
+  /**
+   * Deep-clone this geometry. Allocates new typed arrays for every
+   * attribute and the index. Groups, userData, and bounding volumes
+   * are copied. Mirrors three.js `BufferGeometry.clone()`.
+   */
+  clone(): BufferGeometry {
+    const out = new BufferGeometry();
+    for (const [name, attr] of Object.entries(this.attributes)) {
+      const arr = attr.array as Float32Array;
+      out.setAttribute(name, new BufferAttribute(arr.slice(), attr.itemSize));
+    }
+    if (this.index) {
+      const idxArr = this.index.array as Float32Array;
+      out.setIndex(new BufferAttribute(idxArr.slice(), this.index.itemSize));
+    }
+    out.groups = this.groups.map((g) => ({ ...g }));
+    out.userData = { ...this.userData };
+    if (this.boundingBox) {
+      out.boundingBox = {
+        min: this.boundingBox.min.clone(),
+        max: this.boundingBox.max.clone(),
+      };
+    }
+    if (this.boundingSphere) {
+      out.boundingSphere = {
+        center: this.boundingSphere.center.clone(),
+        radius: this.boundingSphere.radius,
+      };
+    }
+    return out;
+  }
+
   /** Serialize for .vreen / Java interop. */
   toJSON(): Record<string, unknown> {
     const out: Record<string, unknown> = {
