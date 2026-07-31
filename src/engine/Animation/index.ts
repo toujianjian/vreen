@@ -23,6 +23,13 @@ export {
   type ProceduralAnimationStats,
 } from './ProceduralAnimation';
 export { BlendSpace1D, type BlendSpaceSample } from './BlendSpace1D';
+// 2D blend space (Delaunay triangulation + barycentric weights) for
+// forward/strafe locomotion blending. Adapted from o3de EMotionFX
+// BlendSpace2DNode.
+export { BlendSpace2D, type BlendSpace2DSample, type BlendSpace2DResult } from './BlendSpace2D';
+// Secondary bone spring physics (hair / cloth / ears / tail follow-through).
+// Adapted from o3de EMotionFX SpringSolver.
+export { SpringSolver, type SpringBone, type SpringSolverOptions } from './SpringSolver';
 // Root motion / motion extraction (adapted from o3de EMotionFX RepositioningLayerPass).
 // Extracts the root bone's per-frame delta from a clip and redirects it to the
 // actor's world transform so in-place walk/run clips drive the character forward.

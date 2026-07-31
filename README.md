@@ -75,7 +75,7 @@ VREEN is positioned as a **lightweight Web game engine** — comparable in scope
 | **Serialization** | `Serialization/` module — `SceneSerializer` / `GeometrySerializer` / `MaterialSerializer` round-trip Scene / Geometry / Material ↔ JSON. |
 | **Cameras** | `PerspectiveCamera` / `OrthographicCamera` + `CinematicCamera` (shot sequence with `cut` / `fade` / `dolly` / `orbit` transitions, DOF, Perlin shake, timeline import/export) + `CameraRig` (crane / dolly / orbit / fixed modes with damping follow). |
 | **Inspection UI** | 9 camera presets (Free / Iso / Front / Back / Side / Top / 1st-person / 3rd-person / Cinematic), real-time material lab, HDRI environments, post-FX toggles, PNG capture, drag-and-drop upload. |
-| **Debug tooling** | Physics debug renderer (collider / contact / velocity channels), `EntityGraph` relationship visualizer, profiler family — `Profiler` (CPU/GPU marks) / `FrameProfiler` (FPS aggregation) / `SystemProfiler` (ECS hot systems) / `MemoryTracker` (leak detection) / `GpuProfiler` (timer queries) / `PerformanceReport` (text + JSON) — surfaced through `FrameChart` and `ProfilerHUD`. |
+| **Debug tooling** | Physics debug renderer (collider / contact / velocity channels), `EntityGraph` relationship visualizer, profiler family — `Profiler` (CPU/GPU marks) / `FrameProfiler` (FPS aggregation) / `SystemProfiler` (ECS hot systems) / `MemoryTracker` (leak detection) / `GpuProfiler` (timer queries) / `PerformanceReport` (text + JSON) — surfaced through `FrameChart` and `ProfilerHUD`. `ConsoleCommands` editor REPL — register / execute / auto-complete / history / aliases, 25+ preset commands across 8 categories (General / Engine / Scene / Entity / Physics / Rendering / Audio / Debug), backing the `EngineConsole.tsx` UI panel. |
 | **Visual scripting** | Blockly block editor with Camera / Animation / Scene / Renderer / Physics / Control categories, bound to the live ECS World via `EcsScriptAPI`, with Tick-callback registration. Complemented by `VisualScriptComponent` (Script-Canvas-style node graph component, inspired by O3DE Script Canvas). |
 | **Package format** | `.vreen` ZIP container (manifest + scene + world + embedded assets), `.vreen-delta` incremental diffs, multi-language SDKs, `vreen` CLI for pack / unpack / validate / diff. |
 | **Desktop** | Electron 43 + electron-builder producing a single-file portable Windows `.exe`. |
@@ -166,7 +166,7 @@ vreen/
 │   │   ├── viewer/             # 3D inspector core (see below)
 │   │   ├── three/              # Mini-canvas helpers (BackgroundScene / PresetPreview / SafeEnvironment)
 │   │   └── hud/                # Reusable HUD widgets (HudPanel / TopBar / LangSwitcher)
-│   ├── engine/                 # Self-developed WebGL2 engine (mirrored to packages/engine/src) — 34 top-level modules, 393 source files (non-test) + 251 test files
+│   ├── engine/                 # Self-developed WebGL2 engine (mirrored to packages/engine/src) — 34 top-level modules, 411 source files (non-test) + 270 test files
 │   │   ├── Core/               # Scene graph primitives + Sprite/Text/BitmapText/TextAtlas + texture family (Cube/Data/DataArray/Depth/Video/Canvas/Compressed) + Source + MorphTargets/MorphTargetAnimation + InstancedBufferAttribute + Fog/FogExp2 + Raycaster + DirtyFlag/SceneGraphProcessor/FrustumCuller/SceneStats + ModuleRegistry (Gem-style module registry)
 │   │   ├── Math/               # Vector2/3/4, Matrix3/4, Quaternion, Euler, Color, Box3, Sphere, Plane, Ray, Line3, Triangle, Frustum, MathUtils
 │   │   ├── Cameras/            # Perspective / Orthographic cameras + CinematicCamera (shot sequence) + CameraRig (crane/dolly/orbit/fixed)
@@ -192,7 +192,7 @@ vreen/
 │   │   ├── SaveSystem/         # SaveSystem (multi-slot + auto-save) / SaveSerializer / LocalStorageAdapter
 │   │   ├── SceneManager/       # SceneManager / SceneTransition (Fade/Crossfade/Slide/Wipe/None) + SceneStreaming (chunked streaming load/unload)
 │   │   ├── Input/              # InputManager / KeyboardState / MouseState / TouchState / GamepadState / InputAction / InputMap
-│   │   ├── Tools/              # Profiler / FrameProfiler / SystemProfiler / MemoryTracker / GpuProfiler / PerformanceReport + LODManager (distance/screen-space LOD + HLOD) + Profiler2 (frame/zone/event + Chrome Trace export)
+│   │   ├── Tools/              # Profiler / FrameProfiler / SystemProfiler / MemoryTracker / GpuProfiler / PerformanceReport + LODManager (distance/screen-space LOD + HLOD) + Profiler2 (frame/zone/event + Chrome Trace export) + ConsoleCommands (editor REPL: register/execute/auto-complete/history/aliases + 25+ preset commands across 8 categories)
 │   │   ├── AI/                 # NavMesh (navigation mesh) + PathFinder (A*) + SteeringBehavior (Reynolds) + Agent + BehaviorTree + Blackboard + CrowdSystem (large-scale crowd + Reynolds separation) + SpatialGrid (2D XZ neighbourhood acceleration)
 │   │   ├── Environment/        # WeatherSystem + SkySystem (day/night) + ProceduralSky (Preetham atmosphere) + CloudSystem + VolumetricClouds (ray-march + 3D noise) + PrecipitationSystem + VegetationSystem + VegetationRenderer (instanced + wind + season) + WaterSimulation + WaterSystem
 │   │   ├── Timeline/           # TimelineClip + TimelineTrack + EventTrack + PropertyTrack + TimelineSequencer (play/pause/seek/loop/export/import)
@@ -573,6 +573,7 @@ Performance analysis toolkit — a family of complementary profilers that can be
 | `MemoryTracker` | Engine-managed resource allocation ledger. `track(type, size)` returns an id; `untrack(id)` releases it; `getLeaks(minAgeMs)` flags allocations that survived past an age threshold. Maintains `byType` summary for leak triage. |
 | `GpuProfiler` | Standalone GPU timer-query wrapper. `beginQuery(gl, id)` / `endQuery(gl, id)` / `getQueryResult(gl, id)`; non-blocking `pollAll(gl)` resolves elapsed ns → ms once the driver reports availability. Silently degrades to CPU-side timing when `EXT_disjoint_timer_query_webgl2` is unavailable. |
 | `PerformanceReport` | Static report generator — `generate(fp?, sp?, mt?)` produces a human-readable text report; `toJSON(...)` produces a `PerformanceReportJson` for tooling. |
+| `ConsoleCommands` | **Editor console command system** — REPL-style text command registry backing the `EngineConsole.tsx` UI panel. Each `ConsoleCommand` declares `name` / `description` / `usage` / `args` (typed: `string` / `number` / `boolean` / `vector3`) / `handler` / `category`. `execute(input)` tokenizes (supporting double-quoted args with `\"` escapes for JSON), validates args, dispatches to the handler, and catches throws → `"Error: <msg>"`. Supports aliases (`registerAlias`), history (`addToHistory` / `getHistory`, `maxHistory` capped), auto-complete (`getAutoComplete` — prefix match over names + aliases), and grouped help (`getHelp`). `registerAllDefaultCommands(world?, scene?)` is idempotent and registers 25+ preset commands across 8 categories: **General** (`help` / `clear` / `history` + `?` / `cls` / `h` aliases), **Engine** (`engine.info` / `engine.commands` / `engine.categories`), **Scene** (`scene.load` / `scene.save` / `scene.list` + `ls` alias, delegates `SceneSerializer`), **Entity** (`entity.create` / `entity.delete` / `entity.list` / `entity.count`, delegates `World`), **Physics** (`physics.gravity` / `physics.pause` / `physics.resume` + `pause` / `resume` aliases), **Rendering** (`render.pipeline` / `render.quality` / `render.screenshot` + `ss` alias), **Audio** (`audio.volume` / `audio.play` / `audio.stop`), **Debug** (`debug.stats` / `debug.fps` / `debug.profile` / `debug.systems` / `debug.memory`, delegates `FrameProfiler` / `SystemProfiler` / `MemoryTracker`). Dependency injection via `setWorld` / `setScene` / `setFrameProfiler` / `setSystemProfiler` / `setMemoryTracker`. `getDefaultConsoleCommands()` / `resetDefaultConsoleCommands()` manage a process-wide singleton. Complements `Editor/EditorCommands` (undo/redo factory) and `Scripting/ScriptBindings` (Blockly API surface) — see `ConsoleCommands.test.ts` for full coverage. |
 
 ### Events (`src/engine/Events/`)
 
@@ -896,7 +897,7 @@ npm run test:coverage     # coverage report
 
 ### Coverage
 
-Unit tests cover the engine foundation (4700+ tests across 251 test files, 34 top-level modules):
+Unit tests cover the engine foundation (6100+ tests across 270 test files, 34 top-level modules):
 
 | Area | Test files |
 |------|-----------|
@@ -914,16 +915,16 @@ Unit tests cover the engine foundation (4700+ tests across 251 test files, 34 to
 | Audio | `Audio`, `AudioAnalyser`, `AudioContext`, `AudioListener`, `AudioLoader`, `PositionalAudio`, `SpatialAudio`, `AudioEffects` |
 | Terrain | `TerrainGeometry`, `HeightmapGenerator`, `TerrainLayer`, `TerrainSplat`, `TerrainErosion` |
 | Acceleration | `BVH`, `MeshBVH` |
-| Physics | `ClothSimulation`, `Constraints`, `FluidSimulation`, `DestructionSystem`, `VoronoiFracture`, `CollisionSystem`, `ConstraintSystem`, `RopePhysics` |
+| Physics | `ClothSimulation`, `Constraints`, `FluidSimulation`, `DestructionSystem`, `VoronoiFracture`, `CollisionSystem`, `ConstraintSystem`, `RopePhysics`, `Buoyancy`, `FlightPhysics`, `VehiclePhysics`, `PhysicsMaterial` |
 | Assets | `AssetCache`, `AssetRegistry`, `AssetLoader`, `AssetBundle`, `TextureStreaming` |
 | Serialization | `GeometrySerializer`, `SceneSerializer` |
 | Events | `EventBus`, `EventQueue`, `GameEvent` |
 | Scripting | `Coroutine`, `ScriptRegistry`, `VisualScriptComponent` |
-| Tools | `FrameProfiler`, `SystemProfiler`, `MemoryTracker`, `LODManager`, `Profiler2` |
+| Tools | `FrameProfiler`, `SystemProfiler`, `MemoryTracker`, `LODManager`, `Profiler2`, `ConsoleCommands` |
 | Particles | `ParticleSystem2`, `ParticleEmitter`, `ParticleModifier`, `ParticleCurve`, `ParticleData`, `TrailModule` |
 | Input | `KeyboardState`, `MouseState`, `InputAction`, `InputMap`, `InputManager` |
 | AI | `Agent`, `NavMesh`, `PathFinder`, `SteeringBehavior`, `BehaviorTree`, `Blackboard`, `CrowdSystem`, `SpatialGrid` |
-| Environment | `SkySystem`, `WeatherSystem`, `VegetationSystem`, `WaterSimulation`, `WaterSystem`, `ProceduralSky`, `VolumetricClouds`, `VegetationRenderer` |
+| Environment | `SkySystem`, `WeatherSystem`, `VegetationSystem`, `WaterSimulation`, `WaterSystem`, `ProceduralSky`, `VolumetricClouds`, `VegetationRenderer`, `FFTOcean`, `WaterInteraction` |
 | Timeline | `TimelineSequencer`, `TimelineTrack`, `EventTrack`, `PropertyTrack` |
 | Voxel | `VoxelChunk`, `VoxelWorld`, `VoxelPalette`, `VoxelRaycaster` |
 | Editor | `SelectionSystem`, `UndoRedoSystem`, `SnapSystem`, `TransformGizmo`, `EditorCommands` |
@@ -1043,7 +1044,7 @@ npm run electron:build
 | Scripting | ScriptComponent + CoroutineSystem + ScriptRegistry | None |
 | Export | GLTF / OBJ / STL / PLY (4 exporters) | None |
 | i18n | 5 languages (en/zh/ja/ko/es) | 2 languages (en/zh) |
-| Testing | 4700+ unit tests (251 test files, 393 source files non-test, 165K+ LOC, 34 top-level modules) | None |
+| Testing | 6100+ unit tests (270 test files, 411 source files non-test, 220K+ LOC, 34 top-level modules) | None |
 | Visual Scripting | Blockly integration | None |
 | Package Format | .vreen (ZIP + delta diff) | None |
 

@@ -15,6 +15,8 @@ export * from './Lights';
 export { LightProbe, SphericalHarmonics3, AmbientLightProbe, HemisphereLightProbe } from './Lights';
 export * from './Materials';
 export * from './Geometries';
+// Modifiers — 几何体修饰器 (TessellateModifier 细分 + SimplifyModifier 简化)。
+export * from './Modifiers';
 export * from './Loaders';
 export * from './Audio';
 export * from './Renderer';
