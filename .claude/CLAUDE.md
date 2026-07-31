@@ -14,10 +14,10 @@ VREEN 是一个基于**自研 WebGL2 渲染引擎**的可视化 3D 模型检视�
 
 ## 📊 项目统计
 
-- **代码行数**: 165K+ (含引擎 + 应用 + 测试;引擎源码 ~83K + 引擎测试 ~59K + 应用 ~23K)
-- **测试数量**: 4700+ (251 个测试文件)
-- **引擎模块**: 34 个顶层模块
-- **源码文件**: 393 (`src/engine/`, 不含测试) + 251 测试文件
+- **代码行数**: 228K+ (含引擎 + 应用 + 测试;引擎源码 108K+ + 引擎测试 ~90K + 应用 ~30K)
+- **测试数量**: 7000+ (290+ 个测试文件,本批次新增 877 测试覆盖 8 个新模块)
+- **引擎模块**: 42 个顶层模块 (本批次新增 8 个:Curves/SurfaceData/Shapes/Vegetation/LocalUser/ScriptCanvas/WhiteBox + PassGraph 作为 Renderer 子模块)
+- **源码文件**: 450+ (`src/engine/`, 不含测试) + 290+ 测试文件
 - **Commits**: 73
 - **零运行时依赖**: `@vreen/engine` 仅 Draco 为可选 peer
 
@@ -56,16 +56,17 @@ src/
 ├── engine/                  # 自研 WebGL2 引擎 (@vreen/engine)
 │   ├── Core/                # 场景图 (Object3D/Scene/Group/Mesh/SkinnedMesh/Bone/Skeleton/BufferGeometry/BufferAttribute/InstancedBufferAttribute/Material/InstancedMesh/LOD/Sprite/Text/BitmapText/TextAtlas) + 纹理家族 (Texture/CubeTexture/DataTexture/DataArrayTexture/DepthTexture/VideoTexture/CanvasTexture/CompressedTexture) + Source + MorphTargets/MorphTargetAnimation + Fog/FogExp2 + Raycaster + DirtyFlag/SceneGraphProcessor/FrustumCuller/SceneStats + ModuleRegistry (Gem 风格模块注册)
 │   ├── Renderer/            # WebGL2Renderer, ShaderProgram, RenderPass, ShadowMapManager + MRTTarget/GBuffer (延迟渲染) + DeferredRenderer (替代延迟后端) + ForwardPlusRenderer (Forward+ 分块光源剔除) + ReflectionProbe/ReflectionProbeManager (IBL 探针) + GlobalIllumination (光探针 SH2 + VXGI 简化版) + GPUDrivenRenderer (GPU 驱动渲染管线原型) + RenderGraph (Frostbite FrameGraph 风格渲染图,资源依赖+拓扑排序+生命周期) + RenderPipelineManager (Forward/Deferred/Forward+ 管线编排器,质量等级切换) + ContactShadowsPass (接触阴影) + GTAOPass (顶层 GTAO) + 后处理 (基础: Bloom/ChromaticAberration/Vignette/SSAO/FXAA/ToneMapping/Gamma/DOF; PostProcess/ 增强: ColorGrading/LUT/FilmGrain/Afterimage/Pixelation/AutoExposure/DOFEnhanced/GTAO/MotionBlur/SSR/SSSS/TAA/Velocity/VolumetricFog) + PathTracer (CPU 参考路径追踪)
+│   │   └── PassGraph/       # Pass, PassAttachment, PassTemplate, PassFactory, PassGraph (7 pass 类型: Forward/Deferred/Shadow/Bloom/SSAO/ToneMap/Debug, 数据驱动渲染管线, o3de Atom/RPI 适配)
 │   ├── Materials/           # StandardMaterial, MeshPhysicalMaterial, MeshBasicMaterial, MeshPhongMaterial, MeshNormalMaterial, ShadowMaterial, SpriteMaterial, ShaderMaterial (+onBeforeCompile), ShaderChunks/ 子目录 (10 GLSL 片段 + ShaderChunkRegistry), ShaderLibrary (15 预定义着色器模板), ShaderCompiler (#include 预处理 + chunk 注入 + 编译 + 缓存), ShaderVariant (关键字变体 + LRU 缓存), 高级材质: AdvancedPBRMaterial (各向异性+虹彩+clearcoat+sheen), SubsurfaceScatteringMaterial (次表面散射), 特殊材质: FurMaterial/MatcapMaterial/ToonMaterial/OutlineMaterial/WaterMaterial/WireframeMaterial
-│   ├── Math/                # Vector2/3/4, Matrix3/4, Quaternion, Euler, Color, Box3, Sphere, Plane, Ray, Line3, Triangle, Frustum, MathUtils
+│   ├── Math/                # Vector2/3/4, Matrix3/4, Quaternion, Euler, Color, Box3, Sphere, Plane, Ray, Line3, Triangle, Frustum, MathUtils + Spherical(球坐标) + Cylindrical(柱坐标, three.js 适配)
 │   ├── Cameras/             # PerspectiveCamera, OrthographicCamera, CinematicCamera (电影级镜头序列), CameraRig (摇臂/轨道跟随)
-│   ├── Lights/              # Ambient/Directional/Point/Spot/Hemisphere/RectArea + DirectionalLightShadow + ShadowMapManager
+│   ├── Lights/              # Ambient/Directional/Point/Spot/Hemisphere/RectArea + DirectionalLightShadow + ShadowMapManager + LightProbe/AmbientLightProbe/HemisphereLightProbe + SphericalHarmonics3 (球谐光探针, three.js 适配)
 │   ├── Loaders/             # GLB/OBJ/FBX/HDR/KTX2/STL/PLY/TGA/MTL/EXR Loader + TextureLoader + DracoDecoder + AssetManager + 4 导出器 (OBJExporter/GLTFExporter/STLExporter/PLYExporter) + GLTFExtensionLoader (扩展加载器,支持 DRACO/KTX2 + KHR/EXT 扩展注册)
-│   ├── Animation/           # AnimationMixer/AnimationClip/AnimationAction/AnimationStateMachine/BlendSpace1D/Humanoid + AnimationLayer/AnimationLayerMixer/BoneMask/AvatarMask/AdditiveBlend/AnimationSync + IK (IKBone/IKChain/IKSolver(FABRIK)/CCDSolver/IKHumanoid) + IKSystem (高层逆运动学,直接操作 Object3D 关节链,FABRIK/CCD 双求解器) + ProceduralAnimation (程序化动画,8 种节点:headTrack/breathing/walkCycle/runCycle/idleSway/lookAt/reach/secondaryMotion)
+│   ├── Animation/           # AnimationMixer/AnimationClip/AnimationAction/AnimationStateMachine/BlendSpace1D/Humanoid + AnimationLayer/AnimationLayerMixer/BoneMask/AvatarMask/AdditiveBlend/AnimationSync + IK (IKBone/IKChain/IKSolver(FABRIK)/CCDSolver/IKHumanoid) + IKSystem (高层逆运动学,直接操作 Object3D 关节链,FABRIK/CCD 双求解器) + ProceduralAnimation (程序化动画,8 种节点:headTrack/breathing/walkCycle/runCycle/idleSway/lookAt/reach/secondaryMotion) + RootMotionExtractor (根运动提取,修复角色滑步,o3de EMotionFX 适配)
 │   ├── ECS/                 # World, ComponentType, Components, Systems, PhysicsComponents (含 Constraint: Ball/Hinge/Slider/Fixed/Distance), PhysicsSystems (含 ConstraintSolver), Prefab, QueryBuilder, Broadphase
-│   ├── Controls/            # OrbitControls, FlyControls, PointerLockControls, MapControls, CharacterController (kinematic 角色), VRController (WebXR VR/XR 支持,头显位姿+双眼视图+手柄追踪)
-│   ├── Geometries/          # Box/Sphere/Cylinder/Cone/Torus/Plane/Circle/Ring/Capsule/TorusKnot/Lathe/Extrude/Shape/Wireframe/Edges + InstancedGeometry (实例化几何体) + Primitives barrel
-│   ├── Helpers/             # GridHelper, GridHelper3D, AxesHelper, BoxHelper, CameraHelper, ArrowHelper, LineHelper, PhysicsDebugRenderer
+│   ├── Controls/            # OrbitControls, FlyControls, PointerLockControls, MapControls, CharacterController (kinematic 角色), SweptCharacterController (扫掠 CC + 滑墙 + 坡度判定, o3de PhysX 适配), VRController (WebXR VR/XR 支持,头显位姿+双眼视图+手柄追踪)
+│   ├── Geometries/          # Box/Sphere/Cylinder/Cone/Torus/Plane/Circle/Ring/Capsule/TorusKnot/Lathe/Extrude/Shape/Wireframe/Edges + InstancedGeometry (实例化几何体) + ConvexGeometry (QuickHull 凸包) + ParametricGeometry (参数曲面) + DecalGeometry (贴花投影) + TubeGeometry (沿 Curve 生成管状几何 + Frenet 帧, three.js 适配) + Primitives barrel
+│   ├── Helpers/             # GridHelper, GridHelper3D, AxesHelper, BoxHelper, CameraHelper, ArrowHelper, LineHelper, PhysicsDebugRenderer + PolarGridHelper(极坐标网格) + Box3Helper(Box3 包围盒可视化) + PlaneHelper(平面可视化, three.js 适配)
 │   ├── Events/              # EventBus, EventQueue, GameEvent (CollisionEvent/TriggerEvent/SpawnEvent/DestroyEvent/ScoreEvent/CustomEvent) - 类型化 pub/sub
 │   ├── Scripting/           # ScriptComponent/ScriptC, ScriptSystem, ScriptRegistry, CoroutineSystem - 代码驱动脚本层 (与 Blockly 互补) + VisualScriptComponent (Script Canvas 风格可视化脚本组件)
 │   ├── Particles/           # ParticleSystem2, ParticleEmitter, ParticleModifier (Force/Vortex/Turbulence/ColorOverLife/SizeOverLife/VelocityOverLife/SubEmitters), ParticleCurve (Constant/Linear/Bezier/Random), TrailModule, ParticleData - 高级 CPU 粒子系统 (与 ECS ParticleSystem 分离)
@@ -74,19 +75,26 @@ src/
 │   ├── Acceleration/        # BVH, BVHBuilder, MeshBVH
 │   ├── Assets/              # AssetCache (LRU), AssetRegistry (引用计数), AssetLoader (异步加载) - 资源生命周期管理 (与 Loaders/AssetManager 互补) + AssetBundle (资源包打包/加载,依赖清单) + TextureStreaming (纹理流式加载,mipmap 分级按需上传)
 │   ├── Serialization/       # SerializerRegistry, GeometrySerializer, MaterialSerializer, SceneSerializer - 场景/几何体/材质 ↔ JSON 往返
-│   ├── Tools/               # Profiler (CPU/GPU mark), FrameProfiler (帧级 FPS), SystemProfiler (ECS 系统耗时), MemoryTracker (分配/泄漏), GpuProfiler (timer query), PerformanceReport (文本/JSON 报告), LODManager (基于屏幕占比/距离的 LOD 选择 + 屏幕尺寸启发式), Profiler2 (帧/区域/事件三层语义 + Chrome Trace 导出)
-│   ├── Physics/             # PhysicsDemo + ConstraintSolver + Joint 约束 (Ball/Hinge/Slider/Fixed/Distance) + ConstraintSystem (ECS 侧约束系统,可断裂约束,驱动 ConstraintSolver) + CollisionSystem (BVH/SAT/GJK/EPA 三段式碰撞管线,球/盒/胶囊/凸包/网格) + ClothSimulation (Verlet 布料) + RopePhysics (Verlet 链绳索,距离约束+弯曲约束+风力+碰撞) + FluidSimulation (SPH 流体) + DestructionSystem + VoronoiFracture
-│   ├── Network/             # NetworkSync (服务器权威同步) + Snapshot (二进制快照序列化/压缩) + NetworkTransport (WebSocket/Mock 传输抽象) + NetworkLerp (位置/旋转插值 + 预测 + 和解) + StateSync (快照插值 + Delta 压缩,纯数据层) + LagCompensation (历史回溯延迟补偿,服务器命中 rewind + 客户端插值) + NetworkSession (会话生命周期,lobby/loading/playing/paused/ended 状态机,槽位+主机权威)
+│   ├── Tools/               # Profiler (CPU/GPU mark), FrameProfiler (帧级 FPS), SystemProfiler (ECS 系统耗时), MemoryTracker (分配/泄漏), GpuProfiler (timer query), PerformanceReport (文本/JSON 报告) + LODManager (距离/屏幕占比 LOD + HLOD) + Profiler2 (帧/区域/事件 + Chrome Trace 导出) + ConsoleCommands (编辑器控制台命令系统:注册/执行/补全/历史 + 25 预置命令跨 8 分类)
+│   ├── Physics/             # PhysicsDemo + ConstraintSolver + Joint 约束 (Ball/Hinge/Slider/Fixed/Distance) + ConstraintSystem (ECS 侧约束系统,可断裂约束,驱动 ConstraintSolver) + CollisionSystem (BVH/SAT/GJK/EPA 三段式碰撞管线,球/盒/胶囊/凸包/网格) + ClothSimulation (Verlet 布料) + RopePhysics (Verlet 链绳索,距离约束+弯曲约束+风力+碰撞) + FluidSimulation (SPH 流体) + DestructionSystem + VoronoiFracture + Buoyancy (浮力模拟,阿基米德原理 + 阻尼 + 波高采样)
+│   ├── Network/             # NetworkSync (服务器权威同步) + Snapshot (二进制快照序列化/压缩) + NetworkTransport (WebSocket/Mock 传输抽象) + NetworkLerp (位置/旋转插值 + 预测 + 和解) + StateSync (快照插值 + Delta 压缩,纯数据层) + LagCompensation (历史回溯延迟补偿,服务器命中 rewind + 客户端插值) + NetworkSession (会话生命周期,lobby/loading/playing/paused/ended 状态机,槽位+主机权威) + NetworkTime(网络时间轴+时钟同步) + RewindableObject(可回滚对象包装) + InputHistory(客户端输入环形缓冲) + ClientPrediction(客户端预测+服务器和解, o3de Multiplayer 适配)
 │   ├── SaveSystem/          # SaveSystem (多槽位 + 自动保存) + SaveSerializer (Scene+World ↔ SaveData,含压缩) + LocalStorageAdapter (localStorage/内存兜底)
 │   ├── SceneManager/        # SceneManager (多场景注册/加载/切换) + SceneTransition (Fade/Crossfade/Slide/Wipe/None 过渡) + SceneStreaming (场景流式加载/卸载,分块按需载入)
 │   ├── Input/               # InputManager (统一键盘/鼠标/触摸/手柄) + KeyboardState/MouseState/TouchState/GamepadState + InputAction (动作映射) + InputMap (JSON 配置往返)
-│   ├── AI/                  # AI 导航 + 行为树 (NavMesh 导航网格 + A* PathFinder 寻路 + SteeringBehavior 转向行为 + Agent 代理) + 行为树 (BehaviorTree/BTAction/BTComposite/BTCondition/BTDecorator/BTNode + Blackboard 黑板) + CrowdSystem (大规模人群调度 + Reynolds separation 避障) + SpatialGrid (2D XZ 邻域加速)
-│   ├── Environment/         # 环境系统 (WeatherSystem 天气 + SkySystem 天空/日夜循环 + ProceduralSky 程序化天空着色 (Preetham 大气散射) + CloudSystem 云层 + VolumetricClouds 体积云 (Perlin+Worley 噪声 + 光线步进 + Beer-Lambert 透射) + PrecipitationSystem 降水 + VegetationSystem/VegetationType 植被分布 + VegetationRenderer 植被实例化渲染 (LOD+风摆动+季节) + WaterSimulation/WaterSystem 水体)
+│   ├── AI/                  # AI 导航 + 行为树 (NavMesh 导航网格 + A* PathFinder 寻路 + SteeringBehavior 转向行为 + Agent 代理) + 行为树 (BehaviorTree/BTAction/BTComposite/BTCondition/BTDecorator/BTNode + Blackboard 黑板) + CrowdSystem (大规模人群调度 + Reynolds separation 避障) + SpatialGrid (2D XZ 邻域加速) + PerceptionSystem (AI 感知:视觉锥+听觉+LOS+意识等级) + MLInterface (机器学习接口:ModelAdapter 契约 + TFJS 适配 + MLAgent 感知→模型→动作)
+│   ├── Environment/         # 环境系统 (WeatherSystem 天气 + SkySystem 天空/日夜循环 + ProceduralSky 程序化天空着色 (Preetham 大气散射) + CloudSystem 云层 + VolumetricClouds 体积云 (Perlin+Worley 噪声 + 光线步进 + Beer-Lambert 透射) + PrecipitationSystem 降水 + VegetationSystem/VegetationType 植被分布 + VegetationRenderer 植被实例化渲染 (LOD+风摆动+季节) + WaterSimulation/WaterSystem 水体 + FFTOcean FFT 海洋 (Tessendorf 统计波浪模型 + Phillips 频谱 + 逆 FFT) + WaterInteraction 水面交互 (双向耦合:物体→涟漪 + 水→浮力))
 │   ├── Timeline/            # 时间轴/Sequencer (TimelineClip 片段 + TimelineTrack 轨道 + EventTrack 事件 + PropertyTrack 属性关键帧 + TimelineSequencer 序列器,支持 play/pause/seek/loop/export/import)
 │   ├── Voxel/               # VoxelChunk 16³ + VoxelWorld 多块管理 + VoxelMesher 贪婪网格合并 + VoxelRaycaster DDA + VoxelPalette 类型表
 │   ├── Editor/              # 编辑器系统:SelectionSystem 选择/拾取 + TransformGizmo 变换手柄 (translate/rotate/scale) + UndoRedoSystem 撤销重做 (含 beginGroup/endGroup) + EditorCommands 命令工厂 (Move/Rotate/Scale/Add/Remove/Property) + SnapSystem 网格/角度/缩放吸附
 │   ├── PCG/                 # 程序化内容生成 (NoiseGenerator Perlin/Simplex/Worley/FBM + BuildingGenerator + BuildingGenerator2 (5 风格/4 屋顶/装饰/内部,种子化) + CityGenerator + DungeonGenerator + TreeGenerator + RoadGenerator (Catmull-Rom 样条道路+地形跟随+交叉路口) + CharacterGenerator (人形角色拼装,5 种族/4 体型/服装配饰,带简化 Skeleton)) - 产出 BufferGeometry/布局元数据,不绑定 Material/Scene
 │   ├── Pipeline/            # 资源管线 (AssetPipeline 步骤序列 + TextureProcessor 纹理处理 + GeometryProcessor 几何体处理 + ImportPipeline 模型导入) - 与 Loaders/AssetManager 互补:Loaders 关注解析,Pipeline 关注处理与优化
+│   ├── Curves/              # Curve 基类 + CurvePath + 9 具体曲线 (CatmullRom/CubicBezier/QuadraticBezier/Line/Arc/Ellipse/SplineCatmullRom 等) + Path (2D 路径) + Shape (2D 轮廓) + ShapeUtils + Earcut (三角剖分, three.js src/extras 适配)
+│   ├── SurfaceData/         # SurfaceTag (表面标签位掩码) + SurfacePoint (位置+法线+标签) + SurfaceDataProvider (查询契约) + SurfaceDataSystem (多 Provider 注册/合并) + TerrainSurfaceProvider (地形→表面点, o3de Gems/SurfaceData 适配)
+│   ├── Shapes/              # Shape 抽象基类 (SDF + 射线相交 + AABB) + 8 具体形状 (Box/Sphere/Capsule/Cylinder/Disk/Quad/Tube/Compound 复合, o3de Gems/LmbrCentral/Shape 适配)
+│   ├── Vegetation/          # VegetationDescriptor (植被描述符) + 6 Filters (Distance/ShapeIntersection/SurfaceMask/Distribution/ShapeSurface/Blocker) + 4 Modifiers (Scale/Rotation/Position/Alignment) + SpawnerArea (生成区域) + AreaBlender (区域混合, o3de Gems/Vegetation 适配)
+│   ├── LocalUser/           # LocalUserProfile (本地用户配置) + LocalPlayerSlot (玩家槽位) + LocalUserManager (多用户管理 + 槽位分配, o3de Gems/LocalUser 适配)
+│   ├── ScriptCanvas/        # ScriptNode (节点基类) + ScriptGraph (DAG 图) + ScriptExecutor (执行引擎) + 18 内置节点类型 (事件/动作/条件/变量/函数/数学/逻辑/向量/字符串/分支等, o3de Gems/ScriptCanvas 适配)
+│   ├── WhiteBox/            # HalfEdgeMesh (半边网格结构) + WhiteBoxShapes (box/tetrahedron/icosahedron/staircase greyboxing 基元) + Csg (union/subtract/intersect 布尔运算, o3de Gems/WhiteBox 适配)
 │   └── Gameplay/            # 游戏玩法系统 (DialogueSystem 对话 + DialogueTree 对话树 + DialogueParticipant 参与者 + QuestSystem 任务 + InventorySystem 物品栏) - 与 Events/Scripting 互补,提供 RPG/NPC 玩法层
 ├── pages/                   # 页面组件 (HomePage, ViewerPage, EngineDemoPage)
 ├── stores/                  # Zustand 状态管理
@@ -292,7 +300,9 @@ src/
 - `GpuProfiler` — 独立 GPU timer-query 封装,`beginQuery(gl, id)`/`endQuery(gl, id)`/`getQueryResult(gl, id)`;内部缓存 `EXT_disjoint_timer_query_webgl2` 扩展,`pollAll(gl)` 非阻塞刷新待决查询并将 ns→ms,处理 `GPU_DISJOINT_EXT`(丢弃结果);扩展不可用时(Safari 等)退化到 CPU 侧计时;`dispose(gl)` 释放所有 `WebGLQuery`
 - `PerformanceReport` — 静态报告生成器,`generate(fp?, sp?, mt?)` 产出人类可读文本报告(帧/系统/内存段全部可选),`toJSON(...)` 产出 `PerformanceReportJson` 供工具化/回归追踪
 - `LODManager` — 场景级 LOD 管理系统:统一管理多个 `LODGroup`(每个 Group 对应一个 `Object3D` + 多精度级别);两种切换策略 — 距离 LOD(按相机到 Group 世界位置的距离,`lodDistances` 阈值)/ 屏幕占比 LOD(按包围盒在屏幕投影占比,`screenSpaceThreshold`);HLOD(超 `hlodDistance` 隐藏整个 Group,由调用方替换为合并代理 mesh 减远距 draw call);`getLODStats()` 提供统计;与 `Core/LOD` 互补(LOD 是单节点自动切换,LODManager 是场景级多 Group + 全局策略)
-- **为什么是工具家族而非单一 profiler?** 每个 profiler 形态不同(ring buffer vs. map vs. set vs. async-query),消费者也不同(HUD vs. leak 排查 vs. CI);拆分让每类小巧可测可独立使用,`PerformanceReport` 提供聚合层
+- `Profiler2` — 增强版分析器,三层语义:**帧**(per-frame 总量 — FPS/dt/draw calls)/ **区域**(命名 CPU 区间,`beginZone(name)`/`endZone(name)` 线程局部栈嵌套)/ **事件**(一次性时间戳标记 `event(name, payload?)`);ring buffer(默认 10k 事件);`exportChromeTrace()` 导出 `chrome://tracing` JSON schema 供离线分析;补充原始 `Profiler`(per-frame mark 区间) — Profiler2 添加事件时间线视图诊断"帧 N 发生了什么"
+- `ConsoleCommands` — 编辑器控制台命令系统(REPL):注册/执行/补全/历史,支撑 `EngineConsole.tsx` 面板。每个 `ConsoleCommand` 声明 `name`/`description`/`usage`/`args`(类型化:string/number/boolean/vector3)/`handler`/`category`。`execute(input)` 分词(支持双引号包裹 + `\"` 转义,可传 JSON)、校验参数、分发 handler、捕获异常返回 `"Error: <msg>"`。支持别名(`registerAlias`)、历史(`addToHistory`/`getHistory`/`maxHistory` 裁剪)、前缀自动补全(`getAutoComplete`)。`registerAllDefaultCommands(world?, scene?)` 幂等注册 25+ 预置命令跨 8 分类(General/Engine/Scene/Entity/Physics/Rendering/Audio/Debug):`help`/`clear`/`history`/`engine.info`/`scene.load`/`scene.save`/`scene.list`/`entity.create`/`entity.delete`/`entity.list`/`entity.count`/`physics.gravity`/`physics.pause`/`physics.resume`/`render.pipeline`/`render.quality`/`render.screenshot`/`audio.volume`/`audio.play`/`audio.stop`/`debug.stats`/`debug.fps`/`debug.profile`/`debug.systems`/`debug.memory`。依赖注入:`setWorld`/`setScene`/`setFrameProfiler`/`setSystemProfiler`/`setMemoryTracker`,debug 命令在缺少 profiler 时优雅退化为 `"(no X bound)"`。`getDefaultConsoleCommands()` 进程级单例。与 `Scripting/ScriptBindings` 互补(后者向 Blockly/脚本暴露类型化 API,ConsoleCommands 面向开发者 REPL 交互)
+- **为什么是工具家族而非单一 profiler?** 每个 profiler 形态不同(ring buffer vs. map vs. set vs. async-query),消费者也不同(HUD vs. leak 排查 vs. CI);拆分让每类小巧可测可独立使用,`PerformanceReport` 提供聚合层;`ConsoleCommands` 加入后 Tools 兼具开发者交互层(REPL),与 ScriptBindings(脚本 API 表面)正交
 
 ### 场景辅助 (Core/)
 
@@ -551,7 +561,7 @@ src/
 ### 编辑器 UI 组件 (src/components/editor/ + src/components/viewer/)
 
 - `src/components/editor/` — 编辑器风格 UI 组件集(赛博朋克风,可独立调试):`SceneHierarchy` 场景树/对象层级面板(展开/折叠/选择/拖拽排序/右键菜单/搜索过滤)/ `InspectorPanel` 属性检查器面板 / `EngineConsole` 引擎控制台(日志输出 + 命令输入) / `AssetBrowser` 资源浏览器 / `MaterialEditor` 材质编辑器(节点图风格) / `LevelEditor` 关卡编辑器 / `AnimationEditor` 动画编辑器 / `ParticleEditor` 粒子编辑器
-- `src/components/viewer/EngineModulesPanel.tsx` — 引擎模块展示面板:集中展示自研 `@vreen/engine` 的全部 34 个顶层模块,按类别分组(渲染 / 场景与资源 / 动画与角色 / 物理与模拟 / 架构与系统 / 游戏基础设施 / 性能与调试 / UI 与交付),每个模块卡片可展开显示核心类与功能描述;与 `EngineFeaturesPanel` 互补(后者只展示 8 个可开关子系统,本面板展示全部模块用于检视/学习)
+- `src/components/viewer/EngineModulesPanel.tsx` — 引擎模块展示面板:集中展示自研 `@vreen/engine` 的全部 42 个顶层模块,按类别分组(渲染 / 场景与资源 / 动画与角色 / 物理与模拟 / 架构与系统 / 游戏基础设施 / 性能与调试 / UI 与交付),每个模块卡片可展开显示核心类与功能描述;与 `EngineFeaturesPanel` 互补(后者只展示 8 个可开关子系统,本面板展示全部模块用于检视/学习)
 - `src/components/viewer/PerformanceMonitor.tsx` — 实时性能监控面板(图表式):与 `ProfilerHUD` 互补(ProfilerHUD 是浮动 overlay tab 切换 CPU/GPU/System/Draws 文本为主,本类是面板式聚焦 4 个核心指标 FPS/帧时间/内存/DrawCall + 折线图);数据源 `profilerStore.latest` + history(FrameSample ring buffer);内存优先使用 `performance.memory` (Chrome),不可用时显示 N/A;图表为纯 SVG 折线图零依赖
 
 ### 架构参考与对比文档
@@ -564,6 +574,78 @@ src/
   - **游戏基础设施** — AI 导航(NavMesh + A*)/行为树/人群系统/ECS/环境(天气·天空·植被·水体)/体素/PCG/RPG 玩法/地形侵蚀/空间音频;soup3D 完全缺失
   - **交付形态** — 浏览器纯客户端运行 + Electron 桌面便携版 + `.vreen` 包格式 + 多语言 SDK;soup3D 桌面端独占需 Python 环境
 - **详细架构文档**:`ARCHITECTURE.md`(英文,引擎架构深度文档)、`README.md`(功能矩阵与快速上手)、`ROADMAP.md`(分阶段规划)、`docs/SOUP3D_COMPARISON.md`(引擎对比)、`docs/vreen-format-spec.md`(`.vreen` 格式规范)
+
+### 曲线与 2D 路径 (Curves/)
+
+- 适配自 [three.js `src/extras/`](https://github.com/mrdoob/three.js/tree/r169/src/extras),本批次新增
+- `Curve` — 曲线抽象基类:`getPoint(t)` / `getPoints(divisions)` / `getTangent(t)` / `getLength()`(arc-length 累积)/ `getFrenetFrames(segments)`(Frenet 坐标系,TubeGeometry 依赖)
+- 9 个具体曲线:`CatmullRomCurve3` / `CubicBezierCurve3` / `QuadraticBezierCurve3` / `LineCurve3` / `ArcCurve` / `EllipseCurve` / `SplineCurve`(2D)等,均继承 `Curve`
+- `CurvePath` — 多段曲线拼接,按顺序串联多段 `Curve` 形成复合路径;`Path` — 2D 路径(基于 `CurvePath`,增加 `moveTo`/`lineTo`/`absellipse` 等 Canvas 风格 API);`Shape` — 2D 闭合轮廓(基于 `Path`,含 holes),供 `ExtrudeGeometry`/`DecalGeometry` 消费
+- `ShapeUtils` — 2D 几何工具(三角面积 / `triangulateShape` 调用 Earcut);`Earcut` —EarClipping 三角剖分算法([mapbox Earcut](https://github.com/mapbox/earcut) 移植),把带洞多边形剖分为三角形列表
+- 与 `Geometries/ExtrudeGeometry`、`Geometries/TubeGeometry`、`Geometries/DecalGeometry` 协作:后者沿 Curve 采样或对 Shape 三角化生成 3D 网格
+
+### 表面标签系统 (SurfaceData/)
+
+- 适配自 [o3de `Gems/SurfaceData`](https://github.com/o3de/o3de/tree/development/Gems/SurfaceData),本批次新增
+- `SurfaceTag` — 表面标签位掩码(每个 bit 代表一种表面类型:草地/岩石/沙地/水面/雪地等),用 `number` 位运算合并/查询,支持最多 32 种标签
+- `SurfacePoint` — 表面采样点:`position`(Vector3)+ `normal`(Vector3)+ `tags`(SurfaceTag 位掩码);是 Provider 查询的统一输出
+- `SurfaceDataProvider` — 查询契约接口:`getSurfacePoints(inPoints, outPoints, tags)` 输入一组查询点,输出对应的 SurfacePoint(含标签);Provider 不绑定具体数据源
+- `SurfaceDataSystem` — 系统主控:注册多个 `SurfaceDataProvider`,合并查询结果(多 Provider 对同一点的不同标签做位掩码 OR 合并);`TerrainSurfaceProvider` — 把 `Terrain/TerrainGeometry` 高度场适配为 Provider(查询点投影到地形表面,返回高度+法线+地形标签)
+- 与 `Vegetation/` 协作:植被系统按 SurfaceTag 筛选可行走/可生长的表面点;与 `Shapes/` 协作:Shape 可作为 SurfaceMask 过滤区域
+
+### 逻辑形状组件 (Shapes/)
+
+- 适配自 [o3de `Gems/LmbrCentral/Shape`](https://github.com/o3de/o3de/tree/development/Gems/LmbrCentral/Shape),本批次新增
+- `Shape` — 抽象基类:统一接口 `getAabb()`(包围盒)/ `getOobb()`(定向包围盒)/ `getBoundingSphere()` / `rayIntersect(ray)`(射线相交)/ `sdf(point)`(有符号距离场,Signed Distance Function)
+- 8 个具体形状:`BoxShape` / `SphereShape` / `CapsuleShape` / `CylinderShape` / `DiskShape` / `QuadShape` / `TubeShape` / `CompoundShape`(复合,聚合多 Shape 的 OR/AND 查询)
+- 与 `Geometries/` 区别:`Geometries/` 产出 `BufferGeometry`(渲染用三角网格),`Shapes/` 产出逻辑形状描述(SDF + 射线相交 + 包围体,用于游戏逻辑判定而非渲染);一个 Shape 可对应零或多个渲染 Mesh
+- SDF 支持使本模块可服务于:碰撞近似(用 SDF 判断点是否在形状内)、AI 寻路(Shape 作为障碍体)、植被分布(Shape 作为生成区域边界)、CSG 运算(WhiteBox CSG 用 SDF 近似)
+- 射线相交返回 `{ hit: boolean, point: Vector3, normal: Vector3, distance: number }`,与 `Raycaster` 的 intersect 格式一致便于复用
+
+### 可组合植被管线 (Vegetation/)
+
+- 适配自 [o3de `Gems/Vegetation`](https://github.com/o3de/o3de/tree/development/Gems/Vegetation),本批次新增;与 `Environment/VegetationSystem` 互补(后者是渲染数据层,本模块是可组合的生成管线)
+- `VegetationDescriptor` — 植被描述符:mesh 引用 / LOD 阶梯 / 风摆动参数 / 季节颜色 / 密度 / 尺寸范围;一个 Descriptor 描述一种植被(草/灌木/树/岩石)
+- 6 个 Filter(过滤器,决定某个候选点是否放置植被):`DistanceFilter`(距相机/中心距离)/ `ShapeIntersectionFilter`(与 Shapes/ 形状求交)/ `SurfaceMaskFilter`(按 SurfaceTag 过滤表面)/ `DistributionFilter`(基于噪声的密度分布)/ `ShapeSurfaceFilter`(形状表面采样)/ `BlockerFilter`(避开障碍物)
+- 4 个 Modifier(修改器,调整已放置植被的属性):`ScaleModifier`(尺寸抖动)/ `RotationModifier`(旋转随机化,可沿法线对齐)/ `PositionModifier`(位置偏移,贴附表面)/ `AlignmentModifier`(朝向对齐:法线/世界向上/相机)
+- `SpawnerArea` — 生成区域:绑定一个 `VegetationDescriptor` + 一组 Filter + 一组 Modifier,在区域内(Shape 定义)采样候选点 → 过滤 → 修改 → 产出实例化数据;`AreaBlender` — 多区域混合器:解决重叠区域的冲突(优先级/密度合并)
+- 管线可序列化为 JSON,数据驱动;与 `SurfaceData/`(提供标签化表面点)、`Shapes/`(提供区域边界)、`Environment/VegetationRenderer`(最终渲染)协作
+
+### 本地多人系统 (LocalUser/)
+
+- 适配自 [o3de `Gems/LocalUser`](https://github.com/o3de/o3de/tree/development/Gems/LocalUser),本批次新增
+- `LocalUserProfile` — 本地用户配置:displayName / avatar / 控制偏好(键位映射/手柄死区/灵敏度)/ 音量 / 语言;可序列化到 localStorage,多用户各自独立配置
+- `LocalPlayerSlot` — 玩家槽位:绑定一个 `LocalUserProfile` + 输入设备(键盘/手柄 N)+ 当前活动状态(`joined` / `ready` / `playing` / `spectating`);槽位有 index(0-3,支持最多 4 人本地分屏)
+- `LocalUserManager` — 多用户管理器:`join(profile, device)` 分配空槽位 / `leave(slotIndex)` 释放 / `getSlot(index)` 查询 / `getActiveSlots()` 返回所有已加入槽位;管理槽位分配与设备独占(一个手柄不能同时被两个槽位占用)
+- 与 `Input/InputManager` 协作:InputManager 提供原始输入,LocalUserManager 把输入设备路由到对应槽位的玩家;与 `Network/NetworkSession` 互补(本地多人 + 在线多人可组合:本地槽位作为客户端加入在线会话)
+- 与 `Controls/` 协作:每个槽位可绑定独立的相机/控制器,支持分屏渲染
+
+### 可视化脚本系统 (ScriptCanvas/)
+
+- 适配自 [o3de `Gems/ScriptCanvas`](https://github.com/o3de/o3de/tree/development/Gems/ScriptCanvas),本批次新增;与 `Scripting/VisualScriptComponent`(轻量可视化脚本组件)互补 — 本模块是独立的、功能完整的 ScriptCanvas 实现
+- `ScriptNode` — 节点基类:`id` / `type`(节点类型)/ `inputs`(ScriptPin 数组)/ `outputs`(ScriptPin 数组)/ `execute(ctx)` 方法;`ScriptPin` 持有名称 + 数据类型 + 可选默认值
+- `ScriptGraph` — DAG 图:持有 `nodes: Map<id, ScriptNode>` + 邻接表(exec 边 + data 边);`addNode` / `removeNode` / `connect(from, to)` / `validate()`(环检测 + 类型检查 + 悬空引脚)
+- `ScriptExecutor` — 执行引擎:从指定 event 节点入口,沿 exec-output 链深度优先执行;`ScriptContext` 提供黑板变量读写 + 自定义函数注册(`registerFunction(name, fn)`)+ 日志;带递归深度上限防止死循环
+- 18 个内置节点类型:`OnEvent`(事件入口)/ `CallFunction`(调用注册函数)/ `Branch`(条件分支)/ `While`/`For`(循环)/ `GetVariable`/`SetVariable`/ `Add`/`Subtract`/`Multiply`/`Divide`(数学)/ `And`/`Or`/`Not`(逻辑)/ `Vector3` 构造/分解/ `StringConcat`/ `Print`/ `Delay`(协程延迟)
+- 图可序列化为 JSON(`exportGraph`/`importGraph`),数据驱动,可存档进 `.vreen` 包;与 Blockly(浏览器端可视化编辑)协作:Blockly 积木可编译为 ScriptGraph JSON
+
+### WhiteBox Greyboxing (WhiteBox/)
+
+- 适配自 [o3de `Gems/WhiteBox`](https://github.com/o3de/o3de/tree/development/Gems/WhiteBox),本批次新增
+- `HalfEdgeMesh` — 半边网格数据结构:每个顶点 / 边 / 面通过 `HalfEdge` 双向链表互引用,支持高效的拓扑查询(邻接面 / 共享边 / 边界环)与编辑(顶点移动 / 面挤压 / 边倒角);是 WhiteBox 的核心数据结构,比 `BufferGeometry` 的扁平索引数组更适合交互式编辑
+- `WhiteBoxShapes` — greyboxing 基元生成器:从 `HalfEdgeMesh` 产出 4 种基础形状 — `box`(立方体)/ `tetrahedron`(四面体)/ `icosahedron`(二十面体,球体近似起点)/ `staircase`(阶梯,参数化台阶数与尺寸)
+- `Csg` — 布尔运算(Constructive Solid Geometry):对两个 `HalfEdgeMesh` 执行 `union`(合并)/ `subtract`(A 减 B)/ `intersect`(交集);基于半边网格求交,产出新 HalfEdgeMesh;支持链式组合(多个基元经多次 CSG 形成复杂 greybox 造型)
+- 与 `Geometries/` 区别:`Geometries/` 产出最终渲染网格(不可编辑),`WhiteBox/` 产出可编辑的半边网格(关卡设计师迭代造型),最终可 `toBufferGeometry()` 转为渲染网格
+- 与 `Editor/` 协作:WhiteBox 网格可挂到 `Object3D`,经 `TransformGizmo` 变换、`UndoRedoSystem` 记录编辑历史;适合关卡设计早期快速搭建关卡体量(blockout)
+
+### 层级渲染管线 (Renderer/PassGraph/)
+
+- 适配自 [o3de `Gems/Atom/RPI`](https://github.com/o3de/o3de/tree/development/Gems/Atom/RPI),本批次新增;与 `Renderer/RenderGraph` 互补 — RenderGraph 是通用资源依赖图(资源生命周期管理),PassGraph 是面向渲染 Pass 的层级化模板系统
+- `Pass` — Pass 基类:持 `inputAttachments` / `outputAttachments`(`PassAttachment` 引用)+ `children`(子 Pass,形成层级树)+ `execute(ctx)` 方法;层级结构支持 Pass 嵌套(如 RootPass → ForwardPass → ShadowPass 子树)
+- `PassAttachment` — Pass 附件:描述渲染目标(纹理格式 / 尺寸 / 用法 color|depth|stencil / 生命周期 transient|persistent);与 `MRTTarget` 协作(MRTTarget 是 GL 侧 FBO 包装,PassAttachment 是数据描述)
+- `PassTemplate` — Pass 模板:声明式描述一个 Pass 的结构(子 Pass 列表 + 附件槽位 + 参数),可序列化为 JSON;`PassFactory` — 工厂:从 `PassTemplate` 实例化 `Pass` 树(递归构建子 Pass + 绑定附件)
+- `PassGraph` — Pass 图根节点:持整棵 Pass 树 + 全局附件池;`execute(ctx)` 按层级深度优先遍历执行所有 Pass;支持 7 种内置 Pass 类型:`ForwardPass` / `DeferredPass` / `ShadowPass` / `BloomPass` / `SSAOPass` / `ToneMapPass` / `DebugPass`
+- 数据驱动:整个渲染管线可由 JSON 模板描述(无需写代码),运行时由 `PassFactory` 重建;与 `RenderPipelineManager` 协作(后者管 Forward/Deferred/Forward+ 三种管线的运行时切换,PassGraph 提供单管线内部的 Pass 树结构)
 
 ### 代码规范
 
@@ -589,6 +671,6 @@ src/
 
 - `npm test` / `npm run test:watch` / `npm run test:coverage`
 - Vitest 4 + @vitest/coverage-v8;测试文件与源码同目录 `*.test.ts`
-- 当前测试数量:**4700+**(251 个测试文件,覆盖 Math / Core / ECS / Animation / Physics / Renderer / Loaders / Materials / Particles / Audio / Terrain / Network / SaveSystem / SceneManager / Input / AI / Environment / Timeline / Voxel / Editor / PCG / Pipeline / Gameplay 等 34 个顶层模块)
+- 当前测试数量:**7000+**(290+ 个测试文件,覆盖 Math / Core / ECS / Animation / Physics / Renderer / Loaders / Materials / Particles / Audio / Terrain / Network / SaveSystem / SceneManager / Input / AI / Environment / Timeline / Voxel / Editor / PCG / Pipeline / Gameplay / Tools (含 ConsoleCommands) / Curves / SurfaceData / Shapes / Vegetation / LocalUser / ScriptCanvas / WhiteBox / PassGraph 等 42 个顶层模块)
 
 ## 📌&#x20;

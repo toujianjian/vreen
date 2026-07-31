@@ -59,10 +59,10 @@
 | 图形后端   | 自研 WebGL2 引擎 + Three.js r169 双后端                        |
 | 定位       | 面向独立游戏开发者与 3D 艺术家的可视化检视系统                  |
 | License    | MIT                                                            |
-| 代码规模   | 56K+ 行(引擎 + 应用 + 测试)                                  |
-| 引擎模块   | 34 个顶层模块                                                  |
-| 源码文件   | 390+ (`src/engine/`)                                          |
-| 测试       | 3361+ 测试(200+ 文件,42+ 模块)                              |
+| 代码规模   | 64K+ 行(引擎 + 应用 + 测试)                                  |
+| 引擎模块   | 42 个顶层模块                                                  |
+| 源码文件   | 430+ (`src/engine/`)                                          |
+| 测试       | 4200+ 测试(290+ 文件,42+ 模块)                              |
 | 运行时依赖 | 零(@vreen/engine 仅 Draco 为可选 peer)                       |
 | 构建工具   | Vite 5 + Tailwind CSS 3                                        |
 | 桌面端     | Electron 43 + electron-builder 26(便携 .exe)                |
@@ -207,7 +207,7 @@
 | 检视器 UI         | ✗           | ✓ Stage/Inspector/Outliner/Toolbar/StatusBar       | VREEN  |
 | 性能 HUD          | ✗           | ✓ ProfilerHUD(CPU/GPU/System/Draws tab)          | VREEN  |
 | 引擎功能面板      | ✗           | ✓ EngineFeaturesPanel(8 子系统开关)              | VREEN  |
-| 引擎模块面板      | ✗           | ✓ EngineModulesPanel(34 模块展示)【新增】        | VREEN  |
+| 引擎模块面板      | ✗           | ✓ EngineModulesPanel(42 模块展示)【新增】        | VREEN  |
 | 性能监控面板      | ✗           | ✓ PerformanceMonitor(图表式)【新增】             | VREEN  |
 | 国际化            | ✗           | ✓ i18next(5 语言:zh/en/ja/ko/es)               | VREEN  |
 | Blockly 脚本面板  | ✗           | ✓ BlocklyPanel                                     | VREEN  |
@@ -245,9 +245,9 @@
 5. **架构现代化** — VREEN 采用 ECS + 事件总线 + 脚本系统 + 可视化脚本(Blockly);soup3D 为传统 Model/Face 即时模式。
 6. **工具链与调试** — VREEN 提供 5 类 Profiler + 性能报告 + 检视器 UI + 性能 HUD;soup3D 无任何调试工具。
 7. **国际化与交付** — VREEN 支持 5 语言 + 浏览器即点即用 + Electron 桌面便携包;soup3D 仅桌面 + 需 Python 环境。
-8. **测试与质量** — VREEN 拥有 3361+ 测试覆盖 42+ 模块;soup3D 测试覆盖未公开。
+8. **测试与质量** — VREEN 拥有 4200+ 测试覆盖 42+ 模块;soup3D 测试覆盖未公开。
 9. **资源生态** — VREEN 支持 11 种加载器 + 4 种导出器 + .vreen 包格式 + 增量差分;soup3D 无资源管线。
-10. **文档化架构** — VREEN 拥有 34 模块的详细架构文档(CLAUDE.md)+ API 教程 + 格式规范;soup3D 仅有 README。
+10. **文档化架构** — VREEN 拥有 42 模块的详细架构文档(CLAUDE.md)+ API 教程 + 格式规范;soup3D 仅有 README。
 
 ### 5.2 soup3D 的不可替代优势(VREEN 不直接竞争)
 
@@ -261,7 +261,7 @@
 2. **浏览器零安装** — 保持纯客户端浏览器运行的分发优势。
 3. **可视化脚本** — Blockly 面向非程序员,soup3D 无对应能力。
 4. **.vreen 包生态** — 多语言 SDK(Java/C#/C++/Unity/Unreal)形成跨引擎互操作,soup3D 无包格式。
-5. **测试规模** — 持续扩大 3361+ 测试覆盖,作为质量护城河。
+5. **测试规模** — 持续扩大 4200+ 测试覆盖,作为质量护城河。
 
 ### 5.4 总评
 
@@ -288,7 +288,36 @@
 
 | 组件                      | 路径                                              | 作用 |
 | ------------------------- | ------------------------------------------------- | ---- |
-| `EngineModulesPanel.tsx`  | `src/components/viewer/EngineModulesPanel.tsx`   | 展示全部 34 个引擎顶层模块,可展开查看核心类与功能,赛博朋克风格 |
+| `EngineModulesPanel.tsx`  | `src/components/viewer/EngineModulesPanel.tsx`   | 展示全部 42 个引擎顶层模块,可展开查看核心类与功能,赛博朋克风格 |
 | `PerformanceMonitor.tsx`  | `src/components/viewer/PerformanceMonitor.tsx`   | 实时性能监控面板,FPS/帧时间/内存/DrawCall 图表展示,赛博朋克风格 |
 
 新增 i18n key(5 语言):`engineModules.*` / `performanceMonitor.*`(含 `fps` / `frameTime` / `memory` / `drawCalls`)。
+
+---
+
+## 新增引擎能力(2026-07-30 适配 three.js + o3de)
+
+本批次从 three.js 与 o3de 适配 8 个新顶层模块 + 7 处模块扩展,新增 346 测试(总计 877 新模块测试通过)。
+
+| 能力 | 来源 | soup3D | VREEN |
+|------|------|--------|-------|
+| 曲线系统 (CatmullRom/Bezier/Spline + arc-length + Frenet) | three.js | ❌ | ✅ |
+| 2D Path + Shape + Earcut 三角剖分 | three.js | ❌ | ✅ |
+| 表面标签系统 (SurfaceData 查询/合并) | o3de | ❌ | ✅ |
+| 逻辑形状组件 (8 种 Shape + SDF + 射线相交) | o3de | ❌ | ✅ |
+| 可组合植被管线 (6 Filter + 4 Modifier + SpawnerArea) | o3de | ❌ | ✅ |
+| 本地多人 (LocalUserManager + 槽位 + 配置) | o3de | ❌ | ✅ |
+| 可视化脚本 (ScriptCanvas 18 节点 + 执行引擎) | o3de | ❌ | ✅ |
+| WhiteBox greyboxing (半边网格 + CSG) | o3de | ❌ | ✅ |
+| 层级渲染管线 (PassGraph 7 pass 类型 + 数据驱动) | o3de | ❌ | ✅ |
+| 扫掠角色控制器 (SweptCC + 滑墙 + 坡度判定) | o3de | ❌ | ✅ |
+| 根运动提取 (RootMotion 修复滑步) | o3de | ❌ | ✅ |
+| 客户端预测 + 和解 (Rewindable + InputHistory) | o3de | ❌ | ✅ |
+| 球谐光探针 (LightProbe + SH3 + Ambient/Hemisphere) | three.js | ❌ | ✅ |
+| 凸包几何 (QuickHull) | three.js | ❌ | ✅ |
+| 贴花几何 (DecalGeometry) | three.js | ❌ | ✅ |
+| 管状几何 (TubeGeometry + Frenet 帧) | three.js | ❌ | ✅ |
+| 球坐标/柱坐标 (Spherical/Cylindrical) | three.js | ❌ | ✅ |
+| 极坐标网格 + Box3/Plane Helper | three.js | ❌ | ✅ |
+
+VREEN 现已覆盖 o3de 10 项核心系统(SurfaceData/Shapes/RootMotion/Vegetation/LocalUser/Rewindable+预测/RPI Pass Tree/Swept CC/ScriptCanvas/WhiteBox)与 three.js 12 项扩展(Curves/Math/Lights/Geometries/Helpers/TubeGeometry),引擎模块总数达 42,测试总数超 4200。
