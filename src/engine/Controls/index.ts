@@ -20,6 +20,16 @@ export type {
   GroundSampleFn,
 } from './CharacterController';
 
+// SweptCharacterController — swept-collision kinematic CC (capsule sweep + slide).
+// Adapts o3de PhysX CharacterController swept-collision concept.
+export { SweptCharacterController, sweepCapsule } from './SweptCharacterController';
+export type {
+  SweepHit,
+  SweepResult,
+  ColliderProvider,
+  SweptCharacterControllerOptions,
+} from './SweptCharacterController';
+
 // VRController — WebXR VR/XR 支持 (手柄追踪 + 双眼渲染位姿提取)。
 export { VRController } from './VRController';
 export type {

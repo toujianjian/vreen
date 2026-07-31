@@ -12,6 +12,7 @@ export { RingGeometry } from './RingGeometry';
 export { CapsuleGeometry } from './CapsuleGeometry';
 export { TorusKnotGeometry } from './TorusKnotGeometry';
 export { LatheGeometry } from './LatheGeometry';
+export { TubeGeometry, type TubeGeometryOptions } from './TubeGeometry';
 export { WireframeGeometry } from './WireframeGeometry';
 export { EdgesGeometry } from './EdgesGeometry';
 export { ConvexGeometry } from './ConvexGeometry';
