@@ -56,3 +56,19 @@ export {
   type SessionMessage,
   type SessionStats,
 } from './NetworkSession';
+export {
+  NetworkTime,
+  defaultNetworkTime,
+} from './NetworkTime';
+export {
+  RewindableObject,
+  type RewindableEntry,
+} from './RewindableObject';
+export {
+  InputHistory,
+  type InputHistoryEntry,
+} from './InputHistory';
+export {
+  ClientPrediction,
+  type ClientPredictionState,
+} from './ClientPrediction';

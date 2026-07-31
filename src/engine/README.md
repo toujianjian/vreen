@@ -4,7 +4,7 @@
 >
 > The kernel of the VREEN engine: a TypeScript-first, zero-runtime-dependency
 > WebGL2 rendering and simulation stack aimed at indie game developers and
-> 3D artists. The kernel exposes 34 top-level modules through a single barrel
+> 3D artists. The kernel exposes 39 top-level modules through a single barrel
 > (`src/engine/index.ts`) and ships **3361+ tests** across **200+ test files**.
 
 ---
@@ -68,6 +68,13 @@ CatmullRom·      SurfaceDataProvider     Capsule·Cylinder·Disk
 Bezier·Line·     SurfaceDataSystem       Quad·Tube·Compound
 Ellipse·Spline·  TerrainSurfaceProvider
 Path·Shape·ShapeUtils
+   │
+   ▼
+Vegetation       LocalUser
+Descriptor·      LocalUserProfile·
+Filter·Modifier  LocalPlayerSlot·
+SpawnerArea·     LocalUserManager
+AreaBlender
 ```
 
 The barrel re-exports **every** module's public surface; users import from a
@@ -118,8 +125,10 @@ import { Scene, PerspectiveCamera, WebGL2Renderer, BoxGeometry, StandardMaterial
 | Pipeline | `Pipeline/` | AssetPipeline · TextureProcessor · GeometryProcessor · Import | [Pipeline/README.md](./Pipeline/README.md) |
 | Gameplay | `Gameplay/` | Dialogue · Quest · Inventory · DialogueParticipant | [Gameplay/README.md](./Gameplay/README.md) |
 | Curves | `Curves/` | Curve · CurvePath · CatmullRomCurve3 · CubicBezierCurve3 · QuadraticBezierCurve3 · LineCurve3 · EllipseCurve · SplineCurve · Path · Shape · ShapeUtils | [Curves/README.md](./Curves/README.md) |
-| SurfaceData | `SurfaceData/` | SurfaceTag · SurfacePoint · SurfaceDataProvider · SurfaceDataSystem · TerrainSurfaceProvider | — |
-| Shapes | `Shapes/` | Shape (abstract) · BoxShape · SphereShape · CapsuleShape · CylinderShape · DiskShape · QuadShape · TubeShape · CompoundShape | — |
+| SurfaceData | `SurfaceData/` | SurfaceTag · SurfacePoint · SurfaceDataProvider · SurfaceDataSystem · TerrainSurfaceProvider | [SurfaceData/README.md](./SurfaceData/README.md) |
+| Shapes | `Shapes/` | Shape (abstract) · BoxShape · SphereShape · CapsuleShape · CylinderShape · DiskShape · QuadShape · TubeShape · CompoundShape | [Shapes/README.md](./Shapes/README.md) |
+| Vegetation | `Vegetation/` | VegetationDescriptor · VegetationFilter (altitude/slope/mask/distance/shape/distribution) · VegetationModifier (position/rotation/scale/slopeAlignment) · SpawnerArea · AreaBlender | [Vegetation/README.md](./Vegetation/README.md) |
+| LocalUser | `LocalUser/` | LocalUserProfile · LocalPlayerSlot · PlayerSlotState · LocalUserManager | [LocalUser/README.md](./LocalUser/README.md) |
 
 ---
 

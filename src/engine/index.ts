@@ -219,3 +219,10 @@ export {
 // Animation — Root Motion 提取器 (参考 o3de EMotionFX RepositioningLayerPass)。
 // 从根骨节提取相对位移/旋转增量,应用到角色世界变换而非骨节,修复滑步。
 export { RootMotionExtractor, DEFAULT_ROOT_MOTION_CONFIG, type RootMotionConfig } from './Animation';
+// Vegetation — 可组合植被管线 (Spawner + Filters + Modifiers + Descriptors + AreaBlender)。
+// 与 Environment/VegetationSystem 互补:VegetationSystem 是一体化系统,本模块是可组合管线。
+// 参考 o3de Gems/Vegetation。
+export * from './Vegetation';
+// LocalUser — 本地多用户管理 (Profile + Slot + Manager)。
+// 参考 o3de Gems/LocalUser。
+export * from './LocalUser';
