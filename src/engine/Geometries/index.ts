@@ -17,6 +17,8 @@ export { WireframeGeometry } from './WireframeGeometry';
 export { EdgesGeometry } from './EdgesGeometry';
 export { ConvexGeometry } from './ConvexGeometry';
 export { ParametricGeometry, type ParametricFunction } from './ParametricGeometry';
+// TeapotGeometry — 犹他茶壶 (32 个贝塞尔面片),适配自 three.js TeapotGeometry。
+export { TeapotGeometry, type TeapotGeometryOptions } from './TeapotGeometry';
 export { DecalGeometry } from './DecalGeometry';
 export { Shape } from './Shape';
 export { ExtrudeGeometry, type ExtrudeOptions } from './ExtrudeGeometry';
