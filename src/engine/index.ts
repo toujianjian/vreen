@@ -73,6 +73,19 @@ export {
   type ProceduralNodeType,
   type ProceduralNode,
   type ProceduralAnimationStats,
+  // Animation retargeting
+  AnimationRetargeting,
+  extractBindPose,
+  type BindTransform,
+  type BoneMapping,
+  type RetargetConfig,
+  // Two-bone IK + LookAt IK
+  TwoBoneIKSolver,
+  LookAtIK,
+  type TwoBoneIKInput,
+  type TwoBoneIKOutput,
+  type LookAtIKInput,
+  type LookAtIKOutput,
 } from './Animation';
 export * from './ECS';
 export * from './Physics';

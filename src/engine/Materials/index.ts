@@ -130,4 +130,22 @@ export {
   type ShaderVariantCompiler,
   type VariantQuery,
 } from './ShaderVariant';
+// 节点式程序化材质图(可视化编辑器核心 + GLSL 编译器)。
+// 参考 o3de MaterialGraph / Unreal Material Editor / Unity ShaderGraph。
+// 用户连接节点(Input / Math / Texture / Color / Output),编译器把图
+// 编译成 GLSL(顶点 + 片段),最终包装成 ShaderMaterial 供 renderer 使用。
+// 完全无 WebGL 依赖(纯数据 + 字符串生成),可在 Node/无头环境运行。
+export {
+  MaterialGraph,
+  type SocketType,
+  type SocketDirection,
+  type Socket,
+  type NodeKind,
+  type MaterialNode,
+  type MaterialEdge,
+  type CompileResult,
+  createTexturedPBRGraph,
+  createFresnelGraph,
+  createNoiseGraph,
+} from './MaterialGraph';
 

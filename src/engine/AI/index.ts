@@ -85,3 +85,30 @@ export {
   type TrainingProgress,
   type MLStats,
 } from './MLInterface';
+// GOAPPlanner — 目标导向行动规划 (A* 搜索动作空间,生成最低代价动作序列)。
+// 与 BehaviorTree 互补:BT 是反应式决策,GOAP 是规划式决策,适合复杂多步骤目标。
+export {
+  GOAPPlanner,
+  GOAPAgent,
+  makeWorldState,
+  type WorldStateValue,
+  type WorldState,
+  type GOAPAction,
+  type GOAPGoal,
+  type GOAPPlan,
+  type GOAPPlanResult,
+  type GOAPFailureReason,
+} from './GOAPPlanner';
+// UtilityAI — 效用理论驱动决策 (考虑因素 + 响应曲线 + 合成策略 + 冷却/惯性)。
+// 与 BehaviorTree/GOAP 互补:BT 是硬编码决策树,GOAP 是规划式,UtilityAI 是连续评分式。
+export {
+  UtilityAI,
+  Considerations,
+  type UtilityContext,
+  type ResponseCurveType,
+  type ResponseCurveParams,
+  type Consideration,
+  type UtilityAction,
+  type CompositeStrategy,
+  type UtilityDecision,
+} from './UtilityAI';

@@ -101,11 +101,11 @@ import { Scene, PerspectiveCamera, WebGL2Renderer, BoxGeometry, StandardMaterial
 | Cameras | `Cameras/` | PerspectiveCamera · OrthographicCamera · CinematicCamera · CameraRig | [Cameras/README.md](./Cameras/README.md) |
 | Controls | `Controls/` | Orbit · Fly · PointerLock · Map · CharacterController · VRController | [Controls/README.md](./Controls/README.md) |
 | Lights | `Lights/` | Ambient · Directional · Point · Spot · Hemisphere · RectArea · LightProbe · AmbientLightProbe · HemisphereLightProbe · SphericalHarmonics3 + shadows | [Lights/README.md](./Lights/README.md) |
-| Materials | `Materials/` | Standard · Physical · Phong · Toon · Fur · SSS · Water · ShaderChunks | [Materials/README.md](./Materials/README.md) |
+| Materials | `Materials/` | Standard · Physical · Phong · Toon · Fur · SSS · Water · ShaderChunks · MaterialGraph · AdvancedPBR | [Materials/README.md](./Materials/README.md) |
 | Geometries | `Geometries/` | 18 procedural primitives + Shape + Extrude + Wireframe + Edges + ConvexGeometry + ParametricGeometry + DecalGeometry | [Geometries/README.md](./Geometries/README.md) |
 | Loaders | `Loaders/` | GLB · OBJ · FBX · STL · PLY · TGA · HDR · KTX2 · EXR + 4 exporters | [Loaders/README.md](./Loaders/README.md) |
 | Audio | `Audio/` | Listener · Positional · Effects · Analyzer · Procedural · Spatial | [Audio/README.md](./Audio/README.md) |
-| Renderer | `Renderer/` | WebGL2 · Deferred · Forward+ · PathTracer · PostProcess · GI · RT | [Renderer/README.md](./Renderer/README.md) |
+| Renderer | `Renderer/` | WebGL2 · Deferred · Forward+ · PathTracer · PostProcess · GI · RT · LightmapBaker · RenderGraph | [Renderer/README.md](./Renderer/README.md) |
 | Helpers | `Helpers/` | Grid · Axes · Box · Arrow · Camera · Line · Debug · PhysicsDebug · PolarGridHelper · Box3Helper · PlaneHelper | [Helpers/README.md](./Helpers/README.md) |
 | Terrain | `Terrain/` | TerrainGeometry · Heightmap · Splat · Layer · Erosion · Editor | [Terrain/README.md](./Terrain/README.md) |
 | Acceleration | `Acceleration/` | BVH · BVHBuilder (SAH) · MeshBVH (Raycaster acceleration) | [Acceleration/README.md](./Acceleration/README.md) |
@@ -113,16 +113,16 @@ import { Scene, PerspectiveCamera, WebGL2Renderer, BoxGeometry, StandardMaterial
 | Serialization | `Serialization/` | Registry · Geometry · Material · Scene ↔ JSON round-trip | [Serialization/README.md](./Serialization/README.md) |
 | SaveSystem | `SaveSystem/` | Multi-slot saves · Auto-save · LocalStorage adapter | [SaveSystem/README.md](./SaveSystem/README.md) |
 | SceneManager | `SceneManager/` | Multi-scene register/switch · Transition · Streaming | [SceneManager/README.md](./SceneManager/README.md) |
-| Animation | `Animation/` | Clip · Mixer · StateMachine · BlendSpace · Layer · IK · Procedural · RootMotion | [Animation/README.md](./Animation/README.md) |
+| Animation | `Animation/` | Clip · Mixer · StateMachine · BlendSpace · Layer · IK · Procedural · RootMotion · BoneAttachment · Retargeting · SpringSolver · TwoBoneIK | [Animation/README.md](./Animation/README.md) |
 | ECS | `ECS/` | World · ComponentType · Systems · QueryBuilder · Broadphase · Prefab | [ECS/README.md](./ECS/README.md) |
-| Physics | `Physics/` | Rigid · Cloth · Fluid · Buoyancy · Vehicle · Flight · Constraints | [Physics/README.md](./Physics/README.md) |
+| Physics | `Physics/` | Rigid · Cloth · Fluid · Buoyancy · Vehicle · Flight · Constraints · Ragdoll · SoftBody · Rope | [Physics/README.md](./Physics/README.md) |
 | Events | `Events/` | EventBus · EventQueue · typed GameEvent hierarchy | [Events/README.md](./Events/README.md) |
 | Scripting | `Scripting/` | ScriptC · ScriptSystem · Registry · Coroutine · Bindings · VisualScript | [Scripting/README.md](./Scripting/README.md) |
 | Particles | `Particles/` | ParticleSystem2 · Emitter · Modifier · Curve · Trail · SubEmitters | [Particles/README.md](./Particles/README.md) |
 | Tools | `Tools/` | Profiler · FrameProfiler · SystemProfiler · MemoryTracker · Console | [Tools/README.md](./Tools/README.md) |
 | Network | `Network/` | Transport · Snapshot · NetworkSync · LagComp · Session · StateSync | [Network/README.md](./Network/README.md) |
 | Input | `Input/` | Keyboard · Mouse · Touch · Gamepad · InputAction · InputMap | [Input/README.md](./Input/README.md) |
-| AI | `AI/` | NavMesh · PathFinder · Steering · Perception · BehaviorTree · ML | [AI/README.md](./AI/README.md) |
+| AI | `AI/` | NavMesh · PathFinder · Steering · Perception · BehaviorTree · ML · GOAP · UtilityAI | [AI/README.md](./AI/README.md) |
 | Environment | `Environment/` | Sky · Cloud · Weather · Vegetation · Water · FFT Ocean | [Environment/README.md](./Environment/README.md) |
 | Timeline | `Timeline/` | Clip · Track · Event · Property · Sequencer (play/seek/export) | [Timeline/README.md](./Timeline/README.md) |
 | Voxel | `Voxel/` | Chunk 16³ · World · Mesher (greedy) · Raycaster (DDA) · Palette | [Voxel/README.md](./Voxel/README.md) |

@@ -23,6 +23,26 @@ export {
   type ProceduralAnimationStats,
 } from './ProceduralAnimation';
 export { BlendSpace1D, type BlendSpaceSample } from './BlendSpace1D';
+// Animation retargeting — adapt a clip from one skeleton to another with
+// different proportions. Relative-to-bind-pose strategy: delta = anim - bind,
+// then apply delta to target bind. Adapted from o3de EMotionFX retargeting.
+export {
+  AnimationRetargeting,
+  extractBindPose,
+  type BindTransform,
+  type BoneMapping,
+  type RetargetConfig,
+} from './AnimationRetargeting';
+// Two-bone IK solver (law of cosines + pole vector) and LookAt IK.
+// The standard UE/Godot/o3de pattern for arm/leg IK and head tracking.
+export {
+  TwoBoneIKSolver,
+  LookAtIK,
+  type TwoBoneIKInput,
+  type TwoBoneIKOutput,
+  type LookAtIKInput,
+  type LookAtIKOutput,
+} from './TwoBoneIKSolver';
 // 2D blend space (Delaunay triangulation + barycentric weights) for
 // forward/strafe locomotion blending. Adapted from o3de EMotionFX
 // BlendSpace2DNode.
@@ -57,3 +77,12 @@ export {
   type HumanoidRestPose,
   defaultHumanoidRestPose,
 } from './IK';
+// BoneAttachment — 把任意 Object3D 附加到骨骼上(武器 / 道具 / 装备槽 / VFX 锚点)。
+// 类似 Godot BoneAttachment / UE AttachToComponent / o3de ActorComponent。
+// 支持 4 种跟随模式(world / position / rotation / snap)+ 平滑插值 + 批量管理器。
+export {
+  BoneAttachment,
+  BoneAttachmentManager,
+  type BoneAttachmentOptions,
+  type FollowMode,
+} from './BoneAttachment';

@@ -223,4 +223,134 @@ export class Matrix4 {
   toArray(): number[] {
     return Array.from(this.elements);
   }
+
+  /** Set this matrix to a pure translation. */
+  makeTranslation(x: number, y: number, z: number): this {
+    const e = this.elements;
+    e[0] = 1; e[1] = 0; e[2] = 0; e[3] = 0;
+    e[4] = 0; e[5] = 1; e[6] = 0; e[7] = 0;
+    e[8] = 0; e[9] = 0; e[10] = 1; e[11] = 0;
+    e[12] = x; e[13] = y; e[14] = z; e[15] = 1;
+    return this;
+  }
+
+  /** Set this matrix to a pure scale. */
+  makeScale(x: number, y: number, z: number): this {
+    const e = this.elements;
+    e[0] = x; e[1] = 0; e[2] = 0; e[3] = 0;
+    e[4] = 0; e[5] = y; e[6] = 0; e[7] = 0;
+    e[8] = 0; e[9] = 0; e[10] = z; e[11] = 0;
+    e[12] = 0; e[13] = 0; e[14] = 0; e[15] = 1;
+    return this;
+  }
+
+  /** Set this matrix to a pure rotation from a quaternion. */
+  makeRotationFromQuaternion(q: { x: number; y: number; z: number; w: number }): this {
+    const x = q.x, y = q.y, z = q.z, w = q.w;
+    const x2 = x + x, y2 = y + y, z2 = z + z;
+    const xx = x * x2, xy = x * y2, xz = x * z2;
+    const yy = y * y2, yz = y * z2, zz = z * z2;
+    const wx = w * x2, wy = w * y2, wz = w * z2;
+    const e = this.elements;
+    e[0] = 1 - (yy + zz);
+    e[1] = xy + wz;
+    e[2] = xz - wy;
+    e[3] = 0;
+    e[4] = xy - wz;
+    e[5] = 1 - (xx + zz);
+    e[6] = yz + wx;
+    e[7] = 0;
+    e[8] = xz + wy;
+    e[9] = yz - wx;
+    e[10] = 1 - (xx + yy);
+    e[11] = 0;
+    e[12] = 0; e[13] = 0; e[14] = 0; e[15] = 1;
+    return this;
+  }
+
+  /**
+   * Invert this matrix in place. Wrapper around `getInverse(this)`.
+   * Returns identity when determinant is 0.
+   */
+  invert(): this {
+    // getInverse 写入 this = inv(this),但需要先备份原始元素。
+    const tmp = new Matrix4();
+    tmp.copy(this);
+    return this.getInverse(tmp);
+  }
+
+  /**
+   * Decompose this matrix into translation / rotation / scale.
+   * Mirrors three.js Matrix4.decompose.
+   *
+   * 注意:对于含负缩放(镜像)或剪切(非正交上 3x3)的矩阵,
+   * 提取的 quaternion 可能不精确;此处只做标准 polar 分解,
+   * 满足常规场景图变换需求。
+   *
+   * @param targetPosition 写入位置
+   * @param targetQuaternion 写入旋转
+   * @param targetScale 写入缩放
+   */
+  decompose(
+    targetPosition: { x: number; y: number; z: number },
+    targetQuaternion: { x: number; y: number; z: number; w: number },
+    targetScale: { x: number; y: number; z: number },
+  ): this {
+    const e = this.elements;
+    // 位置:最后一列前 3 行
+    targetPosition.x = e[12];
+    targetPosition.y = e[13];
+    targetPosition.z = e[14];
+
+    // 缩放:取上 3x3 各列向量长度
+    const sx = Math.hypot(e[0], e[1], e[2]);
+    const sy = Math.hypot(e[4], e[5], e[6]);
+    const sz = Math.hypot(e[8], e[9], e[10]);
+    targetScale.x = sx;
+    targetScale.y = sy;
+    targetScale.z = sz;
+
+    // 旋转:把上 3x3 每列除以缩放,得到纯旋转矩阵,再转为 quaternion
+    // 处理 0 缩放(避免 NaN)
+    const invSX = sx !== 0 ? 1 / sx : 0;
+    const invSY = sy !== 0 ? 1 / sy : 0;
+    const invSZ = sz !== 0 ? 1 / sz : 0;
+    const m11 = e[0] * invSX, m12 = e[4] * invSY, m13 = e[8] * invSZ;
+    const m21 = e[1] * invSX, m22 = e[5] * invSY, m23 = e[9] * invSZ;
+    const m31 = e[2] * invSX, m32 = e[6] * invSY, m33 = e[10] * invSZ;
+
+    // 标准 rotation matrix → quaternion(shepperd's method)
+    const trace = m11 + m22 + m33;
+    let qw: number, qx: number, qy: number, qz: number;
+    if (trace > 0) {
+      const s = 0.5 / Math.sqrt(trace + 1);
+      qw = 0.25 / s;
+      qx = (m32 - m23) * s;
+      qy = (m13 - m31) * s;
+      qz = (m21 - m12) * s;
+    } else if (m11 > m22 && m11 > m33) {
+      const s = 2 * Math.sqrt(1 + m11 - m22 - m33);
+      qw = (m32 - m23) / s;
+      qx = 0.25 * s;
+      qy = (m12 + m21) / s;
+      qz = (m13 + m31) / s;
+    } else if (m22 > m33) {
+      const s = 2 * Math.sqrt(1 + m22 - m11 - m33);
+      qw = (m13 - m31) / s;
+      qx = (m12 + m21) / s;
+      qy = 0.25 * s;
+      qz = (m23 + m32) / s;
+    } else {
+      const s = 2 * Math.sqrt(1 + m33 - m11 - m22);
+      qw = (m21 - m12) / s;
+      qx = (m13 + m31) / s;
+      qy = (m23 + m32) / s;
+      qz = 0.25 * s;
+    }
+    targetQuaternion.x = qx;
+    targetQuaternion.y = qy;
+    targetQuaternion.z = qz;
+    targetQuaternion.w = qw;
+    return this;
+  }
 }

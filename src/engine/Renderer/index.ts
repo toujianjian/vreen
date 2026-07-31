@@ -206,4 +206,13 @@ export {
   type QualitySettings,
   QUALITY_PRESETS,
 } from './RenderPipelineManager';
+// 离线光照贴图烘焙器(CPU 实现,directional/point/ambient 光源 + 可选 Monte Carlo AO + 高斯模糊降噪)。
+// 与 PathTracer/GlobalIllumination 互补:本类用于离线烘焙静态光,运行时零计算成本。
+export {
+  LightmapBaker,
+  type BakerLight,
+  type BakerGeometry,
+  type BakeOptions,
+  type BakeResult,
+} from './LightmapBaker';
 

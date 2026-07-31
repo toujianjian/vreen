@@ -96,6 +96,8 @@
 | 特殊材质                | ✗             | ✓ Fur/Toon/Matcap/Outline/Water/Wireframe/SSS      | VREEN  |
 | 高级 PBR 材质           | ✗             | ✓ AdvancedPBRMaterial(各向异性/Clearcoat)        | VREEN  |
 | 次表面散射              | ✗             | ✓ SubsurfaceScatteringMaterial(皮肤/蜡)          | VREEN  |
+| 节点式材质图            | ✗             | ✓ MaterialGraph(50+ 节点 + GLSL 编译器 + 序列化) | VREEN  |
+| 光照贴图烘焙            | ✗             | ✓ LightmapBaker(directional/point/ambient + AO)   | VREEN  |
 | Morph Targets           | ✗             | ✓ MorphTargets + MorphTargetAnimation              | VREEN  |
 | 文本/精灵               | ✗             | ✓ Text/BitmapText/TextAtlas/Sprite                 | VREEN  |
 | 实例化渲染              | ✗             | ✓ InstancedMesh + InstancedBufferAttribute         | VREEN  |
@@ -124,11 +126,16 @@
 | ----------------- | ------- | -------------------------------------------------- | ------ |
 | 骨骼动画          | ✗       | ✓ AnimationMixer + SkinnedMesh + Skeleton          | VREEN  |
 | 动画状态机        | ✗       | ✓ AnimationStateMachine(Idle/Walk/Run)           | VREEN  |
-| BlendSpace        | ✗       | ✓ BlendSpace1D                                     | VREEN  |
+| BlendSpace        | ✗       | ✓ BlendSpace1D + BlendSpace2D(Delaunay)            | VREEN  |
 | 动画层            | ✗       | ✓ AnimationLayerMixer + BoneMask + Additive        | VREEN  |
-| IK 逆向运动学     | ✗       | ✓ FABRIK/CCD/IKHumanoid + 关节约束                  | VREEN  |
+| IK 逆向运动学     | ✗       | ✓ FABRIK/CCD/IKHumanoid + TwoBoneIK + LookAt       | VREEN  |
 | 形变目标          | ✗       | ✓ MorphTargets + MorphTargetAnimation              | VREEN  |
 | 时间轴/Sequencer  | ✗       | ✓ Timeline(片段/轨道/事件/属性关键帧)           | VREEN  |
+| 动画重定向        | ✗       | ✓ AnimationRetargeting(relative-to-bind)           | VREEN  |
+| 程序化动画        | ✗       | ✓ ProceduralAnimation(步态/呼吸/待机/二次运动)   | VREEN  |
+| 弹簧物理(二次)  | ✗       | ✓ SpringSolver(头发/布料/尾巴)                   | VREEN  |
+| 根运动提取        | ✗       | ✓ RootMotion(in-place → 世界位移)                | VREEN  |
+| 骨骼附件          | ✗       | ✓ BoneAttachment(武器/道具/VFX 锚点 + 4 模式)    | VREEN  |
 
 ### 3.4 物理与模拟
 
@@ -136,8 +143,9 @@
 | ----------------- | ------- | -------------------------------------------------- | ------ |
 | 刚体物理          | ✗       | ✓ semi-implicit Euler + 冲量响应 + Baumgarte       | VREEN  |
 | 碰撞检测          | ✗       | ✓ Broadphase + narrowphase(AABB/Sphere/Capsule)  | VREEN  |
-| 物理约束          | ✗       | ✓ Ball/Hinge/Slider/Fixed/Distance Joint           | VREEN  |
+| 物理约束          | ✗       | ✓ Ball/Hinge/Slider/Fixed/Distance/ConeTwist Joint | VREEN  |
 | 布料模拟          | ✗       | ✓ ClothSimulation(Verlet + PBD)                  | VREEN  |
+| 软体模拟          | ✗       | ✓ SoftBodySimulation(3D 弹簧-质点 + 体积约束)    | VREEN  |
 | 流体模拟          | ✗       | ✓ FluidSimulation(SPH + 空间哈希)                | VREEN  |
 | 破坏系统          | ✗       | ✓ VoronoiFracture + DestructionSystem              | VREEN  |
 | 粒子系统(高级)  | ✗       | ✓ ParticleSystem2 + Modifier + Curve + Trail       | VREEN  |
@@ -145,6 +153,7 @@
 | 载具物理          | ✗       | ✓ VehiclePhysics(轮胎/悬挂/传动/转向)           | VREEN  |
 | 飞行物理          | ✗       | ✓ FlightPhysics(升力/阻力/控制面)               | VREEN  |
 | 绳索物理          | ✗       | ✓ RopePhysics(Verlet 距离约束)                    | VREEN  |
+| 布娃娃物理        | ✗       | ✓ RagdollSystem(骨骼 + ConeTwist 关节 + 写回)    | VREEN  |
 | 物理材质          | ✗       | ✓ PhysicsMaterial(摩擦/恢复系数)                  | VREEN  |
 
 ### 3.5 架构与系统
@@ -166,6 +175,8 @@
 | ----------------- | ------- | -------------------------------------------------- | ------ |
 | AI 导航           | ✗       | ✓ NavMesh + A* PathFinder + SteeringBehavior       | VREEN  |
 | 行为树            | ✗       | ✓ BehaviorTree + Blackboard + Decorator            | VREEN  |
+| GOAP 规划器       | ✗       | ✓ GOAPPlanner(A* 动作搜索 + 世界状态)            | VREEN  |
+| Utility AI        | ✗       | ✓ UtilityAI(9 响应曲线 + 4 组合策略 + 惯性)     | VREEN  |
 | 群体避障          | ✗       | ✓ CrowdSystem(RVO/ORCA 上层封装)                | VREEN  |
 | AI 感知系统       | ✗       | ✓ PerceptionSystem(视觉/听觉/触觉/嗅觉)         | VREEN  |
 | 机器学习接口      | ✗       | ✓ MLInterface(神经网络/KNN/决策树/SVM 训练)     | VREEN  |

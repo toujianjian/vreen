@@ -26,10 +26,19 @@ Material (abstract)
    │     └── WireframeMaterial        stylised wireframe
    ├── StandardMaterial               PBR (base color / metallic / roughness / emissive)
    │     └── MeshPhysicalMaterial     extended PBR (clearcoat / sheen / IOR / transmission)
+   ├── AdvancedPBRMaterial            anisotropic / iridescence / clearcoat / sheen / emissive
+   ├── SubsurfaceScatteringMaterial   skin / wax / jade / milk
+   ├── MatcapMaterial                 matcap (view-space normal → texture)
    ├── MeshPhongMaterial              legacy Blinn-Phong
    ├── MeshNormalMaterial             normal debug
    ├── ShadowMaterial                 shadow-only receiver
-   └── ShaderMaterial                 custom GLSL with onBeforeCompile
+   ├── ShaderMaterial                 custom GLSL with onBeforeCompile
+   ├── ShaderLibrary                  15 named templates (unlit/pbr/toon/...)
+   ├── ShaderCompiler                 #include + chunk injection + cache
+   ├── ShaderVariant                  keyword combinations + LRU variant cache
+   └── MaterialGraph                  node-based procedural materials (50+ node kinds)
+                                      Input / Constant / Texture / Math / Channel /
+                                      Noise / Curve / Output → GLSL → ShaderMaterial
 ```
 
 The renderer collects material parameters into uniforms and selects a

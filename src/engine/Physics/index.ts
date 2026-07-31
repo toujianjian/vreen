@@ -145,3 +145,34 @@ export {
   type BuoyancyOptions,
   type BuoyancyStats,
 } from './Buoyancy';
+
+// 软体物理(质量-弹簧 + 体积保持 + 形状匹配)
+// 与 ClothSimulation 互补:布料是 2D 表面,软体是 3D 体积(四面体 + 体积约束)。
+export {
+  SoftBodySimulation,
+  type SoftBodyParticle,
+  type SoftBodySpring,
+  type SpringType,
+  type VolumeConstraint,
+  type SoftBodyOptions,
+  type SoftBodyStats,
+} from './SoftBodySimulation';
+
+// 锥-扭关节(球关节 + swing 锥角限制 + twist 扭转限制)
+// 用于 ragdoll 肩/髋/脊柱/颈等需要双向摆动 + 扭转限制的关节。
+export {
+  ConeTwistConstraint,
+} from './ConeTwistConstraint';
+
+// 布娃娃物理(骨骼 → 刚体 + 锥-扭/铰链关节 + 重力/地面碰撞 → 写回 Bone)
+// 与 ECS PhysicsSystems 解耦:ragdoll 是 specialized pipeline,形态与一般刚体不同。
+export {
+  RagdollSystem,
+  createHumanoidRagdollConfig,
+  type RagdollShape,
+  type RagdollBoneConfig,
+  type RagdollBone,
+  type RagdollRigidbody,
+  type RagdollStats,
+  type RagdollOptions,
+} from './RagdollSystem';
