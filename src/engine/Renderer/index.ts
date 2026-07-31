@@ -43,6 +43,32 @@ export {
   type ShadowMapManagerOptions,
   isCastShadowLight,
 } from './ShadowMapManager';
+// 级联阴影贴图 (CSM/PSSM) — 大型户外场景多级阴影。
+// 适配 three.js CSM.js 与 o3de Atom CascadedShadows。
+// 提供 logarithmic / uniform / practical (PSSM λ 混合) 三种分割方案 +
+// tight 光源正交投影 + texel grid 稳定化,消除相机移动时的阴影抖动。
+export {
+  CascadedShadowMap,
+  type Cascade,
+  type SplitScheme,
+  type CascadedShadowMapOptions,
+} from './CascadedShadowMap';
+// 镜头光晕 (Lens Flare) — CPU 侧合成 Pass。
+// 适配 three.js Lensflare.js 与 o3de Atom LensFlarePass。
+// 提供 core/halo/ghost/streak 四种 flare 元素 + 沿轴分布 +
+// 方向判定 + 可选 ray-sphere 遮挡测试 + additive 合成到 RGBA 像素。
+// 不依赖 WebGL,可在 Node/无头环境运行(与 MotionBlurPass/TAAPass 同构)。
+export {
+  LensFlare,
+  DEFAULT_FLARES,
+  type FlareKind,
+  type FlareElement,
+  type LensFlareOptions,
+  type LensFlareStats,
+  type LensFlareInput,
+  type LensFlareCamera,
+  type OccluderSphere,
+} from './LensFlare';
 // 多渲染目标(MRT)+ 几何缓冲(GBuffer,延迟渲染用)。
 export { MRTTarget, type MRTSetupOptions } from './MRTTarget';
 export { GBuffer, type GBufferOptions } from './GBuffer';

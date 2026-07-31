@@ -81,7 +81,10 @@
 | PBR 物理渲染            | ✗             | ✓ StandardMaterial / MeshPhysicalMaterial          | VREEN  |
 | IBL 环境光照            | ✗             | ✓ HDR / CubeTexture / ReflectionProbe              | VREEN  |
 | 延迟渲染                | ✗             | ✓ DeferredRenderer + GBuffer(MRT 4 附件)         | VREEN  |
-| 阴影贴图                | ✗             | ✓ ShadowMapManager + DirectionalLightShadow        | VREEN  |
+| 阴影贴图                | ✗             | ✓ ShadowMapManager + DirectionalLightShadow          | VREEN  |
+| 级联阴影贴图 (CSM/PSSM) | ✗             | ✓ CascadedShadowMap (log/uniform/practical + texel 稳定) | VREEN  |
+| 镜头光晕 (Lens Flare)   | ✗             | ✓ LensFlare (core/halo/ghost/streak + 遮挡测试)      | VREEN  |
+| 几何体工具              | ✗             | ✓ BufferGeometryUtils (merge/weld/tangent/interleave) | VREEN  |
 | 后处理基础              | ✗             | ✓ Bloom/CA/Vignette/SSAO/FXAA/ToneMap/Gamma/DOF    | VREEN  |
 | 后处理增强              | ✗             | ✓ GTAO/SSR/SSSS/TAA/MotionBlur/VolumetricFog/LUT   | VREEN  |
 | 路径追踪(CPU 参考)    | ✗             | ✓ PathTracer(Möller–Trumbore + 俄罗斯轮盘)       | VREEN  |
@@ -332,3 +335,31 @@
 | 极坐标网格 + Box3/Plane Helper | three.js | ❌ | ✅ |
 
 VREEN 现已覆盖 o3de 10 项核心系统(SurfaceData/Shapes/RootMotion/Vegetation/LocalUser/Rewindable+预测/RPI Pass Tree/Swept CC/ScriptCanvas/WhiteBox)与 three.js 12 项扩展(Curves/Math/Lights/Geometries/Helpers/TubeGeometry),引擎模块总数达 42,测试总数超 4200。
+
+---
+
+## 新增引擎能力(2026-07-31 几何工具 + 级联阴影 + 镜头光晕)
+
+本批次新增 3 个模块,92 测试(BufferGeometryUtils 34 + CascadedShadowMap 26 + LensFlare 32)。
+
+| 能力 | 来源 | soup3D | VREEN |
+|------|------|--------|-------|
+| 几何体工具 (mergeGeometries/weldVertices/computeTangents/estimateBytesUsed/interleaveAttributes/toIndexed/deduplicateIndices) | three.js | ❌ | ✅ |
+| 级联阴影贴图 (CSM/PSSM,log/uniform/practical 三种分割 + tight 正交投影 + texel grid 稳定化) | three.js + o3de | ❌ | ✅ |
+| 镜头光晕 (LensFlare,core/halo/ghost/streak + 方向判定 + ray-sphere 遮挡测试 + additive 合成) | three.js + o3de | ❌ | ✅ |
+
+**关键算法**:
+- `weldVertices`:空间哈希网格 O(n) 平均复杂度的顶点焊接(27 邻居查询 + 距离阈值)
+- `computeTangents`:Lengyel 切线空间基计算 + Gram-Schmidt 正交化 + 手性修正
+- `CascadedShadowMap._logSplit`:`(near * (far/near)^p - near) / (far - near)` 对数分割
+- `practical` 方案:`(1-λ)*log + λ*uniform` PSSM 混合(λ=0 → log,λ=1 → uniform)
+- 稳定化:每帧 snap AABB min/max 到 texel grid,消除光源移动时的阴影抖动
+- 场景包围盒扩展:Z 范围并入场景 8 角点,确保 casters 全覆盖
+- `LensFlare.computeLightScreen`:VP 矩阵投影光源到 NDC + 方向 dot 判定 + ray-sphere 遮挡测试
+- flare 沿"光源屏幕位置 → 屏幕中心"轴线分布,符合真实镜头光学规律
+- additive 合成:`output += flare.rgb * opacity * visibility * intensity`,clamp 到 255
+
+**Matrix4 扩展**:`makeOrthographic(left, right, top, bottom, near, far)` 列主序正交投影(WebGL depth [-1,1])。
+**BufferGeometry 扩展**:`addGroup` / `clearGroups` draw group 支持,配合 mergeGeometries 多材质渲染。
+
+引擎模块总数 42,测试总数超 4200(+92)。

@@ -82,6 +82,19 @@ export class Matrix4 {
     return this;
   }
 
+  /** Right-handed orthographic projection (WebGL depth [-1, 1]). */
+  makeOrthographic(left: number, right: number, top: number, bottom: number, near: number, far: number): this {
+    const w = 1 / (right - left);
+    const h = 1 / (top - bottom);
+    const p = 1 / (far - near);
+    const e = this.elements;
+    e[0] = 2 * w;  e[1] = 0;     e[2] = 0;        e[3] = 0;
+    e[4] = 0;      e[5] = 2 * h;  e[6] = 0;        e[7] = 0;
+    e[8] = 0;      e[9] = 0;      e[10] = -2 * p;   e[11] = 0;
+    e[12] = -(right + left) * w;  e[13] = -(top + bottom) * h;  e[14] = -(far + near) * p;  e[15] = 1;
+    return this;
+  }
+
   /** Right-handed lookAt view matrix (camera at `eye`, looking at `target`, `up` world up). */
   makeLookAt(eye: { x: number; y: number; z: number }, target: { x: number; y: number; z: number }, up: { x: number; y: number; z: number }): this {
     const zx = eye.x - target.x;

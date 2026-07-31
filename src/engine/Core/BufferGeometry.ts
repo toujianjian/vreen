@@ -60,6 +60,18 @@ export class BufferGeometry {
     return this;
   }
 
+  /** Add a draw group (for multi-material rendering). */
+  addGroup(start: number, count: number, materialIndex: number = 0): this {
+    this.groups.push({ start, count, materialIndex });
+    return this;
+  }
+
+  /** Clear all draw groups. */
+  clearGroups(): this {
+    this.groups.length = 0;
+    return this;
+  }
+
   /** Recompute the AABB from the 'position' attribute. */
   computeBoundingBox(): void {
     const pos = this.attributes.position;

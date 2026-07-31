@@ -22,6 +22,8 @@ Renderer (interface)        ← pluggable backend contract
           ├── MRTTarget     ← multi-render-target FBO
           ├── GBuffer       ← deferred rendering geometry buffer
           ├── ShadowMapManager ← shadow-map FBO/texture lifecycle
+          ├── CascadedShadowMap ← CSM/PSSM for large outdoor scenes
+          ├── LensFlare ← CPU-side lens flare compositor
           ├── DeferredRenderer ← alternative deferred backend
           ├── ReflectionProbe / ReflectionProbeManager ← IBL probes
           └── PathTracer    ← CPU reference path tracer
@@ -141,6 +143,89 @@ G-Buffer shader writing to the 4 `layout(location = N) out` outputs.
 Centralised shadow-map FBO / texture lifecycle for cast-shadow lights.
 Per-light depth target reuse and resize policy. PCF 16-tap sampling in
 the shadow shader.
+
+### `CascadedShadowMap` (`CascadedShadowMap.ts`)
+
+Cascaded Shadow Maps (CSM / PSSM) for large outdoor scenes. A single
+shadow map cannot simultaneously cover near-camera detail and far shadow
+distance; CSM partitions the view frustum into N slices (typically 2–4)
+and renders a separate shadow map per slice. Near slices have high
+texel density (detail), far slices cover more world distance (range).
+
+Adapted from three.js `CSM.js` and o3de Atom `CascadedShadowMapsPass`.
+
+| Split Scheme | Formula | Trade-off |
+|--------------|---------|-----------|
+| `logarithmic` | `(near·(far/near)^p − near) / (far − near)` | Best near detail; far cascade under-covered |
+| `uniform` | `p = i/N` (linear) | Best far coverage; near cascade low resolution |
+| `practical` (PSSM) | `(1−λ)·log + λ·uniform` | λ=0 → log, λ=1 → uniform; default λ=0.5 |
+
+Per-frame `update(camera, sceneBounds?)`:
+1. Compute each cascade's `near` / `far` from split ratios.
+2. Extract the 8 corner points of each sub-frustum (camera space → world).
+3. Build a light view matrix (lookAt from cascade centre along light dir).
+4. Transform the 8 corners to light space, compute AABB.
+5. Optionally expand Z range using `sceneBounds` 8 corners (ensure all casters are inside).
+6. Stabilisation: snap AABB min/max to the texel grid — eliminates shadow jitter when the camera moves.
+7. Build orthographic projection (with `shadowBias` padding); `viewProjection = proj · view`.
+
+Shader uniforms: `u_cascadeVP[0..N]` (via `getCascadeVPArray()`, N·16 floats),
+`u_cascadeSplits[0..N]` (via `getSplitDepths()`, N floats for cascade selection).
+
+```ts
+const csm = new CascadedShadowMap({
+  cascades: 4,
+  scheme: 'practical',
+  lambda: 0.5,
+  resolution: 2048,
+  shadowDistance: 200,
+  lightDirection: new Vector3(-0.5, -1, -0.3).normalize(),
+  stabilize: true,
+});
+// each frame:
+csm.update(camera, sceneBoundingBox);
+for (const cascade of csm.cascades) {
+  renderer.renderShadowMap(scene, cascade.viewProjection, cascade.resolution);
+}
+```
+
+### `LensFlare` (`LensFlare.ts`)
+
+CPU-side lens flare compositor (no WebGL dependency; runs headless in
+Node/tests, isomorphic with `MotionBlurPass` / `TAAPass`). Simulates
+camera lens flares from bright light sources: core highlight, halo,
+ghosts, and anamorphic streak, all distributed along the axis from the
+light's screen position through the screen centre.
+
+Adapted from three.js `Lensflare.js` and o3de Atom `LensFlarePass`.
+
+Flare element kinds:
+
+| Kind | Description |
+|------|-------------|
+| `core` | Bright spot at the light's screen position; small, high opacity |
+| `halo` | Large soft circle at the light's position; low opacity |
+| `ghost` | Coloured circle along the axis (positionAlongAxis 0..1+) |
+| `streak` | Anamorphic horizontal/angled line through the core |
+
+Per-frame `render(input, lightWorldPos, camera, occluders?)`:
+1. Compute light direction from camera; reject if `dot < behindThreshold`.
+2. Project light to clip space via VP matrix → NDC → screen pixel.
+3. Optional ray-sphere occlusion test against `occluders` (bounding spheres); each hit reduces `visibility` (closer occluders attenuate more).
+4. For each `FlareElement`: position along the light→centre axis, draw with additive blending into the RGBA buffer (radial `(1-t)^falloff` for circles, Gaussian for streaks).
+
+```ts
+const lensFlare = new LensFlare({ intensity: 1.0 });
+const out = lensFlare.render(
+  { data: framePixels, width: 1280, height: 720 },
+  sunWorldPosition,
+  camera,
+  occluderSpheres,  // optional, for occlusion test
+);
+// out is a new Uint8ClampedArray with flares composited in
+```
+
+`DEFAULT_FLARES` preset ships 9 elements (1 core + 1 halo + 1 streak + 6 ghosts); replace at runtime via `setFlares()` / `addFlare()` / `clearFlares()`.
 
 ### `DeferredRenderer` (`DeferredRenderer.ts`)
 

@@ -4,8 +4,8 @@
 >
 > The kernel of the VREEN engine: a TypeScript-first, zero-runtime-dependency
 > WebGL2 rendering and simulation stack aimed at indie game developers and
-> 3D artists. The kernel exposes 41 top-level modules through a single barrel
-> (`src/engine/index.ts`) and ships **3361+ tests** across **200+ test files**.
+> 3D artists. The kernel exposes 42 top-level modules through a single barrel
+> (`src/engine/index.ts`) and ships **4200+ tests** across **290+ test files**.
 
 ---
 

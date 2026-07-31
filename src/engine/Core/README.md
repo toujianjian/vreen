@@ -75,9 +75,25 @@ interface LODLevel { distance: number; object: Object3D; hysteresis?: number; }
 
 | Export | Role |
 |--------|------|
-| `BufferGeometry` | Vertex attribute container + optional index. Carries `boundingBox` / `boundingSphere`, `morphTargets`, optional `bvh`. `version` increments on attribute edits. |
+| `BufferGeometry` | Vertex attribute container + optional index. Carries `boundingBox` / `boundingSphere`, `morphTargets`, optional `bvh`. `version` increments on attribute edits. Supports `addGroup` / `clearGroups` for multi-material draw groups. |
 | `BufferAttribute` | Typed-array view over one attribute (`position` / `normal` / `uv` / etc.). `version` increments on `set` / `setXY` / `setXYZ`. |
 | `InstancedBufferAttribute` | Per-instance attribute; `meshPerAttribute` maps to `gl.vertexAttribDivisor(loc, N)` (default 1). |
+
+### BufferGeometry Utilities
+
+Adapted from three.js `BufferGeometryUtils.js`. All functions are pure (do not
+mutate inputs unless stated); `computeTangents` is the only exception and
+mutates the input geometry in place to add the `tangent` attribute.
+
+| Export | Role |
+|--------|------|
+| `mergeGeometries(geometries, useGroups?)` | Concatenate N geometries into one. Validates attribute consistency (name + itemSize). Indexed/non-indexed must not mix. When `useGroups=true`, emits `addGroup` entries so each input can still use its own material. |
+| `weldVertices(geometry, tolerance=1e-4)` | Merge vertices within `tolerance` (position-based). Uses a spatial hash grid for O(n) average-case search (27-neighbour query). Returns a new geometry with compacted index and remapped attributes. Non-indexed inputs are auto-converted via `toIndexed`. |
+| `computeTangents(geometry)` | Per-vertex tangent space for normal mapping (Lengyel's method). Requires `position` / `normal` / `uv`. Accumulates tangents per face, then Gram-Schmidt orthogonalises against the normal and applies handedness correction from the bitangent. **Mutates** the input, adds a `tangent` attribute (itemSize=3). |
+| `estimateBytesUsed(geometry)` | GPU memory estimate: sums each attribute's `byteLength`, then accounts for the index using `Uint16` (<65536 max index) or `Uint32` per vertex. |
+| `interleaveAttributes(attributes)` | Pack N attributes into a single interleaved `Float32Array`. Returns `{ array, stride, offsets }` for `glVertexAttribPointer`. All inputs must share the same `count`. |
+| `toIndexed(geometry)` | Convert a non-indexed geometry to indexed by deduplicating position-identical vertices (spatial hash). Indexed inputs return a clone. |
+| `deduplicateIndices(geometry)` | Remove duplicate triangles (same 3 indices, any winding) from an indexed geometry. Returns a new geometry. |
 
 ### Materials
 
