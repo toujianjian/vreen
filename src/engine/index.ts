@@ -226,3 +226,39 @@ export * from './Vegetation';
 // LocalUser — 本地多用户管理 (Profile + Slot + Manager)。
 // 参考 o3de Gems/LocalUser。
 export * from './LocalUser';
+// ScriptCanvas — 可视化脚本运行时 (节点图数据模型 + 执行引擎,无 UI 画布)。
+// 参考 o3de Gems/ScriptCanvas。与 lib/vreenBlockly.ts (Blockly UI 编辑器) 互补:
+// ScriptCanvas 提供 JSON 可序列化节点图 + 运行时执行器,Blockly 负责可视化编辑。
+// 注意:./ScriptCanvas 与 ./Scripting 都导出 `ScriptPin` / `ScriptGraphJSON` (前者是
+// ScriptCanvas 运行时的 pin/图 JSON,后者是 VisualScriptComponent 的 ECS 组件 pin/图 JSON,
+// 形态不同)。与上方 ./Curves 排除 `Shape` 同理:此处显式列出 ScriptCanvas 的全部导出
+// (排除重名的 ScriptPin / ScriptGraphJSON),让根 barrel 保留 Scripting 的版本;
+// ScriptCanvas 自己的 ScriptPin / ScriptGraphJSON 经子 barrel `./ScriptCanvas` 直接导出。
+export {
+  type ScriptValueType,
+  type ScriptValue,
+  type ScriptNodeDescriptor,
+  NodeRegistry,
+  defaultNodeRegistry,
+  registerBuiltinNodes,
+  type ScriptGraphEdge,
+  type ScriptGraphNode,
+  ScriptGraph,
+  type ScriptExecutionContext,
+  ScriptExecutor,
+} from './ScriptCanvas';
+// WhiteBox — 半边网格 + 基元 + CSG,面向编辑器 greyboxing。
+// 参考 o3de Gems/WhiteBox。产出 HalfEdgeMesh (拓扑感知) + BufferGeometry (可渲染)。
+// 注意:./WhiteBox 的 `Face` 接口与 ./Core 的 `Face` 重名,此处显式列出 WhiteBox 的全部
+// 导出 (排除 Face),让根 barrel 保留 Core 的版本;WhiteBox 的 Face 经子 barrel 直接导出。
+export {
+  type Vertex,
+  type HalfEdge,
+  HalfEdgeMesh,
+  createBox,
+  createTetrahedron,
+  createIcosahedron,
+  createStaircase,
+  type CsgOperation,
+  csg,
+} from './WhiteBox';

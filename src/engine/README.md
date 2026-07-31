@@ -4,7 +4,7 @@
 >
 > The kernel of the VREEN engine: a TypeScript-first, zero-runtime-dependency
 > WebGL2 rendering and simulation stack aimed at indie game developers and
-> 3D artists. The kernel exposes 39 top-level modules through a single barrel
+> 3D artists. The kernel exposes 41 top-level modules through a single barrel
 > (`src/engine/index.ts`) and ships **3361+ tests** across **200+ test files**.
 
 ---
@@ -75,6 +75,12 @@ Descriptor·      LocalUserProfile·
 Filter·Modifier  LocalPlayerSlot·
 SpawnerArea·     LocalUserManager
 AreaBlender
+   │
+   ▼
+ScriptCanvas     WhiteBox
+ScriptGraph·     HalfEdgeMesh·
+ScriptExecutor·  WhiteBoxShapes·
+NodeRegistry     Csg
 ```
 
 The barrel re-exports **every** module's public surface; users import from a
@@ -129,6 +135,8 @@ import { Scene, PerspectiveCamera, WebGL2Renderer, BoxGeometry, StandardMaterial
 | Shapes | `Shapes/` | Shape (abstract) · BoxShape · SphereShape · CapsuleShape · CylinderShape · DiskShape · QuadShape · TubeShape · CompoundShape | [Shapes/README.md](./Shapes/README.md) |
 | Vegetation | `Vegetation/` | VegetationDescriptor · VegetationFilter (altitude/slope/mask/distance/shape/distribution) · VegetationModifier (position/rotation/scale/slopeAlignment) · SpawnerArea · AreaBlender | [Vegetation/README.md](./Vegetation/README.md) |
 | LocalUser | `LocalUser/` | LocalUserProfile · LocalPlayerSlot · PlayerSlotState · LocalUserManager | [LocalUser/README.md](./LocalUser/README.md) |
+| ScriptCanvas | `ScriptCanvas/` | ScriptGraph · ScriptExecutor · NodeRegistry · 18 built-in nodes (start/print/branch/math/event/variable/delay) | [ScriptCanvas/README.md](./ScriptCanvas/README.md) |
+| WhiteBox | `WhiteBox/` | HalfEdgeMesh · WhiteBoxShapes (box/tetrahedron/icosahedron/staircase) · Csg (union/subtract/intersect) | [WhiteBox/README.md](./WhiteBox/README.md) |
 
 ---
 
