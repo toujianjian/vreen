@@ -23,6 +23,9 @@ export { Line3 } from './Line3';
 export { Triangle } from './Triangle';
 export { Frustum } from './Frustum';
 export { OBB } from './OBB';
+// ConvexHull — 凸包计算 (convex hull),QuickHull 增量算法。
+// 适配 three.js ConvexHull.js,返回结构化面数据供碰撞检测/物理/阴影用。
+export { ConvexHull, type ConvexHullFace, type ConvexHullResult } from './ConvexHull';
 
 // 球/柱坐标
 export { Spherical } from './Spherical';
