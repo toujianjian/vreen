@@ -266,4 +266,13 @@ export {
   type ReflectorOptions,
   type MirrorCamera,
 } from './Reflector';
+// 平面折射 (Planar Refraction) — CPU 侧折射数学库。
+// 适配 three.js Refractor.js + GLSL refract()。
+// 提供 Snell 折射方向 / 全反射判定 / 临界角 / UV 位移估算 / 虚拟位置,
+// 不依赖 WebGL,可在 Node/无头环境测试。与 Reflector 互补。
+export {
+  Refractor,
+  refract,
+  type RefractorOptions,
+} from './Refractor';
 
