@@ -7,9 +7,11 @@
 > used by the renderer, an abstract `Camera` base carrying the world
 > transform plus a cached `projectionMatrix` / `projectionMatrixInverse`,
 > a `CinematicCamera` that drives a `PerspectiveCamera` through a
-> scripted shot sequence with transitions / DOF / shake, and a `CameraRig`
+> scripted shot sequence with transitions / DOF / shake, a `CameraRig`
 > that follows a target object in real time using crane / dolly / orbit /
-> fixed motion modes.
+> fixed motion modes, a `StereoCamera` for off-axis dual-eye VR / 3D
+> rendering, and a `CubeCamera` that captures 6-face environment maps
+> for real-time IBL / reflections / refractions.
 
 ---
 
@@ -36,12 +38,26 @@ CameraRig                      ── real-time target follower
    ├── follow(target: Object3D)  (crane = overhead swing, dolly = XZ rail,
    │                               orbit = circular, fixed = offset lock)
    └── damping  (0 = instant, 1 ≈ frozen; typical 0.05..0.2)
+
+StereoCamera                   ── off-axis dual-eye (Kooima 2008)
+   ├── eyeSep / focalLength       (IPD + convergence plane)
+   ├── cameraL / cameraR          (two PerspectiveCamera, eye offset on local X)
+   └── update(camera)             (copy intrinsics + apply asymmetric frustum)
+
+CubeCamera                     ── 6-face 90° environment map capture
+   ├── cameras: PerspectiveCamera[6]   (px, nx, py, ny, pz, nz)
+   ├── renderTarget: CubeRenderTarget  (resolution / format / mipmap / colorSpace)
+   ├── update(renderer, scene)         (delegates GL work to renderer.updateCubeCamera)
+   └── autoUpdate / version            (matrixWorld sync + dirty tracking)
 ```
 
 `CinematicCamera` and `CameraRig` are complementary: the former plays a
 *scripted* shot sequence (predetermined poses over time), the latter
 *reactively* follows a live `Object3D` (player / vehicle). They compose —
 a rig can follow the player while a cinematic camera cuts between rigs.
+`CubeCamera` is orthogonal: it captures the scene into a cube map rather
+than rendering a single view, and its output feeds the material system's
+`envMap` / IBL pipeline.
 
 ---
 
@@ -220,6 +236,107 @@ Adapted from three.js `StereoCamera.js`. CPU math only — no WebGL
 dependency, headless-testable; complements `AnaglyphEffect` and
 `ParallaxBarrierEffect` in the Renderer module.
 
+### `CubeCamera` (`CubeCamera.ts`)
+
+Six-face 90° `PerspectiveCamera` rig that captures the scene into a cube
+map for real-time environment lighting (IBL), reflections, refractions,
+dynamic skyboxes, and point-light shadow maps. Adapted from three.js
+`CubeCamera.js` with the VREEN headless convention: the camera owns only
+**data** (position, orientation, projection, render-target descriptor) —
+no GL calls. The actual 6-face render-to-cube is performed by
+`WebGL2Renderer.updateCubeCamera(camera, scene)`.
+
+| Field | Type | Default | Notes |
+|-------|------|---------|-------|
+| `cameras` | `PerspectiveCamera[6]` | — | One per face, order `px, nx, py, ny, pz, nz`. |
+| `renderTarget` | `CubeRenderTarget` | `{256,'rgba8',true,'srgb'}` | Resolution / format / mipmap / colorSpace descriptor (no GL handle). |
+| `near` / `far` | `number` | `0.1` / `1000` | Shared by all 6 cameras; `setNear()` / `setFar()` propagate. |
+| `autoUpdate` | `boolean` | `true` | When `true`, `update()` calls `updateMatrixWorld(true)` before rendering. |
+| `version` | `number` | `0` | Incremented after each `update()` — lets callers cache / invalidate. |
+| `isCubeCamera` | `boolean` | `true` | Type flag. |
+| `type` | `string` | `'CubeCamera'` | Object3D type tag. |
+
+| Export | Role |
+|--------|------|
+| `CubeCamera` | The camera class. |
+| `CUBE_FACES` | `readonly ['px','nx','py','ny','pz','nz']` — face index order. |
+| `CubeFace` | Union type of the 6 face names. |
+| `CubeRenderTarget` | Interface: `resolution`, `format`, `generateMipmaps`, `colorSpace`. |
+
+```ts
+export class CubeCamera extends Object3D {
+  cameras: PerspectiveCamera[];          // length 6
+  renderTarget: CubeRenderTarget;
+  near: number;  far: number;
+  autoUpdate: boolean;  version: number;
+
+  constructor(opts?: {
+    near?: number;  far?: number;  resolution?: number;
+    format?: 'rgba8' | 'rgba16f' | 'rgba32f' | 'r11g11b10';
+    generateMipmaps?: boolean;  colorSpace?: 'srgb' | 'linear';
+  }): CubeCamera;
+
+  setNear(n): this;          // propagate to all 6 cameras + updateProjectionMatrix
+  setFar(n): this;           // ditto
+  setResolution(res): this;  // update renderTarget.resolution (min 1, floored)
+  updateCameras(): void;     // recompute 6-camera position + orientation from this.position
+  update(renderer, scene): void;   // delegate to renderer.updateCubeCamera(this, scene)
+}
+```
+
+**Face orientation table** (OpenGL cubemap convention):
+
+| Face | dir (forward) | up | Resulting -Z axis |
+|------|---------------|----|--------------------|
+| `px` (+X right)  | `( 1, 0, 0)` | `(0,-1, 0)` | camera looks +X |
+| `nx` (−X left)   | `(-1, 0, 0)` | `(0,-1, 0)` | camera looks −X |
+| `py` (+Y top)    | `( 0, 1, 0)` | `(0, 0, 1)` | camera looks +Y |
+| `ny` (−Y bottom) | `( 0,-1, 0)` | `(0, 0,-1)` | camera looks −Y |
+| `pz` (+Z front)  | `( 0, 0, 1)` | `(0,-1, 0)` | camera looks +Z |
+| `nz` (−Z back)   | `( 0, 0,-1)` | `(0,-1, 0)` | camera looks −Z |
+
+**Direction math** — `_updateCameras()` builds a view matrix per face via
+`Matrix4.makeLookAt(eye=pos, target=pos+dir, up=faceUp)`, then extracts
+the world-rotation quaternion by transposing the view rotation (orthogonal
+inverse = transpose) and converting with a Shoemake 1987
+matrix→quaternion routine. This bypasses `Object3D.lookAt`, which hard-codes
+`up=(0,1,0)` and would degenerate for the ±Y faces where forward is
+parallel to (0,1,0).
+
+**`update(renderer, scene)` flow**:
+1. If `autoUpdate`, call `this.updateMatrixWorld(true)` (which triggers
+   the override → `_updateCameras()`).
+2. Call `_updateCameras()` unconditionally (cheap; idempotent).
+3. Delegate GL work: `renderer.updateCubeCamera(this, scene)` — the
+   renderer iterates `cameras[6]`, sets each as active, renders the scene
+   into the corresponding cube-map face.
+4. Increment `version` (lets material / texture systems invalidate caches).
+
+**Differences from three.js**:
+- three.js `CubeCamera` holds a `WebGLCubeRenderTarget` (live GL handle)
+  and its `update()` directly calls `renderer.setRenderTarget()` +
+  `renderer.render()` 6 times. VREEN `CubeCamera` holds only a
+  `CubeRenderTarget` *descriptor* (plain data, no GL handle); the
+  renderer owns the GL framebuffer and performs the 6-face render.
+- three.js uses `Object3D.lookAt(target)` with the camera's `up` field
+  set per-face. VREEN's `Object3D.lookAt` hard-codes `up=(0,1,0)`, so
+  `CubeCamera` computes the rotation directly from `Matrix4.makeLookAt`
+  with the per-face up vector (see "Direction math" above).
+- Headless-testable: all 6 cameras' positions, directions, and
+  projection matrices can be verified in Node without a GL context.
+
+**Limitations**:
+- `_updateCameras()` reads `this.position` (local), not the world
+  position. When the CubeCamera is a child of a transformed parent, place
+  it at the root or call `updateMatrixWorld(true)` before relying on the
+  6-camera positions. (Matches three.js behavior where the CubeCamera is
+  typically a root-level scene node.)
+- The 6 child cameras are **not** added to `this.children`; they do not
+  participate in scene-graph traversal or frustum culling. The renderer
+  renders them explicitly via `updateCubeCamera`.
+- `update()` does not skip rendering when `version` is unchanged —
+  callers decide cadence (every frame, on-demand, or throttled).
+
 ---
 
 ## Usage
@@ -270,6 +387,39 @@ Side / Top / 1st-person / 3rd-person / Cinematic) are configurations of
 preset additionally enables `CinematicCamera`'s slow orbit + FOV
 breathing + DOF.
 
+### CubeCamera for real-time environment maps
+
+```ts
+import { CubeCamera } from '@vreen/engine';
+
+// 256×256 RGBA8 cube map, mipmap-enabled, sRGB color space
+const cubeCam = new CubeCamera({ near: 0.1, far: 100, resolution: 256 });
+cubeCam.position.set(0, 5, 0);
+scene.add(cubeCam);
+
+// Each frame (or throttled): render 6 faces → cube map
+cubeCam.update(renderer, scene);
+
+// Manual cadence (e.g. every 6th frame for cost control):
+if (frame % 6 === 0) cubeCam.update(renderer, scene);
+
+// After update, the renderer's cube-map texture is ready for IBL / reflections
+// (renderer exposes the cube texture; see WebGL2Renderer.updateCubeCamera)
+```
+
+Common patterns:
+- **IBL / reflections**: place the `CubeCamera` at the reflective object's
+  position, call `update()` once per frame (or throttled), feed the
+  resulting cube texture to `material.envMap`.
+- **Dynamic skybox**: parent the `CubeCamera` to the player; update every
+  frame so the skybox tracks player motion.
+- **Point-light shadow map**: use a `CubeCamera` at the light position
+  with `far` tuned to the light's range; the renderer's shadow pass reads
+  the cube depth texture.
+- **On-demand capture**: set `autoUpdate = false`, call `update()` only
+  when the scene changes (door opens, light moves), checking `version`
+  to invalidate downstream caches.
+
 ---
 
 ## Invariants
@@ -299,6 +449,26 @@ breathing + DOF.
 - `CameraTimelineJSON` round-trips losslessly: `importTimeline(
   exportTimeline())` reproduces the shots, transition duration, and all
   DOF parameters.
+- `CubeCamera.cameras` always has exactly 6 entries in the order
+  `px, nx, py, ny, pz, nz` (matching `CUBE_FACES`); each is a
+  `PerspectiveCamera` with `fov=90`, `aspect=1`.
+- `CubeCamera._updateCameras()` is called by the `updateMatrixWorld`
+  override and by `update()` — the 6 child cameras' positions and
+  rotations always reflect the CubeCamera's current `position`.
+- The 6 child cameras are **not** in `this.children`; they are not
+  traversed by the scene graph and must be rendered explicitly via
+  `renderer.updateCubeCamera()`.
+- `CubeCamera.update()` always increments `version`, even if the scene
+  is unchanged — callers decide cadence.
+- `setNear()` / `setFar()` propagate to all 6 cameras and recompute
+  their `projectionMatrix` immediately.
+- `setResolution()` floors to an integer and clamps to a minimum of 1;
+  it does not recreate any GL resource (the renderer reads
+  `renderTarget.resolution` on next `updateCubeCamera`).
+- The ±Y face rotations use `up=(0,0,±1)`; the ±X / ±Z faces use
+  `up=(0,-1,0)`. `Object3D.lookAt` (which hard-codes `up=(0,1,0)`) is
+  **not** used — `_updateCameras()` builds the rotation directly from
+  `Matrix4.makeLookAt` to support the per-face up vectors.
 
 ---
 
@@ -315,4 +485,10 @@ breathing + DOF.
   `CinematicCamera` DOF parameters.
 - three.js `PerspectiveCamera`, `OrthographicCamera` — projection
   matrix conventions (symmetric frustum, WebGL depth `[-1, 1]`).
+- three.js `CubeCamera.js` / `WebGLCubeRenderTarget` — cube-map capture
+  conventions and 6-face orientation table (OpenGL spec §8.13.1).
+- o3de Atom `ReflectionProbe` — runtime IBL probe system that uses a
+  cube camera as its capture primitive.
+- Ken Shoemake, "Quaternion Calculus and Fast Animation" (1987) — the
+  rotation-matrix → quaternion algorithm used in `_updateCameras()`.
 - `src/engine/Cameras/index.ts` — barrel re-exports for the module.
