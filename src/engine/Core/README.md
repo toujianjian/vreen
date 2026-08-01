@@ -213,6 +213,48 @@ interface EngineModule {
 }
 ```
 
+### Scene Graph Utilities & Special Nodes
+
+#### `SceneUtils` (`SceneUtils.ts`)
+
+Scene-graph helpers that preserve world transforms when reparenting,
+plus multi-material and ordering utilities.
+
+| Method | Signature | Role |
+|--------|-----------|------|
+| `detach` | `(child, parent) → child` | Remove `child` from `parent`, baking its world matrix back into a local position/quaternion/scale so it stays put in world space. |
+| `attach` | `(child, parent) → child` | Add `child` to `parent`, recomputing the local transform as `parent.worldMatrix⁻¹ · child.worldMatrix` so the world transform is unchanged. |
+| `createMultiMaterialObject` | `(geometry, materials) → Group` | Clone `geometry` once per material and wrap in a `Group` (three.js multi-material pattern). |
+| `sortRadial` | `(objects, origin) → objects` | Sort transparent objects back-to-front by distance to `origin`. |
+
+Also augments `Object3D` with a `renderOrder: number` field used by the
+renderer to sequence draw calls (opaque front-to-back by renderOrder,
+then opaque-by-distance; transparent back-to-front).
+
+#### `Gyroscope` (`Gyroscope.ts`)
+
+An `Object3D` whose world **rotation is locked** while its position
+follows its parent. `updateMatrixWorld()` recomposes the world matrix
+from the parent's world position and the node's own last-known world
+rotation — producing a "compass / horizon / HUD" node that stays level
+regardless of parent orientation. Differs from a plain `Object3D` whose
+rotation is parent-relative; here rotation is forcibly world-absolute.
+
+#### `FlakesTexture` (`FlakesTexture.ts`)
+
+Procedural metal-flake texture for car-paint / flake-finish rendering.
+Generates a deterministic flake pattern (seeded RNG), tiles seamlessly
+(`wrap` modulo), anti-aliases flake edges via a distance field, and can
+convert the height field to a tangent-space normal map for use as a
+micro-surface normal input to PBR materials.
+
+| Method | Signature | Role |
+|--------|-----------|------|
+| `generate` | `(opts?) → { data, width, height }` | Produce RGBA flake height texture. |
+| `toNormalMap` | `(heightMap, strength?) → { data, width, height }` | Convert height → tangent-space normal map. |
+
+Adapted from three.js `FlakesTexture.js`. Pure CPU — no WebGL dependency.
+
 ---
 
 ## Usage Example

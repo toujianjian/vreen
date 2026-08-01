@@ -195,6 +195,31 @@ Motion modes (all compute a desired position, then `lerp` toward it with
 to avoid a large initial jump; subsequent `update(dt)` calls apply
 damping.
 
+### `StereoCamera` (`StereoCamera.ts`)
+
+Dual-eye stereo camera for VR / 3D display rendering. Models the
+**off-axis asymmetric frustum** technique (Kooima 2008) so the left and
+right eye projections converge at a configurable `focalLength` plane
+without vertical parallax artifacts. Owns two child `PerspectiveCamera`s
+(`cameraL`, `cameraR`) whose fov / aspect / near / far mirror a source
+camera; only the horizontal projection offset and eye position differ.
+
+| Field | Type | Role |
+|-------|------|------|
+| `eyeSep` | `number` | Inter-pupillary distance (world units). Typical 0.064. |
+| `focalLength` | `number` | Convergence distance: where the two eye axes meet. |
+| `cameraL` / `cameraR` | `PerspectiveCamera` | Cached left / right eye cameras. |
+| `aspect` | `number` | Per-eye aspect (caller sets, usually `aspect / 2` for side-by-side). |
+
+`update(camera)` copies the source camera's intrinsics, applies the eye
+offset matrix along the camera's local X, and recomputes each eye's
+asymmetric projection. `render(renderer, scene)` is left to the caller
+in the headless engine convention; the renderer submits left then right.
+
+Adapted from three.js `StereoCamera.js`. CPU math only — no WebGL
+dependency, headless-testable; complements `AnaglyphEffect` and
+`ParallaxBarrierEffect` in the Renderer module.
+
 ---
 
 ## Usage

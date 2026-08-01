@@ -165,6 +165,54 @@ const metaballGeo = MarchingCubes.fromMetaballs(
 scene.add(new Mesh(metaballGeo, new StandardMaterial({ ... })));
 ```
 
+### `RoundedBoxGeometry` (`RoundedBoxGeometry.ts`)
+
+A `BoxGeometry` variant whose 12 edges and 8 corners are rounded with
+spherical / cylindrical transitions, producing a fully smoothed box.
+Useful for stylized UI meshes, buttons, soft-edged props, and any case
+where sharp box corners read poorly under PBR lighting.
+
+| Param | Type | Default | Role |
+|-------|------|---------|------|
+| `width` | `number` | `1` | Box width. |
+| `height` | `number` | `1` | Box height. |
+| `depth` | `number` | `1` | Box depth. |
+| `segments` | `number` | `2` | Round-edge subdivisions (higher = smoother). |
+| `radius` | `number` | `0.1` | Corner radius (clamped to `≤ min(w,h,d)/2`). |
+
+Vertex normals are the true surface normals of the transition curves,
+so lighting is continuous with no hard edge seams. Outputs indexed
+positions / normals / uvs.
+
+Adapted from three.js `RoundedBoxGeometry.js`.
+
+### `ConvexGeometry` (`ConvexGeometry.ts`)
+
+Builds the convex hull of an arbitrary 3D point set and emits it as a
+non-indexed triangle mesh with flat (per-face) normals — matching
+three.js `ConvexGeometry` behavior. Powered by the incremental QuickHull
+algorithm (initial tetrahedron from extreme points → per-point visible-
+face removal → horizon-edge fan → outward normals via centroid
+reference). Degenerate inputs (< 4 points, collinear, or coplanar)
+yield an empty geometry.
+
+```ts
+import { ConvexGeometry, Vector3 } from '@vreen/engine';
+const geo = new ConvexGeometry([
+  new Vector3(-1, -1, -1), new Vector3(1, -1, -1),
+  new Vector3(-1, 1, -1), new Vector3(-1, -1, 1),
+  new Vector3(0.5, 0.5, 0.5), // interior point, ignored by hull
+]);
+// geo.attributes.position / normal populated; flat-shaded hull mesh.
+```
+
+The standalone `ConvexHull` (in the Math module) exposes the structured
+result (`{ faces, vertexIndices, vertices }`) plus `volume()` /
+`surfaceArea()` for collision and shadow use; `ConvexGeometry` is the
+geometry-builder convenience wrapper.
+
+Adapted from three.js `ConvexGeometry.js` + `ConvexHull.js`.
+
 ---
 
 ## Usage Example

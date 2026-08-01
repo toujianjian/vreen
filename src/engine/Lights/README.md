@@ -138,6 +138,34 @@ window.position.set(0, 2, -2);
 window.lookAt(0, 0, 0);
 ```
 
+### `LightProbeGenerator` (`LightProbeGenerator.ts`)
+
+Bakes a `LightProbe` (SH2 spherical-harmonics irradiance) from a cubemap
+or a list of RGBA face buffers. Implements the diffuse-convolution
+projection from Ramamoorthi & Hanrahan 2001: each texel's radiance is
+weighted by the SH basis function evaluated at its direction and
+accumulated into the 9 RGB coefficients of `SphericalHarmonics3`.
+
+| Method | Signature | Role |
+|--------|-----------|------|
+| `fromCubeRenderTarget` | `(renderer, cubeRT) → LightProbe` | Sample a `WebGLCubeRenderTarget`'s 6 faces (renderer path). |
+| `fromCubeImage` | `(image, config?) → LightProbe` | Integrate a single equirect / cube image into SH2. |
+| `fromRGBAFaces` | `(faces, size, config?) → LightProbe` | Pure-CPU integration from 6 `Uint8Array`/`Float32Array` face buffers (headless-testable). |
+
+The pure-CPU `fromRGBAFaces` path makes the generator testable in
+Node/headless environments (no WebGL context required). The output
+`LightProbe.sh` feeds PBR materials as the diffuse-IBL term, complementing
+the specular IBL handled by `ReflectionProbe`.
+
+```ts
+import { LightProbeGenerator } from '@vreen/engine';
+const probe = LightProbeGenerator.fromRGBAFaces(faces, 128);
+scene.add(probe); // probe.sh used by StandardMaterial as diffuse IBL
+```
+
+Adapted from three.js `LightProbeGenerator.js`. Math only — no WebGL
+dependency in the CPU path.
+
 ---
 
 ## Usage
