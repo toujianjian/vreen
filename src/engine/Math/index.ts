@@ -26,6 +26,9 @@ export { OBB } from './OBB';
 // ConvexHull — 凸包计算 (convex hull),QuickHull 增量算法。
 // 适配 three.js ConvexHull.js,返回结构化面数据供碰撞检测/物理/阴影用。
 export { ConvexHull, type ConvexHullFace, type ConvexHullResult } from './ConvexHull';
+// ImprovedNoise — Ken Perlin 改进噪声 (3D Perlin),程序化生成基础。
+// 适配 three.js ImprovedNoise.js,支持 noise/noise2D/noise1D/fBm。
+export { ImprovedNoise } from './ImprovedNoise';
 
 // 球/柱坐标
 export { Spherical } from './Spherical';
