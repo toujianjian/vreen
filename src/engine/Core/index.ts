@@ -82,6 +82,9 @@ export { Points } from './Points';
 // Line / LineSegments / LineLoop — 线段物体 (GL_LINE_STRIP / GL_LINES / GL_LINE_LOOP),
 // 适配 three.js Line.js / LineSegments.js / LineLoop.js。共享 distanceSqToSegment 阈值拾取。
 export { Line, LineSegments, LineLoop } from './Line';
+// LineSegments2 / Line2 — 粗线物体 (屏幕空间四边形扩展),适配 three.js Line2.js / LineSegments2.js。
+// 突破 gl.lineWidth=1 限制,支持任意像素宽度、虚线、逐顶点颜色、worldUnits 模式。
+export { LineSegments2, Line2 } from './Line2';
 export { InstancedMesh } from './InstancedMesh';
 export { LOD, type LODLevel } from './LOD';
 export { Group } from './Group';

@@ -37,6 +37,11 @@ export { ExtrudeGeometry, type ExtrudeOptions } from './ExtrudeGeometry';
 // InstancedGeometry — 实例化几何体 (per-instance matrix + color + 自定义属性)。
 // 参考 three.js InstancedBufferGeometry,叠加显式 setInstanceMatrix/Color/CustomAttribute API。
 export { InstancedGeometry } from './InstancedGeometry';
+// LineSegmentsGeometry / LineGeometry — 粗线几何体 (屏幕空间四边形扩展)。
+// 适配 three.js examples/jsm/lines/LineSegmentsGeometry.js / LineGeometry.js。
+// 每条线段作为一个实例,配合 LineSegments2 / Line2 + LineMaterial 绘制带宽度的线。
+export { LineSegmentsGeometry } from './LineSegmentsGeometry';
+export { LineGeometry } from './LineGeometry';
 // MarchingCubes — 等值面提取 (iso-surface extraction)。
 // 适配 three.js MarchingCubes.js,Lorensen & Cline 1987 经典算法。
 // 支持 density function / metaball / raw field 输入,输出非索引三角形 + 面法线。

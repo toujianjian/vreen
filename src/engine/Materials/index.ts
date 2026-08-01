@@ -11,6 +11,15 @@ export { SpriteMaterial, type SpriteMaterialOptions } from './SpriteMaterial';
 export { PointsMaterial, type PointsMaterialOptions } from './PointsMaterial';
 // 线段材质 (GL_LINES / GL_LINE_STRIP / GL_LINE_LOOP),适配 three.js LineBasicMaterial。
 export { LineBasicMaterial, type LineBasicMaterialOptions } from './LineBasicMaterial';
+// 粗线材质 (屏幕空间四边形扩展),适配 three.js examples/jsm/lines/LineMaterial。
+// 配合 LineSegments2 / Line2 使用,突破 gl.lineWidth=1 限制,支持虚线/逐顶点颜色/worldUnits。
+export {
+  LineMaterial,
+  type LineMaterialOptions,
+  type LineMaterialUniforms,
+  LINE_MATERIAL_VERT,
+  LINE_MATERIAL_FRAG,
+} from './LineMaterial';
 // 特殊着色器材质(卡通 / 水面 / 线框 / 描边 / Matcap)。
 export {
   ToonMaterial,

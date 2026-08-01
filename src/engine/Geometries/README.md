@@ -39,6 +39,10 @@ BufferGeometry (Core) ──base──→ all primitives
 InstancedGeometry ──extends BufferGeometry──→ per-instance:
    instanceMatrix (Matrix4), instanceColor (Color), custom attributes
 
+LineSegmentsGeometry ──extends InstancedGeometry──→ per-segment:
+   instanceStart (Vector3), instanceEnd (Vector3), instanceColorStart/End, instanceDistanceStart/End
+   └── LineGeometry ──polyline chain──→ N-1 segment pairs (Line2 thick polyline)
+
 MarchingCubes ──extracts──→ iso-surface BufferGeometry from:
    density function (x,y,z) → number  |  metaballs[]  |  raw Float32Array field
 ```
@@ -87,6 +91,114 @@ for (let i = 0; i < 100; i++) {
 }
 geo.instanceMatrix.needsUpdate = true;
 ```
+
+### Thick Line Geometry (`LineSegmentsGeometry.ts` / `LineGeometry.ts`)
+
+Screen-space quad-expansion geometry for rendering thick (≥ 1 px) lines.
+Each line segment becomes one **instance** drawn with a shared 8-vertex /
+18-index template quad; the vertex shader expands the quad in screen
+space to the desired `linewidth` (see `LineMaterial` + `LineSegments2` /
+`Line2` in `Core`).
+
+Adapted from three.js `examples/jsm/lines/LineSegmentsGeometry.js` and
+`LineGeometry.js`. The VREEN port stores per-segment data in
+`InstancedGeometry.customAttributes` (`instanceStart` / `instanceEnd` /
+optional `instanceColorStart` / `instanceColorEnd` /
+`instanceDistanceStart` / `instanceDistanceEnd`) instead of three.js's
+`InstancedInterleavedBuffer`.
+
+**Template geometry** (three.js original values — the shader depends on
+these, do **not** modify):
+
+| Attribute | Values |
+|-----------|--------|
+| `position` | `[-1,2,0, 1,2,0, -1,1,0, 1,1,0, -1,0,0, 1,0,0, -1,-1,0, 1,-1,0]` |
+| `uv` | `[-1,2, 1,2, -1,1, 1,1, -1,-1, 1,-1, -1,-2, 1,-2]` |
+| `index` | `[0,2,1, 2,3,1, 2,4,3, 4,5,3, 4,6,5, 6,7,5]` |
+
+`position.x ∈ {-1, 1}` controls left/right offset perpendicular to the
+segment; `position.y ∈ {-1, 0, 1, 2}` (with matching `uv.y`) controls
+position along the segment and the round end-cap extension.
+
+| Export | Role |
+|--------|------|
+| `LineSegmentsGeometry` | Independent thick segments. `setPositions([x0,y0,z0, x1,y1,z1, …])` — every 6 floats = one segment (`instanceStart` + `instanceEnd`). `setColors([r0,g0,b0, r1,g1,b1, …])` — per-segment vertex colors. |
+| `LineGeometry` | Thick polyline (extends `LineSegmentsGeometry`). `setPositions([x0,y0,z0, x1,y1,z1, x2,y2,z2, …])` — N vertices → N−1 segments; internally converts the chain to segment pairs. `setColors` likewise takes a per-vertex color chain. |
+
+**Custom attributes** (populated by `setPositions` / `setColors` /
+`computeLineDistances`):
+
+| Name | itemSize | Source | Purpose |
+|------|---------:|--------|---------|
+| `instanceStart` | 3 | `setPositions` | Segment start point (local space). |
+| `instanceEnd` | 3 | `setPositions` | Segment end point (local space). |
+| `instanceColorStart` | 3 | `setColors` | Start vertex color (linear RGB). |
+| `instanceColorEnd` | 3 | `setColors` | End vertex color (linear RGB). |
+| `instanceDistanceStart` | 1 | `LineSegments2.computeLineDistances` | Cumulative line distance at segment start (for dashed rendering). |
+| `instanceDistanceEnd` | 1 | `LineSegments2.computeLineDistances` | Cumulative line distance at segment end. |
+
+```ts
+import { LineSegmentsGeometry, LineGeometry } from '@vreen/engine/geometries';
+import { LineSegments2, Line2 } from '@vreen/engine/core';
+import { LineMaterial } from '@vreen/engine/materials';
+import { Vector2 } from '@vreen/engine/math';
+
+// Independent thick segments
+const segGeo = new LineSegmentsGeometry();
+segGeo.setPositions([
+  0, 0, 0, 3, 0, 0,   // segment 0
+  0, 0, 0, 0, 4, 0,   // segment 1
+]);
+segGeo.setColors([
+  1, 0, 0, 0, 1, 0,   // segment 0: red → green
+  0, 0, 1, 1, 1, 0,   // segment 1: blue → yellow
+]);
+
+// Thick polyline (4 vertices → 3 segments)
+const lineGeo = new LineGeometry();
+lineGeo.setPositions([0, 0, 0, 3, 0, 0, 3, 4, 0, 3, 4, 12]);
+
+const mat = new LineMaterial({
+  color: { r: 0.2, g: 1, b: 0.8 },
+  linewidth: 4,
+  resolution: new Vector2(1920, 1080),
+});
+
+const line = new Line2(lineGeo, mat);
+line.computeLineDistances();   // populate instanceDistanceStart/End for dashed mode
+scene.add(line);
+```
+
+**Differences from three.js**:
+
+- three.js uses `InstancedInterleavedBuffer` + `InterleavedBufferAttribute`
+  for `instanceStart` / `instanceEnd` (interleaved `xyz,xyz`); VREEN stores
+  them as two separate `InstancedGeometry.customAttributes` (itemSize=3),
+  which the renderer binds as instanced vertex attribs.
+- `instanceMatrix` is kept as identity (per-instance) — segment endpoints
+  come directly from `instanceStart` / `instanceEnd`, transformed to world
+  space by the object's `matrixWorld` in the vertex shader.
+- `applyMatrix4` transforms `instanceStart` / `instanceEnd` in-place
+  (three.js does the same on its interleaved buffer).
+- `computeBoundingBox` / `computeBoundingSphere` iterate the per-segment
+  start/end arrays directly (no `Box3.setFromPoints` — uses `makeEmpty` +
+  `expandByPoint` loop).
+
+**Limitations**:
+
+- The template quad has no `normal` attribute; lighting in `LineMaterial`
+  is unlit (`BasicMaterial`-based). For lit thick lines, extend the
+  fragment shader with a hard-coded normal (e.g. screen-facing `(0,0,1)`).
+- `setColors` expects the same segment count as `setPositions`; passing
+  a mismatched count throws.
+- Raycasting is handled by `LineSegments2.raycast` / `Line2.raycast`
+  (in `Core/Line2.ts`), not by the geometry itself.
+- The `resolution` uniform must be updated on viewport resize; otherwise
+  screen-space expansion uses stale dimensions and line width appears
+  wrong.
+
+Adapted from three.js `examples/jsm/lines/LineSegmentsGeometry.js` and
+`examples/jsm/lines/LineGeometry.js`.
 
 ### `MarchingCubes` (`MarchingCubes.ts`)
 

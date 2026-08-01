@@ -45,6 +45,8 @@ describe('Raycaster', () => {
     expect(r.camera).toBeNull();
     expect(r.params.Mesh).toBeDefined();
     expect(r.params.Line.threshold).toBe(1);
+    expect(r.params.Line2).toBeDefined();
+    expect(r.params.Line2!.threshold).toBe(1);
     expect(r.params.Points.threshold).toBe(1);
   });
 

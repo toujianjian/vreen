@@ -25,6 +25,8 @@ Object3D ──base──→ Scene
    ├── Line ──LINE_STRIP──→ BufferGeometry vertex chain
    │     ├── LineSegments ──LINES──→ vertex pairs (0-1)(2-3)…
    │     └── LineLoop ──LINE_LOOP──→ Line + closing edge (last→first)
+   ├── LineSegments2 ──screen-space quad──→ LineSegmentsGeometry + LineMaterial
+   │     └── Line2 ──polyline chain──→ LineGeometry + LineMaterial
    ├── LOD ──switches──→ Mesh[] by distance
    ├── Text / BitmapText ──uses──→ TextAtlas
    └── FurShell ──multi-layer──→ Mesh[] (FurMaterial)
@@ -70,6 +72,7 @@ ModuleRegistry ──manages──→ EngineModule lifecycle (load/unload/depend
 | `Sprite` | Always-camera-facing billboard. CPU writes camera world rotation in `updateMatrixWorld`. |
 | `Points` | Point-cloud / point-sprite node. Renders every `position` vertex as a `GL_POINTS` primitive via `PointsMaterial`. Supports threshold-based raycast picking. |
 | `Line` / `LineSegments` / `LineLoop` | Line nodes. `Line` = `GL_LINE_STRIP` (connected chain), `LineSegments` = `GL_LINES` (independent pairs), `LineLoop` = `GL_LINE_LOOP` (chain + closing edge). Threshold-based edge raycast via `Ray.distanceSqToSegment`. |
+| `LineSegments2` / `Line2` | Thick-line nodes (screen-space quad expansion). `LineSegments2` = independent thick segments, `Line2` = thick polyline. Breaks `gl.lineWidth=1` cap via instanced quad expansion + `LineMaterial`. Threshold-based raycast via `Raycaster.params.Line2`. |
 | `Text` | 3D text rendered via `TextAtlas` quads + `MeshBasicMaterial`. Supports wrapping/alignment. |
 | `BitmapText` | Text using a pre-rendered `TextAtlas` for large shared-atlas batches. |
 | `TextAtlas` | Rasterises characters to a canvas + records UVs; emits `CanvasTexture`. Degrades to dry-run without DOM. |
@@ -317,7 +320,7 @@ Extends `Object3D`; holds `geometry: BufferGeometry` and
 non-indexed geometry are supported. Used for wireframe overlays, debug
 gizmos, CAD edge highlighting, graph edges, and any effect that needs
 thin 1px lines. (For thick anti-aliased lines, use `Line2` +
-`LineMaterial` — screen-space quad expansion — a planned module.)
+`LineMaterial` — screen-space quad expansion; see `Line2` below.)
 
 **Raycast** (threshold-based edge picking): for each segment, computes
 the closest distance between the ray and the segment via
@@ -384,6 +387,106 @@ const hits = raycaster.intersectObject(edges, false);
 
 Adapted from three.js `src/objects/Line.js`, `LineSegments.js`, and
 `LineLoop.js`.
+
+#### `LineSegments2` / `Line2` (`Line2.ts`)
+
+Thick-line nodes — render arbitrary-pixel-width anti-aliased lines via
+**screen-space quad expansion**. Each line segment becomes one instance
+of a shared 8-vertex template quad (`LineSegmentsGeometry` /
+`LineGeometry`); the vertex shader (`LineMaterial`) expands the quad in
+screen space to the desired `linewidth`, bypassing the WebGL
+`gl.lineWidth = 1` cap.
+
+| Class | Geometry | Pairing | `isLineSegments2` / `isLine2` |
+|-------|----------|---------|--------------------------------|
+| `LineSegments2` | `LineSegmentsGeometry` | Independent segments (6 floats each). | `true` / `false` |
+| `Line2` | `LineGeometry` | Polyline chain (3 floats per vertex → N−1 segments). | `true` / `true` |
+
+Extends `Object3D`; holds `geometry: LineSegmentsGeometry` (or
+`LineGeometry` for `Line2`) and `material: LineMaterial | LineMaterial[]`.
+
+**`computeLineDistances()`**: populates `instanceDistanceStart` /
+`instanceDistanceEnd` custom attributes (itemSize=1) on the geometry,
+used by `LineMaterial`'s dashed-fragment discard. For `LineSegments2`
+each segment is independent (start=0, end=length); for `Line2` distances
+accumulate across the polyline (matching `Line.computeLineDistances`).
+
+**Raycast**: same algorithm as `Line.raycast`
+(`Ray.distanceSqToSegment`, local-space threshold, bounding-sphere
+rejection), but iterates per-instance `instanceStart` / `instanceEnd`
+custom attributes instead of the `position` attribute. Threshold comes
+from `raycaster.params.Line2.threshold` (default 1); if `params.Line2`
+is absent it falls back to `params.Line.threshold`.
+
+| Property | Type | Default | Role |
+|----------|------|---------|------|
+| `geometry` | `LineSegmentsGeometry` / `LineGeometry` | `new LineSegmentsGeometry()` / `new LineGeometry()` | Source of per-segment `instanceStart` / `instanceEnd`. |
+| `material` | `LineMaterial \| LineMaterial[]` | `new LineMaterial()` | Color, linewidth, resolution, dashed params. |
+| `isLineSegments2` / `isLine2` | `boolean` | `true` / `false` | Duck-type flags. |
+
+```ts
+import { Line2 } from '@vreen/engine/core';
+import { LineGeometry } from '@vreen/engine/geometries';
+import { LineMaterial } from '@vreen/engine/materials';
+import { Vector2 } from '@vreen/engine/math';
+
+// Thick dashed polyline
+const geo = new LineGeometry();
+geo.setPositions([0, 0, 0, 3, 0, 0, 3, 4, 0, 3, 4, 12]);
+
+const mat = new LineMaterial({
+  color: { r: 0.2, g: 1, b: 0.8 },
+  linewidth: 4,
+  resolution: new Vector2(1920, 1080),
+  dashed: true,
+  dashSize: 2,
+  gapSize: 1,
+});
+
+const line = new Line2(geo, mat);
+line.computeLineDistances();
+scene.add(line);
+
+// Picking
+raycaster.params.Line2 = { threshold: 0.5 };
+const hits = raycaster.intersectObject(line, false);
+```
+
+**Differences from three.js `LineSegments2` / `Line2`**:
+
+- three.js `LineSegments2` extends `Mesh`; VREEN extends `Object3D`
+  directly (matching VREEN's `Line` pattern), since thick lines don't
+  use the Mesh triangle-rendering path.
+- Per-segment data comes from `InstancedGeometry.customAttributes`
+  (`instanceStart` / `instanceEnd` as itemSize=3 custom attributes);
+  three.js uses `InstancedInterleavedBuffer` +
+  `InterleavedBufferAttribute`.
+- `RaycasterParameters` adds an optional `Line2?: { threshold: number }`
+  field; three.js reuses `Line.threshold`.
+- `computeLineDistances` writes to `instanceDistanceStart` /
+  `instanceDistanceEnd` custom attributes (itemSize=1); three.js writes
+  to `instanceDistanceStart` / `instanceDistanceEnd` interleaved
+  buffers.
+- `raycast` reads `instanceStart` / `instanceEnd` from
+  `customAttributes` (not `geometry.attributes`), matching the VREEN
+  `InstancedGeometry` data model.
+
+**Limitations**:
+
+- The renderer must bind `instanceStart` / `instanceEnd` /
+  `instanceColorStart` / `instanceColorEnd` /
+  `instanceDistanceStart` / `instanceDistanceEnd` as instanced vertex
+  attribs (via `InstancedGeometry.customAttributes`); this is handled by
+  the `WebGL2Renderer` instanced custom-attribute path.
+- `material.resolution` must be updated on viewport resize; otherwise
+  screen-space expansion uses stale dimensions.
+- `computeLineDistances` must be called before enabling `dashed: true`
+  on the material, or all fragments fall in the dash region.
+- `Line2` does not close the loop (no `LineLoop2`); use `LineSegments2`
+  with explicit closing segments if a loop is needed.
+
+Adapted from three.js `examples/jsm/lines/LineSegments2.js` and
+`examples/jsm/lines/Line2.js`.
 
 #### `SceneUtils` (`SceneUtils.ts`)
 

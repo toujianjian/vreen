@@ -7,7 +7,8 @@
 > debug / shadow / sprite materials, a `ShaderMaterial` with
 > `onBeforeCompile` GLSL injection, special-purpose materials
 > (`FurMaterial`, `MatcapMaterial`, `ToonMaterial`, `OutlineMaterial`,
-> `WaterMaterial`, `WireframeMaterial`), and a `ShaderChunks/` registry
+> `WaterMaterial`, `WireframeMaterial`), the `LineMaterial` thick-line
+> renderer (screen-space quad expansion), and a `ShaderChunks/` registry
 > for `#include <name>` GLSL fragment resolution.
 
 ---
@@ -21,6 +22,7 @@ Material (abstract)
    │     ├── SpriteMaterial           billboard sprites (transparent, sizeAttenuation)
    │     ├── PointsMaterial           point-cloud / point-sprite (GL_POINTS, gl_PointSize)
    │     ├── LineBasicMaterial        thin lines (GL_LINES / LINE_STRIP / LINE_LOOP, linewidth)
+   │     ├── LineMaterial             thick lines (screen-space quad expansion, Line2/LineSegments2)
    │     ├── FurMaterial              shell-based fur / hair
    │     ├── ToonMaterial             cel-shaded cartoon
    │     ├── OutlineMaterial          back-side outline pass
@@ -183,12 +185,135 @@ Pairs with `Line` / `LineSegments` / `LineLoop`; the renderer issues
 `gl.drawArrays(gl.LINES | gl.LINE_STRIP | gl.LINE_LOOP, …)`. **Note:**
 the WebGL spec caps `gl.lineWidth` at 1 on most desktop platforms, so
 `linewidth > 1` is silently clamped — for thick anti-aliased lines use
-the planned `Line2` + `LineMaterial` (screen-space quad expansion).
+`Line2` + `LineMaterial` (screen-space quad expansion; see below).
 
 For dashed lines, call `line.computeLineDistances()` to populate the
 `lineDistance` attribute, then set `dashed: true` with `dashSize` /
 `gapSize` / `scale`. The shader samples `lineDistance` and discards
 fragments in the gaps.
+
+#### `LineMaterial` (`LineMaterial.ts`)
+
+Thick-line material — screen-space quad-expansion renderer that breaks
+the `gl.lineWidth = 1` cap. Pairs with `LineSegments2` / `Line2` (in
+`Core`) and `LineSegmentsGeometry` / `LineGeometry` (in `Geometries`).
+Each segment is drawn as an instanced quad; the vertex shader expands
+it in screen space to the desired `linewidth`, supporting round end
+caps, dashed patterns, per-vertex colors, and a `worldUnits` mode.
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `color` | `{ r, g, b }` (linear RGB) | `{ 1, 1, 1 }` | Multiplied with `instanceColorStart` / `instanceColorEnd` when present. |
+| `linewidth` | `number` | `1` | Line width in pixels (or world units when `worldUnits = true`). |
+| `resolution` | `Vector2` | `(1, 1)` | Viewport size in pixels. **Must be updated on resize** — screen-space expansion depends on it. |
+| `dashed` | `boolean` | `false` | Enable dashed pattern (requires `computeLineDistances()` on the line object). |
+| `dashSize` | `number` | `1` | Dash length (world units × `scale`). |
+| `gapSize` | `number` | `1` | Gap length (world units × `scale`). |
+| `dashOffset` | `number` | `0` | Dash offset (world units × `scale`). |
+| `scale` | `number` | `1` | Dash scale factor. |
+| `worldUnits` | `boolean` | `false` | Interpret `linewidth` as world units instead of pixels. |
+| `opacity` | `number` | `1` | Opacity (0..1). |
+| `transparent` | `boolean` | `false` | Enable alpha blending. |
+| `alphaTest` | `number` | `0` | Alpha-test threshold (fragments with `alpha < alphaTest` are discarded). |
+| `depthTest` / `depthWrite` | `boolean` | `true` / `true` | Depth buffer control. |
+| `renderOrder` | `number` | `0` | Render sort weight. |
+
+The material exposes `LINE_MATERIAL_VERT` and `LINE_MATERIAL_FRAG` GLSL
+ES 3.0 shader sources. The vertex shader uses `#ifdef USE_COLOR` /
+`#ifdef USE_DASH` preprocessor guards so the renderer can compile
+trimmed variants when per-vertex colors or dashes are unused.
+
+**Uniforms** (`LineMaterialUniforms`, mirrored from the material fields
+via `syncUniforms()`):
+
+| Uniform | GLSL type | Source |
+|---------|-----------|--------|
+| `u_lineColor` | `vec3` | `color` |
+| `u_linewidth` | `float` | `linewidth` |
+| `u_resolution` | `vec2` | `resolution` |
+| `u_dashSize` | `float` | `dashSize` |
+| `u_gapSize` | `float` | `gapSize` |
+| `u_dashOffset` | `float` | `dashOffset` |
+| `u_scale` | `float` | `scale` |
+| `u_opacity` | `float` | `opacity` |
+| `u_worldUnits` | `int` | `worldUnits ? 1 : 0` |
+
+**Vertex shader algorithm** (screen-space quad expansion):
+
+1. Transform `instanceStart` / `instanceEnd` to clip space via
+   `projection × view × model`.
+2. Compute screen-space direction
+   `dir = normalize(endScreen − startScreen)`, perpendicular
+   `perp = vec2(−dir.y, dir.x)`.
+3. Map `a_position.y ∈ {−1, 0, 1, 2}` to interpolation parameter `t`
+   along the segment; `|a_position.y| > 1` extends beyond the endpoints
+   for round caps.
+4. Offset along `perp` by `a_position.x × linewidth / 2` (screen-space
+   mode) or world-space perpendicular (worldUnits mode).
+5. Output `gl_Position`, `v_uv`, `v_color` (interpolated per-instance
+   colors), `v_lineDistance` (for dashed discard).
+
+**Fragment shader**: discards fragments in dash gaps
+(`mod(v_lineDistance + dashOffset, dashSize + gapSize) > dashSize`),
+multiplies `u_lineColor` by `v_color` and `u_opacity`, applies
+`alphaTest`.
+
+```ts
+import { LineMaterial } from '@vreen/engine/materials';
+import { Vector2 } from '@vreen/engine/math';
+
+const mat = new LineMaterial({
+  color: { r: 0.2, g: 1, b: 0.8 },        // cyan
+  linewidth: 4,                            // 4 pixels
+  resolution: new Vector2(1920, 1080),
+  dashed: true,
+  dashSize: 2,
+  gapSize: 1,
+  transparent: true,
+  opacity: 0.9,
+});
+// Update on resize:
+mat.resolution.set(canvas.width, canvas.height);
+mat.syncUniforms();
+```
+
+**Differences from three.js `LineMaterial`**:
+
+- VREEN attributes use `a_` prefix (`a_instanceStart`, `a_instanceEnd`,
+  `a_instanceColorStart`, `a_instanceColorEnd`, `a_instanceDistanceStart`,
+  `a_instanceDistanceEnd`) consistent with the engine naming convention;
+  three.js uses `instanceStart` / `instanceEnd` (no prefix).
+- Uniform names use `u_` prefix (`u_lineColor`, `u_linewidth`, …);
+  three.js uses bare names (`lineColor`, `linewidth`, …).
+- `uniforms` is a typed `LineMaterialUniforms` object (not a plain
+  `Record<string, IUniform>`), giving compile-time field safety.
+- `syncUniforms()` must be called after mutating material fields before
+  the renderer reads `uniforms`; three.js auto-syncs on every frame.
+- `worldUnits` is stored as `boolean` on the material and uploaded as
+  `int` (0/1) to the shader; three.js stores it as `number` (0/1).
+- `fromHex(hex)` factory parses `#rrggbb` / `#rgb` strings into `color`.
+
+**Limitations**:
+
+- `resolution` must be updated manually on viewport resize; the material
+  does not auto-detect canvas changes.
+- The fragment shader does not implement round end-cap alpha (the vertex
+  shader extends the quad, but the fragment shader keeps rectangular
+  ends). Round caps can be added by discarding fragments where
+  `|v_uv.x| > 1` in the cap region.
+- The shader is unlit (`BasicMaterial`-based); there is no lighting or
+  shadow interaction. For lit thick lines, extend the fragment shader
+  with a hard-coded normal.
+- `dashed` requires `LineSegments2.computeLineDistances()` /
+  `Line2.computeLineDistances()` to populate `instanceDistanceStart` /
+  `instanceDistanceEnd`; otherwise `v_lineDistance` is zero and all
+  fragments fall in the dash region.
+- Renderer integration (binding `instanceStart` / `instanceEnd` etc. as
+  instanced vertex attribs) is handled by `WebGL2Renderer`'s instanced
+  custom-attribute path.
+
+Adapted from three.js `examples/jsm/lines/LineMaterial.js` and
+`examples/jsm/lines/LineMaterial.glsl.js`.
 
 ### Custom Shader
 

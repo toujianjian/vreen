@@ -53,6 +53,8 @@ export interface Intersection {
 export interface RaycasterParameters {
   Mesh: object;
   Line: { threshold: number };
+  /** 粗线物体(Line2 / LineSegments2)阈值,可选;未配置时回退到 Line.threshold。 */
+  Line2?: { threshold: number };
   LOD: object;
   Points: { threshold: number };
   Sprite: object;
@@ -203,6 +205,7 @@ export class Raycaster {
     this.params = {
       Mesh: {},
       Line: { threshold: 1 },
+      Line2: { threshold: 1 },
       LOD: {},
       Points: { threshold: 1 },
       Sprite: {},
