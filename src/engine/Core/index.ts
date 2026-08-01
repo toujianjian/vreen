@@ -44,6 +44,9 @@ export { SceneStats, type SceneStatsData } from './SceneStats';
 export { FrustumCuller, type FrustumCullStats } from './FrustumCuller';
 export { BufferAttribute, type AttributeKind } from './BufferAttribute';
 export { InstancedBufferAttribute } from './InstancedBufferAttribute';
+// BufferGeometry — 顶点属性容器 + 可选索引,含 computeVertexNormals / computeTangents
+// (MikkTSpace 切线空间,vec4 + 手性 w) / computeBoundingBox / computeBoundingSphere /
+// applyMatrix4 / clone / toJSON / dispose。适配 three.js BufferGeometry.js。
 export { BufferGeometry } from './BufferGeometry';
 // BufferGeometryUtils — 几何体处理工具 (mergeGeometries/weldVertices/computeTangents/estimateBytesUsed/interleaveAttributes/toIndexed/deduplicateIndices)。
 // 适配 three.js BufferGeometryUtils.js,提供空间哈希焊接 + Lengyel 切线空间 + 交错属性打包。

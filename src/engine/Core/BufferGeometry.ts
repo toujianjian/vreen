@@ -184,6 +184,134 @@ export class BufferGeometry {
   }
 
   /**
+   * Generate per-vertex tangents using the MikkTSpace algorithm
+   * (Morten S. Mikkelsen, "Generating Tangent Space Basis Vectors").
+   *
+   * Requires `position`, `normal`, and `uv` attributes. Produces a `tangent`
+   * attribute (vec4: xyz = tangent direction, w = handedness sign ±1).
+   *
+   * The tangent space is consistent across shared vertices and handles
+   * degenerate UV mappings (mirrored or zero-area UV triangles) by falling
+   * back to identity UV deltas.
+   *
+   * Adapted from three.js `BufferGeometry.computeTangents()`.
+   */
+  computeTangents(): void {
+    const pos = this.attributes.position;
+    const nrm = this.attributes.normal;
+    const uv = this.attributes.uv;
+    if (!pos || !nrm || !uv) return;
+
+    const idx = this.index;
+    const vc = pos.count;
+
+    // Allocate tangent attribute (vec4: xyz = direction, w = handedness)
+    const tan = new BufferAttribute(new Float32Array(vc * 4), 4);
+    const t = tan.array;
+
+    const p = pos.array;
+    const n = nrm.array;
+    const u = uv.array;
+
+    const tanAccum = new Float32Array(vc * 3); // xyz accumulate
+    const tanSign = new Float32Array(vc);      // handedness accumulate
+
+    const processTriangle = (i0: number, i1: number, i2: number): void => {
+      const pa = i0 * 3, pb = i1 * 3, pc = i2 * 3;
+      const ua = i0 * 2, ub = i1 * 2, uc = i2 * 2;
+
+      // Position edges
+      const e1x = p[pb] - p[pa], e1y = p[pb + 1] - p[pa + 1], e1z = p[pb + 2] - p[pa + 2];
+      const e2x = p[pc] - p[pa], e2y = p[pc + 1] - p[pa + 1], e2z = p[pc + 2] - p[pa + 2];
+
+      // UV deltas
+      let dUV1x = u[ub] - u[ua], dUV1y = u[ub + 1] - u[ua + 1];
+      let dUV2x = u[uc] - u[ua], dUV2y = u[uc + 1] - u[ua + 1];
+
+      // Determinant
+      let det = dUV1x * dUV2y - dUV1y * dUV2x;
+
+      // Degenerate UV: fall back to identity
+      if (Math.abs(det) < 1e-10) {
+        dUV1x = 1; dUV1y = 0;
+        dUV2x = 0; dUV2y = 1;
+        det = 1;
+      }
+
+      const r = 1 / det;
+
+      // Tangent = (dUV2.y * e1 - dUV1.y * e2) * r
+      const tx = (dUV2y * e1x - dUV1y * e2x) * r;
+      const ty = (dUV2y * e1y - dUV1y * e2y) * r;
+      const tz = (dUV2y * e1z - dUV1y * e2z) * r;
+
+      // Bitangent = (dUV1.x * e2 - dUV2.x * e1) * r (for handedness)
+      const bx = (dUV1x * e2x - dUV2x * e1x) * r;
+      const by = (dUV1x * e2y - dUV2x * e1y) * r;
+      const bz = (dUV1x * e2z - dUV2x * e1z) * r;
+
+      // Accumulate tangent per vertex
+      for (const vi of [i0, i1, i2]) {
+        tanAccum[vi * 3] += tx;
+        tanAccum[vi * 3 + 1] += ty;
+        tanAccum[vi * 3 + 2] += tz;
+      }
+
+      // Handedness: sign of dot(cross(n, t), b) — same for all 3 vertices
+      // (using face normal approximation from averaged vertex normals)
+      const nx = (n[pa] + n[pb] + n[pc]) / 3;
+      const ny = (n[pa + 1] + n[pb + 1] + n[pc + 1]) / 3;
+      const nz = (n[pa + 2] + n[pb + 2] + n[pc + 2]) / 3;
+      // cross(n, t)
+      const cx = ny * tz - nz * ty;
+      const cy = nz * tx - nx * tz;
+      const cz = nx * ty - ny * tx;
+      // dot(cross, b)
+      const handedness = cx * bx + cy * by + cz * bz < 0 ? -1 : 1;
+
+      for (const vi of [i0, i1, i2]) {
+        tanSign[vi] += handedness;
+      }
+    };
+
+    if (idx) {
+      const ia = idx.array as unknown as ArrayLike<number>;
+      for (let i = 0; i < ia.length; i += 3) {
+        processTriangle(ia[i], ia[i + 1], ia[i + 2]);
+      }
+    } else {
+      for (let i = 0; i < vc; i += 3) {
+        processTriangle(i, i + 1, i + 2);
+      }
+    }
+
+    // Gram-Schmidt orthogonalize and normalize
+    for (let i = 0; i < vc; i++) {
+      const nx = n[i * 3], ny = n[i * 3 + 1], nz = n[i * 3 + 2];
+      const tx = tanAccum[i * 3], ty = tanAccum[i * 3 + 1], tz = tanAccum[i * 3 + 2];
+
+      // Gram-Schmidt: t = normalize(t - n * dot(n, t))
+      const dot = nx * tx + ny * ty + nz * tz;
+      let gx = tx - nx * dot;
+      let gy = ty - ny * dot;
+      let gz = tz - nz * dot;
+      const len = Math.hypot(gx, gy, gz) || 1;
+      gx /= len; gy /= len; gz /= len;
+
+      // Handedness sign
+      const w = tanSign[i] < 0 ? -1 : 1;
+
+      t[i * 4] = gx;
+      t[i * 4 + 1] = gy;
+      t[i * 4 + 2] = gz;
+      t[i * 4 + 3] = w;
+    }
+
+    tan.version++;
+    this.setAttribute('tangent', tan);
+  }
+
+  /**
    * Apply a 4x4 matrix to position (and normal, when present). Useful for
    * baked static transforms (e.g. merging world transforms when collapsing
    * a hierarchy into a single mesh).

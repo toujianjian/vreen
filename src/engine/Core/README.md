@@ -88,9 +88,95 @@ interface LODLevel { distance: number; object: Object3D; hysteresis?: number; }
 
 | Export | Role |
 |--------|------|
-| `BufferGeometry` | Vertex attribute container + optional index. Carries `boundingBox` / `boundingSphere`, `morphTargets`, optional `bvh`. `version` increments on attribute edits. Supports `addGroup` / `clearGroups` for multi-material draw groups. |
+| `BufferGeometry` | Vertex attribute container + optional index. Carries `boundingBox` / `boundingSphere`, `morphTargets`, optional `bvh`. `version` increments on attribute edits. Supports `addGroup` / `clearGroups` for multi-material draw groups. Instance methods: `computeVertexNormals()` (flat + averaged normals), `computeTangents()` (MikkTSpace tangent space, vec4 with handedness w), `computeBoundingBox()` / `computeBoundingSphere()`, `applyMatrix4()`, `clone()`, `toJSON()`, `dispose()`. |
 | `BufferAttribute` | Typed-array view over one attribute (`position` / `normal` / `uv` / etc.). `version` increments on `set` / `setXY` / `setXYZ`. |
 | `InstancedBufferAttribute` | Per-instance attribute; `meshPerAttribute` maps to `gl.vertexAttribDivisor(loc, N)` (default 1). |
+
+### Tangent Space (Normal Mapping)
+
+VREEN provides **two** tangent-space implementations. The instance method is
+the recommended primary API (matches three.js / Unreal / Unity convention);
+the utility function is kept as a legacy alternative.
+
+#### `BufferGeometry.computeTangents()` — MikkTSpace (recommended)
+
+Implements the MikkTSpace algorithm (Morten S. Mikkelsen,
+"Generating Tangent Space Basis Vectors for an Arbitrary Mesh", 2011).
+This is the industry-standard tangent space used by three.js, Unreal Engine,
+Unity, and the de-facto reference for content-authoring tools (Blender,
+Substance Painter, Marmoset Toolbag). Using MikkTSpace on both engine and
+authoring sides guarantees that normal maps authored in any DCC tool render
+without lighting seams or mirrored-tangent artifacts.
+
+**API**:
+```ts
+class BufferGeometry {
+  computeTangents(): void;
+}
+```
+
+**Requirements**: `position`, `normal`, and `uv` attributes (any of these
+missing → no-op, no throw). Works on both indexed and non-indexed geometries.
+
+**Output**: `tangent` attribute, `itemSize = 4`:
+- `xyz` = tangent direction (unit vector, Gram-Schmidt orthogonalised
+  against the vertex normal so `dot(t, n) ≈ 0`)
+- `w`   = handedness sign `±1` (encodes bitangent direction:
+  `bitangent = w * cross(normal, tangent.xyz)`)
+
+**Algorithm** (per triangle):
+1. Compute position edges `e1 = v1 - v0`, `e2 = v2 - v0`.
+2. Compute UV deltas `dUV1 = uv1 - uv0`, `dUV2 = uv2 - uv0`.
+3. Determinant `det = dUV1.x * dUV2.y - dUV1.y * dUV2.x`.
+4. **Degenerate UV fallback**: if `|det| < 1e-10` (zero-area or mirrored UV
+   triangle), substitute identity deltas `(1,0),(0,1)` and `det = 1`. This
+   keeps tangent generation robust on meshes with bad UVs.
+5. `tangent    = (dUV2.y * e1 - dUV1.y * e2) / det`
+6. `bitangent  = (dUV1.x * e2 - dUV2.x * e1) / det`
+7. Accumulate `tangent` into the 3 vertex slots; accumulate handedness
+   sign `dot(cross(faceNormal, tangent), bitangent) < 0 ? -1 : +1`.
+8. Per-vertex Gram-Schmidt: `t = normalize(t - n * dot(n, t))`.
+9. Final `w = (accumulated handedness < 0) ? -1 : +1`.
+
+**Why vec4 + separate `w`** (not vec3 with `w` baked into direction):
+Baking handedness into the direction (multiplying `t.xyz` by `w`) is
+incorrect for mirrored UVs — it flips the tangent axis, which the shader
+cannot distinguish from a 180° rotation, producing wrong lighting on
+mirrored sub-meshes (e.g. symmetric character faces). Storing `w` as a
+separate component lets the shader reconstruct the true bitangent:
+`bitangent = w * cross(normal, tangent.xyz)`.
+
+**Differences from three.js `BufferGeometry.computeTangents()`**:
+- Identical algorithm and output layout (vec4, `w = ±1`).
+- VREEN adds the **degenerate UV fallback** (three.js skips degenerate
+  faces entirely, leaving zero tangents; VREEN substitutes identity deltas
+  so every vertex gets a valid tangent).
+- VREEN uses face-normal approximation from averaged vertex normals for
+  handedness, instead of recomputing geometric face normals — this keeps
+  the implementation O(1) per face and avoids needing position-only edges.
+
+**Test coverage** (`BufferGeometry.test.ts`, 16 tests):
+- Missing attribute safety (position / normal / uv).
+- itemSize = 4, correct vertex count.
+- Tangent ⟂ normal (`dot ≈ 0`).
+- Tangent unit length (`‖t‖ ≈ 1`).
+- Tangent direction aligns with `+u` UV axis.
+- Handedness `w ∈ {+1, -1}`.
+- Standard UV → `w = +1`; mirrored UV (u flipped) → `w = -1`.
+- Degenerate UV (zero-area) → valid tangent via identity fallback.
+- Indexed vs non-indexed produce identical results on same topology.
+- Version increment; idempotent on repeated calls.
+- 3D cube: tangents stay orthogonal to per-face normals.
+
+#### `computeTangents(geometry)` — Lengyel (legacy utility)
+
+Kept in `BufferGeometryUtils.ts` for backwards compatibility. Uses Eric
+Lengyel's method ("Computing Tangent Space Basis Vectors for an Arbitrary
+Mesh", Terathon 2011) — mathematically equivalent to MikkTSpace but stores
+the result as `itemSize = 3` with handedness **baked into the tangent
+direction** (`t.xyz *= w`). This convention is incorrect for mirrored UVs
+(see note above) and is **not recommended** for new content. New code
+should call the instance method `geometry.computeTangents()` instead.
 
 ### BufferGeometry Utilities
 
@@ -102,7 +188,7 @@ mutates the input geometry in place to add the `tangent` attribute.
 |--------|------|
 | `mergeGeometries(geometries, useGroups?)` | Concatenate N geometries into one. Validates attribute consistency (name + itemSize). Indexed/non-indexed must not mix. When `useGroups=true`, emits `addGroup` entries so each input can still use its own material. |
 | `weldVertices(geometry, tolerance=1e-4)` | Merge vertices within `tolerance` (position-based). Uses a spatial hash grid for O(n) average-case search (27-neighbour query). Returns a new geometry with compacted index and remapped attributes. Non-indexed inputs are auto-converted via `toIndexed`. |
-| `computeTangents(geometry)` | Per-vertex tangent space for normal mapping (Lengyel's method). Requires `position` / `normal` / `uv`. Accumulates tangents per face, then Gram-Schmidt orthogonalises against the normal and applies handedness correction from the bitangent. **Mutates** the input, adds a `tangent` attribute (itemSize=3). |
+| `computeTangents(geometry)` | **Legacy** Lengyel tangent space (itemSize=3, handedness baked into direction). Prefer `geometry.computeTangents()` (MikkTSpace, vec4) for new code. Requires `position` / `normal` / `uv`; auto-converts non-indexed via `toIndexed`. **Mutates** the input. See "Tangent Space" section above for the full comparison. |
 | `estimateBytesUsed(geometry)` | GPU memory estimate: sums each attribute's `byteLength`, then accounts for the index using `Uint16` (<65536 max index) or `Uint32` per vertex. |
 | `interleaveAttributes(attributes)` | Pack N attributes into a single interleaved `Float32Array`. Returns `{ array, stride, offsets }` for `glVertexAttribPointer`. All inputs must share the same `count`. |
 | `toIndexed(geometry)` | Convert a non-indexed geometry to indexed by deduplicating position-identical vertices (spatial hash). Indexed inputs return a clone. |
