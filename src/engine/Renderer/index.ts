@@ -275,4 +275,14 @@ export {
   refract,
   type RefractorOptions,
 } from './Refractor';
+// 红蓝立体合成 (Anaglyph Stereo) — CPU 侧左右眼图像合成。
+// 适配 three.js AnaglyphEffect.js,支持 redCyan/redGreen/redBlue/amberBlue 4 种色彩模式。
+// 不依赖 WebGL,可在 Node/无头环境测试。与 StereoCamera 互补。
+export {
+  AnaglyphEffect,
+  createSolidImage,
+  type AnaglyphOptions,
+  type AnaglyphColorMode,
+  type ImageData4,
+} from './AnaglyphEffect';
 
