@@ -29,6 +29,9 @@ export { ConvexHull, type ConvexHullFace, type ConvexHullResult } from './Convex
 // ImprovedNoise — Ken Perlin 改进噪声 (3D Perlin),程序化生成基础。
 // 适配 three.js ImprovedNoise.js,支持 noise/noise2D/noise1D/fBm。
 export { ImprovedNoise } from './ImprovedNoise';
+// SimplexNoise — Stefan Gustavson Simplex 噪声 (2D/3D/4D),程序化生成基础。
+// 适配 three.js SimplexNoise.js,无方向性伪影,计算成本低于 Perlin。
+export { SimplexNoise } from './SimplexNoise';
 
 // 球/柱坐标
 export { Spherical } from './Spherical';
