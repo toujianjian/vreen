@@ -465,3 +465,25 @@ VREEN 现已覆盖 o3de 10 项核心系统(SurfaceData/Shapes/RootMotion/Vegetat
 **soup3D 对比**:soup3D 无任何有向包围盒、表面采样、物体描边、等值面提取能力。VREEN 的 OBB 对斜置物体包裹更紧致 (减少错误剔除与碰撞误报),MeshSurfaceSampler 可在地形/物体表面散布植被与粒子,OutlinePass 为编辑器/检视器提供选中高亮,MarchingCubes 支持 metaball/体素地形/医学影像等值面重建,四者均为产品级引擎的标志性能力。
 
 引擎模块总数 42 → 46,测试总数 4294 → 4416(+122)。
+
+## 新增引擎能力(2026-07-31 WorkerPool 并行任务调度)
+
+本批次新增 1 个顶层模块 `Concurrency`,29 测试。引擎模块总数 46 → 47,测试总数 4416 → 4445(+29)。
+
+| 能力 | 来源 | soup3D | VREEN |
+|------|------|--------|-------|
+| Worker 池管理器 WorkerPool (Promise API + FIFO 队列 + worker 复用 + Transferable 零拷贝 + 主线程降级 + drain/dispose) | three.js WorkerPool + o3de JobSystem | ❌ | ✅ |
+
+**关键算法**:
+
+- `WorkerPool` 并行任务调度:
+  - Promise 化 API(three.js 原版是回调式,这里统一返回 Promise,与现代 async/await 一致)
+  - Worker 复用:空闲 worker 优先复用,避免反复创建开销;仅 `drain()` / `dispose()` 时终止
+  - FIFO 队列:worker 数达上限后,新任务入队,worker 空闲时按入队顺序派发
+  - Transferable 支持:`runTask(data, [buf])` 零拷贝传输 ArrayBuffer,避免序列化开销
+  - 主线程降级:无 `workerCreator` 时,任务通过 `mainThreadHandler` 在主线程同步/异步执行,使同一 API 在浏览器(多线程)与 Node/无头测试(单线程)下行为一致
+  - 错误处理:worker `onerror` / `postMessage` 抛错 / handler 抛错均 reject 对应 task,worker 保持可用
+  - `dispose()` 安全:reject 所有队列与在飞任务,终止所有 worker,后续 `runTask` 立即 reject
+  - `drain()`:等待全部任务完成后回收 worker,池仍可继续使用(重新创建 worker)
+
+**soup3D 对比**:soup3D 无任何 Worker 池管理能力,所有计算均在主线程,无法利用多核 CPU。VREEN 的 WorkerPool 为 KTX2 纹理压缩、Draco 几何解码、NavMesh 构建、流体模拟、路径追踪等计算密集型任务提供统一的多线程调度基础设施,是产品级引擎的标志性能力。

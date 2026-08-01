@@ -4,8 +4,8 @@
 >
 > The kernel of the VREEN engine: a TypeScript-first, zero-runtime-dependency
 > WebGL2 rendering and simulation stack aimed at indie game developers and
-> 3D artists. The kernel exposes 46 top-level modules through a single barrel
-> (`src/engine/index.ts`) and ships **4410+ tests** across **290+ test files**.
+> 3D artists. The kernel exposes 47 top-level modules through a single barrel
+> (`src/engine/index.ts`) and ships **4440+ tests** across **291+ test files**.
 
 ---
 
@@ -110,6 +110,7 @@ import { Scene, PerspectiveCamera, WebGL2Renderer, BoxGeometry, StandardMaterial
 | Terrain | `Terrain/` | TerrainGeometry · Heightmap · Splat · Layer · Erosion · Editor | [Terrain/README.md](./Terrain/README.md) |
 | Acceleration | `Acceleration/` | BVH · BVHBuilder (SAH) · MeshBVH (Raycaster acceleration) | [Acceleration/README.md](./Acceleration/README.md) |
 | Assets | `Assets/` | AssetCache (LRU) · Registry (refcount) · Loader · Bundle · Streaming | [Assets/README.md](./Assets/README.md) |
+| Concurrency | `Concurrency/` | WorkerPool (Promise-based, FIFO queue, transferable, main-thread fallback) | [Concurrency/README.md](./Concurrency/README.md) |
 | Serialization | `Serialization/` | Registry · Geometry · Material · Scene ↔ JSON round-trip | [Serialization/README.md](./Serialization/README.md) |
 | SaveSystem | `SaveSystem/` | Multi-slot saves · Auto-save · LocalStorage adapter | [SaveSystem/README.md](./SaveSystem/README.md) |
 | SceneManager | `SceneManager/` | Multi-scene register/switch · Transition · Streaming | [SceneManager/README.md](./SceneManager/README.md) |
