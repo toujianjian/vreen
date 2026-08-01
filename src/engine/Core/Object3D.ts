@@ -114,6 +114,8 @@ export class Object3D {
 
   visible: boolean = true;
   frustumCulled: boolean = true;
+  /** 渲染顺序(小的先渲染,用于半透明物体从后往前排序)。默认 0。 */
+  renderOrder: number = 0;
   userData: Record<string, unknown> = {};
 
   constructor() {

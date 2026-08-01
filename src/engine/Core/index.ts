@@ -22,6 +22,21 @@ export {
 // MeshSurfaceSampler — 网格表面面积加权随机采样 (植被散布/粒子发射)。
 // 适配 three.js MeshSurfaceSampler.js,CDF + barycentric 均匀采样。
 export { MeshSurfaceSampler, type SampleResult } from './MeshSurfaceSampler';
+// SceneUtils — 场景图工具集 (detach/attach/createMultiMaterialObject/createMeshesFromInstancedGeometry/sortChildren/getWorld*)。
+// 适配 three.js SceneUtils.js,保持世界变换的父子关系切换 + 实例化拆分 + 遍历工具。
+export {
+  detach,
+  attach,
+  createMultiMaterialObject,
+  createMeshesFromInstancedGeometry,
+  sortChildrenByRenderOrder,
+  getWorldPosition,
+  getWorldQuaternion,
+  getWorldScale,
+  getWorldDirection,
+  getMeshes,
+  countObjects,
+} from './SceneUtils';
 export { Mesh } from './Mesh';
 export { Sprite } from './Sprite';
 export { InstancedMesh } from './InstancedMesh';
