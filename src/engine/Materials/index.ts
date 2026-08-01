@@ -74,6 +74,15 @@ export {
   REFLECTOR_VERT,
   REFLECTOR_FRAG,
 } from './ReflectorMaterial';
+// 平面折射材质(与 Renderer/Refractor.ts CPU 数学库配套)。
+// 适配 three.js Refractor.js shader 部分,扩展色散/菲涅尔反射混合/色调/折射强度。
+// GLSL refract() 实时计算折射 UV 位移;色散模式 R/G/B 三通道不同 eta。
+export {
+  RefractorMaterial,
+  type RefractorMaterialOptions,
+  REFRACTOR_VERT,
+  REFRACTOR_FRAG,
+} from './RefractorMaterial';
 // 高级 PBR 材质(各向异性 + 虹彩 + 透明涂层 + 光泽 + 自发光)。
 // 在 PhysicalMaterial 之上扩展:完整 GLSL shader + CPU BRDF 参考实现,
 // 直接被 renderer 使用(PhysicalMaterial 的 clearcoat/sheen 为 advisory)。

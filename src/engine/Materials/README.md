@@ -28,6 +28,7 @@ Material (abstract)
    │     ├── OutlineMaterial          back-side outline pass
    │     ├── WaterMaterial            animated water surface
    │     ├── ReflectorMaterial        planar mirror reflection (with Reflector math)
+   │     ├── RefractorMaterial        planar refraction (glass/water/heat distortion)
    │     └── WireframeMaterial        stylised wireframe
    ├── StandardMaterial               PBR (base color / metallic / roughness / emissive)
    │     └── MeshPhysicalMaterial     extended PBR (clearcoat / sheen / IOR / transmission)
@@ -493,6 +494,139 @@ const mesh = new Mesh(planeGeometry, material);
 - Shader logic validation: perspective divide, tint multiply, Fresnel
   Schlick, baseColor mix, UV clamp.
 - Integration with `Reflector.computeTextureMatrix()` output.
+
+#### `RefractorMaterial` (`RefractorMaterial.ts`)
+
+Planar refraction material — the shader counterpart to
+`Renderer/Refractor.ts` (the CPU refraction math library). Samples a
+pre-rendered scene texture and displaces the UV using GLSL `refract()`
+(Snell's law) to simulate seeing objects through a refractive surface
+(glass, water, heat distortion).
+
+**Architecture** (two-module design, complementary to Reflector):
+
+```
+Renderer/Refractor.ts (CPU math, no GL)
+  ├── refractDirection()          — Snell's law (D' = η·D + (η·cosθi - cosθt)·N)
+  ├── isTotalInternalReflection() — TIR check (sin²θt > 1)
+  ├── criticalAngle               — arcsin(1/η) for η > 1
+  ├── estimateUVOffset()          — depth × tan(θt)
+  └── computeVirtualPosition()    — apparent depth compression
+
+Materials/RefractorMaterial.ts (GLSL shader + data)
+  ├── REFRACTOR_VERT  — worldPos → v_screenCoord via textureMatrix (main camera)
+  ├── REFRACTOR_FRAG  — GLSL refract() → UV offset → sample → tint → Fresnel → dispersion
+  └── RefractorMaterial — holds refractionTexture / textureMatrix / eta / dispersion
+```
+
+**Reflector vs Refractor comparison**:
+
+| Aspect | Reflector | Refractor |
+|--------|-----------|-----------|
+| Physical effect | Mirror reflection (angle flip) | Refraction (angle bend) |
+| Virtual camera | Mirrored across plane | Main camera (no mirror) |
+| Texture matrix | `scaleBias × proj × viewMirror` | `scaleBias × proj × view` (main cam) |
+| UV computation | Direct texture matrix transform | `refract(-V, N, η).xy × scale` offset |
+| Shader function | `textureProj(reflectionMap, coord)` | `texture(refractionMap, screenUv + offset)` |
+| TIR handling | N/A (reflection has no TIR) | GLSL `refract()` returns `(0,0,0)` on TIR |
+| Typical use | Mirrors, polished floors | Glass, water surface, heat haze |
+
+**Properties**:
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `refractionTexture` | `Texture \| null` | `null` | Scene render target (main camera, excluding refractor mesh). |
+| `textureMatrix` | `Matrix4 \| null` | `null` | World → screen UV. `scaleBias × projection × view` (main camera). |
+| `eta` | `number` | `0.75` | Refractive index ratio n1/n2. Air→water ≈ 0.75; air→glass ≈ 0.667. |
+| `tint` | `[r, g, b]` | `[1, 1, 1]` | Surface tint (e.g. `[0.9, 0.95, 1.0]` for cool glass). |
+| `opacity` | `number` | `1.0` | Surface opacity. |
+| `refractionScale` | `number` | `0.02` | UV displacement strength (higher = more distortion). |
+| `fresnelScale` | `number` | `0.0` | Fresnel reflection blend (0 = pure refraction; >0 = grazing-angle reflection). |
+| `fresnelPower` | `number` | `5.0` | Fresnel exponent. |
+| `dispersion` | `number` | `0.0` | Chromatic dispersion strength. R/G/B use `η±dispersion` → colored edges. |
+| `baseColor` | `[r, g, b]` | `[0.02, 0.02, 0.03]` | Fallback color for TIR or missing texture. |
+| `transparent` | `boolean` | `true` | Whether the material is transparent. |
+| `depthWrite` | `boolean` | `false` | Whether to write depth (false = see-through). |
+
+**Vertex shader** (`REFRACTOR_VERT`):
+1. `worldPos = u_model * vec4(position, 1.0)`
+2. `v_screenCoord = u_textureMatrix * worldPos` — world → main camera clip space → [0,1] UV
+3. `v_worldNormal = normalize(u_normalMatrix * a_normal)`
+4. `gl_Position = u_projection * u_view * worldPos`
+
+**Fragment shader** (`REFRACTOR_FRAG`):
+1. Screen UV: `screenUv = v_screenCoord.xy / v_screenCoord.w`
+2. View direction: `V = normalize(u_cameraPos - v_worldPos)`
+3. Incident: `I = -V` (pointing toward surface)
+4. **No dispersion**: `refractDir = refract(I, N, u_eta)`; `offset = refractDir.xy × u_refractionScale`
+5. **With dispersion** (`u_dispersion > 0`):
+   - `etaR = η + dispersion`, `etaG = η`, `etaB = η - dispersion`
+   - Sample R/G/B channels separately with different offsets → chromatic edges
+6. Sample: `refrColor = texture(u_refractionMap, clamp(screenUv + offset, 0, 1))`
+7. Tint: `refrColor *= u_tint`
+8. Fresnel blend (if `fresnelScale > 0`): `mix(refrColor, baseColor, Schlick(dot(N,V), 0.04) × fresnelScale)`
+9. Output: `outColor = vec4(finalColor, u_opacity)`
+
+**Extensions vs three.js Refractor.js**:
+- **Chromatic dispersion** (`dispersion`): R/G/B channels use slightly
+  different η → prism-like colored edges at grazing angles. three.js has
+  no dispersion.
+- **Fresnel reflection blend**: real glass both refracts AND reflects;
+  VREEN blends refraction with a base color at grazing angles via
+  Schlick Fresnel. three.js is pure refraction.
+- **Tint**: colored glass (green, amber, etc.).
+- **Configurable refraction scale**: controls distortion strength.
+- **TIR handling**: GLSL `refract()` returns `(0,0,0)` on total internal
+  reflection → UV offset is zero → shows base color (graceful fallback).
+
+**Usage**:
+```ts
+import { Refractor } from '../Renderer/Refractor';
+import { RefractorMaterial } from '../Materials/RefractorMaterial';
+
+// 1. CPU math (Snell's law, TIR, critical angle)
+const refractor = new Refractor({
+  plane: new Plane(new Vector3(0, 1, 0), 0), // y=0 water surface
+  eta: 0.75, // air → water
+});
+
+// 2. Material (shader + data)
+const material = new RefractorMaterial({
+  eta: 0.75,
+  tint: [0.9, 0.95, 1.0],
+  opacity: 0.85,
+  refractionScale: 0.02,
+  fresnelScale: 0.5,   // grazing-angle reflection
+  dispersion: 0.02,    // chromatic edges
+  baseColor: [0.05, 0.08, 0.12],
+});
+
+// 3. Each frame:
+//    a. Render scene (excluding refractor mesh) to texture from main camera
+//    b. Compute texture matrix
+const scaleBias = new Matrix4().set(0.5,0,0,0.5, 0,0.5,0,0.5, 0,0,0.5,0.5, 0,0,0,1);
+const pv = new Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+material.textureMatrix = new Matrix4().multiplyMatrices(scaleBias, pv);
+material.refractionTexture = sceneRenderTargetTexture;
+
+// 4. Mesh
+const mesh = new Mesh(waterGeometry, material);
+```
+
+**Test coverage** (`RefractorMaterial.test.ts`, 33 tests):
+- Construction defaults + custom options (eta, dispersion, refractionScale, etc.).
+- RGB object / array acceptance for `tint` and `baseColor`.
+- Type identity (`type === 'Refractor'`, `isRefractorMaterial`, `extends BasicMaterial`,
+  unique uuid, distinct from `Reflector` type).
+- `copy()` / `clone()` — full field duplication + array independence.
+- Shader source validation: `#version 300 es`, all uniforms
+  (`u_textureMatrix`, `u_refractionMap`, `u_eta`, `u_tint`, `u_opacity`,
+  `u_refractionScale`, `u_fresnelScale`, `u_fresnelPower`, `u_dispersion`,
+  `u_baseColor`, `u_refractionMapEnabled`).
+- Shader logic: GLSL `refract()` usage, perspective divide, tint,
+  Fresnel Schlick, dispersion (etaR/etaG/etaB), UV clamp.
+- Integration with Refractor math: textureMatrix, refractionTexture,
+  runtime eta updates (air→water vs air→glass).
 
 #### `WireframeMaterial` (`WireframeMaterial.ts`)
 
