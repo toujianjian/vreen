@@ -30,7 +30,8 @@ BufferGeometry (Core) ──base──→ all primitives
    ├── Shape (2-D contour) ──input to──→ ExtrudeGeometry
    ├── WireframeGeometry ──derived from──→ BufferGeometry
    ├── EdgesGeometry ──derived from──→ BufferGeometry (hard-edge filter)
-   └── ExtrudeGeometry ──extrudes──→ Shape along +Z
+   ├── ExtrudeGeometry ──extrudes──→ Shape along +Z
+   └── DecalGeometry ──projects──→ target mesh triangles → clipped box
 
 InstancedGeometry ──extends BufferGeometry──→ per-instance:
    instanceMatrix (Matrix4), instanceColor (Color), custom attributes
@@ -213,6 +214,84 @@ geometry-builder convenience wrapper.
 
 Adapted from three.js `ConvexGeometry.js` + `ConvexHull.js`.
 
+### `DecalGeometry` (`DecalGeometry.ts`)
+
+Projects a target mesh's triangles into a local projector space and
+clips them against a 3-axis-aligned box, producing a new triangle mesh
+that conforms exactly to the target surface within the projector volume.
+Used for bullet holes, blood splatter, scratches, graffiti, projected
+textures, and any effect that needs to "paint" geometry onto existing
+surfaces.
+
+**Algorithm** (Sutherland–Hodgman triangle-against-box clipping):
+
+1. Build `projectorMatrix = T(position) × R(orientation)` and invert.
+2. For each triangle of the target (indexed or non-indexed), transform
+   every vertex to **projector-local space** via
+   `projectorMatrixInverse × mesh.matrixWorld × vertexLocal`; transform
+   normals to **world space** via `transformDirection(mesh.matrixWorld)`.
+3. Clip the triangle against 6 axis-aligned planes (±X, ±Y, ±Z) in
+   sequence. Each plane uses threshold
+   `s = 0.5 × |size · planeNormal|`; a vertex with
+   `position · plane − s > 0` is outside. After each plane, the
+   triangle is re-triangulated:
+   - 0 vertices outside → keep (1 triangle)
+   - 1 vertex outside  → quad split into 2 triangles
+   - 2 vertices outside → 1 triangle
+   - 3 vertices outside → discarded
+4. Output: UV = `(0.5 + localX/size.x, 0.5 + localY/size.y)`;
+   position transformed back to **world space** via `projectorMatrix`;
+   normal kept in world space (interpolated across clipped edges).
+
+| Param | Type | Role |
+|-------|------|------|
+| `target` | `Object3D` | Mesh whose triangles are projected. Must have `geometry.attributes.position`; `normal` is used if present (fallback `(0,0,1)`). |
+| `position` | `Vector3` | Decal projector centre in world space. |
+| `orientation` | `Quaternion` | Decal projector orientation (unit quaternion). |
+| `size` | `Vector3` | Decal box dimensions `(sx, sy, sz)`. Any zero component → empty geometry. |
+
+```ts
+import { DecalGeometry } from '@vreen/engine/geometries';
+import { Vector3, Quaternion } from '@vreen/engine/math';
+
+// Project a bullet-hole decal onto a wall mesh
+const decal = DecalGeometry.create(
+  wallMesh,
+  new Vector3(0, 1.5, -0.5),          // world-space hit point
+  new Quaternion(0, 0, 0, 1),          // identity orientation
+  new Vector3(0.5, 0.5, 0.5),          // 50cm × 50cm × 50cm box
+);
+const decalMesh = new Mesh(decal, decalMaterial);
+scene.add(decalMesh);
+```
+
+**Differences from three.js `DecalGeometry`**:
+
+- `orientation` is a `Quaternion` (three.js uses `Euler`); the
+  projector matrix is built via `Matrix4.compose(position, quat, (1,1,1))`.
+- When the target geometry lacks a `normal` attribute, VREEN falls back
+  to `(0, 0, 1)` instead of throwing.
+- Output is non-indexed (same as three.js): every clipped triangle emits
+  3 independent vertices.
+- Output positions are in **world space** (same as three.js); UVs are
+  computed in projector-local space before the world transform.
+
+**Limitations**:
+
+- Decal projections can distort around sharp corners (same fundamental
+  limitation as three.js; see
+  [Decal projections without distortions](https://github.com/mrdoob/three.js/issues/21187)).
+- Boundary vertices (exactly on `±s`) are classified as inside
+  (`d > 0` test); floating-point rotation matrices may push a boundary
+  vertex slightly outside, triggering unexpected clipping. Use a slightly
+  larger `size` when projecting onto geometry with vertices at exact
+  box boundaries.
+- The projector box is axis-aligned in **projector-local space**, not
+  world space — use `orientation` to rotate the box.
+
+Adapted from three.js `src/geometries/DecalGeometry.js` and the
+[Wolfire decal projection article](http://blog.wolfire.com/2009/06/how-to-project-decals/).
+
 ---
 
 ## Usage Example
@@ -340,6 +419,13 @@ const blob = new Mesh(blobGeo, new StandardMaterial({ baseColor: { r: 0.3, g: 0.
 - **`MarchingCubes.fromField` expects `N³` layout.** The field array
   must be indexed `[z*N*N + y*N + x]` with `N = resolution + 1`.
   Mismatched dimensions produce out-of-bounds reads or garbage geometry.
+- **`DecalGeometry` output is non-indexed world-space.** Every clipped
+  triangle emits 3 independent vertices; positions are in world space
+  (not projector-local). UVs are `[0,1]`-normalised within the projector
+  box. The output `BufferGeometry` has no index buffer.
+- **`DecalGeometry` mutates neither target nor projector.** The target
+  mesh's `matrixWorld` is updated via `updateMatrixWorld(true)` before
+  projection; the original geometry attributes are read-only.
 
 ---
 
