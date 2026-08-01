@@ -7,6 +7,8 @@ export { PhongMaterial, type PhongMaterialOptions } from './MeshPhongMaterial';
 export { NormalMaterial, type NormalMaterialOptions } from './MeshNormalMaterial';
 export { ShadowMaterial, type ShadowMaterialOptions, SHADOW_MATERIAL_VERT, SHADOW_MATERIAL_FRAG } from './ShadowMaterial';
 export { SpriteMaterial, type SpriteMaterialOptions } from './SpriteMaterial';
+// 点云材质 (GL_POINTS 点精灵),适配 three.js PointsMaterial。
+export { PointsMaterial, type PointsMaterialOptions } from './PointsMaterial';
 // 特殊着色器材质(卡通 / 水面 / 线框 / 描边 / Matcap)。
 export {
   ToonMaterial,

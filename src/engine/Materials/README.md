@@ -19,6 +19,7 @@ Material (abstract)
    ├── BasicMaterial (unlit base)
    │     ├── MeshBasicMaterial        flat color / texture
    │     ├── SpriteMaterial           billboard sprites (transparent, sizeAttenuation)
+   │     ├── PointsMaterial           point-cloud / point-sprite (GL_POINTS, gl_PointSize)
    │     ├── FurMaterial              shell-based fur / hair
    │     ├── ToonMaterial             cel-shaded cartoon
    │     ├── OutlineMaterial          back-side outline pass
@@ -130,6 +131,32 @@ Sprite material — extends `BasicMaterial` with:
 Pairs with `Sprite`; the renderer uses a separate sprite shader path
 that implements billboard orientation in the vertex shader.
 `transparent` defaults to `true` (sprites usually have alpha).
+
+#### `PointsMaterial` (`PointsMaterial.ts`)
+
+Point-cloud / point-sprite material — extends `BasicMaterial` with:
+
+| Property | Type | Default |
+|----------|------|---------|
+| `color` | `{ r, g, b }` (linear RGB, multiplied with `map`) | `{ 1, 1, 1 }` |
+| `map` | `Texture \| null` (sampled with `gl_PointCoord` as UV) | `null` |
+| `alphaMap` | `Texture \| null` (`.r` channel modulates alpha) | `null` |
+| `size` | `number` (world units when `sizeAttenuation=true`, else pixels) | `1` |
+| `sizeAttenuation` | `boolean` | `true` (perspective near-big-far-small) |
+| `opacity` | `number` | `1` |
+| `transparent` | `boolean` | `true` (point clouds usually have alpha) |
+| `alphaTest` | `number` (fragments with alpha < `alphaTest` are discarded) | `0` |
+| `depthTest` / `depthWrite` | `boolean` | `true` / `true` |
+| `wireframe` | `boolean` | `false` |
+| `renderOrder` | `number` | `0` |
+
+Pairs with `Points`; the renderer issues a `gl.drawArrays(gl.POINTS, …)`
+call and sets `gl_PointSize` in the vertex shader from `size` (and
+attenuates by view-space depth when `sizeAttenuation=true`). `map` is
+sampled with `gl_PointCoord` (a `vec2` in `[0,1]` covering the point
+sprite quad), so a single texture is reused across every point. Use
+`alphaTest` to cut out point-sprite edges (e.g. circular particle
+textures) and avoid visible square boundaries.
 
 ### Custom Shader
 

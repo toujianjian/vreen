@@ -20,7 +20,8 @@ Object3D ──base──→ Scene
    ├── Mesh ──holds──→ BufferGeometry + Material
    │     ├── SkinnedMesh ──binds──→ Skeleton + Bone[]
    │     ├── InstancedMesh ──uses──→ InstancedBufferAttribute
-   │     └── Sprite (billboard)
+   │     ├── Sprite (billboard)
+   │     └── Points (GL_POINTS point cloud)
    ├── LOD ──switches──→ Mesh[] by distance
    ├── Text / BitmapText ──uses──→ TextAtlas
    └── FurShell ──multi-layer──→ Mesh[] (FurMaterial)
@@ -64,6 +65,7 @@ ModuleRegistry ──manages──→ EngineModule lifecycle (load/unload/depend
 | `InstancedMesh` | Mesh drawn N times with per-instance matrices (and optional per-instance colors). |
 | `LOD` | Switches child meshes by camera distance against `LODLevel[]` thresholds. |
 | `Sprite` | Always-camera-facing billboard. CPU writes camera world rotation in `updateMatrixWorld`. |
+| `Points` | Point-cloud / point-sprite node. Renders every `position` vertex as a `GL_POINTS` primitive via `PointsMaterial`. Supports threshold-based raycast picking. |
 | `Text` | 3D text rendered via `TextAtlas` quads + `MeshBasicMaterial`. Supports wrapping/alignment. |
 | `BitmapText` | Text using a pre-rendered `TextAtlas` for large shared-atlas batches. |
 | `TextAtlas` | Rasterises characters to a canvas + records UVs; emits `CanvasTexture`. Degrades to dry-run without DOM. |
@@ -214,6 +216,84 @@ interface EngineModule {
 ```
 
 ### Scene Graph Utilities & Special Nodes
+
+#### `Points` (`Points.ts`)
+
+Point-cloud / point-sprite node — renders every `position` vertex of a
+`BufferGeometry` as a single `GL_POINTS` primitive. Used for particle
+systems, scanned point-cloud data, starfields, debug markers, and any
+effect that needs thousands of independent dots.
+
+Extends `Object3D`; holds `geometry: BufferGeometry` and
+`material: PointsMaterial | PointsMaterial[]`. The geometry's `index`
+is ignored — points are drawn in `position` vertex order.
+
+**Raycast** (threshold-based picking): for each vertex, computes the
+distance from the ray to the point (in geometry-local space) and keeps
+the hit if `distance² ≤ localThreshold²`. `localThreshold` is derived
+from `raycaster.params.Points.threshold` divided by the mean of the
+three axis scales (`meanScale = (sx+sy+sz)/3`), so a uniformly scaled-up
+cloud needs a larger world-space threshold to pick — matching three.js
+behaviour. Each hit fills `distance` (world-space ray-origin→hit),
+`distanceToRay` (local perpendicular distance), `point` (world-space
+closest point on ray), and `index` (the vertex index). A local-space
+bounding-sphere test rejects the whole cloud early when the ray is far
+away.
+
+| Property | Type | Default | Role |
+|----------|------|---------|------|
+| `geometry` | `BufferGeometry` | `new BufferGeometry()` | Source of point positions. Only `position` is read. |
+| `material` | `PointsMaterial \| PointsMaterial[]` | `new PointsMaterial()` | Render parameters (size, map, attenuation…). |
+| `isPoints` | `boolean` | `true` | Duck-type flag. |
+| `castShadow` / `receiveShadow` | `boolean` | `false` / `false` | Points never cast/receive shadows (matches three.js). |
+
+```ts
+import { Points, BufferGeometry, BufferAttribute } from '@vreen/engine/core';
+import { PointsMaterial } from '@vreen/engine/materials';
+
+const N = 5000;
+const positions = new Float32Array(N * 3);
+for (let i = 0; i < N; i++) {
+  // random points on a unit sphere
+  const u = Math.random(), v = Math.random();
+  const theta = 2 * Math.PI * u, phi = Math.acos(2 * v - 1);
+  positions[i * 3]     = Math.sin(phi) * Math.cos(theta);
+  positions[i * 3 + 1] = Math.sin(phi) * Math.sin(theta);
+  positions[i * 3 + 2] = Math.cos(phi);
+}
+const geo = new BufferGeometry();
+geo.setAttribute('position', new BufferAttribute(positions, 3));
+
+const points = new Points(geo, new PointsMaterial({
+  color: { r: 0.3, g: 0.7, b: 1 },
+  size: 0.04,
+  sizeAttenuation: true,
+}));
+scene.add(points);
+
+// Picking — threshold = 0.2 world units
+const raycaster = createRaycasterFromMouse(...);
+raycaster.params.Points.threshold = 0.2;
+const hits = raycaster.intersectObject(points, false);
+if (hits.length > 0) console.log('picked vertex', hits[0].index);
+```
+
+**Differences from three.js `Points`**:
+
+- The bounding-sphere rejection test is done in **geometry-local space**
+  (ray transformed by `matrixWorld⁻¹`), reusing VREEN's existing
+  `Ray.distanceSqToPoint` + raw `boundingSphere` shape, instead of
+  three.js's world-space `Sphere.applyMatrix4` path. Numerically
+  equivalent.
+- `castShadow` / `receiveShadow` are explicitly `false` by default
+  (three.js leaves them `true` but the shadow map pass ignores Points
+  anyway; VREEN makes the intent explicit).
+- The local threshold fallback when `meanScale === 0` is the world
+  `threshold` (avoids `Infinity`); three.js would produce `Infinity`
+  and never hit, which is rarely the desired behaviour for a degenerate
+  scale.
+
+Adapted from three.js `src/objects/Points.js`.
 
 #### `SceneUtils` (`SceneUtils.ts`)
 

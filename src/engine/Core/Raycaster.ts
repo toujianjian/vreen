@@ -45,6 +45,8 @@ export interface Intersection {
   uv?: Vector2;
   /** InstancedMesh 命中时的实例索引。 */
   instanceId?: number;
+  /** Points 命中时的顶点索引(从 0 开始)。与 three.js Points raycast 对齐。 */
+  index?: number;
 }
 
 /** 子类型阈值配置(与 three.js 结构一致;VREEN 仅 Mesh/InstancedMesh 实际使用)。 */
