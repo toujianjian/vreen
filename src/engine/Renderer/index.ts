@@ -326,4 +326,20 @@ export {
   type BRDFLUTOptions,
   type BRDFLUTData,
 } from './BRDFLUT';
+// SubsurfaceScattering — Pre-Integrated Skin 工具集(曲率 + 背光透射 + 混合)。
+// 补充 Core/PreIntegratedSkinLUT.ts(LUT 生成)+ SSSSPass(屏幕空间模糊)+
+// SubsurfaceScatteringMaterial(材质 shader)。从 Core 重新导出 LUT API。
+export {
+  generatePreIntegratedSkinLUT,
+  samplePreIntegratedSkinLUT,
+  skinScatterProfile,
+  curvatureFromRadius,
+  computeCurvature,
+  computeCurvatureAveraged,
+  backLightTransmission,
+  mixSSSDiffuse,
+  type PreIntegratedSkinLUTOptions,
+  type PreIntegratedSkinLUTResult,
+  type SkinColor,
+} from './SubsurfaceScattering';
 

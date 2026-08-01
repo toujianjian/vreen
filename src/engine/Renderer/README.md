@@ -31,6 +31,9 @@ Renderer (interface)        ← pluggable backend contract
           ├── Reflector / Refractor ← planar reflection & refraction math
           ├── StereoCamera / AnaglyphEffect / ParallaxBarrierEffect ← stereo
           ├── GPUComputationRenderer ← GPGPU texture ping-pong + dependency graph
+          ├── PMREMGenerator ← prefiltered IBL mip chain (Karis 2013)
+          ├── BRDFLUT ← split-sum BRDF integration LUT (Karis 2013)
+          ├── SubsurfaceScattering ← Pre-Integrated Skin (Penner 2011) + curvature + transmission
           ├── DeferredRenderer ← alternative deferred backend
           ├── ReflectionProbe / ReflectionProbeManager ← IBL probes
           └── PathTracer    ← CPU reference path tracer
@@ -578,6 +581,166 @@ const lut = BRDFLUT.generate({ size: 256, samples: 1024 });
 - The V=N approximation (split-sum) introduces slight inaccuracy at
   grazing angles; this is the standard Karis tradeoff shared by UE4,
   Filament, and three.js.
+
+### `SubsurfaceScattering` (`SubsurfaceScattering.ts`)
+
+Subsurface scattering (SSS) runtime toolkit for skin and organic
+materials. Provides curvature estimation, backlight transmission, and
+diffuse mixing utilities that complement the Pre-Integrated Skin LUT
+(`Core/PreIntegratedSkinLUT.ts`), the screen-space SSS pass
+(`PostProcess/SSSSPass.ts`), and the SSS material
+(`Materials/SubsurfaceScatteringMaterial.ts`).
+
+Adapted from Penner & Borshukov 2011 "Pre-Integrated Skin Shading"
+(SIGGRAPH Course) and d'Eon 2007 "GPU Gems 3 Ch.14 — Advanced Skin".
+This module fills a gap that soup3D and three.js do not cover —
+curvature-aware skin diffuse with a pre-integrated LUT.
+
+**Why Pre-Integrated Skin?** Skin is translucent: light enters at one
+point, scatters through the tissue, and exits at another. At high-curvature
+regions (nose tip, ear edges, nostrils, lips), the scattering crosses the
+light/shadow terminator, producing the characteristic warm-red glow on the
+shadow boundary. Standard Lambertian diffuse cannot reproduce this. The
+Penner 2011 method pre-integrates the scattering over a spherical arc for
+each (N·L, curvature) pair, producing a 2D LUT that the shader samples at
+runtime — O(1) per pixel with no blur passes required.
+
+**Pipeline overview** (three complementary components):
+
+| Component | File | Role |
+|-----------|------|------|
+| Pre-Integrated Skin LUT | `Core/PreIntegratedSkinLUT.ts` | Offline generation of 2D RGB LUT (N·L × curvature → diffuse color) |
+| Runtime tools | `SubsurfaceScattering.ts` (this file) | Curvature estimation, backlight transmission, diffuse mixing |
+| Screen-space blur | `PostProcess/SSSSPass.ts` | Jimenez 2012 separable SSSS post-process blur (optional enhancement) |
+| Material shader | `Materials/SubsurfaceScatteringMaterial.ts` | GLSL shader sampling the LUT + transmission |
+
+**Exports** (re-exports from `Core/PreIntegratedSkinLUT.ts` + local functions):
+
+| Export | Signature | Description |
+|--------|-----------|-------------|
+| `generatePreIntegratedSkinLUT` | `(opts?) → { data, width, height, maxCurvature }` | Generate 2D RGB LUT via d'Eon Gaussian-sum profile integration |
+| `samplePreIntegratedSkinLUT` | `(lut, NdotL, curvature) → { r, g, b }` | Bilinear sample the LUT with auto-clamping |
+| `skinScatterProfile` | `(distanceMM) → { r, g, b }` | d'Eon 2007 skin diffuse reflectance profile R_d(s) |
+| `curvatureFromRadius` | `(radiusMM) → number` | Convert curvature radius (mm) to curvature (1/mm) |
+| `computeCurvature` | `(n0, n1, edgeLength) → number` | Estimate curvature from two adjacent normals |
+| `computeCurvatureAveraged` | `(center, neighbors[], edgeLengths[]) → number` | Average curvature from multiple neighbors (more stable) |
+| `backLightTransmission` | `(thickness, NoL, VoL) → [r, g, b]` | Backlight transmission color (ear/nose rim glow) |
+| `mixSSSDiffuse` | `(diffuseColor, sssColor, sssAmount) → [r, g, b]` | Blend Lambertian diffuse with SSS LUT result |
+
+**d'Eon 2007 skin diffuse profile** (Gaussian sum, per channel):
+
+```
+R_d(s) = Σ_k  a_k · exp(−s² / (2·v_k))    (s in mm, v_k in mm²)
+```
+
+| Channel | Gaussian terms (weight, variance) | Long-range? |
+|---------|-----------------------------------|-------------|
+| Red     | (0.028, 0.013), (0.238, 0.060), (0.448, 0.268), (0.698, 0.842) | Yes — v=0.842 → red scatters farthest |
+| Green   | (0.449, 0.019), (0.367, 0.088), (0.184, 0.228) | No — short range only |
+| Blue    | (0.549, 0.022), (0.318, 0.084), (0.133, 0.183) | No — shortest range |
+
+The red channel's long-range Gaussian (v=0.842 mm²) is what causes the
+red bleed across the terminator — red light scatters ~2× farther than
+green/blue, so shadow edges on skin appear warm red.
+
+**LUT generation algorithm** (`generatePreIntegratedSkinLUT`):
+
+For each texel (u, v) where u = (N·L+1)/2 and v = curvature/maxCurvature:
+
+1. Convert curvature to arc radius: `r = 1 / curvature` (mm).
+2. For N samples along the arc `s ∈ [−maxScatter, +maxScatter]`:
+   - Compute arc angle: `φ = s / r`.
+   - Evaluate the scatter profile: `R_d(|s|)` (Gaussian sum, per channel).
+   - Compute local N·L: `cos(θ + φ)` where `θ = acos(N·L)`.
+   - Accumulate: `Σ max(cos(θ+φ), 0) · R_d(|s|)` per channel.
+   - Accumulate weight: `Σ R_d(|s|)` per channel.
+3. Normalize: `diffuse = Σ(lit · R_d) / Σ(R_d)` per channel.
+4. Degenerate case: curvature ≈ 0 (flat) → `diffuse = max(N·L, 0)` (standard Lambert).
+
+**Invariants**:
+- Output per channel ∈ [0, 1] (normalised by Σ R_d).
+- curvature → 0 (flat surface): result ≈ `max(N·L, 0)` (standard Lambert).
+- N·L = 1 (fully lit) with finite curvature: result ≈ 1.0 (normalisation guarantee).
+- Higher curvature → more red bleed at the terminator (N·L ≈ 0).
+- Same parameters always produce the same LUT (deterministic, no RNG).
+
+**Curvature estimation** (`computeCurvature` / `computeCurvatureAveraged`):
+
+For a mesh surface, curvature ≈ |ΔN| / |ΔP|, where ΔN is the normal
+change and ΔP is the position change between adjacent vertices. This can
+be precomputed on the CPU and uploaded as a vertex attribute for the
+shader to sample the LUT:
+
+```ts
+// Per-vertex curvature from 4 neighbors
+const curvature = computeCurvatureAveraged(
+  vertex.normal,
+  [n0, n1, n2, n3],
+  [edgeLen0, edgeLen1, edgeLen2, edgeLen3],
+);
+// Upload as vertex attribute
+geometry.setAttribute('curvature', new Float32Array(curvatures), 1);
+```
+
+**Backlight transmission** (`backLightTransmission`):
+
+When light passes through thin tissue (ears, nostrils, fingers) from
+behind, the blood absorbs green/blue light and the transmitted light
+appears red. The transmission intensity depends on:
+- `thickness`: 0 = paper-thin (max transmission), 1 = opaque (no transmission).
+- `NoL` (N·L): negative values mean light is behind the surface → transmission.
+- `VoL` (V·L): negative values mean viewer is on the opposite side from light.
+
+Transmission color: `[1.0, 0.45, 0.32]` (warm red, blood-absorbed).
+
+```ts
+const transmission = backLightTransmission(thickness, NoL, VoL);
+finalColor[0] += transmission[0];
+finalColor[1] += transmission[1];
+finalColor[2] += transmission[2];
+```
+
+**Complete pipeline example**:
+
+```ts
+// 1. Generate LUT (offline, once)
+const lut = generatePreIntegratedSkinLUT({ width: 256, height: 256, samples: 64 });
+
+// 2. Upload as RG16F/RGB16F texture
+const lutTexture = createTextureFromLUT(lut);
+
+// 3. In shader: sample LUT using N·L and per-vertex curvature
+//    vec3 sssDiffuse = texture(skinLUT, vec2(NdotL * 0.5 + 0.5, curvature)).rgb;
+
+// 4. On CPU (testing / offline baking):
+const sssColor = samplePreIntegratedSkinLUT(lut, NoL, curvature);
+const lambert = [albedo.r * NoL, albedo.g * NoL, albedo.b * NoL];
+const diffuse = mixSSSDiffuse(lambert, [sssColor.r, sssColor.g, sssColor.b], 0.7);
+
+// 5. Add backlight transmission for thin regions
+const transmission = backLightTransmission(thickness, NoL, VoL);
+const finalColor = [diffuse[0] + transmission[0], diffuse[1] + transmission[1], diffuse[2] + transmission[2]];
+```
+
+**Differences from three.js / o3de**:
+- three.js has no built-in Pre-Integrated Skin LUT; this module fills that gap.
+- o3de Atom has `SkinDiffuseProfile` / `PreIntegratedBrdf` assets; VREEN
+  generates the LUT procedurally at runtime (no asset pipeline needed).
+- The d'Eon Gaussian profile is hardcoded (standard for human skin); o3de
+  allows custom profiles via JSON asset. VREEN's `skinScatterProfile` can
+  be extended to accept custom profiles in the future.
+
+**Limitations**:
+- The d'Eon profile is tuned for human Caucasian skin; other skin tones may
+  need profile adjustment (the Gaussian variances are the same, but the
+  albedo multiplier differs).
+- Curvature estimation from normals is a first-order approximation; for
+  production quality, precompute curvature in a DCC tool (Maya/Blender) and
+  bake it as a vertex attribute.
+- Backlight transmission is a simplified thin-wall model; for thick
+  objects, use the screen-space SSSS pass (`PostProcess/SSSSPass.ts`).
+- The LUT is 2D (N·L × curvature); a 3D LUT (adding thickness) would be
+  more accurate but increases memory 8×–64×.
 
 ### `DeferredRenderer` (`DeferredRenderer.ts`)
 
