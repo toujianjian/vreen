@@ -59,10 +59,10 @@
 | 图形后端   | 自研 WebGL2 引擎 + Three.js r169 双后端                        |
 | 定位       | 面向独立游戏开发者与 3D 艺术家的可视化检视系统                  |
 | License    | MIT                                                            |
-| 代码规模   | 64K+ 行(引擎 + 应用 + 测试)                                  |
-| 引擎模块   | 46 个顶层模块                                                  |
-| 源码文件   | 430+ (`src/engine/`)                                          |
-| 测试       | 4400+ 测试(290+ 文件,46+ 模块)                              |
+| 代码规模   | 222K+ 行(引擎 `.ts`)+ 应用 + 测试                            |
+| 引擎模块   | 43 个顶层模块                                                  |
+| 源码文件   | 866+ (`src/engine/*.ts`)                                      |
+| 测试       | 7500+ 测试(340+ 文件,43 模块)                              |
 | 运行时依赖 | 零(@vreen/engine 仅 Draco 为可选 peer)                       |
 | 构建工具   | Vite 5 + Tailwind CSS 3                                        |
 | 桌面端     | Electron 43 + electron-builder 26(便携 .exe)                |
@@ -110,6 +110,17 @@
 | 文本/精灵               | ✗             | ✓ Text/BitmapText/TextAtlas/Sprite                 | VREEN  |
 | 实例化渲染              | ✗             | ✓ InstancedMesh + InstancedBufferAttribute         | VREEN  |
 | 毛发渲染                | ✗             | ✓ FurShell 多层 shell                              | VREEN  |
+| 平面镜面反射            | ✗             | ✓ Reflector(反射矩阵 + 镜像相机 + Lengyel 斜截投影 + 纹理矩阵) | VREEN  |
+| 平面折射                | ✗             | ✓ Refractor(Snell 折射 + 全反射/临界角 + 表观深度) | VREEN  |
+| 立体相机                | ✗             | ✓ StereoCamera(离轴非对称投影 + 会聚距离,Kooima 2008) | VREEN  |
+| 红蓝立体合成            | ✗             | ✓ AnaglyphEffect(redCyan/redGreen/redBlue/amberBlue 4 模式) | VREEN  |
+| 视差屏障立体            | ✗             | ✓ ParallaxBarrierEffect(horizontal/vertical/checkerboard 隔行) | VREEN  |
+| 程序化金属薄片纹理      | ✗             | ✓ FlakesTexture(确定性 RNG + 平铺 wrap + 抗锯齿 + 法线贴图转换) | VREEN  |
+| 光照探针生成            | ✗             | ✓ LightProbeGenerator(SH2 球谐系数从 cubemap 积分,Ramamoorthi 2001) | VREEN  |
+| GPGPU 通用计算          | ✗             | ✓ GPUComputationRenderer(纹理 ping-pong + 依赖图拓扑序 + CPU 内核降级 + GLSL 包装) | VREEN  |
+| 圆角盒子几何            | ✗             | ✓ RoundedBoxGeometry(棱角球面/圆柱过渡 + 可配半径/分段) | VREEN  |
+| 凸包几何                | ✗             | ✓ ConvexGeometry + ConvexHull(增量 QuickHull + horizon 边 + 体积/表面积) | VREEN  |
+| 程序化噪声              | ✗             | ✓ ImprovedNoise(Perlin 2002)+ SimplexNoise(Gustavson 2D/3D/4D)+ fBm | VREEN  |
 
 ### 3.2 场景与资源
 
@@ -128,6 +139,8 @@
 | 资源生命周期      | ✗               | ✓ AssetCache(LRU)+ AssetRegistry(引用计数)      | VREEN  |
 | 序列化            | ✗               | ✓ Scene/Geometry/Material ↔ JSON 往返             | VREEN  |
 | .vreen 包格式     | ✗               | ✓ ZIP 容器 + manifest + 增量差分包 + 多语言 SDK     | VREEN  |
+| 场景图工具        | ✗               | ✓ SceneUtils(detach/attach 保世界变换 + createMultiMaterialObject + sortRadial) | VREEN  |
+| 陀螺仪节点        | ✗               | ✓ Gyroscope(锁定世界朝向 + 跟随父节点位置)        | VREEN  |
 
 ### 3.3 动画与角色
 
@@ -487,3 +500,116 @@ VREEN 现已覆盖 o3de 10 项核心系统(SurfaceData/Shapes/RootMotion/Vegetat
   - `drain()`:等待全部任务完成后回收 worker,池仍可继续使用(重新创建 worker)
 
 **soup3D 对比**:soup3D 无任何 Worker 池管理能力,所有计算均在主线程,无法利用多核 CPU。VREEN 的 WorkerPool 为 KTX2 纹理压缩、Draco 几何解码、NavMesh 构建、流体模拟、路径追踪等计算密集型任务提供统一的多线程调度基础设施,是产品级引擎的标志性能力。
+
+## 新增引擎能力(2026-08-01 反射/折射 + 立体渲染 + 场景工具 + 光探针 + GPGPU + 噪声 + 凸包)
+
+本批次从 three.js 适配 **14 个新模块**,共 **279 测试**(Reflector 30 + SceneUtils 31 + Refractor 28 + StereoCamera 17 + AnaglyphEffect 16 + Gyroscope 12 + ParallaxBarrierEffect 14 + FlakesTexture 16 + LightProbeGenerator 14 + RoundedBoxGeometry 17 + ConvexHull 14 + ImprovedNoise 13 + SimplexNoise 16 + GPUComputationRenderer 41)。模块归入既有 `Renderer` / `Core` / `Cameras` / `Geometries` / `Math` 顶层模块,顶层模块总数维持 43,测试总数 4445 → 4724(+279;含历史批次累计口径现达 7500+ 测试 / 340+ 文件)。
+
+| 能力 | 来源 | soup3D | VREEN |
+|------|------|--------|-------|
+| 平面镜面反射 Reflector (反射矩阵 + 镜像相机 + Lengyel 斜截投影 + 纹理矩阵 + 可配分辨率/颜色/clipBias) | three.js Reflector + Lengyel | ❌ | ✅ |
+| 平面折射 Refractor (Snell 折射方向 + 全反射/临界角判定 + 表观深度 + 虚拟位置 UV 位移) | three.js Refractor + GLSL refract | ❌ | ✅ |
+| 场景图工具 SceneUtils (detach/attach 保世界变换 + createMultiMaterialObject + sortRadial + filter) + Object3D.renderOrder | three.js SceneUtils | ❌ | ✅ |
+| 陀螺仪节点 Gyroscope (锁定世界朝向 + 跟随父节点位置,updateMatrixWorld 重算世界旋转) | three.js Gyroscope | ❌ | ✅ |
+| 立体相机 StereoCamera (离轴非对称投影 + 会聚距离 + eyeSep + 左右 PerspectiveCamera 同步,Kooima 2008) | three.js StereoCamera | ❌ | ✅ |
+| 红蓝立体合成 AnaglyphEffect (redCyan/redGreen/redBlue/amberBlue 4 色彩模式 + 左右眼通道分离 + 可配强度/翻转) | three.js AnaglyphEffect | ❌ | ✅ |
+| 视差屏障立体 ParallaxBarrierEffect (horizontal/vertical/checkerboard 3 种隔行交错 + 左右眼像素分配) | three.js ParallaxBarrierEffect | ❌ | ✅ |
+| 程序化金属薄片纹理 FlakesTexture (确定性 RNG + 平铺 wrap + 抗锯齿距离场 + 法线贴图转换,车漆渲染) | three.js FlakesTexture | ❌ | ✅ |
+| 光照探针生成 LightProbeGenerator (SH2 球谐系数从 cubemap 面积分量积分 + Ramamoorthi 2001 漫反射卷积 + 归一化) | three.js LightProbeGenerator | ❌ | ✅ |
+| 圆角盒子几何 RoundedBoxGeometry (棱角球面/圆柱过渡 + 可配半径/分段 + 6 面 12 棱 8 角圆滑) | three.js RoundedBoxGeometry | ❌ | ✅ |
+| 凸包计算 ConvexHull (增量 QuickHull + horizon 边检测 + 面法线朝外 + 体积/表面积 + 从点集/BufferGeometry 构造) | three.js ConvexHull | ❌ | ✅ |
+| Perlin 改进噪声 ImprovedNoise (Ken Perlin 2002 + fade 6t⁵-15t⁴+10t³ + 3D/2D/1D 切片 + fBm 多倍频) | three.js ImprovedNoise | ❌ | ✅ |
+| Simplex 噪声 SimplexNoise (Stefan Gustavson + 斜切网格 + 径向衰减 (0.5-x²-y²-z²)⁴ + 2D/3D/4D + fBm) | three.js SimplexNoise | ❌ | ✅ |
+| GPGPU 通用计算 GPUComputationRenderer (Variable 数据纹理 + 依赖图拓扑序 Kahn + ping-pong 双缓冲 + 依赖读旧值语义 + CPU 内核降级 + GLSL 包装生成) | three.js GPUComputationRenderer | ❌ | ✅ |
+
+**关键算法**:
+
+- `Reflector` 平面镜面反射:
+  - 反射矩阵:对平面 (normal, constant) 构造 4×4 反射矩阵 `M = I - 2·n·nᵀ`(平移分量由 constant 处理)
+  - 镜像相机:主相机世界矩阵 × 反射矩阵,得到水面对称的虚拟相机
+  - Lengyel 斜截投影:把镜像相机近平面压到反射平面,避免水下几何穿透镜面(构造修正投影矩阵 `M' = M · L`,L 改变 clip plane)
+  - 纹理矩阵:把反射纹理从投影空间映射回屏幕 UV,保证反射与场景对齐
+  - 可配:`resolution`(反射纹理分辨率降采样提性能)、`color`(镜面色调)、`clipBias`(防止反射漏看水下)
+
+- `Refractor` 平面折射:
+  - Snell 折射定律:`n₁·sinθ₁ = n₂·sinθ₂`,折射方向 `t = (n₁/n₂)(i + cosθ₁·n) - cosθ₂·n`
+  - 全反射 (TIR):当 `sinθ₂ > 1`(入射角 > 临界角)时无折射光,返回零向量
+  - 临界角:`θc = asin(n₂/n₁)`(从密介质到疏介质)
+  - 表观深度:物体在水中的视觉位置上移 `d' = d·(n_air/n_water)`
+  - 虚拟位置 UV 位移:按折射角估算屏幕 UV 偏移,采样折射纹理
+
+- `SceneUtils` 场景图工具:
+  - `detach(child, parent)`:把 child 从 parent 移除,保留其世界变换(把世界矩阵分解回局部 position/quaternion/scale)
+  - `attach(child, parent)`:把 child 加到 parent,保持世界变换不变(计算 parent 逆 × child 世界 = 新局部)
+  - `createMultiMaterialObject(geometry, materials)`:为每个材质克隆一份 geometry 包到一个 Group(多材质渲染的 three.js 经典模式)
+  - `sortRadial(objects, origin)`:按到原点的径向距离排序(透明物体从后往前)
+
+- `Gyroscope` 陀螺仪节点:
+  - `updateMatrixWorld()`:用父节点世界位置 + 自身上一帧世界旋转,重新组合世界矩阵 → 实现"位置跟随父节点、朝向锁定世界"的效果(常用于 HUD/指南针/地平仪)
+  - 与 `Object3D` 默认行为的差异:默认 Object3D 的旋转是相对父节点的,Gyroscope 把旋转从世界空间强行保持
+
+- `StereoCamera` 立体相机:
+  - 离轴非对称投影(Kooima 2008):左右眼视锥在投影面上不对称偏移,保证会聚平面处左右眼视线相交
+  - 会聚距离 `focalLength`:双眼在 focalLength 处汇聚;eyeSep 控制瞳距
+  - 左右 `PerspectiveCamera` 同步:从主相机复制 fov/aspect/near/far,再施加水平偏移矩阵
+  - `update(camera)`:重算左右眼投影 + 视图矩阵;`render()` 交由调用方分别提交
+
+- `AnaglyphEffect` 红蓝立体合成:
+  - 4 色彩模式:redCyan(左红右青)/ redGreen / redBlue / amberBlue(琥珀蓝,色彩平衡更佳)
+  - 通道分离:左眼图像保留对应左色通道,右眼保留互补通道,叠加后戴滤色眼镜产生立体感
+  - 可配:`eyeSep`、`strength`(通道增益)、`flip`(左右眼互换)
+
+- `ParallaxBarrierEffect` 视差屏障立体:
+  - 3 种隔行模式:horizontal(隔行,适合横屏屏障)/ vertical(隔列)/ checkerboard(棋盘,适合斜向屏障)
+  - 左右眼像素按屏障模式分配到隔行/隔列位置,裸眼或屏障屏产生立体感
+
+- `FlakesTexture` 程序化金属薄片纹理:
+  - 确定性 RNG(种子化):保证同参数生成同纹理,可复现
+  - 平铺 wrap:flake 位置模运算,保证纹理无缝平铺
+  - 抗锯齿:flake 边缘距离场平滑过渡,避免锯齿
+  - 法线贴图转换:从高度场计算梯度 → 法线,用作车漆金属薄片的微表面法线
+
+- `LightProbeGenerator` 光照探针生成:
+  - SH2 (二阶球谐) 系数:9 个 vec3 = 27 floats,从 cubemap 6 面积分
+  - Ramamoorthi & Hanrahan 2001 漫反射卷积:把 cubemap 的每像素辐亮度按 SH 基函数投影累积,得到入射辐照度球谐
+  - 归一化:按面积权重与常数项归一化,使 SH 重建的辐照度物理正确
+  - 输出 `LightProbe.sh: SphericalHarmonics3`,可直接喂给 PBR 着色器作 diffuse IBL
+
+- `RoundedBoxGeometry` 圆角盒子:
+  - 6 面 + 12 棱 + 8 角:棱用圆柱面过渡,角用球面过渡,实现全圆滑
+  - 可配:`radius`(圆角半径,≤ min(w,h,d)/2)、`segments`(圆角分段数,越高越平滑)
+  - 顶点法线:每点法线为过渡曲面的真实法线,光照连续无棱线伪影
+
+- `ConvexHull` 凸包计算(增量 QuickHull):
+  - 初始四面体:从点集选 4 个不共面点(极小 x → 最远点 → 距线最远 → 距面最远),保证初始体积非零
+  - 增量插入:对每个剩余点,标记"可见面"(点在外侧),移除可见面,沿 horizon 边(可见区与不可见区边界,用有向边 twin 判定)向该点构造新三角面
+  - 面法线朝外:用初始四面体中心点作参考,法线指向中心则翻转绕序
+  - `volume()`:有符号体积 Σ (face.centroid · face.normal · constant) / 6;`surfaceArea()`:Σ 三角形面积
+  - 复用:碰撞检测凸包、阴影生成凸包、LOD 简化
+
+- `ImprovedNoise` Perlin 改进噪声(Ken Perlin 2002):
+  - 洗牌置换表 `perm[512]`:从固定种子洗牌,保证梯度分布均匀
+  - fade 函数 `6t⁵-15t⁴+10t³`:平滑插值,保证 C² 连续(导数在格点为 0,消除块状伪影)
+  - 梯度 `grad3[12][3]`:12 个方向梯度向量,用 `grad(hash, x, y, z)` 索引
+  - 3D 噪声:8 角点梯度 + 三线性 fade 插值;`noise2D`/`noise1D` 为 z=0/y=0,z=0 切片
+  - fBm:`Σ octaves·persistenceⁱ·noise(freq·p)`,频率 `lacunarityⁱ` 增长
+
+- `SimplexNoise` Simplex 噪声(Stefan Gustavson):
+  - 斜切网格 (skew):把 (x,y,z) 斜切到超立方体格点,每 simplex 单元只有 n+1 个角点贡献(Perlin 是 2ⁿ),计算成本更低
+  - 径向衰减 `(0.5 - x²-y²-z²)⁴`:仅在 simplex 单元内贡献,外为 0,保证连续无块状
+  - 2D/3D/4D:`grad3`/`grad4` 梯度表,skew/unskew 变换;4D 用两个 3D 噪声插值的简化外推(避免完整 4D simplex 的 32 顶点排序)
+  - fBm:同 ImprovedNoise,多倍频叠加
+  - 优势:无 Perlin 的方向性伪影(轴对齐亮带),计算量更低,纹理更自然
+
+- `GPUComputationRenderer` GPGPU 通用计算:
+  - Variable(数据纹理):RGBA 浮点(4 floats/texel),`sizeX×sizeY` 网格,内部 ping-pong 双缓冲
+  - 依赖图:Variable 可依赖其它 Variable,`init()` 用 Kahn 拓扑排序 + 环检测,计算按拓扑序进行
+  - 依赖读旧值语义:本轮所有 Variable 先读到依赖的上一轮快照,写到 alternate 缓冲,最后统一 swap → 与 three.js "同 pass 读上一轮" 行为一致,避免数据竞争
+  - CPU 内核降级:`setVariableKernel(name, fn)` 注册 CPU 内核,`compute()` 按 texel 调用,语义等价 fragment shader,使无头测试/Node 环境可运行
+  - GLSL 包装生成:把用户 fragment 片段包装成完整 `#version 300 es` shader(声明依赖 `uniform sampler2D`、`uniform vec2 resolution`、`out vec4 fragColor`、`#define gl_FragColor fragColor` 兼容别名、passthrough 回退),供调用方(WebGL2Renderer)直接编译提交
+  - `swapVariableBuffer(name)`:GPU 路径下,调用方 readPixels 回填后调本方法交换缓冲指针
+  - 用例:粒子位置/速度场、流体、布料、flocking、任何 GPU 迭代计算
+
+**soup3D 对比**:soup3D 无任何反射、折射、立体渲染、GPGPU、光探针、凸包或程序化噪声能力,其渲染管线为入门级 Blinn-Phong 单 pass。VREEN 本批次补齐了产品级引擎的「高级光学效果(反射/折射)」「VR/立体显示(立体相机/红蓝/视差屏障)」「GPU 通用计算(GPGPU)」「全局光照捕获(光探针)」「程序化生成基础(Perlin/Simplex 噪声)」「碰撞/阴影凸包」六大方向,在图形能力广度上对 soup3D 形成压倒性优势。配合 7500+ 测试覆盖与无头可测的 CPU 降级路径,VREEN 在「功能完备性」与「工程可验证性」两个维度均达到产品级引擎标准。
+
+引擎顶层模块总数维持 43(本批次模块归入既有 `Renderer` / `Core` / `Cameras` / `Geometries` / `Math`),测试总数 4445 → 4724(+279;含历史批次累计口径现达 7500+ 测试 / 340+ 文件)。

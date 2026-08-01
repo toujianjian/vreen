@@ -4,8 +4,9 @@
 >
 > The kernel of the VREEN engine: a TypeScript-first, zero-runtime-dependency
 > WebGL2 rendering and simulation stack aimed at indie game developers and
-> 3D artists. The kernel exposes 47 top-level modules through a single barrel
-> (`src/engine/index.ts`) and ships **4440+ tests** across **291+ test files**.
+> 3D artists. The kernel exposes 43 top-level modules through a single barrel
+> (`src/engine/index.ts`) and ships **7500+ tests** across **340+ test files**
+> (866+ `.ts` source files, ~222K lines).
 
 ---
 
@@ -96,16 +97,16 @@ import { Scene, PerspectiveCamera, WebGL2Renderer, BoxGeometry, StandardMaterial
 
 | Module | Path | Purpose | README |
 |--------|------|---------|--------|
-| Math | `Math/` | Vector · Matrix · Quaternion · Color · Frustum · Spherical · Cylindrical · OBB primitives | [Math/README.md](./Math/README.md) |
-| Core | `Core/` | Scene graph · Object3D · Mesh · Textures · Morph · Fog · Raycaster · MeshSurfaceSampler | [Core/README.md](./Core/README.md) |
-| Cameras | `Cameras/` | PerspectiveCamera · OrthographicCamera · CinematicCamera · CameraRig | [Cameras/README.md](./Cameras/README.md) |
+| Math | `Math/` | Vector · Matrix · Quaternion · Color · Frustum · Spherical · Cylindrical · OBB · ConvexHull (QuickHull) · ImprovedNoise (Perlin) · SimplexNoise (Gustavson) + fBm | [Math/README.md](./Math/README.md) |
+| Core | `Core/` | Scene graph · Object3D · Mesh · Textures · Morph · Fog · Raycaster · MeshSurfaceSampler · SceneUtils (detach/attach) · Gyroscope · FlakesTexture | [Core/README.md](./Core/README.md) |
+| Cameras | `Cameras/` | PerspectiveCamera · OrthographicCamera · CinematicCamera · CameraRig · StereoCamera (off-axis projection) | [Cameras/README.md](./Cameras/README.md) |
 | Controls | `Controls/` | Orbit · Fly · PointerLock · Map · CharacterController · VRController | [Controls/README.md](./Controls/README.md) |
-| Lights | `Lights/` | Ambient · Directional · Point · Spot · Hemisphere · RectArea · LightProbe · AmbientLightProbe · HemisphereLightProbe · SphericalHarmonics3 + shadows | [Lights/README.md](./Lights/README.md) |
+| Lights | `Lights/` | Ambient · Directional · Point · Spot · Hemisphere · RectArea · LightProbe · AmbientLightProbe · HemisphereLightProbe · SphericalHarmonics3 · LightProbeGenerator (SH2 from cubemap) + shadows | [Lights/README.md](./Lights/README.md) |
 | Materials | `Materials/` | Standard · Physical · Phong · Toon · Fur · SSS · Water · ShaderChunks · MaterialGraph · AdvancedPBR | [Materials/README.md](./Materials/README.md) |
-| Geometries | `Geometries/` | 18 procedural primitives + Shape + Extrude + Wireframe + Edges + ConvexGeometry + ParametricGeometry + DecalGeometry + MarchingCubes | [Geometries/README.md](./Geometries/README.md) |
+| Geometries | `Geometries/` | 18 procedural primitives + Shape + Extrude + Wireframe + Edges + ConvexGeometry + RoundedBoxGeometry + ParametricGeometry + DecalGeometry + MarchingCubes | [Geometries/README.md](./Geometries/README.md) |
 | Loaders | `Loaders/` | GLB · OBJ · FBX · STL · PLY · TGA · HDR · KTX2 · EXR + 4 exporters | [Loaders/README.md](./Loaders/README.md) |
 | Audio | `Audio/` | Listener · Positional · Effects · Analyzer · Procedural · Spatial | [Audio/README.md](./Audio/README.md) |
-| Renderer | `Renderer/` | WebGL2 · Deferred · Forward+ · PathTracer · PostProcess · GI · RT · LightmapBaker · RenderGraph · OutlinePass | [Renderer/README.md](./Renderer/README.md) |
+| Renderer | `Renderer/` | WebGL2 · Deferred · Forward+ · PathTracer · PostProcess · GI · RT · LightmapBaker · RenderGraph · OutlinePass · Reflector · Refractor · AnaglyphEffect · ParallaxBarrierEffect · GPUComputationRenderer (GPGPU) | [Renderer/README.md](./Renderer/README.md) |
 | Helpers | `Helpers/` | Grid · Axes · Box · Arrow · Camera · Line · Debug · PhysicsDebug · PolarGridHelper · Box3Helper · PlaneHelper | [Helpers/README.md](./Helpers/README.md) |
 | Terrain | `Terrain/` | TerrainGeometry · Heightmap · Splat · Layer · Erosion · Editor | [Terrain/README.md](./Terrain/README.md) |
 | Acceleration | `Acceleration/` | BVH · BVHBuilder (SAH) · MeshBVH (Raycaster acceleration) | [Acceleration/README.md](./Acceleration/README.md) |
@@ -142,6 +143,21 @@ import { Scene, PerspectiveCamera, WebGL2Renderer, BoxGeometry, StandardMaterial
 | MeshSurfaceSampler | `Core/MeshSurfaceSampler.ts` | Area-weighted random surface point sampling · CDF + barycentric coordinates · weight attribute · batch sampling · normal/color output | [Core/README.md](./Core/README.md) |
 | OutlinePass | `Renderer/OutlinePass.ts` | CPU-side object outline rendering · mask blurring (Gaussian) + edge detection · configurable edge color/strength/blur/glow | [Renderer/README.md](./Renderer/README.md) |
 | MarchingCubes | `Geometries/MarchingCubes.ts` | Iso-surface extraction from density fields or metaballs · Marching Cubes algorithm (Lorensen & Cline 1987) · density function / metaball / raw field input | [Geometries/README.md](./Geometries/README.md) |
+| WorkerPool | `Concurrency/WorkerPool.ts` | Promise-based worker pool · FIFO queue · worker reuse · Transferable zero-copy · main-thread fallback · drain/dispose | [Concurrency/README.md](./Concurrency/README.md) |
+| Reflector | `Renderer/Reflector.ts` | Planar mirror reflection · reflection matrix · mirror camera · Lengyel oblique projection · texture matrix · configurable resolution/color/clipBias | [Renderer/README.md](./Renderer/README.md) |
+| SceneUtils | `Core/SceneUtils.ts` | detach/attach (preserve world transform) · createMultiMaterialObject · sortRadial · filter + Object3D.renderOrder | [Core/README.md](./Core/README.md) |
+| Refractor | `Renderer/Refractor.ts` | Planar refraction · Snell's law · total internal reflection / critical angle · apparent depth · virtual-position UV offset | [Renderer/README.md](./Renderer/README.md) |
+| StereoCamera | `Cameras/StereoCamera.ts` | Off-axis asymmetric stereo projection (Kooima 2008) · convergence distance · eyeSep · left/right PerspectiveCamera sync | [Cameras/README.md](./Cameras/README.md) |
+| AnaglyphEffect | `Renderer/AnaglyphEffect.ts` | Red-cyan/green/blue/amber-blue anaglyph stereo compositing · channel separation · configurable strength/flip | [Renderer/README.md](./Renderer/README.md) |
+| Gyroscope | `Core/Gyroscope.ts` | World-orientation-locking Object3D · follows parent position while preserving world rotation (HUD/compass/horizon) | [Core/README.md](./Core/README.md) |
+| ParallaxBarrierEffect | `Renderer/ParallaxBarrierEffect.ts` | Interlaced stereo for 3D displays · horizontal/vertical/checkerboard interlacing · left/right pixel assignment | [Renderer/README.md](./Renderer/README.md) |
+| FlakesTexture | `Core/FlakesTexture.ts` | Procedural metal-flake texture (car paint) · deterministic RNG · tiling wrap · anti-aliased distance field · normal-map conversion | [Core/README.md](./Core/README.md) |
+| LightProbeGenerator | `Lights/LightProbeGenerator.ts` | SH2 spherical-harmonics coefficients from cubemap integration · Ramamoorthi 2001 diffuse convolution · normalization | [Lights/README.md](./Lights/README.md) |
+| RoundedBoxGeometry | `Geometries/RoundedBoxGeometry.ts` | Rounded box · corner/edge rounding via spherical/cylindrical transitions · configurable radius/segments | [Geometries/README.md](./Geometries/README.md) |
+| ConvexHull | `Math/ConvexHull.ts` | Standalone convex hull (incremental QuickHull) · horizon-edge detection · outward normals · volume/surfaceArea · from points/BufferGeometry | [Math/README.md](./Math/README.md) |
+| ImprovedNoise | `Math/ImprovedNoise.ts` | Ken Perlin 2002 improved noise · fade 6t⁵-15t⁴+10t³ · 3D/2D/1D slices · fBm (fractal Brownian motion) | [Math/README.md](./Math/README.md) |
+| SimplexNoise | `Math/SimplexNoise.ts` | Stefan Gustavson simplex noise · skew grid · radial falloff (0.5-x²-y²-z²)⁴ · 2D/3D/4D · fBm | [Math/README.md](./Math/README.md) |
+| GPUComputationRenderer | `Renderer/GPUComputationRenderer.ts` | GPGPU orchestrator · Variable data textures · dependency-graph topo sort (Kahn) · ping-pong double buffering · CPU kernel fallback · GLSL wrapper generation | [Renderer/README.md](./Renderer/README.md) |
 
 ---
 

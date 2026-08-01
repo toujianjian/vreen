@@ -84,6 +84,9 @@ type EulerOrder = 'XYZ' | 'YZX' | 'ZXY' | 'XZY' | 'YXZ' | 'ZYX';
 | `Triangle` | Three vertices. `area` / `normal` / `barycoordFromPoint` / `containsPoint` / `intersectsRay`. |
 | `Frustum` | Six planes. `setFromProjectionMatrix` / `containsPoint` / `intersectsBox` / `intersectsSphere`. Used by `FrustumCuller`. |
 | `OBB` | Oriented bounding box (`center` / `halfSize` / `rotation: Matrix3`). `fromBox3` / `computeBoundingBox` / `containsPoint` / `containsBox` / `intersectsSphere` / `intersectsBox3` / `intersectsPlane` / `intersectsRay` / `intersectsOBB` (SAT 15-axis) / `applyMatrix4` / `translate`. Tighter fit than `Box3` for rotated objects. |
+| `ConvexHull` | Standalone convex hull (`ConvexHull.compute(points)`). Incremental QuickHull with horizon-edge detection + outward normals. `ConvexHull.volume(result)` / `ConvexHull.surfaceArea(result)`. Returns structured `{ faces, vertexIndices, vertices }`; consumed by collision, shadow, and LOD pipelines. |
+| `ImprovedNoise` | Ken Perlin 2002 improved noise. `noise(x,y,z)` / `noise2D` / `noise1D` / `fbm(x,y,z, octaves?, persistence?, lacunarity?)` / `fbm2D`. Fade `6t⁵-15t⁴+10t³` for C² continuity. |
+| `SimplexNoise` | Stefan Gustavson simplex noise. `noise2D` / `noise3D` / `noise4D` / `fbm2D` / `fbm3D`. Skew grid + radial falloff `(0.5-x²-y²-z²)⁴`; no Perlin axis-aligned artifacts, lower cost. |
 
 ### `OBB` — Oriented Bounding Box (`OBB.ts`)
 

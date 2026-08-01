@@ -28,6 +28,9 @@ Renderer (interface)        ← pluggable backend contract
           ├── LensFlare ← CPU-side lens flare compositor
           ├── WeightedBlendedOIT ← order-independent transparency
           ├── OutlinePass ← CPU-side object outline / selection highlight
+          ├── Reflector / Refractor ← planar reflection & refraction math
+          ├── StereoCamera / AnaglyphEffect / ParallaxBarrierEffect ← stereo
+          ├── GPUComputationRenderer ← GPGPU texture ping-pong + dependency graph
           ├── DeferredRenderer ← alternative deferred backend
           ├── ReflectionProbe / ReflectionProbeManager ← IBL probes
           └── PathTracer    ← CPU reference path tracer
@@ -352,6 +355,61 @@ const out = pass.render({
 `OutlinePass` is a CPU reference / fallback path. The production WebGL2
 pipeline can implement the same algorithm as a two-pass render-pass
 (mask FBO → separable blur shader → composite) for real-time use.
+
+### `Reflector` / `Refractor` (`Reflector.ts` / `Refractor.ts`)
+
+Planar reflection and refraction math libraries. `Reflector` provides a
+reflection matrix, mirror camera, Lengyel oblique projection (to keep the
+mirror plane at the near boundary and avoid leaking geometry behind it),
+and a texture matrix mapping reflected texture space back to screen UV.
+`Refractor` provides Snell's-law refraction direction, total-internal-
+reflection / critical-angle detection, apparent-depth estimation, and a
+virtual-position UV offset for sampling a refraction texture.
+
+Adapted from three.js `Reflector.js` / `Refractor.js`. CPU-side math only,
+no WebGL dependency — headless-testable; the caller binds GL state.
+
+### `StereoCamera` / `AnaglyphEffect` / `ParallaxBarrierEffect`
+
+Stereo rendering family. `StereoCamera` (off-axis asymmetric projection,
+Kooima 2008) produces left/right `PerspectiveCamera` views with a
+configurable eye separation and convergence distance. `AnaglyphEffect`
+composites left/right images into a red-cyan / red-green / red-blue /
+amber-blue anaglyph. `ParallaxBarrierEffect` interleaves left/right
+pixels horizontally / vertically / checkerboard for parallax-barrier 3D
+displays. All CPU-side, headless-testable; complement `StereoCamera`.
+
+### `GPUComputationRenderer` (`GPUComputationRenderer.ts`)
+
+GPGPU orchestrator adapted from three.js `GPUComputationRenderer.js`.
+Manages `Variable`s (RGBA float data textures) and a directed dependency
+graph; `init()` topo-sorts (Kahn) with cycle detection and generates a
+complete `#version 300 es` fragment-shader wrapper for each variable
+(declares dependency `uniform sampler2D`s, `resolution`, `fragColor`
+output, and a `gl_FragColor` alias for user-code compatibility). Each
+step `compute()` runs variables in topological order with ping-pong
+double buffering and "read previous-step value" semantics (matching
+three.js single-pass behavior). A CPU kernel path
+(`setVariableKernel`) provides a headless-testable / fallback equivalent
+of the fragment shader.
+
+| Export | Role |
+|--------|------|
+| `GPUComputationRenderer` | Orchestrator. Constructor: `(sizeX?, sizeY?)`. |
+| `GPUKernel` | CPU compute kernel signature `(deps, coord, out, off, sizeX, sizeY) => void`. |
+| `GPUVariableUniforms` | Per-variable upload info (data buffer, size, channels, wrapped shader source, dependencies). |
+| `GPUInitError` | `init()` failure reason union (`duplicate-variable` / `unknown-dependency` / `cyclic-dependency` / `empty`). |
+
+```ts
+const gpu = new GPUComputationRenderer(64, 64);
+gpu.addVariable('position', positionFrag);
+gpu.addVariable('velocity', velocityFrag);
+gpu.setVariableDependencies('velocity', ['position']);
+gpu.setVariableDependencies('position', ['velocity']);
+if (gpu.init() !== null) throw new Error('init failed');
+gpu.compute(); // advance one step
+const pos = gpu.getVariableData('position'); // Float32Array copy
+```
 
 ### `DeferredRenderer` (`DeferredRenderer.ts`)
 
