@@ -5,10 +5,12 @@
 > The terrain subsystem of the `@vreen/engine` kernel. Generates
 > heightmap-driven terrain geometry, procedural heightmaps (Perlin /
 > Diamond-Square / Ridge / Flat), texture-layer blending via splatmaps,
-> natural erosion (thermal / hydraulic / wind), and an interactive
-> brush editor with undo/redo. All classes are decoupled from
-> `Material` and `Scene`: they emit `BufferGeometry`, typed arrays or
-> operate in place on a `Float32Array` heightmap.
+> natural erosion (thermal / hydraulic / wind), an interactive
+> brush editor with undo/redo, Simplex-based FBM noise for real-time
+> height functions, and chunked LOD with skirt stitching for infinite
+> streaming terrain. All classes are decoupled from `Material` and
+> `Scene`: they emit `BufferGeometry`, typed arrays or operate in place
+> on a `Float32Array` heightmap.
 
 ---
 
@@ -39,6 +41,24 @@ HeightmapGenerator ──static──→ Float32Array (0..1, normalized)
                  TerrainErosion ──in-place──→ heightmap Float32Array
                    thermal / hydraulic / wind
                    erosionMap (net change per cell)
+
+  ── Streaming LOD (infinite terrain) ──────────────────────
+
+  FBMNoise ──realtime──→ HeightFunction (x, z) → y
+                               │
+                               ▼
+                    TerrainSystem  (multi-chunk manager)
+                      │  update(camX, camZ) → visible chunks[]
+                      │  getHeightAt / getNormalAt / getSlopeAt
+                      │  LOD selection by distance
+                      │  chunk caching + recycling
+                      ▼
+                    TerrainChunk[]  (each extends BufferGeometry)
+                      │  LOD N → segments = baseSegments / 2^N
+                      │  skirt: edge vertices displaced −skirtHeight
+                      │  position / normal / uv / index
+                      ▼
+                    renderer.submit(chunk)
 ```
 
 Two heightmap conventions coexist:
@@ -226,6 +246,146 @@ perturbation; `erode` is a simplified thermal pass. `paint` records
 splat snapshots instead of heightmap slices. The editor mutates
 `terrain.heightmap` in place — the caller must notify the render layer
 to recompute normals and re-upload to the GPU.
+
+### FBM Noise (`FBMNoise.ts`)
+
+Simplex-based Fractal Brownian Motion noise generator. Complements
+`HeightmapGenerator` (which uses Perlin): Simplex noise has no
+directional artefacts and lower computational cost in higher
+dimensions. Provides `toHeightFunction()` to generate a
+`HeightFunction` callable suitable for `TerrainChunk` and
+`TerrainSystem`.
+
+Adapted from three.js `SimplexNoise.js` + Perlin 2002 "Improving Noise".
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `octaves` | 6 | Number of frequency-doubling iterations |
+| `persistence` | 0.5 | Amplitude decay per octave (× persistence) |
+| `lacunarity` | 2.0 | Frequency growth per octave (× lacunarity) |
+| `scale` | 0.01 | Input coordinate scaling (larger = smoother terrain) |
+
+```ts
+const fbm = new FBMNoise(6, 0.5, 2.0, 0.01);
+const heightFn = fbm.toHeightFunction(20); // ±20 world units
+```
+
+**Differences from `HeightmapGenerator`**:
+- `HeightmapGenerator` generates a full `Float32Array` heightmap offline
+  (Perlin / Diamond-Square / Ridge / Flat) — best for pre-baked terrain.
+- `FBMNoise` provides a real-time callable `HeightFunction` — best for
+  infinite streaming terrain (`TerrainSystem`).
+
+### Chunked LOD (`TerrainChunk.ts`)
+
+A single terrain LOD chunk. Each chunk is a `BufferGeometry` with
+position / normal / uv attributes, generated from a `HeightFunction`
+at a specified world offset and LOD level.
+
+Adapted from o3de Atom `TerrainSystem` / `TerrainSpawner` and
+GPU Gems 1 Ch.38 "Terrain LOD".
+
+**LOD resolution**: `segments = max(1, baseSegments / 2^lod)`.
+LOD 0 = full resolution; LOD 3 = 1/8 resolution.
+
+**Skirt generation**: along all four edges, a duplicate row of vertices
+is added with Y displaced by `-skirtHeight`. Triangle indices connect
+each edge vertex to its skirt counterpart, producing a vertical "curtain"
+that hides the gap between adjacent chunks at different LOD levels.
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `chunkX` | `number` | World X of the chunk's top-left corner |
+| `chunkZ` | `number` | World Z of the chunk's top-left corner |
+| `size` | `number` | Chunk edge length (world units) |
+| `lod` | `number` | LOD level (0 = highest detail) |
+| `segments` | `number` | Grid resolution (= baseSegments / 2^lod) |
+| `skirtHeight` | `number` | Vertical curtain height (0 = no skirt) |
+
+```ts
+const chunk = new TerrainChunk({
+  chunkX: 0, chunkZ: 0, size: 64, lod: 0,
+  heightFunction: fbm.toHeightFunction(20),
+  baseSegments: 64, skirtHeight: 2,
+});
+// chunk is a BufferGeometry — add to scene as a mesh
+```
+
+**Invariants**:
+- Vertex count (no skirt) = `(segments + 1)²`.
+- Skirt adds `4 × segments` extra vertices (edge duplicates).
+- Index count (no skirt) = `segments² × 6` (2 triangles × 3 indices per cell).
+- Skirt adds `4 × segments × 6` extra indices (2 triangles per edge pair).
+- `getCenter()` returns `(chunkX + size/2, 0, chunkZ + size/2)`.
+- `distanceTo(cx, cz)` returns horizontal Euclidean distance to chunk centre.
+
+### Terrain System (`TerrainSystem.ts`)
+
+Multi-chunk terrain manager with distance-based LOD selection and
+global height/normal/slope queries.
+
+Adapted from o3de Atom `TerrainWorld`.
+
+Each frame, `update(cameraX, cameraZ)`:
+1. Computes the set of chunk coordinates within `viewDistance` of the camera.
+2. For each visible chunk, selects LOD based on distance to camera.
+3. Creates or rebuilds chunks whose LOD changed; caches unchanged chunks.
+4. Recycles chunks that fell outside `viewDistance` (prevents memory growth).
+5. Returns the visible chunk array for the renderer to submit.
+
+Height queries (`getHeightAt`, `getNormalAt`, `getSlopeAt`) call the
+`HeightFunction` directly — they do not depend on chunk geometry, so
+they return accurate results even before chunks are generated.
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `heightFunction` | — | World (x, z) → height y |
+| `chunkSize` | 64 | Chunk edge length (world units) |
+| `baseSegments` | 64 | LOD 0 grid resolution |
+| `lodLevels` | 4 | Number of LOD levels (0..N-1) |
+| `lodDistances` | [0, 64, 128, 256] | Min camera distance per LOD |
+| `skirtHeight` | 1 | Skirt curtain height |
+| `viewDistance` | 256 | Max render distance from camera |
+| `uvRepeat` | 1 | UV tiling per chunk |
+
+```ts
+const fbm = new FBMNoise(6, 0.5, 2.0, 0.01);
+const terrain = new TerrainSystem({
+  heightFunction: fbm.toHeightFunction(20),
+  chunkSize: 64,
+  baseSegments: 64,
+  lodLevels: 4,
+  lodDistances: [0, 64, 128, 256],
+  viewDistance: 256,
+  skirtHeight: 2,
+});
+
+// Each frame:
+const visibleChunks = terrain.update(cameraX, cameraZ);
+for (const chunk of visibleChunks) {
+  renderer.submit(chunk); // chunk is a BufferGeometry
+}
+
+// Global queries (any world position, any time):
+const h = terrain.getHeightAt(playerX, playerZ);
+const n = terrain.getNormalAt(playerX, playerZ);
+const slope = terrain.getSlopeAt(playerX, playerZ);
+```
+
+**Invariants**:
+- Same `(chunkX, chunkZ)` + same LOD → cached chunk reused (no rebuild).
+- LOD change → chunk rebuilt; old chunk garbage-collected.
+- Chunks outside `viewDistance` are recycled immediately.
+- `getHeightAt` / `getNormalAt` / `getSlopeAt` are O(1), independent of chunk state.
+- `dispose()` clears all chunks.
+
+**Differences from o3de Atom**:
+- o3de uses asset-based heightmaps (`*.terrain` files); VREEN uses a
+  real-time `HeightFunction` for infinite streaming.
+- o3de's LOD uses a quadtree; VREEN uses uniform grid chunks with
+  distance-based LOD (simpler, suitable for web).
+- o3de supports GPU tessellation; VREEN uses CPU mesh generation
+  (WebGL2-compatible, no tessellation shader required).
 
 ---
 
