@@ -86,6 +86,12 @@ export { Line, LineSegments, LineLoop } from './Line';
 // 突破 gl.lineWidth=1 限制,支持任意像素宽度、虚线、逐顶点颜色、worldUnits 模式。
 export { LineSegments2, Line2 } from './Line2';
 export { InstancedMesh } from './InstancedMesh';
+// BatchedMesh — 动态多几何体合并渲染(减少 draw call)。
+// 适配 three.js BatchedMesh.js / o3de Atom RPI::BatchedMesh。
+// 与 InstancedMesh 互补:InstancedMesh 渲染同一几何体 N 次,
+// BatchedMesh 合并多个不同几何体到一个缓冲区。预分配大缓冲区 +
+// addGeometry/deleteGeometry/optimize 生命周期 + 每批次独立矩阵/可见性/包围盒。
+export { BatchedMesh, type BatchedDrawRange } from './BatchedMesh';
 export { LOD, type LODLevel } from './LOD';
 export { Group } from './Group';
 export { Text, type TextAlignment, type TextOptions } from './Text';

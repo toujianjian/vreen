@@ -20,6 +20,7 @@ Object3D ──base──→ Scene
    ├── Mesh ──holds──→ BufferGeometry + Material
    │     ├── SkinnedMesh ──binds──→ Skeleton + Bone[]
    │     ├── InstancedMesh ──uses──→ InstancedBufferAttribute
+   │     ├── BatchedMesh ──merges──→ N geometries into 1 buffer
    │     ├── Sprite (billboard)
    │     └── Points (GL_POINTS point cloud)
    ├── Line ──LINE_STRIP──→ BufferGeometry vertex chain
@@ -68,6 +69,7 @@ ModuleRegistry ──manages──→ EngineModule lifecycle (load/unload/depend
 | `Bone` | Scene-graph node participating in a `Skeleton`. |
 | `Skeleton` | Bone hierarchy + `boneMatrices` UBO data; `update()` recomputes per-bone world matrices. |
 | `InstancedMesh` | Mesh drawn N times with per-instance matrices (and optional per-instance colors). |
+| `BatchedMesh` | Dynamic multi-geometry batching — merges N different geometries into one vertex/index buffer for reduced draw calls. Per-batch matrix / visibility / bounding box. |
 | `LOD` | Switches child meshes by camera distance against `LODLevel[]` thresholds. |
 | `Sprite` | Always-camera-facing billboard. CPU writes camera world rotation in `updateMatrixWorld`. |
 | `Points` | Point-cloud / point-sprite node. Renders every `position` vertex as a `GL_POINTS` primitive via `PointsMaterial`. Supports threshold-based raycast picking. |
@@ -689,6 +691,17 @@ for (let i = 0; i < 100; i++) {
   instanced.setMatrixAt(i, /* model matrix */);
 }
 instanced.instanceMatrix.needsUpdate = true;
+
+// Batched rendering — merge different geometries into one draw call
+const batched = new BatchedMesh(10000, 30000, material);
+const id1 = batched.addGeometry(boxGeometry);    // different geometries
+const id2 = batched.addGeometry(sphereGeometry);  // in one buffer
+const id3 = batched.addGeometry(cylinderGeometry);
+batched.setMatrixAt(id1, new Matrix4().makeTranslation(0, 0, 0));
+batched.setMatrixAt(id2, new Matrix4().makeTranslation(5, 0, 0));
+batched.setMatrixAt(id3, new Matrix4().makeTranslation(10, 0, 0));
+batched.setVisibleAt(id2, false); // hide one batch
+// Renderer iterates batched.getDrawRanges() to submit draw calls
 
 // Morph targets
 const morph = new MorphTargets();
