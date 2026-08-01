@@ -152,7 +152,11 @@
       "physics": "物理",
       "physicsDebug": "物理DBG",
       "profiler": "プロファイラ",
-      "tuner": "チューナー"
+      "tuner": "チューナー",
+      "particle": "パーティクル",
+      "terrain": "地形",
+      "ik": "IK",
+      "shadow": "シャドウ"
     },
     "projectMenu": {
       "title": "プロジェクト",
@@ -181,7 +185,15 @@
       "profilerOn": "プロファイラ: オン (CPU/GPU/システム計時)",
       "profilerOff": "プロファイラ: オフ",
       "tunerOn": "チューナー: オン (ジェネレータのライブ編集)",
-      "tunerOff": "チューナー: オフ"
+      "tunerOff": "チューナー: オフ",
+      "particleOn": "パーティクルシステム: オン (ParticleSystem2)",
+      "particleOff": "パーティクルシステム: オフ",
+      "terrainOn": "地形システム: オン (TerrainGeometry)",
+      "terrainOff": "地形システム: オフ",
+      "ikOn": "逆運動学: オン (IKSolver)",
+      "ikOff": "逆運動学: オフ",
+      "shadowOn": "シャドウシステム: オン (ShadowMapManager)",
+      "shadowOff": "シャドウシステム: オフ"
     }
   },
   "profiler": {

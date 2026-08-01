@@ -152,7 +152,11 @@
       "physics": "물리",
       "physicsDebug": "물리DBG",
       "profiler": "프로파일러",
-      "tuner": "튜너"
+      "tuner": "튜너",
+      "particle": "파티클",
+      "terrain": "지형",
+      "ik": "IK",
+      "shadow": "섀도"
     },
     "projectMenu": {
       "title": "프로젝트",
@@ -181,7 +185,15 @@
       "profilerOn": "프로파일러: 켜짐 (CPU/GPU/시스템 타이밍)",
       "profilerOff": "프로파일러: 꺼짐",
       "tunerOn": "튜너: 켜짐 (제너레이터 라이브 편집)",
-      "tunerOff": "튜너: 꺼짐"
+      "tunerOff": "튜너: 꺼짐",
+      "particleOn": "파티클 시스템: 켜짐 (ParticleSystem2)",
+      "particleOff": "파티클 시스템: 꺼짐",
+      "terrainOn": "지형 시스템: 켜짐 (TerrainGeometry)",
+      "terrainOff": "지형 시스템: 꺼짐",
+      "ikOn": "역운동학: 켜짐 (IKSolver)",
+      "ikOff": "역운동학: 꺼짐",
+      "shadowOn": "섀도 시스템: 켜짐 (ShadowMapManager)",
+      "shadowOff": "섀도 시스템: 꺼짐"
     }
   },
   "profiler": {

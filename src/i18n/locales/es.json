@@ -152,7 +152,11 @@
       "physics": "FÍSICA",
       "physicsDebug": "FIS-DBG",
       "profiler": "PROFILER",
-      "tuner": "TUNER"
+      "tuner": "TUNER",
+      "particle": "PARTÍCULAS",
+      "terrain": "TERRENO",
+      "ik": "IK",
+      "shadow": "SOMBRA"
     },
     "projectMenu": {
       "title": "PROYECTO",
@@ -181,7 +185,15 @@
       "profilerOn": "Profiler: ON (timing de CPU/GPU/Sistema)",
       "profilerOff": "Profiler: OFF",
       "tunerOn": "Tuner: ON (editor en vivo de presets del generador)",
-      "tunerOff": "Tuner: OFF"
+      "tunerOff": "Tuner: OFF",
+      "particleOn": "Sistema de partículas: ON (ParticleSystem2)",
+      "particleOff": "Sistema de partículas: OFF",
+      "terrainOn": "Sistema de terreno: ON (TerrainGeometry)",
+      "terrainOff": "Sistema de terreno: OFF",
+      "ikOn": "Cinemática inversa: ON (IKSolver)",
+      "ikOff": "Cinemática inversa: OFF",
+      "shadowOn": "Sistema de sombras: ON (ShadowMapManager)",
+      "shadowOff": "Sistema de sombras: OFF"
     }
   },
   "profiler": {
