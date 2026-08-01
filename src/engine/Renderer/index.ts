@@ -258,4 +258,12 @@ export {
   type BakeOptions,
   type BakeResult,
 } from './LightmapBaker';
+// 平面镜面反射 (Planar Reflection) — CPU 侧反射数学库。
+// 适配 three.js Reflector.js + Lengyel 斜截投影。
+// 提供反射矩阵 / 镜像相机 / 斜截投影 / 纹理矩阵,不依赖 WebGL,可在 Node/无头环境测试。
+export {
+  Reflector,
+  type ReflectorOptions,
+  type MirrorCamera,
+} from './Reflector';
 
