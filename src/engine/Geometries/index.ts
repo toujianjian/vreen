@@ -2,6 +2,9 @@
 // 各几何体从 three.js 移植并适配 VREEN 自研引擎。
 
 export { BoxGeometry } from './BoxGeometry';
+// RoundedBoxGeometry — 圆角盒子几何体 (rounded box)。
+// 适配 three.js RoundedBoxGeometry.js,所有棱角圆滑过渡。
+export { RoundedBoxGeometry } from './RoundedBoxGeometry';
 export { SphereGeometry } from './SphereGeometry';
 export { CylinderGeometry } from './CylinderGeometry';
 export { ConeGeometry } from './ConeGeometry';
