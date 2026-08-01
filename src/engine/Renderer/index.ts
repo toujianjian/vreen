@@ -294,4 +294,16 @@ export {
   type InterlaceMode,
   type PBImageData,
 } from './ParallaxBarrierEffect';
+// GPUComputationRenderer — GPGPU 通用计算编排器(纹理 ping-pong + 依赖图)。
+// 适配 three.js GPUComputationRenderer.js:Variable(数据纹理)+ 依赖图 +
+// 拓扑序计算 + ping-pong 双缓冲 + CPU 内核(无头测试/降级)+ GLSL 包装生成。
+// 不绑定 GL 上下文:实际渲染提交由调用方(WebGL2Renderer)完成,可在 Node/无头环境测试。
+export {
+  GPUComputationRenderer,
+  type GPUKernel,
+  type GPUVariableData,
+  type GPUVariableUniforms,
+  type GPUInitError,
+  type GPUComputeStats,
+} from './GPUComputationRenderer';
 
