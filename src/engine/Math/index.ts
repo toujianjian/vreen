@@ -40,5 +40,36 @@ export { Cylindrical } from './Cylindrical';
 // 颜色
 export { Color, type HSL } from './Color';
 
+// Tonemapping — HDR → LDR 色调映射算子 + 色彩空间转换(CPU 侧纯函数)。
+// 适配 three.js tonemapping_pars_fragment.glsl.js,提供 ACESFilmic/Reinhard/Filmic 算子,
+// sRGB/ACEScg 色彩空间转换,以及 ColorManagement 线性工作流管理。
+// 注意:不从此 barrel 导出 `RGBColor`(引擎根 barrel 已由 ./Lights 提供,结构相同),
+// 亦不导出 `ToneMappingMode`(与 ./Renderer 的数值 enum 同名)。本模块的算子枚举改名为
+// `TonemappingOperator`(字符串联合),与 Renderer 的 GPU pass `ToneMappingMode` 区分。
+// 直接从 './Tonemapping' 子模块导入仍可得 RGBColor / TonemappingOptions 等。
+export {
+  applyTonemapping,
+  acesFilmicScalar,
+  reinhardScalar,
+  reinhardExtendedScalar,
+  hableCurve,
+  filmicScalar,
+  linearToSRGB,
+  sRGBToLinear,
+  linearToSRGBGamma,
+  sRGBGammaToLinear,
+  linearToSRGBColor,
+  sRGBToLinearColor,
+  linearSRGBToACEScg,
+  acescgToLinearSRGB,
+  applyExposure,
+  luminance,
+  middleGrayOutput,
+  ColorManagement,
+  type TonemappingOperator,
+  type TonemappingOptions,
+  type WorkingSpace,
+} from './Tonemapping';
+
 // 工具
 export * as MathUtils from './MathUtils';
