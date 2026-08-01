@@ -4,6 +4,9 @@ export { Object3D, DirtyFlag } from './Object3D';
 // 陀螺仪对象 (Gyroscope) — 位置跟随父节点,朝向锁定世界坐标。
 // 适配 three.js Gyroscope.js,用于 billboard / HUD / 指南针 / 粒子广告牌。
 export { Gyroscope } from './Gyroscope';
+// 程序化金属薄片纹理 (Flakes Texture) — 车漆/金属漆/珠光漆效果。
+// 适配 three.js FlakesTexture.js,支持确定性 RNG + 平铺 + 法线贴图转换。
+export { FlakesTexture, type FlakesTextureOptions, type FlakesTextureResult } from './FlakesTexture';
 export { Scene } from './Scene';
 export { SceneGraphProcessor, type SceneGraphStats } from './SceneGraphProcessor';
 export { SceneStats, type SceneStatsData } from './SceneStats';
