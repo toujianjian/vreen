@@ -411,6 +411,91 @@ gpu.compute(); // advance one step
 const pos = gpu.getVariableData('position'); // Float32Array copy
 ```
 
+### `PMREMGenerator` (`PMREMGenerator.ts`)
+
+Prefiltered Mipmaped Radiance Environment Map generator — the IBL core
+that turns raw cube-map captures into PBR-ready environment lighting.
+Adapted from three.js `PMREMGenerator.js` with the Karis 2013 split-sum
+GGX importance-sampling approach. **Pure CPU**: no GL calls, all math on
+`Float32Array`; fully headless-testable.
+
+Consumes `EnvironmentCubeData` from `RoomEnvironment` (or the renderer's
+`updateCubeCamera` output) and produces:
+
+1. **`prefilter(cube)`** → `PMREMData`: a 6-face cube mip chain where
+   each mip level encodes a different surface roughness (α from 0 → 1).
+   mip 0 is a direct copy (α=0, mirror reflection); higher mips are
+   GGX-importance-sampled convolutions (α>0, blurred highlights). The
+   renderer samples this with `textureLod(envMap, dir, roughness * mipCount)`.
+
+2. **`diffuseIrradiance(cube, outSize?)`** → `EnvironmentCubeData`: a
+   single-layer cosine-weighted hemisphere convolution for Lambertian
+   diffuse IBL. Higher-frequency than the SH2 path in
+   `LightProbeGenerator`; use SH2 for low-frequency environments (faster,
+   less memory) and this for environments with localized bright sources.
+
+| Export | Role |
+|--------|------|
+| `PMREMGenerator` | Generator class. Constructor: `(opts?: { samples?: number })`. |
+| `PMREMGeneratorOptions` | `{ samples?: number }` — max importance samples per texel (default 32). |
+| `PMREMData` | Output of `prefilter()`: `{ size, mipCount, faces: PMREMFace[6] }`. |
+| `PMREMFace` | `{ face: string, mips: PMREMFaceMip[] }`. |
+| `PMREMFaceMip` | `{ width, height, data: Float32Array }` — RGB float, HDR. |
+
+```ts
+const room = new RoomEnvironment({ size: 256 });
+const cube = room.generate();
+
+const pmrem = new PMREMGenerator({ samples: 32 });
+const result = pmrem.prefilter(cube);
+// result.faces[0].mips[3].data → +x face mip 3 (α ≈ 0.53)
+
+const diffuse = pmrem.diffuseIrradiance(cube, 64);
+// diffuse.faces[0].data → +x face cosine-convolved irradiance (64×64)
+```
+
+**Algorithm (prefilter)** — Karis 2013 split-sum, specular component:
+- For each output texel (direction N, mip m):
+  - α = (m / (mipCount - 1))² (perceptual roughness squared).
+  - mip 0 (α=0): direct bilinear copy from source (no convolution).
+  - α>0: Hammersley low-discrepancy sequence generates `sampleCount`
+    half-vectors H via GGX importance sampling. For each H:
+    1. Build tangent frame (T, B, N) from N.
+    2. Transform H to world space: `H_w = T·H.x + B·H.y + N·H.z`.
+    3. Compute light direction: `L = reflect(-N, H_w)` (V=N approximation).
+    4. Sample source cube at L (bilinear).
+    5. Weight = `max(N·L, 0)` (geometry/Fresnel handled by the 2D LUT).
+    6. Accumulate weighted color, normalize by total weight.
+
+**Algorithm (diffuseIrradiance)** — cosine-weighted hemisphere sampling:
+- For each output texel (direction N): Monte-Carlo sample `sampleCount`
+  directions in the hemisphere aligned with N, using cosine-weighted
+  importance sampling (`φ = 2π·ξ₁, θ = asin(√ξ₂)`). Sample source cube
+  at each direction, weight by `N·L`. Output = cosine-weighted average
+  (= irradiance / π for Lambertian BRDF).
+
+**Differences from three.js**:
+- three.js `PMREMGenerator` renders to a GL cube framebuffer with a
+  fragment shader doing the convolution. VREEN's version is pure CPU;
+  output is data (`Float32Array`), not a GL texture.
+- three.js uses `scene` as input (renders the scene into a cube map
+  first, then prefilters). VREEN takes `EnvironmentCubeData` directly
+  (already-captured cube data from `RoomEnvironment` or `CubeCamera`).
+- Hammersley sample count is configurable (default 32 vs three.js's
+  fixed 1024 for GPU). Lower = faster but noisier; raise for production.
+
+**Limitations**:
+- CPU convolution is O(texels × samples) per mip; for 256² × 6 faces
+  with 32 samples, `prefilter()` takes ~0.5s on a modern CPU. Use
+  smaller source sizes (64–128) for real-time, larger for offline bake.
+- `diffuseIrradiance()` is O(texels × samples) with no mip acceleration;
+  for large sources, pass `outSize` < `srcSize` to downscale.
+- The split-sum 2D BRDF integration LUT (mapping NoV + roughness to
+  scale/bias) is **not** generated here — it's a fixed 2D texture
+  typically precomputed once and uploaded as a `Sampler2D`.
+- V=N approximation means the result is slightly inaccurate for grazing
+  angles where V ≠ N; this matches the standard Karis split-sum tradeoff.
+
 ### `DeferredRenderer` (`DeferredRenderer.ts`)
 
 Alternative deferred backend. G-Buffer pass → fullscreen lighting pass.

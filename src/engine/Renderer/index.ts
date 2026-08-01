@@ -306,4 +306,15 @@ export {
   type GPUInitError,
   type GPUComputeStats,
 } from './GPUComputationRenderer';
+// PMREMGenerator — 预滤波 mipmap 辐照度环境贴图生成器(CPU 实现)。
+// 适配 three.js PMREMGenerator.js + Karis 2013 split-sum GGX 重要性采样。
+// 消费 RoomEnvironment / CubeCamera 输出的 cube data,生成 specular IBL mip 链
+// + diffuse irradiance 卷积。纯 CPU,不依赖 WebGL,可在 Node/无头环境测试。
+export {
+  PMREMGenerator,
+  type PMREMGeneratorOptions,
+  type PMREMData,
+  type PMREMFace,
+  type PMREMFaceMip,
+} from './PMREMGenerator';
 
