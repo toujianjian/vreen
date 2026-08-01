@@ -6,8 +6,9 @@
 > (`Object3D` / `Scene` / `Group` / `Mesh` / `SkinnedMesh`), the buffer
 > geometry and attribute layer, the material base class, the texture
 > family (2D / cube / data / depth / video / canvas / compressed), morph
-> targets, fog, raycasting, frustum culling, scene-graph processing, and
-> the Gem-style `ModuleRegistry`.
+> targets, fog, raycasting, frustum culling, scene-graph processing,
+> area-weighted surface sampling (`MeshSurfaceSampler`), and the Gem-style
+> `ModuleRegistry`.
 
 ---
 
@@ -38,6 +39,7 @@ Scene services:
    FrustumCuller ──culls──→ Object3D by Frustum + Box3/Sphere
    SceneStats ──aggregates──→ mesh/light/draw-call/triangle counts
    Raycaster ──uses──→ BVH (preferred) or brute force
+   MeshSurfaceSampler ──samples──→ area-weighted points on BufferGeometry
    Fog / FogExp2 ──attached to──→ Scene.fog
 
 ModuleRegistry ──manages──→ EngineModule lifecycle (load/unload/dependencies)
@@ -94,6 +96,65 @@ mutates the input geometry in place to add the `tangent` attribute.
 | `interleaveAttributes(attributes)` | Pack N attributes into a single interleaved `Float32Array`. Returns `{ array, stride, offsets }` for `glVertexAttribPointer`. All inputs must share the same `count`. |
 | `toIndexed(geometry)` | Convert a non-indexed geometry to indexed by deduplicating position-identical vertices (spatial hash). Indexed inputs return a clone. |
 | `deduplicateIndices(geometry)` | Remove duplicate triangles (same 3 indices, any winding) from an indexed geometry. Returns a new geometry. |
+
+### Surface Sampling
+
+`MeshSurfaceSampler` (`MeshSurfaceSampler.ts`) — area-weighted random
+surface point sampler. Distributes points uniformly across a mesh's
+surface, with larger triangles receiving proportionally more samples.
+Supports an optional weight attribute to bias sampling toward high-weight
+regions (e.g. dense vegetation on fertile terrain).
+
+Adapted from three.js `examples/jsm/math/MeshSurfaceSampler.js` (r169).
+
+**Algorithm**:
+
+1. `build()` — iterate all triangles, compute area × optional weight,
+   build a cumulative distribution function (CDF) normalised to [0, 1].
+2. `sample()` — binary-search the CDF to pick a triangle (larger area →
+   longer CDF interval → higher hit probability), then use barycentric
+   coordinates to sample a uniform point inside that triangle.
+
+**Barycentric uniform sampling** (Osada et al. 2002):
+```
+u = random(), v = random()
+a = 1 - sqrt(u)
+b = v * sqrt(u)
+c = 1 - a - b          // = sqrt(u) * (1 - v)
+point = a*A + b*B + c*C
+```
+The `sqrt(u)` term is critical — without it, points cluster near the
+triangle centroid.
+
+| Export | Role |
+|--------|------|
+| `MeshSurfaceSampler` | Sampler. Constructor: `(geometry: BufferGeometry)`. |
+| `SampleResult` | `{ position: Vector3; normal?: Vector3; color?: [r,g,b] }` returned by sampling. |
+
+| Method | Description |
+|--------|-------------|
+| `setWeightAttribute(name)` | Bias sampling by a per-vertex attribute (multi-channel attributes use first channel). Must be called before `build()`. |
+| `build()` | Compute CDF. Chainable. Throws if `position` attribute is missing. |
+| `sample(targetPosition, targetNormal?, targetColor?)` | Sample one point. `targetPosition` is required; normal and color are optional outputs. |
+| `sampleBatch(n)` | Sample `n` points, returning a fresh `Vector3[]`. |
+| `totalArea` (getter) | Last CDF value (1.0 if normalised, total area otherwise). |
+| `triangleCount` (getter) | Number of triangles in the source geometry. |
+
+```ts
+const sampler = new MeshSurfaceSampler(terrainGeometry);
+sampler.setWeightAttribute('fertility').build();
+
+const positions = sampler.sampleBatch(1000);
+for (const p of positions) {
+  placeTreeAt(p);
+}
+
+// Single sample with normal + color
+const pos = new Vector3();
+const nrm = new Vector3();
+const col: [number, number, number] = [0, 0, 0];
+sampler.sample(pos, nrm, col);
+```
 
 ### Materials
 
@@ -162,7 +223,9 @@ import {
   BufferGeometry, BufferAttribute, InstancedMesh,
   BoxGeometry, StandardMaterial, Texture, DataTexture,
   SceneGraphProcessor, FrustumCuller, MorphTargets,
+  MeshSurfaceSampler,
 } from '@vreen/engine/core';
+import { Vector3 } from '@vreen/engine/math';
 
 const scene = new Scene();
 const group = new Group();
@@ -204,6 +267,13 @@ culler.cull(scene, camera);         // marks Object3D.frustumCulled results
 const data = new Uint8Array(256 * 256 * 4);
 const tex = new DataTexture(data, 256, 256);
 tex.needsUpdate = true;
+
+// Surface sampling — scatter vegetation on terrain
+const sampler = new MeshSurfaceSampler(terrainGeometry).build();
+const treePositions = sampler.sampleBatch(500);
+for (const p of treePositions) {
+  scene.add(makeTreeMesh(p));
+}
 ```
 
 ---
@@ -244,6 +314,17 @@ tex.needsUpdate = true;
 - **Texture `version`.** Mutating a texture's `Source` data must be
   followed by `source.needsUpdate()` (or `texture.needsUpdate = true`)
   — the renderer only re-uploads on version change.
+- **`MeshSurfaceSampler.build()` must precede `sample()`.** Calling
+  `sample()` before `build()` throws; the CDF must be computed first.
+  Rebuilding is required if the source geometry's `position` attribute
+  changes.
+- **`MeshSurfaceSampler` normal output is face normal.** `sample()`
+  returns the triangle's face normal via `Triangle.getNormal`, not the
+  interpolated vertex normal. Use the geometry's `normal` attribute
+  directly if smooth normals are needed.
+- **`MeshSurfaceSampler` does not mutate the source geometry.** All
+  sampling reads are side-effect-free; the geometry can be shared
+  across multiple samplers.
 
 ---
 
@@ -263,3 +344,7 @@ tex.needsUpdate = true;
   ray-triangle tests.
 - `src/engine/Tools/PerformanceReport` — consumes `SceneStats` for
   per-frame HUD aggregation.
+- three.js `examples/jsm/math/MeshSurfaceSampler.js` — original
+  implementation adapted for `MeshSurfaceSampler.ts`.
+- Osada et al. "Shape Distributions" (2002) — barycentric uniform
+  sampling reference.

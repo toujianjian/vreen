@@ -78,6 +78,14 @@ export {
   type OITFragment,
   type OITOptions,
 } from './OIT';
+// OutlinePass — 物体描边/轮廓高亮 (CPU 侧合成)。
+// 适配 three.js OutlinePass.js,mask → 高斯模糊 → 边缘检测 → 叠加。
+// 不依赖 WebGL,可在 Node/无头环境运行 (与 LensFlare/OIT 同构)。
+export {
+  OutlinePass,
+  type OutlineOptions,
+  type OutlineInput,
+} from './OutlinePass';
 // 多渲染目标(MRT)+ 几何缓冲(GBuffer,延迟渲染用)。
 export { MRTTarget, type MRTSetupOptions } from './MRTTarget';
 export { GBuffer, type GBufferOptions } from './GBuffer';

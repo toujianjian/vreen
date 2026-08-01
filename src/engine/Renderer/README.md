@@ -5,7 +5,9 @@
 > The rendering subsystem of the `@vreen/engine` kernel. Provides a pluggable
 > `Renderer` interface backed by a concrete `WebGL2Renderer` implementation
 > featuring PBR / IBL, real-time shadow mapping, MRT-based deferred rendering,
-> and a composable post-processing pipeline.
+> a composable post-processing pipeline, and CPU-side compositor passes
+> (`LensFlare` / `WeightedBlendedOIT` / `OutlinePass`) for headless testing
+> and offline compositing.
 
 ---
 
@@ -25,6 +27,7 @@ Renderer (interface)        ← pluggable backend contract
           ├── CascadedShadowMap ← CSM/PSSM for large outdoor scenes
           ├── LensFlare ← CPU-side lens flare compositor
           ├── WeightedBlendedOIT ← order-independent transparency
+          ├── OutlinePass ← CPU-side object outline / selection highlight
           ├── DeferredRenderer ← alternative deferred backend
           ├── ReflectionProbe / ReflectionProbeManager ← IBL probes
           └── PathTracer    ← CPU reference path tracer
@@ -291,6 +294,64 @@ WebGL2 pipeline can implement the same algorithm as a two-target
 render-pass (MRT) for real-time use. The CPU path is used in tests,
 headless rendering, and offline compositing where a GPU context is
 unavailable.
+
+### `OutlinePass` (`OutlinePass.ts`)
+
+CPU-side object outline / selection highlight compositor. Draws a
+glowing edge around selected objects by blurring their mask buffer and
+subtracting the original mask — the difference is the outline. Commonly
+used in editors / inspectors to highlight the currently selected object.
+
+Adapted from three.js `examples/jsm/postprocessing/OutlinePass.js` and
+o3de Atom `EntitySelectionMaskPass`. CPU-side implementation with zero
+WebGL dependency — runs headless in Node/tests, isomorphic with
+`LensFlare` / `WeightedBlendedOIT`.
+
+**Algorithm** (mask-blur edge detection):
+
+1. Selected objects render to a mask buffer (white = selected, black = unselected).
+2. The mask is blurred with a separable Gaussian (horizontal + vertical pass).
+3. Edge = blurred mask − original mask (the pixels that "leaked" outside the selected region).
+4. Edge is alpha-blended onto the scene: `output = scene · (1 − α) + edgeColor · α`.
+
+**Separable Gaussian blur**: a 2D Gaussian kernel is factored into two 1D
+passes (horizontal then vertical), reducing complexity from
+O(kernelSize²) to O(2 · kernelSize) per pixel. The kernel is normalised
+so total weight = 1.
+
+| Export | Role |
+|--------|------|
+| `OutlinePass` | CPU outline compositor. Constructor: `(opts?: OutlineOptions)`. |
+| `OutlineOptions` | `{ edgeColor?, edgeStrength?, blurRadius?, blurSigma?, enabled?, glow? }`. |
+| `OutlineInput` | `{ data: Uint8ClampedArray; width; height; mask: Uint8ClampedArray }` — scene pixels + single-channel selection mask. |
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `edgeColor` | `[0, 255, 255]` (cyan) | Outline RGB (0..255). |
+| `edgeStrength` | `1.0` | Outline opacity (0..1). |
+| `blurRadius` | `4` | Gaussian radius in pixels; larger = thicker outline. |
+| `blurSigma` | `blurRadius / 2` | Gaussian standard deviation. |
+| `enabled` | `true` | Master toggle; `false` returns the input unchanged. |
+| `glow` | `0.0` | Additive glow intensity (0..1+); `output += edgeColor · glow · α`. |
+
+```ts
+const pass = new OutlinePass({
+  edgeColor: [0, 255, 255],
+  blurRadius: 4,
+  edgeStrength: 1.0,
+});
+const out = pass.render({
+  data: scenePixels,      // RGBA Uint8ClampedArray
+  width: 1280,
+  height: 720,
+  mask: selectionMask,    // single-channel (0 or 255) Uint8ClampedArray
+});
+// out is a new Uint8ClampedArray with cyan outlines around selected objects
+```
+
+`OutlinePass` is a CPU reference / fallback path. The production WebGL2
+pipeline can implement the same algorithm as a two-pass render-pass
+(mask FBO → separable blur shader → composite) for real-time use.
 
 ### `DeferredRenderer` (`DeferredRenderer.ts`)
 

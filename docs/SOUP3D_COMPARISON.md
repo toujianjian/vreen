@@ -60,9 +60,9 @@
 | 定位       | 面向独立游戏开发者与 3D 艺术家的可视化检视系统                  |
 | License    | MIT                                                            |
 | 代码规模   | 64K+ 行(引擎 + 应用 + 测试)                                  |
-| 引擎模块   | 42 个顶层模块                                                  |
+| 引擎模块   | 46 个顶层模块                                                  |
 | 源码文件   | 430+ (`src/engine/`)                                          |
-| 测试       | 4200+ 测试(290+ 文件,42+ 模块)                              |
+| 测试       | 4400+ 测试(290+ 文件,46+ 模块)                              |
 | 运行时依赖 | 零(@vreen/engine 仅 Draco 为可选 peer)                       |
 | 构建工具   | Vite 5 + Tailwind CSS 3                                        |
 | 桌面端     | Electron 43 + electron-builder 26(便携 .exe)                |
@@ -88,6 +88,8 @@
 | 几何体工具              | ✗             | ✓ BufferGeometryUtils (merge/weld/tangent/interleave) | VREEN  |
 | 细分曲面 (Catmull-Clark)| ✗             | ✓ SubdivisionModifier (面点/边点 + 内部/边界规则 + UV 插值) | VREEN  |
 | 硬边分裂 (Edge Split)   | ✗             | ✓ EdgeSplitModifier (面法线夹角阈值 + BFS 平滑组)    | VREEN  |
+| 等值面提取 (Marching Cubes) | ✗         | ✓ MarchingCubes (密度场/Metaball + 256 构型查表 + 梯度法线) | VREEN  |
+| 物体描边 (OutlinePass)  | ✗             | ✓ OutlinePass (CPU 高斯模糊 mask + 边缘检测 + 可配置颜色/强度/发光) | VREEN  |
 | 后处理基础              | ✗             | ✓ Bloom/CA/Vignette/SSAO/FXAA/ToneMap/Gamma/DOF    | VREEN  |
 | 后处理增强              | ✗             | ✓ GTAO/SSR/SSSS/TAA/MotionBlur/VolumetricFog/LUT   | VREEN  |
 | 路径追踪(CPU 参考)    | ✗             | ✓ PathTracer(Möller–Trumbore + 俄罗斯轮盘)       | VREEN  |
@@ -117,6 +119,7 @@
 | 脏标记系统        | ✗               | ✓ DirtyFlag + SceneGraphProcessor                  | VREEN  |
 | 视锥剔除          | ✗               | ✓ FrustumCuller                                    | VREEN  |
 | BVH 加速          | ✗               | ✓ BVH/MeshBVH(SAH 构建)                          | VREEN  |
+| 表面采样          | ✗               | ✓ MeshSurfaceSampler (CDF + barycentric + 权重属性 + 批量) | VREEN  |
 | 几何体基元        | 三角面/面片     | ✓ 15 个(Box/Sphere/.../Edges)                   | VREEN  |
 | 模型加载器        | ✗(仅自建面)   | ✓ GLB/OBJ/FBX/HDR/KTX2/STL/PLY/TGA/MTL/EXR         | VREEN  |
 | 模型导出器        | ✗               | ✓ OBJ/GLTF/STL/PLY 导出器                          | VREEN  |
@@ -149,6 +152,7 @@
 | ----------------- | ------- | -------------------------------------------------- | ------ |
 | 刚体物理          | ✗       | ✓ semi-implicit Euler + 冲量响应 + Baumgarte       | VREEN  |
 | 碰撞检测          | ✗       | ✓ Broadphase + narrowphase(AABB/Sphere/Capsule)  | VREEN  |
+| 有向包围盒 (OBB)  | ✗       | ✓ OBB(SAT 15 轴 + sphere/box3/ray/plane/OBB 相交 + containsPoint/Box) | VREEN  |
 | 物理约束          | ✗       | ✓ Ball/Hinge/Slider/Fixed/Distance/ConeTwist Joint | VREEN  |
 | 布料模拟          | ✗       | ✓ ClothSimulation(Verlet + PBD)                  | VREEN  |
 | 软体模拟          | ✗       | ✓ SoftBodySimulation(3D 弹簧-质点 + 体积约束)    | VREEN  |
@@ -224,7 +228,7 @@
 | 检视器 UI         | ✗           | ✓ Stage/Inspector/Outliner/Toolbar/StatusBar       | VREEN  |
 | 性能 HUD          | ✗           | ✓ ProfilerHUD(CPU/GPU/System/Draws tab)          | VREEN  |
 | 引擎功能面板      | ✗           | ✓ EngineFeaturesPanel(8 子系统开关)              | VREEN  |
-| 引擎模块面板      | ✗           | ✓ EngineModulesPanel(42 模块展示)【新增】        | VREEN  |
+| 引擎模块面板      | ✗           | ✓ EngineModulesPanel(46 模块展示)【新增】        | VREEN  |
 | 性能监控面板      | ✗           | ✓ PerformanceMonitor(图表式)【新增】             | VREEN  |
 | 国际化            | ✗           | ✓ i18next(5 语言:zh/en/ja/ko/es)               | VREEN  |
 | Blockly 脚本面板  | ✗           | ✓ BlocklyPanel                                     | VREEN  |
@@ -262,9 +266,9 @@
 5. **架构现代化** — VREEN 采用 ECS + 事件总线 + 脚本系统 + 可视化脚本(Blockly);soup3D 为传统 Model/Face 即时模式。
 6. **工具链与调试** — VREEN 提供 5 类 Profiler + 性能报告 + 检视器 UI + 性能 HUD;soup3D 无任何调试工具。
 7. **国际化与交付** — VREEN 支持 5 语言 + 浏览器即点即用 + Electron 桌面便携包;soup3D 仅桌面 + 需 Python 环境。
-8. **测试与质量** — VREEN 拥有 4200+ 测试覆盖 42+ 模块;soup3D 测试覆盖未公开。
+8. **测试与质量** — VREEN 拥有 4400+ 测试覆盖 46+ 模块;soup3D 测试覆盖未公开。
 9. **资源生态** — VREEN 支持 11 种加载器 + 4 种导出器 + .vreen 包格式 + 增量差分;soup3D 无资源管线。
-10. **文档化架构** — VREEN 拥有 42 模块的详细架构文档(CLAUDE.md)+ API 教程 + 格式规范;soup3D 仅有 README。
+10. **文档化架构** — VREEN 拥有 46 模块的详细架构文档(CLAUDE.md)+ API 教程 + 格式规范;soup3D 仅有 README。
 
 ### 5.2 soup3D 的不可替代优势(VREEN 不直接竞争)
 
@@ -305,7 +309,7 @@
 
 | 组件                      | 路径                                              | 作用 |
 | ------------------------- | ------------------------------------------------- | ---- |
-| `EngineModulesPanel.tsx`  | `src/components/viewer/EngineModulesPanel.tsx`   | 展示全部 42 个引擎顶层模块,可展开查看核心类与功能,赛博朋克风格 |
+| `EngineModulesPanel.tsx`  | `src/components/viewer/EngineModulesPanel.tsx`   | 展示全部 46 个引擎顶层模块,可展开查看核心类与功能,赛博朋克风格 |
 | `PerformanceMonitor.tsx`  | `src/components/viewer/PerformanceMonitor.tsx`   | 实时性能监控面板,FPS/帧时间/内存/DrawCall 图表展示,赛博朋克风格 |
 
 新增 i18n key(5 语言):`engineModules.*` / `performanceMonitor.*`(含 `fps` / `frameTime` / `memory` / `drawCalls`)。
@@ -408,3 +412,56 @@ VREEN 现已覆盖 o3de 10 项核心系统(SurfaceData/Shapes/RootMotion/Vegetat
 **soup3D 对比**:soup3D 无任何细分曲面、硬边分裂、OIT 能力,其着色器为入门级 Blinn-Phong 且无透明排序处理。VREEN 的细分曲面可用于从粗 cage 生成有机平滑网格,硬边分裂可修复导入资源的法线,OIT 解决粒子/植被/半透明材质的排序伪影,三者均为产品级引擎的标志性能力。
 
 引擎模块总数 42,测试总数 4294(+94)。
+
+---
+
+## 新增引擎能力(2026-07-31 OBB + 表面采样 + 描边 + Marching Cubes)
+
+本批次新增 4 个模块,122 测试(OBB 44 + MeshSurfaceSampler 27 + OutlinePass 26 + MarchingCubes 25)。模块归入既有 `Math` / `Core` / `Renderer` / `Geometries` 顶层模块,引擎模块总数 42 → 46,测试总数 4294 → 4416(+122)。
+
+| 能力 | 来源 | soup3D | VREEN |
+|------|------|--------|-------|
+| 有向包围盒 OBB (center + halfSize + rotation Matrix3 + SAT 15 轴 OBB-OBB + sphere/box3/ray/plane 相交 + containsPoint/containsBox + applyMatrix4 + fromBox3) | three.js + Ericson RTCD | ❌ | ✅ |
+| 网格表面采样 MeshSurfaceSampler (面积加权 CDF + barycentric 均匀采样 + 权重属性 + 批量采样 + 法线/颜色输出) | three.js | ❌ | ✅ |
+| 物体描边 OutlinePass (CPU 高斯模糊 mask + 边缘检测 + 可配置颜色/强度/模糊/发光 + 可分离卷积) | three.js + o3de Atom | ❌ | ✅ |
+| 等值面提取 MarchingCubes (Lorensen & Cline 1987 + 密度函数/Metaball/原始场输入 + 256 构型查表 + 梯度法线) | three.js + Bourke | ❌ | ✅ |
+
+**关键算法**:
+
+- `OBB` 有向包围盒 (Oriented Bounding Box):
+  - 表示:`center` (世界中心) + `halfSize` (半边长,各分量 ≥ 0) + `rotation` (3×3 正交矩阵,列为局部轴)
+  - OBB-OBB SAT (分离轴定理):测试 15 条候选轴 (A 的 3 面法线 + B 的 3 面法线 + 9 条叉积),任一轴投影区间不重叠则不相交 (Ericson RTCD 4.4.4)
+  - OBB-Sphere:球心变换到 OBB 局部坐标系,clamp 到盒内最近点,比较距离平方与半径平方
+  - OBB-Ray:Slab 法在 OBB 局部坐标系中求解,返回最近交点参数 t (≥0) 或 null
+  - OBB-Plane:有效半径 `Σ hs.i · |col_i · normal|`,比较中心到平面距离与有效半径
+  - `containsPoint`:局部坐标 `|p'.i| ≤ hs.i`;`containsBox`:检查 8 角点
+  - `applyMatrix4`:center 应用完整 4×4,rotation 应用左上 3×3,halfSize 按列长度缩放
+  - `fromBox3`:从 AABB 构造 (rotation = identity)
+
+- `MeshSurfaceSampler` 网格表面采样器:
+  - `build()`:遍历三角形,计算面积 × 权重 (可选),构建累积分布函数 (CDF) 并归一化到 [0,1]
+  - `sample()`:在 CDF 上二分查找选取三角形 (面积大的三角形被选中概率更高),再用 barycentric 坐标在三角形内均匀采样
+  - Barycentric 均匀采样:`a = 1 - sqrt(u)`, `b = v * sqrt(u)`, `c = 1 - a - b` (sqrt(u) 保证均匀分布,否则点会聚集在中心)
+  - 权重属性:三角形面积乘以 3 顶点权重的平均值,使高权重区域被更频繁采样
+  - 可选输出:面法线 (Triangle.getNormal) + 顶点颜色 (barycentric 插值)
+  - `sampleBatch(n)`:批量采样 n 个点,返回新分配的 Vector3 数组
+
+- `OutlinePass` 物体描边 (CPU 侧合成):
+  - 算法:选中物体渲染到 mask 缓冲 (白色 = 选中) → 对 mask 做可分离高斯模糊 (水平 + 垂直) → 描边 = 扩散 mask - 原 mask → 叠加到场景
+  - 可分离高斯模糊:水平 pass → 垂直 pass,O(kernelSize²) → O(2·kernelSize),归一化高斯核
+  - Alpha blending:`output = scene * (1 - edgeAlpha) + edgeColor * edgeAlpha`
+  - 可选发光:`output += edgeColor * glow * edgeAlpha` (clamp 255)
+  - CPU 实现,零 WebGL 依赖,与 LensFlare/OIT 同构,可在 Node/无头环境运行
+  - 可配置:`edgeColor` / `edgeStrength` / `blurRadius` / `blurSigma` / `enabled` / `glow`
+
+- `MarchingCubes` 等值面提取 (Lorensen & Cline 1987):
+  - 算法:3D 标量场 → 均匀网格 → 遍历每个 cube (8 角点) → 根据角点值与 isoLevel 的关系确定构型 (0..255) → 查 EDGE_TABLE (12 bit) 确定哪些边被穿过 → 查 TRI_TABLE 确定三角形 → 边上线性插值顶点
+  - 三种输入:`fromDensity((x,y,z) => number)` 密度函数 / `MarchingCubes.fromMetaballs(balls, opts)` 静态方法 / `fromField(Float32Array, N)` 原始标量场
+  - Metaball 密度:`d += radiusSq / (distSq + radiusSq)`,多球融合产生有机表面
+  - 法线:面法线 (叉积),方向指向密度减小方向 (向外)
+  - 输出:非索引三角形 BufferGeometry (position + normal),已计算 boundingBox/Sphere
+  - 分辨率 2..256,默认 32;isoLevel 默认 0.5
+
+**soup3D 对比**:soup3D 无任何有向包围盒、表面采样、物体描边、等值面提取能力。VREEN 的 OBB 对斜置物体包裹更紧致 (减少错误剔除与碰撞误报),MeshSurfaceSampler 可在地形/物体表面散布植被与粒子,OutlinePass 为编辑器/检视器提供选中高亮,MarchingCubes 支持 metaball/体素地形/医学影像等值面重建,四者均为产品级引擎的标志性能力。
+
+引擎模块总数 42 → 46,测试总数 4294 → 4416(+122)。

@@ -212,4 +212,14 @@ export class Matrix3 {
     array[offset + 8] = te[8];
     return array;
   }
+
+  /** 逐元素相等比较 (与 three.js Matrix3.equals 一致)。 */
+  equals(m: Matrix3): boolean {
+    const te = this.elements;
+    const me = m.elements;
+    for (let i = 0; i < 9; i++) {
+      if (te[i] !== me[i]) return false;
+    }
+    return true;
+  }
 }

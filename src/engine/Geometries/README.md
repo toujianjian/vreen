@@ -8,7 +8,8 @@
 > `Lathe` / `Extrude` / `Shape` / `Wireframe` / `Edges`) ported from
 > three.js and adapted to the VREEN `BufferGeometry`, plus
 > `InstancedGeometry` for per-instance matrix / color / custom attribute
-> rendering.
+> rendering, and `MarchingCubes` for iso-surface extraction from density
+> fields or metaballs.
 
 ---
 
@@ -33,6 +34,9 @@ BufferGeometry (Core) ──base──→ all primitives
 
 InstancedGeometry ──extends BufferGeometry──→ per-instance:
    instanceMatrix (Matrix4), instanceColor (Color), custom attributes
+
+MarchingCubes ──extracts──→ iso-surface BufferGeometry from:
+   density function (x,y,z) → number  |  metaballs[]  |  raw Float32Array field
 ```
 
 Every primitive populates `position` / `normal` / `uv` attributes and
@@ -64,6 +68,7 @@ cones, capsules) or the XY plane (plane, circle, ring, shape).
 | `ExtrudeGeometry` | Extrudes a `Shape` along +Z `(shape, depth, bevelEnabled, bevelThickness, bevelSize, bevelSegments, steps)`. |
 | `WireframeGeometry` | Builds line-segment geometry from a source `BufferGeometry` — every triangle edge becomes a line. |
 | `EdgesGeometry` | Builds line-segment geometry keeping only edges whose adjacent-face angle exceeds `thresholdAngle` (default 1°). |
+| `MarchingCubes` | Iso-surface extraction from a 3D scalar field (Lorensen & Cline 1987). Accepts a density function, metaball list, or raw `Float32Array` field. Outputs non-indexed triangles + face normals. Resolution 2..256, configurable `isoLevel`. |
 
 ### Instanced Geometry
 
@@ -79,6 +84,87 @@ for (let i = 0; i < 100; i++) {
 geo.instanceMatrix.needsUpdate = true;
 ```
 
+### `MarchingCubes` (`MarchingCubes.ts`)
+
+Iso-surface extraction from a 3D scalar field using the Marching Cubes
+algorithm (Lorensen & Cline, SIGGRAPH 1987). Given a density function
+(or metaballs, or a raw sampled field), it produces a `BufferGeometry`
+mesh approximating the surface where density equals `isoLevel`.
+
+Adapted from three.js `examples/jsm/objects/MarchingCubes.js` and
+reconstructed as a geometry generator.
+
+**Use cases**: metaball rendering (fluid-like fused spheres), voxel
+terrain iso-surface extraction, medical imaging (CT/MRI) surface
+reconstruction, procedural mesh generation from noise fields.
+
+**Algorithm**:
+
+1. Sample the density field onto a uniform `(resolution+1)³` grid.
+2. For each grid cell (cube with 8 corner values):
+   - Compute a 8-bit `cubeIndex` (bit i set if corner i < `isoLevel`).
+   - Look up `EDGE_TABLE[cubeIndex]` — a 12-bit mask indicating which
+     edges the iso-surface crosses.
+   - For each crossed edge, linearly interpolate the vertex position
+     between the two corners: `t = (isoLevel − v_a) / (v_b − v_a)`.
+   - Look up `TRI_TABLE[cubeIndex]` — a list of edge indices forming
+     0–5 triangles for that cube configuration.
+3. Normals are computed as face normals (cross product of triangle edges),
+   pointing toward decreasing density (outward).
+
+**Three input modes**:
+
+| Method | Input | Use case |
+|--------|-------|----------|
+| `fromDensity(fn)` | `(x, y, z) => number` | Procedural fields (noise, SDF, mathematical surfaces) |
+| `MarchingCubes.fromMetaballs(balls, opts)` | `Metaball[]` (static) | Fused-sphere metaball rendering |
+| `fromField(field, N)` | `Float32Array` of size `N³` | Pre-sampled data (CT/MRI, simulation output) |
+
+**Metaball density**: each ball contributes
+`d += radiusSq / (distSq + radiusSq)`. Multiple overlapping balls
+produce smooth fusion — the defining property of metaballs.
+
+| Export | Role |
+|--------|------|
+| `MarchingCubes` | Extractor. Constructor: `(opts?: MarchingCubesOptions)`. |
+| `MarchingCubesOptions` | `{ resolution?, isoLevel?, size?, offset?, computeNormals? }`. |
+| `Metaball` | `{ center: Vector3; radiusSq: number }` — one metaball. |
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `resolution` | `32` | Grid cells per axis (clamped 2..256). Higher = smoother but slower. |
+| `isoLevel` | `0.5` | Threshold; corners with value > `isoLevel` are "inside". |
+| `size` | `1.0` | Total world-space length per axis. |
+| `offset` | `(0, 0, 0)` | World-space origin of the grid. |
+| `computeNormals` | `true` | Whether to compute face normals. |
+
+```ts
+// From a density function — sphere of radius 0.6
+const mc = new MarchingCubes({
+  resolution: 32,
+  isoLevel: 0.5,
+  size: 2,
+  offset: new Vector3(-1, -1, -1),
+});
+const sphereGeo = mc.fromDensity((x, y, z) => {
+  const r = Math.sqrt(x * x + y * y + z * z);
+  return 1 - r;   // > 0.5 inside, < 0.5 outside
+});
+
+// From metaballs — fused organic blobs
+const metaballGeo = MarchingCubes.fromMetaballs(
+  [
+    { center: new Vector3(-0.3, 0, 0), radiusSq: 0.4 },
+    { center: new Vector3(0.3, 0, 0), radiusSq: 0.4 },
+    { center: new Vector3(0, 0.4, 0), radiusSq: 0.3 },
+  ],
+  { resolution: 48, size: 2, offset: new Vector3(-1, -1, -1) },
+);
+
+// Render
+scene.add(new Mesh(metaballGeo, new StandardMaterial({ ... })));
+```
+
 ---
 
 ## Usage Example
@@ -88,10 +174,10 @@ import {
   BoxGeometry, SphereGeometry, CylinderGeometry, ConeGeometry,
   TorusGeometry, PlaneGeometry, CapsuleGeometry, TorusKnotGeometry,
   LatheGeometry, Shape, ExtrudeGeometry, EdgesGeometry,
-  InstancedGeometry,
+  InstancedGeometry, MarchingCubes,
 } from '@vreen/engine/geometries';
 import { Mesh, StandardMaterial } from '@vreen/engine/core';
-import { Vector2 } from '@vreen/engine/math';
+import { Vector2, Vector3 } from '@vreen/engine/math';
 
 const box = new Mesh(
   new BoxGeometry(1, 1, 1),
@@ -142,6 +228,16 @@ for (let i = 0; i < 500; i++) {
   treeGeo.setInstanceMatrix(i, /* per-tree transform */);
 }
 treeGeo.instanceMatrix.needsUpdate = true;
+
+// Marching Cubes — metaball blob
+const blobGeo = MarchingCubes.fromMetaballs(
+  [
+    { center: new Vector3(0, 0, 0), radiusSq: 0.5 },
+    { center: new Vector3(0.4, 0, 0), radiusSq: 0.3 },
+  ],
+  { resolution: 32, size: 2, offset: new Vector3(-1, -1, -1) },
+);
+const blob = new Mesh(blobGeo, new StandardMaterial({ baseColor: { r: 0.3, g: 0.7, b: 0.9 } }));
 ```
 
 ---
@@ -181,6 +277,21 @@ treeGeo.instanceMatrix.needsUpdate = true;
 - **`Shape` winding.** `ExtrudeGeometry` expects counter-clockwise
   outer contours; clockwise winding produces inverted face normals.
   Holes are punched via `shape.holes` with opposite winding.
+- **`MarchingCubes` output is non-indexed.** Each triangle emits 3
+  independent vertices (no index buffer). Weld vertices with
+  `weldVertices` (from `BufferGeometryUtils`) if indexed topology is
+  required for rendering or export.
+- **`MarchingCubes` normals are face normals.** Normals are computed
+  per-triangle via cross product, producing a faceted look. For smooth
+  shading, recompute normals with `geometry.computeVertexNormals()` or
+  use the density-field gradient (central differences) externally.
+- **`MarchingCubes` resolution vs. memory.** Memory is
+  `O((resolution+1)³)` for the field plus `O(triangles · 3)` for the
+  output. Resolution 256 produces a 257³ ≈ 16.9M-cell field — use
+  cautiously. The constructor clamps to `[2, 256]`.
+- **`MarchingCubes.fromField` expects `N³` layout.** The field array
+  must be indexed `[z*N*N + y*N + x]` with `N = resolution + 1`.
+  Mismatched dimensions produce out-of-bounds reads or garbage geometry.
 
 ---
 
@@ -199,3 +310,10 @@ treeGeo.instanceMatrix.needsUpdate = true;
 - `src/three/convertCustomToThree.ts` — converts custom-engine
   `BufferGeometry` to three.js `BufferGeometry` for the THREE render
   path.
+- Lorensen & Cline "Marching Cubes: A High Resolution 3D Surface
+  Construction Algorithm" (SIGGRAPH 1987) — original algorithm reference
+  for `MarchingCubes.ts`.
+- three.js `examples/jsm/objects/MarchingCubes.js` — original
+  implementation adapted for `MarchingCubes.ts`.
+- Paul Bourke "Polygonising a Scalar Field" — alternative reference for
+  the edge / triangle lookup tables.

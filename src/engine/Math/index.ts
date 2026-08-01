@@ -22,6 +22,7 @@ export { Ray } from './Ray';
 export { Line3 } from './Line3';
 export { Triangle } from './Triangle';
 export { Frustum } from './Frustum';
+export { OBB } from './OBB';
 
 // 球/柱坐标
 export { Spherical } from './Spherical';

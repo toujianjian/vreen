@@ -4,8 +4,8 @@
 >
 > The kernel of the VREEN engine: a TypeScript-first, zero-runtime-dependency
 > WebGL2 rendering and simulation stack aimed at indie game developers and
-> 3D artists. The kernel exposes 42 top-level modules through a single barrel
-> (`src/engine/index.ts`) and ships **4290+ tests** across **290+ test files**.
+> 3D artists. The kernel exposes 46 top-level modules through a single barrel
+> (`src/engine/index.ts`) and ships **4410+ tests** across **290+ test files**.
 
 ---
 
@@ -21,9 +21,9 @@
  Math        Core       Cameras       Lights       Materials    Geometries   Loaders
  Vector·Mtx  Scene·Mesh  Persp·Ortho   7 light     Standard·PBR  18 prim     GLB·FBX·
  Quat·Box    Texture·    Cinematic     types +     Toon·Fur·      + Shape    OBJ·STL·
- Frustum     Skeleton    CameraRig     shadows      SSS·Water  Convex·Decal  PLY·HDR
-             Morph                                  + ShaderChunks
- Spher·Cyl                              LightProbe
+ Frustum     Skeleton    CameraRig     shadows      SSS·Water  Convex·Decal·MC  PLY·HDR
+             Morph·Sampler                          + ShaderChunks
+ Spher·Cyl·OBB                          LightProbe
    │           │           │             │             │           │           │
    ▼           ▼           ▼             ▼             ▼           ▼           ▼
  Renderer   Helpers     Controls      ECS           Animation    Audio        Particles
@@ -31,7 +31,7 @@
  Deferred·  Box·Gizmo·  Pointer·      Component·    BlendSpace·  Positional·  Emitter·
  Forward+   Debug       Map·Char·     System·       IK (FABRIK/  Effects·     Modifier·
  PathTracer Renderer    VRController  Prefab·       CCD)·        Analyzer     Curve·Trail
- PostProcess             QueryBuilder  Physics       Procedural                SubEmitters
+ PostProcess·Outline     QueryBuilder  Physics       Procedural                SubEmitters
                          Broadphase    Systems       Animation
            PolarGrid·                              RootMotion
    │           │           │             │             │           │           │
@@ -96,16 +96,16 @@ import { Scene, PerspectiveCamera, WebGL2Renderer, BoxGeometry, StandardMaterial
 
 | Module | Path | Purpose | README |
 |--------|------|---------|--------|
-| Math | `Math/` | Vector · Matrix · Quaternion · Color · Frustum · Spherical · Cylindrical primitives | [Math/README.md](./Math/README.md) |
-| Core | `Core/` | Scene graph · Object3D · Mesh · Textures · Morph · Fog · Raycaster | [Core/README.md](./Core/README.md) |
+| Math | `Math/` | Vector · Matrix · Quaternion · Color · Frustum · Spherical · Cylindrical · OBB primitives | [Math/README.md](./Math/README.md) |
+| Core | `Core/` | Scene graph · Object3D · Mesh · Textures · Morph · Fog · Raycaster · MeshSurfaceSampler | [Core/README.md](./Core/README.md) |
 | Cameras | `Cameras/` | PerspectiveCamera · OrthographicCamera · CinematicCamera · CameraRig | [Cameras/README.md](./Cameras/README.md) |
 | Controls | `Controls/` | Orbit · Fly · PointerLock · Map · CharacterController · VRController | [Controls/README.md](./Controls/README.md) |
 | Lights | `Lights/` | Ambient · Directional · Point · Spot · Hemisphere · RectArea · LightProbe · AmbientLightProbe · HemisphereLightProbe · SphericalHarmonics3 + shadows | [Lights/README.md](./Lights/README.md) |
 | Materials | `Materials/` | Standard · Physical · Phong · Toon · Fur · SSS · Water · ShaderChunks · MaterialGraph · AdvancedPBR | [Materials/README.md](./Materials/README.md) |
-| Geometries | `Geometries/` | 18 procedural primitives + Shape + Extrude + Wireframe + Edges + ConvexGeometry + ParametricGeometry + DecalGeometry | [Geometries/README.md](./Geometries/README.md) |
+| Geometries | `Geometries/` | 18 procedural primitives + Shape + Extrude + Wireframe + Edges + ConvexGeometry + ParametricGeometry + DecalGeometry + MarchingCubes | [Geometries/README.md](./Geometries/README.md) |
 | Loaders | `Loaders/` | GLB · OBJ · FBX · STL · PLY · TGA · HDR · KTX2 · EXR + 4 exporters | [Loaders/README.md](./Loaders/README.md) |
 | Audio | `Audio/` | Listener · Positional · Effects · Analyzer · Procedural · Spatial | [Audio/README.md](./Audio/README.md) |
-| Renderer | `Renderer/` | WebGL2 · Deferred · Forward+ · PathTracer · PostProcess · GI · RT · LightmapBaker · RenderGraph | [Renderer/README.md](./Renderer/README.md) |
+| Renderer | `Renderer/` | WebGL2 · Deferred · Forward+ · PathTracer · PostProcess · GI · RT · LightmapBaker · RenderGraph · OutlinePass | [Renderer/README.md](./Renderer/README.md) |
 | Helpers | `Helpers/` | Grid · Axes · Box · Arrow · Camera · Line · Debug · PhysicsDebug · PolarGridHelper · Box3Helper · PlaneHelper | [Helpers/README.md](./Helpers/README.md) |
 | Terrain | `Terrain/` | TerrainGeometry · Heightmap · Splat · Layer · Erosion · Editor | [Terrain/README.md](./Terrain/README.md) |
 | Acceleration | `Acceleration/` | BVH · BVHBuilder (SAH) · MeshBVH (Raycaster acceleration) | [Acceleration/README.md](./Acceleration/README.md) |
@@ -137,6 +137,10 @@ import { Scene, PerspectiveCamera, WebGL2Renderer, BoxGeometry, StandardMaterial
 | LocalUser | `LocalUser/` | LocalUserProfile · LocalPlayerSlot · PlayerSlotState · LocalUserManager | [LocalUser/README.md](./LocalUser/README.md) |
 | ScriptCanvas | `ScriptCanvas/` | ScriptGraph · ScriptExecutor · NodeRegistry · 18 built-in nodes (start/print/branch/math/event/variable/delay) | [ScriptCanvas/README.md](./ScriptCanvas/README.md) |
 | WhiteBox | `WhiteBox/` | HalfEdgeMesh · WhiteBoxShapes (box/tetrahedron/icosahedron/staircase) · Csg (union/subtract/intersect) | [WhiteBox/README.md](./WhiteBox/README.md) |
+| OBB | `Math/OBB.ts` | Oriented bounding box (center + halfSize + rotation Matrix3) · SAT 15-axis OBB-OBB · sphere/box3/ray/plane intersection · containsPoint/containsBox · applyMatrix4 · fromBox3 | [Math/README.md](./Math/README.md) |
+| MeshSurfaceSampler | `Core/MeshSurfaceSampler.ts` | Area-weighted random surface point sampling · CDF + barycentric coordinates · weight attribute · batch sampling · normal/color output | [Core/README.md](./Core/README.md) |
+| OutlinePass | `Renderer/OutlinePass.ts` | CPU-side object outline rendering · mask blurring (Gaussian) + edge detection · configurable edge color/strength/blur/glow | [Renderer/README.md](./Renderer/README.md) |
+| MarchingCubes | `Geometries/MarchingCubes.ts` | Iso-surface extraction from density fields or metaballs · Marching Cubes algorithm (Lorensen & Cline 1987) · density function / metaball / raw field input | [Geometries/README.md](./Geometries/README.md) |
 
 ---
 

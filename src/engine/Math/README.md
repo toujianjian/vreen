@@ -5,7 +5,7 @@
 > The math library of the `@vreen/engine` kernel. Provides vectors
 > (`Vector2/3/4`), matrices (`Matrix3/4`), rotations (`Quaternion` /
 > `Euler`), geometric primitives (`Box3` / `Sphere` / `Plane` / `Ray` /
-> `Line3` / `Triangle` / `Frustum`), `Color`, and a `MathUtils` toolbox.
+> `Line3` / `Triangle` / `Frustum` / `OBB`), `Color`, and a `MathUtils` toolbox.
 > Naming and semantics align with the three.js `THREE` namespace to ease
 > cross-engine bridging.
 
@@ -23,6 +23,7 @@ Geometric primitives (collision / bounds):
    Box3 ─intersects── Sphere ─intersects── Plane
     │                  │                    │
     └─contains──────── Ray ─intersects── Triangle / Line3
+   OBB ─SAT── OBB ─intersects── Sphere / Box3 / Ray / Plane
 
 Color ──converts── HSL / RGB / hex
 MathUtils ──helpers── clamp / lerp / degToRad / randInt / smoothstep
@@ -82,6 +83,66 @@ type EulerOrder = 'XYZ' | 'YZX' | 'ZXY' | 'XZY' | 'YXZ' | 'ZYX';
 | `Line3` | Two endpoints. `at` / `delta` / `distance` / `closestPointToPoint` / `applyMatrix4`. |
 | `Triangle` | Three vertices. `area` / `normal` / `barycoordFromPoint` / `containsPoint` / `intersectsRay`. |
 | `Frustum` | Six planes. `setFromProjectionMatrix` / `containsPoint` / `intersectsBox` / `intersectsSphere`. Used by `FrustumCuller`. |
+| `OBB` | Oriented bounding box (`center` / `halfSize` / `rotation: Matrix3`). `fromBox3` / `computeBoundingBox` / `containsPoint` / `containsBox` / `intersectsSphere` / `intersectsBox3` / `intersectsPlane` / `intersectsRay` / `intersectsOBB` (SAT 15-axis) / `applyMatrix4` / `translate`. Tighter fit than `Box3` for rotated objects. |
+
+### `OBB` — Oriented Bounding Box (`OBB.ts`)
+
+Unlike the axis-aligned `Box3`, an `OBB`'s three axes may be arbitrarily
+rotated via a `Matrix3`. This produces a tighter fit for tilted objects
+(fallen pillars, rotating vehicles), reducing false culls and collision
+false positives.
+
+**Representation**:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `center` | `Vector3` | Box center (world space). |
+| `halfSize` | `Vector3` | Half-extents (x=half-width, y=half-height, z=half-depth); each component ≥ 0. |
+| `rotation` | `Matrix3` | 3×3 orthogonal matrix whose columns are the box's three local axes (right / up / forward). Identity = axis-aligned. |
+
+**API**:
+
+| Method | Description |
+|--------|-------------|
+| `set(center, halfSize, rotation)` | Set all fields (chainable). |
+| `copy(obb)` / `clone()` | Deep copy. |
+| `getSize(target)` | Full size (non-half) into target. |
+| `computeBoundingBox(target)` | AABB of the 8 corners into `Box3`. |
+| `fromBox3(box)` | Build OBB from AABB (rotation = identity). |
+| `isEmpty()` | True if any half-extent ≤ 0. |
+| `containsPoint(point)` | Transform point to local space, check `|p'.i| ≤ hs.i`. |
+| `containsBox(obb)` | All 8 corners of other OBB inside this one. |
+| `intersectsSphere(sphere)` | Closest-point test in local space. |
+| `intersectsBox3(box)` | Delegates to `intersectsOBB` (treats AABB as OBB with identity rotation). |
+| `intersectsPlane(plane)` | Effective radius `Σ hs.i · |col_i · normal|` vs centre distance. |
+| `intersectsRay(ray, target?)` | Slab method in local space; returns `t ≥ 0` or `null`. |
+| `intersectsOBB(obb, epsilon?)` | SAT — 15 candidate axes (3 A face normals + 3 B face normals + 9 cross products). |
+| `applyMatrix4(matrix)` | Apply 4×4 transform: centre ← full 4×4, rotation ← upper-left 3×3, halfSize ← column-length scale. |
+| `translate(offset)` | Add offset to centre. |
+| `equals(obb)` | Value equality. |
+
+**Key algorithm — OBB-OBB SAT (Separating Axis Theorem)**:
+
+For two OBBs A and B, test 15 candidate separating axes:
+1. A's 3 face normals (rotation columns).
+2. B's 3 face normals.
+3. 9 cross products `a_i × b_j`.
+
+For each axis, project both boxes' extents and the centre-to-centre
+vector; if the projection intervals do not overlap on any axis, the
+boxes do not intersect. This is O(15) per test and is the standard
+real-time algorithm (Ericson, *Real-Time Collision Detection* §4.4.4).
+
+```ts
+const obb = new OBB(
+  new Vector3(0, 0, 0),
+  new Vector3(1, 2, 0.5),
+  new Matrix3().setFromQuaternion(quaternion),
+);
+obb.intersectsSphere(sphere);
+obb.intersectsOBB(otherOBB);
+const aabb = obb.computeBoundingBox(new Box3());
+```
 
 ### Color
 
@@ -108,8 +169,8 @@ const t = MathUtils.clamp(x, 0, 1);
 
 ```ts
 import {
-  Vector3, Matrix4, Quaternion, Euler, Box3, Sphere, Ray,
-  Frustum, Color, MathUtils,
+  Vector3, Matrix4, Matrix3, Quaternion, Euler, Box3, Sphere, Ray,
+  Frustum, OBB, Color, MathUtils,
 } from '@vreen/engine/math';
 
 // Transform composition
@@ -132,11 +193,17 @@ const sphere = new Sphere().setFromPoints([v1, v2, v3]);
 const frustum = new Frustum().setFromProjectionMatrix(
   camera.projectionMatrix.clone().multiply(camera.matrixWorldInverse),
 );
-const visible = frustum.intersectsBox(box);
+const visible = frustum.intersectBox(box);
 
 // Ray picking
 const ray = new Ray(origin, direction);
 const hit = ray.intersectSphere(sphere, new Vector3());
+
+// Oriented bounding box (tighter fit for rotated objects)
+const obb = new OBB().fromBox3(box);
+obb.applyMatrix4(model);          // transform to world space
+const hitsOBB = obb.intersectsRay(ray);
+const hitsOther = obb.intersectsOBB(otherOBB);
 
 // Color
 const base = new Color().setHSL(0.6, 0.8, 0.5);
@@ -177,6 +244,15 @@ const linear = base.clone().convertSRGBToLinear();
 - **No hidden allocations in hot paths.** `intersect*` methods accept an
   optional `target` vector to avoid per-call allocation; callers in
   render loops should always pass one.
+- **`OBB.rotation` must be orthogonal.** The constructor does not verify
+  that `rotation` columns are unit-length and mutually orthogonal;
+  non-orthogonal matrices produce incorrect `intersectsOBB` / `containsPoint`
+  results. Use `Matrix3.setFromQuaternion` or manually orthonormalise.
+- **`OBB.halfSize` must be non-negative.** Negative half-extents produce
+  degenerate boxes; `isEmpty()` returns true when any component ≤ 0.
+- **`OBB.intersectsOBB` uses an epsilon.** The 9 cross-product axis tests
+  include a small `epsilon` (default `1e-10`) to avoid false negatives on
+  parallel edges. Increase for noisy floating-point inputs.
 
 ---
 
@@ -193,3 +269,7 @@ const linear = base.clone().convertSRGBToLinear();
   `Triangle` for BVH construction and ray traversal.
 - three.js `THREE` namespace — naming and semantics are aligned for
   cross-engine bridging (see `src/three/convertCustomToThree.ts`).
+- Ericson, C. *Real-Time Collision Detection* ch. 4 — OBB-OBB SAT
+  algorithm reference for `OBB.intersectsOBB`.
+- three.js `examples/jsm/math/OBB.js` — original OBB implementation
+  adapted for `OBB.ts`.

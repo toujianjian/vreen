@@ -25,6 +25,14 @@ export { ExtrudeGeometry, type ExtrudeOptions } from './ExtrudeGeometry';
 // InstancedGeometry — 实例化几何体 (per-instance matrix + color + 自定义属性)。
 // 参考 three.js InstancedBufferGeometry,叠加显式 setInstanceMatrix/Color/CustomAttribute API。
 export { InstancedGeometry } from './InstancedGeometry';
+// MarchingCubes — 等值面提取 (iso-surface extraction)。
+// 适配 three.js MarchingCubes.js,Lorensen & Cline 1987 经典算法。
+// 支持 density function / metaball / raw field 输入,输出非索引三角形 + 面法线。
+export {
+  MarchingCubes,
+  type MarchingCubesOptions,
+  type Metaball,
+} from './MarchingCubes';
 // TextGeometry — 3D 挤压文本几何体 (简化版 FontDefinition,适配自 three.js TextGeometry)。
 export {
   TextGeometry,

@@ -19,6 +19,9 @@ export {
   toIndexed,
   deduplicateIndices,
 } from './BufferGeometryUtils';
+// MeshSurfaceSampler — 网格表面面积加权随机采样 (植被散布/粒子发射)。
+// 适配 three.js MeshSurfaceSampler.js,CDF + barycentric 均匀采样。
+export { MeshSurfaceSampler, type SampleResult } from './MeshSurfaceSampler';
 export { Mesh } from './Mesh';
 export { Sprite } from './Sprite';
 export { InstancedMesh } from './InstancedMesh';
