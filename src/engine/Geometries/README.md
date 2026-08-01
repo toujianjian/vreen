@@ -6,7 +6,9 @@
 > 15 analytic primitives (`Box` / `Sphere` / `Cylinder` / `Cone` /
 > `Torus` / `Plane` / `Circle` / `Ring` / `Capsule` / `TorusKnot` /
 > `Lathe` / `Extrude` / `Shape` / `Wireframe` / `Edges`) ported from
-> three.js and adapted to the VREEN `BufferGeometry`, plus
+> three.js and adapted to the VREEN `BufferGeometry`, the 4 Platonic
+> solids (`Tetrahedron` / `Octahedron` / `Dodecahedron` / `Icosahedron`)
+> via the `PolyhedronGeometry` subdividable base class, plus
 > `InstancedGeometry` for per-instance matrix / color / custom attribute
 > rendering, and `MarchingCubes` for iso-surface extraction from density
 > fields or metaballs.
@@ -31,7 +33,8 @@ BufferGeometry (Core) ──base──→ all primitives
    ├── WireframeGeometry ──derived from──→ BufferGeometry
    ├── EdgesGeometry ──derived from──→ BufferGeometry (hard-edge filter)
    ├── ExtrudeGeometry ──extrudes──→ Shape along +Z
-   └── DecalGeometry ──projects──→ target mesh triangles → clipped box
+   ├── DecalGeometry ──projects──→ target mesh triangles → clipped box
+   └── PolyhedronGeometry ──subdivides──→ 4 Platonic solids (Tetrahedron/Octahedron/Dodecahedron/Icosahedron)
 
 InstancedGeometry ──extends BufferGeometry──→ per-instance:
    instanceMatrix (Matrix4), instanceColor (Color), custom attributes
@@ -291,6 +294,116 @@ scene.add(decalMesh);
 
 Adapted from three.js `src/geometries/DecalGeometry.js` and the
 [Wolfire decal projection article](http://blog.wolfire.com/2009/06/how-to-project-decals/).
+
+### `PolyhedronGeometry` (`PolyhedronGeometry.ts`)
+
+Base class for the five Platonic solids and arbitrary subdividable
+polyhedra. Given a vertex array and a triangle index array, it builds a
+non-indexed mesh with `position` / `normal` / `uv` attributes, with
+optional face subdivision, spherical projection, and seam-corrected UVs.
+
+The four subclasses provide ready-made vertex/index data for the regular
+polyhedra:
+
+| Class | Faces | Vertices | Notes |
+|-------|------:|---------:|-------|
+| `TetrahedronGeometry` | 4 triangles | 4 | Simplest Platonic solid. |
+| `OctahedronGeometry` | 8 triangles | 6 | Two square pyramids base-to-base. |
+| `DodecahedronGeometry` | 12 pentagons → 36 triangles | 20 | Built with the golden ratio φ = (1+√5)/2. |
+| `IcosahedronGeometry` | 20 triangles | 12 | Highest-resolution Platonic solid; subdivides to a uniform sphere. |
+
+**Algorithm** (4 stages, all running in the constructor):
+
+1. **`subdivide(detail)`** — Recursively subdivide every source triangle
+   into a `(detail+1)²` grid of smaller triangles. `detail=0` keeps the
+   source face intact; `detail=1` splits it into 4, `detail=2` into 9,
+   `detail=n` into `(n+1)²`. Subdivision happens in **source space**
+   (before spherical projection), so each sub-vertex is later projected
+   independently — this is what makes high-detail icosahedra approach a
+   perfect sphere.
+2. **`applyRadius(radius)`** — Normalize every vertex to length `radius`.
+   After this step all vertices lie exactly on a sphere of radius `r`.
+3. **`generateUVs()`** — Spherical UV mapping:
+   - `u = 0.5 + azimuth(v) / (2π)`
+   - `v = 0.5 + inclination(v) / π` (flipped to `1 - v` for texture V-down)
+   - `correctUVs()` fixes pole vertices (where `x=z=0`) by replacing `u`
+     with the centroid azimuth, avoiding degenerate UVs at the poles.
+   - `correctSeam()` detects triangles that straddle the U=0/U=1 seam
+     (`max > 0.9 && min < 0.2`) and adds 1 to the low-side UVs so the
+     triangle samples a contiguous region of the texture.
+4. **Normals** — `detail=0` uses `computeVertexNormals()` (flat shading:
+   each face's three vertices share that face's normal). `detail>0` uses
+   `normalizeNormals()` (smooth shading: each vertex normal = its
+   normalized position, which is correct because every vertex is on the
+   sphere). The smooth path is the reason subdivided icosahedra render
+   as glossy spheres.
+
+| Param | Type | Default | Role |
+|-------|------|---------|------|
+| `vertices` | `number[]` | `[]` | Flat vertex array `[x0,y0,z0, x1,y1,z1, …]`. Used only by the base class. |
+| `indices` | `number[]` | `[]` | Flat triangle index array `[i0,i1,i2, …]`. Used only by the base class. |
+| `radius` | `number` | `1` | Sphere radius all vertices are projected onto. |
+| `detail` | `number` | `0` | Subdivision level. `detail=n` produces `(n+1)²` sub-triangles per source face. |
+
+**Subclass vertex counts** (for verification):
+
+| Class | detail=0 | detail=1 | detail=2 | detail=3 |
+|-------|---------:|---------:|---------:|---------:|
+| Tetrahedron (4 faces)  | 12  | 48  | 108 | 192 |
+| Octahedron (8 faces)   | 24  | 96  | 216 | 384 |
+| Dodecahedron (36 tris) | 108 | 432 | 972 | 1728 |
+| Icosahedron (20 faces) | 60  | 240 | 540 | 960 |
+
+```ts
+import {
+  TetrahedronGeometry, OctahedronGeometry,
+  DodecahedronGeometry, IcosahedronGeometry,
+  PolyhedronGeometry,
+} from '@vreen/engine/geometries';
+import { Vector3 } from '@vreen/engine/math';
+
+// Flat-shaded icosahedron (low-poly aesthetic)
+const lowPoly = new IcosahedronGeometry(1, 0);   // 60 verts, flat normals
+
+// Smooth-shaded icosphere for a planet or marble
+const icoSphere = new IcosahedronGeometry(1, 3); // 960 verts, smooth normals
+
+// Custom subdividable polyhedron from arbitrary triangle soup
+const custom = new PolyhedronGeometry(
+  [1, 0, 0, 0, 1, 0, 0, 0, 1], // 3 vertices
+  [0, 1, 2],                    // 1 triangle
+  1.5,                          // radius
+  2,                            // detail → 9 sub-triangles
+);
+```
+
+**Differences from three.js `PolyhedronGeometry`**:
+
+- VREEN uses `BufferAttribute` directly instead of three.js's `Float32BufferAttribute`;
+  the on-the-wire layout is identical.
+- The base class accepts `vertices`/`indices` as plain `number[]` (three.js
+  uses the same signature); subclasses inherit unchanged.
+- `computeVertexNormals()` is invoked only at `detail=0` for flat shading;
+  the smooth-shading path uses an inlined `normalizeNormals()` that matches
+  three.js's `normalizeNormals()` exactly.
+- UV seam correction uses the same `0.9 / 0.2` thresholds as three.js;
+  pole-vertex UVs are corrected via centroid azimuth identical to upstream.
+
+**Limitations**:
+
+- UVs use spherical mapping, so textures are heavily distorted near the
+  poles (inherent to any sphere UV). For texture-less PBR materials this
+  is invisible; for textured materials consider cubemap sampling instead.
+- Subdivision is uniform per face; there is no adaptive subdivision. A
+  `detail=3` icosahedron produces 960 vertices regardless of whether the
+  camera is close or far. Use LOD swapping for distant objects.
+- The base class does not deduplicate vertices along shared edges after
+  subdivision — output is non-indexed. This is the same as three.js and
+  is what enables per-face flat shading at `detail=0`.
+
+Adapted from three.js `src/geometries/PolyhedronGeometry.js` and its
+subclasses `TetrahedronGeometry.js` / `OctahedronGeometry.js` /
+`DodecahedronGeometry.js` / `IcosahedronGeometry.js`.
 
 ---
 

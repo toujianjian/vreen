@@ -23,6 +23,15 @@ export { ParametricGeometry, type ParametricFunction } from './ParametricGeometr
 // TeapotGeometry — 犹他茶壶 (32 个贝塞尔面片),适配自 three.js TeapotGeometry。
 export { TeapotGeometry, type TeapotGeometryOptions } from './TeapotGeometry';
 export { DecalGeometry } from './DecalGeometry';
+// PolyhedronGeometry — 正多面体几何体基类 + 4 个柏拉图体 (Tetrahedron/Octahedron/Dodecahedron/Icosahedron)。
+// 适配 three.js PolyhedronGeometry.js,支持面细分、球面投影、UV 接缝修正。
+export {
+  PolyhedronGeometry,
+  TetrahedronGeometry,
+  OctahedronGeometry,
+  DodecahedronGeometry,
+  IcosahedronGeometry,
+} from './PolyhedronGeometry';
 export { Shape } from './Shape';
 export { ExtrudeGeometry, type ExtrudeOptions } from './ExtrudeGeometry';
 // InstancedGeometry — 实例化几何体 (per-instance matrix + color + 自定义属性)。
