@@ -9,6 +9,10 @@ import type { Plane } from './Plane';
 import type { Box3 } from './Box3';
 
 const _vector = new Vector3();
+// distanceSqToSegment 内部复用的临时向量(避免每次分配)。
+const _segCenter = new Vector3();
+const _segDir = new Vector3();
+const _diff = new Vector3();
 
 export class Ray {
   origin: Vector3;
@@ -86,6 +90,101 @@ export class Ray {
   intersectsSphere(sphere: Sphere): boolean {
     if (sphere.radius < 0) return false; // 空球
     return this.distanceSqToPoint(sphere.center) <= sphere.radius * sphere.radius;
+  }
+
+  /**
+   * 射线与线段(v0→v1)的最近距离平方。
+   *
+   * 算法来自 GeometricTools "DistRay3Segment3",与 three.js
+   * `Ray.distanceSqToSegment` 完全一致。把射线参数化为
+   * `P(s0) = origin + s0·direction`(s0 ≥ 0),线段参数化为
+   * `Q(s1) = segCenter + s1·segDir`(|s1| ≤ segExtent),求解使
+   * |P−Q|² 最小的 (s0, s1)。按 6 个区域分别钳制 s0 ≥ 0、|s1| ≤ segExtent。
+   *
+   * 可选输出:
+   *   - optionalPointOnRay  → 射线上最近点(origin + dir·s0)
+   *   - optionalPointOnSeg  → 线段上最近点(segCenter + segDir·s1)
+   *
+   * 用于 Line / LineSegments 的阈值拾取:对每条边调用本方法,若
+   * distSq ≤ thresholdSq 则命中。
+   */
+  distanceSqToSegment(
+    v0: Vector3,
+    v1: Vector3,
+    optionalPointOnRay?: Vector3,
+    optionalPointOnSeg?: Vector3,
+  ): number {
+    _segCenter.copy(v0).add(v1).multiplyScalar(0.5);
+    _segDir.copy(v1).sub(v0).normalize();
+    _diff.copy(this.origin).sub(_segCenter);
+
+    const segExtent = v0.distanceTo(v1) * 0.5;
+    const a01 = -this.direction.dot(_segDir);
+    const b0 = _diff.dot(this.direction);
+    const b1 = -_diff.dot(_segDir);
+    const c = _diff.lengthSq();
+    const det = Math.abs(1 - a01 * a01);
+    let s0: number, s1: number, sqrDist: number, extDet: number;
+
+    if (det > 0) {
+      // 射线与线段不平行。
+      s0 = a01 * b1 - b0;
+      s1 = a01 * b0 - b1;
+      extDet = segExtent * det;
+
+      if (s0 >= 0) {
+        if (s1 >= -extDet) {
+          if (s1 <= extDet) {
+            // region 0:最近点在射线与线段内部。
+            const invDet = 1 / det;
+            s0 *= invDet;
+            s1 *= invDet;
+            sqrDist = s0 * (s0 + a01 * s1 + 2 * b0) + s1 * (a01 * s0 + s1 + 2 * b1) + c;
+          } else {
+            // region 1
+            s1 = segExtent;
+            s0 = Math.max(0, -(a01 * s1 + b0));
+            sqrDist = -s0 * s0 + s1 * (s1 + 2 * b1) + c;
+          }
+        } else {
+          // region 5
+          s1 = -segExtent;
+          s0 = Math.max(0, -(a01 * s1 + b0));
+          sqrDist = -s0 * s0 + s1 * (s1 + 2 * b1) + c;
+        }
+      } else {
+        if (s1 <= -extDet) {
+          // region 4
+          s0 = Math.max(0, -(-a01 * segExtent + b0));
+          s1 = s0 > 0 ? -segExtent : Math.min(Math.max(-segExtent, -b1), segExtent);
+          sqrDist = -s0 * s0 + s1 * (s1 + 2 * b1) + c;
+        } else if (s1 <= extDet) {
+          // region 3
+          s0 = 0;
+          s1 = Math.min(Math.max(-segExtent, -b1), segExtent);
+          sqrDist = s1 * (s1 + 2 * b1) + c;
+        } else {
+          // region 2
+          s0 = Math.max(0, -(a01 * segExtent + b0));
+          s1 = s0 > 0 ? segExtent : Math.min(Math.max(-segExtent, -b1), segExtent);
+          sqrDist = -s0 * s0 + s1 * (s1 + 2 * b1) + c;
+        }
+      }
+    } else {
+      // 射线与线段平行。
+      s1 = a01 > 0 ? -segExtent : segExtent;
+      s0 = Math.max(0, -(a01 * s1 + b0));
+      sqrDist = -s0 * s0 + s1 * (s1 + 2 * b1) + c;
+    }
+
+    if (optionalPointOnRay) {
+      optionalPointOnRay.copy(this.origin).addScaledVector(this.direction, s0);
+    }
+    if (optionalPointOnSeg) {
+      optionalPointOnSeg.copy(_segCenter).addScaledVector(_segDir, s1);
+    }
+
+    return sqrDist;
   }
 
   /** 射线与球求交点,写入 target。不相交返回 null。

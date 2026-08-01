@@ -9,6 +9,8 @@ export { ShadowMaterial, type ShadowMaterialOptions, SHADOW_MATERIAL_VERT, SHADO
 export { SpriteMaterial, type SpriteMaterialOptions } from './SpriteMaterial';
 // 点云材质 (GL_POINTS 点精灵),适配 three.js PointsMaterial。
 export { PointsMaterial, type PointsMaterialOptions } from './PointsMaterial';
+// 线段材质 (GL_LINES / GL_LINE_STRIP / GL_LINE_LOOP),适配 three.js LineBasicMaterial。
+export { LineBasicMaterial, type LineBasicMaterialOptions } from './LineBasicMaterial';
 // 特殊着色器材质(卡通 / 水面 / 线框 / 描边 / Matcap)。
 export {
   ToonMaterial,

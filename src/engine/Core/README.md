@@ -22,6 +22,9 @@ Object3D ──base──→ Scene
    │     ├── InstancedMesh ──uses──→ InstancedBufferAttribute
    │     ├── Sprite (billboard)
    │     └── Points (GL_POINTS point cloud)
+   ├── Line ──LINE_STRIP──→ BufferGeometry vertex chain
+   │     ├── LineSegments ──LINES──→ vertex pairs (0-1)(2-3)…
+   │     └── LineLoop ──LINE_LOOP──→ Line + closing edge (last→first)
    ├── LOD ──switches──→ Mesh[] by distance
    ├── Text / BitmapText ──uses──→ TextAtlas
    └── FurShell ──multi-layer──→ Mesh[] (FurMaterial)
@@ -66,6 +69,7 @@ ModuleRegistry ──manages──→ EngineModule lifecycle (load/unload/depend
 | `LOD` | Switches child meshes by camera distance against `LODLevel[]` thresholds. |
 | `Sprite` | Always-camera-facing billboard. CPU writes camera world rotation in `updateMatrixWorld`. |
 | `Points` | Point-cloud / point-sprite node. Renders every `position` vertex as a `GL_POINTS` primitive via `PointsMaterial`. Supports threshold-based raycast picking. |
+| `Line` / `LineSegments` / `LineLoop` | Line nodes. `Line` = `GL_LINE_STRIP` (connected chain), `LineSegments` = `GL_LINES` (independent pairs), `LineLoop` = `GL_LINE_LOOP` (chain + closing edge). Threshold-based edge raycast via `Ray.distanceSqToSegment`. |
 | `Text` | 3D text rendered via `TextAtlas` quads + `MeshBasicMaterial`. Supports wrapping/alignment. |
 | `BitmapText` | Text using a pre-rendered `TextAtlas` for large shared-atlas batches. |
 | `TextAtlas` | Rasterises characters to a canvas + records UVs; emits `CanvasTexture`. Degrades to dry-run without DOM. |
@@ -294,6 +298,92 @@ if (hits.length > 0) console.log('picked vertex', hits[0].index);
   scale.
 
 Adapted from three.js `src/objects/Points.js`.
+
+#### `Line` / `LineSegments` / `LineLoop` (`Line.ts`)
+
+Line nodes — render a `BufferGeometry`'s vertices as connected lines.
+The three subclasses differ only in how vertices are paired into
+segments (the `step` used by raycast and the GL primitive the renderer
+issues):
+
+| Class | GL primitive | Vertex pairing | `isLine` / `isLineSegments` / `isLineLoop` |
+|-------|-------------|----------------|--------------------------------------------|
+| `Line` | `GL_LINE_STRIP` | chain: 0-1, 1-2, 2-3, … | `true` / `false` / `false` |
+| `LineSegments` | `GL_LINES` | pairs: 0-1, 2-3, 4-5, … | `true` / `true` / `false` |
+| `LineLoop` | `GL_LINE_LOOP` | chain + closing edge (last→first) | `true` / `false` / `true` |
+
+Extends `Object3D`; holds `geometry: BufferGeometry` and
+`material: LineBasicMaterial | LineBasicMaterial[]`. Both indexed and
+non-indexed geometry are supported. Used for wireframe overlays, debug
+gizmos, CAD edge highlighting, graph edges, and any effect that needs
+thin 1px lines. (For thick anti-aliased lines, use `Line2` +
+`LineMaterial` — screen-space quad expansion — a planned module.)
+
+**Raycast** (threshold-based edge picking): for each segment, computes
+the closest distance between the ray and the segment via
+`Ray.distanceSqToSegment` (GeometricTools `DistRay3Segment3`, 6-region
+clamping of `(s0, s1)`), in geometry-local space. A segment is kept if
+`distSq ≤ localThresholdSq`, where `localThreshold = threshold /
+meanScale`. A local-space bounding-sphere test rejects the whole line
+early. Each hit fills `distance` (world-space ray-origin→closest-point-on-ray),
+`point` (closest point on the segment, world space), and `index` (the
+segment's start vertex index).
+
+| Property | Type | Default | Role |
+|----------|------|---------|------|
+| `geometry` | `BufferGeometry` | `new BufferGeometry()` | Source of line vertices (`position`); `index` used if present. |
+| `material` | `LineBasicMaterial \| LineBasicMaterial[]` | `new LineBasicMaterial()` | Color, linewidth, dashed params. |
+| `isLine` / `isLineSegments` / `isLineLoop` | `boolean` | `true` / `false` / `false` | Duck-type flags driving the `step` and closing-edge logic. |
+
+**`computeLineDistances()`**: populates a `lineDistance` attribute used
+by dashed materials. For `Line`/`LineLoop` it stores the *cumulative*
+distance from vertex 0 (0, d₀₁, d₀₁+d₁₂, …); for `LineSegments` each
+pair resets to (0, length). Only non-indexed geometry is supported
+(indexed geometry logs a warning and skips), matching three.js.
+
+```ts
+import { LineSegments, BufferGeometry, BufferAttribute } from '@vreen/engine/core';
+import { LineBasicMaterial } from '@vreen/engine/materials';
+
+// Box edge overlay: 12 edges = 24 vertices (pairs)
+const edgePositions = new Float32Array([
+  // bottom rectangle
+  -1,-1,-1,  1,-1,-1,   1,-1,-1,  1, 1,-1,   1, 1,-1,  -1, 1,-1,   -1, 1,-1,  -1,-1,-1,
+  // top rectangle
+  -1,-1, 1,  1,-1, 1,   1,-1, 1,  1, 1, 1,   1, 1, 1,  -1, 1, 1,   -1, 1, 1,  -1,-1, 1,
+  // verticals
+  -1,-1,-1, -1,-1, 1,   1,-1,-1,  1,-1, 1,   1, 1,-1,  1, 1, 1,   -1, 1,-1, -1, 1, 1,
+]);
+const geo = new BufferGeometry();
+geo.setAttribute('position', new BufferAttribute(edgePositions, 3));
+const edges = new LineSegments(geo, new LineBasicMaterial({
+  color: { r: 0.2, g: 1, b: 0.8 },
+}));
+scene.add(edges);
+
+// Picking — threshold = 0.2 world units
+const raycaster = createRaycasterFromMouse(...);
+raycaster.params.Line.threshold = 0.2;
+const hits = raycaster.intersectObject(edges, false);
+```
+
+**Differences from three.js `Line`**:
+
+- The bounding-sphere rejection test is done in **geometry-local space**
+  (ray transformed by `matrixWorld⁻¹`, sphere radius inflated by
+  `localThreshold`), reusing VREEN's existing `Ray.distanceSqToPoint`
+  + raw `boundingSphere` shape, instead of three.js's world-space
+  `Sphere.applyMatrix4` path. Numerically equivalent for uniform scale.
+- VREEN `BufferGeometry` has no `drawRange` or `morphAttributes`, so
+  raycast iterates the full index/position range and
+  `updateMorphTargets` is omitted (no morph-target support on lines).
+- `computeLineDistances` writes a `Float32Array`-backed `BufferAttribute`
+  (three.js uses `Float32BufferAttribute`); the layout is identical.
+- `LineSegments.computeLineDistances` resets each pair to `(0, length)`
+  — matching three.js — so dashed patterns restart per segment.
+
+Adapted from three.js `src/objects/Line.js`, `LineSegments.js`, and
+`LineLoop.js`.
 
 #### `SceneUtils` (`SceneUtils.ts`)
 

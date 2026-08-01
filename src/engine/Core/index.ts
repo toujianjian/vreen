@@ -79,6 +79,9 @@ export { Sprite } from './Sprite';
 // Points — 点云 / 点精灵物体 (GL_POINTS),适配 three.js Points.js。
 // 把 BufferGeometry 每个顶点绘制为一个点,支持 raycast 阈值拾取。
 export { Points } from './Points';
+// Line / LineSegments / LineLoop — 线段物体 (GL_LINE_STRIP / GL_LINES / GL_LINE_LOOP),
+// 适配 three.js Line.js / LineSegments.js / LineLoop.js。共享 distanceSqToSegment 阈值拾取。
+export { Line, LineSegments, LineLoop } from './Line';
 export { InstancedMesh } from './InstancedMesh';
 export { LOD, type LODLevel } from './LOD';
 export { Group } from './Group';

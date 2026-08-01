@@ -20,6 +20,7 @@ Material (abstract)
    │     ├── MeshBasicMaterial        flat color / texture
    │     ├── SpriteMaterial           billboard sprites (transparent, sizeAttenuation)
    │     ├── PointsMaterial           point-cloud / point-sprite (GL_POINTS, gl_PointSize)
+   │     ├── LineBasicMaterial        thin lines (GL_LINES / LINE_STRIP / LINE_LOOP, linewidth)
    │     ├── FurMaterial              shell-based fur / hair
    │     ├── ToonMaterial             cel-shaded cartoon
    │     ├── OutlineMaterial          back-side outline pass
@@ -157,6 +158,37 @@ sampled with `gl_PointCoord` (a `vec2` in `[0,1]` covering the point
 sprite quad), so a single texture is reused across every point. Use
 `alphaTest` to cut out point-sprite edges (e.g. circular particle
 textures) and avoid visible square boundaries.
+
+#### `LineBasicMaterial` (`LineBasicMaterial.ts`)
+
+Thin-line material — extends `BasicMaterial` with:
+
+| Property | Type | Default |
+|----------|------|---------|
+| `color` | `{ r, g, b }` (linear RGB, multiplied with `map`) | `{ 1, 1, 1 }` |
+| `map` | `Texture \| null` (sampled with vertex `uv`) | `null` |
+| `linewidth` | `number` (pixels) | `1` |
+| `dashed` | `boolean` (enable dash pattern) | `false` |
+| `dashSize` | `number` (dash length, world units × `scale`) | `1` |
+| `gapSize` | `number` (gap length, world units × `scale`) | `1` |
+| `scale` | `number` (dash scale factor) | `1` |
+| `opacity` | `number` | `1` |
+| `transparent` | `boolean` | `false` |
+| `alphaTest` | `number` | `0` |
+| `depthTest` / `depthWrite` | `boolean` | `true` / `true` |
+| `wireframe` | `boolean` | `false` |
+| `renderOrder` | `number` | `0` |
+
+Pairs with `Line` / `LineSegments` / `LineLoop`; the renderer issues
+`gl.drawArrays(gl.LINES | gl.LINE_STRIP | gl.LINE_LOOP, …)`. **Note:**
+the WebGL spec caps `gl.lineWidth` at 1 on most desktop platforms, so
+`linewidth > 1` is silently clamped — for thick anti-aliased lines use
+the planned `Line2` + `LineMaterial` (screen-space quad expansion).
+
+For dashed lines, call `line.computeLineDistances()` to populate the
+`lineDistance` attribute, then set `dashed: true` with `dashSize` /
+`gapSize` / `scale`. The shader samples `lineDistance` and discards
+fragments in the gaps.
 
 ### Custom Shader
 

@@ -79,7 +79,7 @@ type EulerOrder = 'XYZ' | 'YZX' | 'ZXY' | 'XZY' | 'YXZ' | 'ZYX';
 | `Box3` | Axis-aligned bounding box (`min`, `max`). `setFromObject` / `setFromPoints` / `union` / `intersect` / `expandByPoint` / `containsPoint` / `intersectsBox` / `intersectsSphere` / `applyMatrix4`. |
 | `Sphere` | Bounding sphere (`center`, `radius`). `setFromPoints` / `union` / `intersectsSphere` / `intersectsBox` / `intersectsPlane` / `applyMatrix4`. |
 | `Plane` | Plane (`normal`, `constant`). `setFromNormalAndCoplanarPoint` / `normalize` / `distanceToPoint` / `intersectLine` / `intersectsBox` / `intersectsSphere` / `applyMatrix4`. |
-| `Ray` | Origin + direction. `at` / `distanceToPoint` / `distanceSqToPoint` / `intersectSphere` / `intersectBox` / `intersectTriangle` / `intersectPlane` / `applyMatrix4`. |
+| `Ray` | Origin + direction. `at` / `distanceToPoint` / `distanceSqToPoint` / `distanceSqToSegment` / `intersectSphere` / `intersectBox` / `intersectTriangle` / `intersectPlane` / `applyMatrix4`. |
 | `Line3` | Two endpoints. `at` / `delta` / `distance` / `closestPointToPoint` / `applyMatrix4`. |
 | `Triangle` | Three vertices. `area` / `normal` / `barycoordFromPoint` / `containsPoint` / `intersectsRay`. |
 | `Frustum` | Six planes. `setFromProjectionMatrix` / `containsPoint` / `intersectsBox` / `intersectsSphere`. Used by `FrustumCuller`. |
