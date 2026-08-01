@@ -314,6 +314,71 @@ Adapted from Penner 2011 + d'Eon 2007 (GPU Gems 3 Ch.14). Pure CPU —
 no WebGL dependency. No direct three.js equivalent; fills VREEN's
 skin-rendering gap relative to o3de Atom's `Skin` material.
 
+#### `SeparableSSS` (`SeparableSSS.ts`)
+
+Separable Screen-Space Subsurface Scattering kernel generator
+(Jimenez 2015) + CPU reference convolution + GLSL chunk. Generates a
+per-channel RGB 1D half-kernel from the d'Eon/Jimenez skin diffusion
+profile (sum of Gaussians), where the red channel carries more weight
+in the wider Gaussians → red scatters further. Two 1D passes
+(horizontal + vertical) approximate the 2D radial diffusion at
+`O(2N)` instead of `O(N²)`.
+
+This closes VREEN's skin pipeline:
+`SubsurfaceScatteringMaterial` (thin-wall back transmission) +
+`PreIntegratedSkinLUT` (front curvature red-shift) +
+`SeparableSSS` (screen-space diffusion blur). The existing
+`SSSSPass` uses a single scalar Gaussian (same spread for R/G/B);
+upgrading it to consume `generateSeparableSSSKernel` +
+`kernelToUniforms` yields the full Jimenez 2015 quality.
+
+| Export | Signature | Role |
+|--------|-----------|------|
+| `generateSeparableSSSKernel` | `(opts?) → { samples, halfSize, fullSize, strength }` | Generate symmetric RGB half-kernel. |
+| `sampleSSSProfile` | `(profile, distanceMM) → SkinColor` | Diffusion profile `Σ color·exp(−d²/2σ²)` per channel. |
+| `convolve1D` | `(row, width, kernel) → Float32Array` | CPU reference 1D symmetric convolution (RGBA). |
+| `convolve2DSeparable` | `(image, w, h, kernel) → Float32Array` | CPU reference H+V two-pass convolution. |
+| `kernelVariance` | `(kernel) → SkinColor` | Per-channel effective variance (verify red>green>blue). |
+| `kernelToUniforms` | `(kernel) → { offsets, weightsR/G/B }` | Flatten to GLSL uniform arrays. |
+| `SKIN_PROFILE_JIMENEZ` | `SSSGaussianComponent[]` | d3xter/separable-sss skin profile (6 Gaussians). |
+| `SEPARABLE_SSS_FRAG` / `_VERT` | GLSL strings | Depth-aware separable blur shader (RGB kernel, two passes). |
+
+**Kernel generation.** Half-kernel samples at uniform distances
+`d ∈ [0, spread]` (default `spread = 3·maxσ`). Weight
+`w_c(d) = Σ_k color_{c,k}·exp(−d²/2σ_k²)`. Per-channel normalization:
+full symmetric sum `= 1` (center once, others twice) → 2D separable
+energy `(Σ w_c)² = 1` conserved. Offsets scaled by `strength`
+(pixels/mm).
+
+**Invariants (tested):**
+- Per-channel full symmetric sum `= 1` (energy conservation).
+- Kernel variance `R > G > B` (red scatters furthest).
+- `convolve1D` constant input → constant output (interior); delta
+  response `= kernel weights`.
+- `convolve2DSeparable` constant image → constant output (interior);
+  delta center `= w0²`; red spreads wider than blue.
+- `sampleSSSProfile` monotonic; red decays slower than blue.
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `samples` | `11` | Half-kernel size (incl. center). Full kernel `= 2·samples−1`. |
+| `strength` | `1.0` | Pixels per mm (scattering radius scale). |
+| `spread` | `3·maxσ` | Max sampling distance (mm). |
+| `profile` | `SKIN_PROFILE_JIMENEZ` | Diffusion profile (Gaussian components). |
+
+```ts
+import { generateSeparableSSSKernel, kernelToUniforms } from '@vreen/engine/core';
+
+const kernel = generateSeparableSSSKernel({ samples: 17, strength: 0.012 /*mm→px*/ });
+const { offsets, weightsR, weightsG, weightsB } = kernelToUniforms(kernel);
+// Upload to SEPARABLE_SSS_FRAG: pass 1 blurDir=(1,0), pass 2 blurDir=(0,1).
+// Red channel blurs wider than blue → warm skin diffusion.
+```
+
+Adapted from Jimenez 2015 "Separable Subsurface Scattering" +
+d3xter/separable-sss. Pure CPU core (no WebGL dependency) + GLSL chunk
+for the GPU two-pass path.
+
 ---
 
 ## Usage Example

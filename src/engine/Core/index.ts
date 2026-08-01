@@ -19,6 +19,25 @@ export {
   type PreIntegratedSkinLUTResult,
   type SkinColor,
 } from './PreIntegratedSkinLUT';
+// 可分离屏幕空间次表面散射核 (Separable SSS) — Jimenez 2015 + d'Eon 扩散剖面。
+// 生成按通道 RGB 权重的 1D 半核(红弥散更远),两趟卷积近似 2D 扩散;含 CPU 参考
+// 卷积 + GLSL chunk + uniform 转换。与 PreIntegratedSkinLUT / SubsurfaceScatteringMaterial
+// 组合实现完整实时皮肤管线。
+export {
+  generateSeparableSSSKernel,
+  sampleSSSProfile,
+  convolve1D,
+  convolve2DSeparable,
+  kernelVariance,
+  kernelToUniforms,
+  SKIN_PROFILE_JIMENEZ,
+  SEPARABLE_SSS_VERT,
+  SEPARABLE_SSS_FRAG,
+  type SSSGaussianComponent,
+  type SSSKernelSample,
+  type SeparableSSSKernelOptions,
+  type SeparableSSSKernelResult,
+} from './SeparableSSS';
 export { Scene } from './Scene';
 export { SceneGraphProcessor, type SceneGraphStats } from './SceneGraphProcessor';
 export { SceneStats, type SceneStatsData } from './SceneStats';
