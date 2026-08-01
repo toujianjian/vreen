@@ -285,4 +285,13 @@ export {
   type AnaglyphColorMode,
   type ImageData4,
 } from './AnaglyphEffect';
+// 视差屏障立体 (Parallax Barrier Stereo) — CPU 侧隔行/隔列交错左右眼。
+// 适配 three.js ParallaxBarrierEffect.js,支持 horizontal/vertical/checkerboard 三种交错模式。
+// 不依赖 WebGL,可在 Node/无头环境测试。与 AnaglyphEffect 互补。
+export {
+  ParallaxBarrierEffect,
+  type ParallaxBarrierOptions,
+  type InterlaceMode,
+  type PBImageData,
+} from './ParallaxBarrierEffect';
 
