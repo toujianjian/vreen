@@ -65,6 +65,15 @@ export {
   SSS_VERT,
   SSS_FRAG,
 } from './SubsurfaceScatteringMaterial';
+// 平面镜面反射材质(与 Renderer/Reflector.ts CPU 数学库配套)。
+// 适配 three.js Reflector.js shader 部分,扩展色调/菲涅尔/基础色。
+// Reflector.computeTextureMatrix() → textureMatrix;Reflector 渲染输出 → reflectionTexture。
+export {
+  ReflectorMaterial,
+  type ReflectorMaterialOptions,
+  REFLECTOR_VERT,
+  REFLECTOR_FRAG,
+} from './ReflectorMaterial';
 // 高级 PBR 材质(各向异性 + 虹彩 + 透明涂层 + 光泽 + 自发光)。
 // 在 PhysicalMaterial 之上扩展:完整 GLSL shader + CPU BRDF 参考实现,
 // 直接被 renderer 使用(PhysicalMaterial 的 clearcoat/sheen 为 advisory)。

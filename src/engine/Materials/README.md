@@ -27,6 +27,7 @@ Material (abstract)
    │     ├── ToonMaterial             cel-shaded cartoon
    │     ├── OutlineMaterial          back-side outline pass
    │     ├── WaterMaterial            animated water surface
+   │     ├── ReflectorMaterial        planar mirror reflection (with Reflector math)
    │     └── WireframeMaterial        stylised wireframe
    ├── StandardMaterial               PBR (base color / metallic / roughness / emissive)
    │     └── MeshPhysicalMaterial     extended PBR (clearcoat / sheen / IOR / transmission)
@@ -386,6 +387,112 @@ waves (configurable wave count / amplitude / direction / steepness),
 specular sun glint, refraction approximation via screen UV offset, and
 depth-based foam fade. Pairs with `WaterSystem` (in `Environment/`) for
 scene-level water state.
+
+#### `ReflectorMaterial` (`ReflectorMaterial.ts`)
+
+Planar mirror reflection material — the shader counterpart to
+`Renderer/Reflector.ts` (the CPU reflection math library). Samples a
+pre-rendered reflection texture and maps it onto the mirror surface via
+a texture matrix that transforms world-space positions into the mirror
+camera's UV space.
+
+**Architecture** (two-module design):
+
+```
+Renderer/Reflector.ts (CPU math, no GL)
+  ├── reflectionMatrix      — mirror transform (det = -1)
+  ├── mirrorCamera()        — flip eye/target/up across plane
+  ├── computeObliqueProjection() — near-plane = reflection plane (Lengyel)
+  └── computeTextureMatrix()    — scaleBias × projection × viewMirror
+
+Materials/ReflectorMaterial.ts (GLSL shader + data)
+  ├── REFLECTOR_VERT         — worldPos → v_reflectionCoord via textureMatrix
+  ├── REFLECTOR_FRAG         — perspective divide + sample + tint + Fresnel
+  └── ReflectorMaterial      — holds reflectionTexture / textureMatrix / tint
+```
+
+**Properties**:
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `reflectionTexture` | `Texture \| null` | `null` | Reflection render target (from Reflector's render-to-texture pass). |
+| `textureMatrix` | `Matrix4 \| null` | `null` | World → reflection UV transform. Set from `Reflector.computeTextureMatrix(proj, viewMirror)`. |
+| `tint` | `[r, g, b]` | `[1, 1, 1]` | Mirror tint (e.g. `[0.9, 0.9, 1.0]` for a cool mirror). |
+| `opacity` | `number` | `1.0` | Surface opacity (0 = invisible, 1 = opaque). |
+| `fresnelScale` | `number` | `0.0` | Fresnel blend strength. 0 = pure mirror; >0 = grazing-angle reflection, front-facing base color. |
+| `fresnelPower` | `number` | `3.0` | Fresnel exponent (higher = sharper rim). |
+| `baseColor` | `[r, g, b]` | `[0.02, 0.02, 0.03]` | Base color shown in low-reflection regions when `fresnelScale > 0`. |
+| `transparent` | `boolean` | `false` | Whether the material is transparent. |
+
+**Vertex shader** (`REFLECTOR_VERT`):
+1. `worldPos = u_model * vec4(position, 1.0)`
+2. `v_reflectionCoord = u_textureMatrix * worldPos` — world → mirror camera clip space → [0,1] UV (textureMatrix already includes scaleBias)
+3. `gl_Position = u_projection * u_view * worldPos`
+
+**Fragment shader** (`REFLECTOR_FRAG`):
+1. Perspective divide: `reflUv = v_reflectionCoord.xy / v_reflectionCoord.w`
+2. Clamp to [0,1] (avoid sampling outside reflection texture)
+3. Sample: `reflColor = texture(u_reflectionMap, reflUv).rgb * u_tint`
+4. Fresnel blend (if `fresnelScale > 0`):
+   - `fresnel = Schlick(dot(N, V), f0=0.04)` — dielectric Fresnel
+   - `finalColor = mix(u_baseColor, reflColor, clamp(fresnel * u_fresnelScale, 0, 1))`
+5. Output: `outColor = vec4(finalColor, u_opacity)`
+
+**Extensions vs three.js Reflector.js**:
+- **Fresnel blend** — three.js Reflector is a pure flat mirror; VREEN adds
+  configurable Fresnel so the mirror shows a base color at normal
+  incidence and full reflection at grazing angles (more realistic for
+  polished surfaces, tinted mirrors, wet floors).
+- **Tint** — colored mirrors (copper `[0.8, 0.5, 0.3]`, gold `[0.9, 0.7, 0.3]`).
+- **Base color** — the non-reflective fallback color for regions where the
+  reflection texture is unavailable or at low-Fresnel angles.
+- **UV clamping** — three.js uses `textureProj` which can sample outside
+  [0,1]; VREEN explicitly clamps to avoid border artifacts.
+
+**Usage**:
+```ts
+import { Reflector } from '../Renderer/Reflector';
+import { ReflectorMaterial } from '../Materials/ReflectorMaterial';
+
+// 1. CPU math (reflection matrix, mirror camera, texture matrix)
+const reflector = new Reflector({
+  plane: new Plane(new Vector3(0, 1, 0), 0), // y=0 floor
+  resolution: 1024,
+});
+
+// 2. Material (shader + data)
+const material = new ReflectorMaterial({
+  tint: [0.95, 0.95, 1.0],
+  opacity: 0.9,
+  fresnelScale: 0.3,
+  baseColor: [0.05, 0.05, 0.08],
+});
+
+// 3. Each frame:
+//    a. Compute mirror camera + texture matrix
+const mirrorCam = reflector.mirrorCamera(eye, target, up);
+const viewMirror = new Matrix4().makeLookAt(mirrorCam.eye, mirrorCam.target, mirrorCam.up);
+const obliqueProj = reflector.computeObliqueProjection(camera.projectionMatrix, viewMirror);
+material.textureMatrix = reflector.computeTextureMatrix(obliqueProj, viewMirror);
+//    b. Renderer renders scene from mirrorCam to reflectionTexture
+//    c. Bind reflectionTexture to material
+material.reflectionTexture = reflectionRenderTargetTexture;
+
+// 4. Mesh
+const mesh = new Mesh(planeGeometry, material);
+```
+
+**Test coverage** (`ReflectorMaterial.test.ts`, 27 tests):
+- Construction defaults + custom options.
+- RGB object / array acceptance for `tint` and `baseColor`.
+- Type identity (`type === 'Reflector'`, `isReflectorMaterial`, `extends BasicMaterial`, unique uuid).
+- `copy()` / `clone()` — full field duplication + array independence.
+- Shader source validation: `#version 300 es`, all uniforms present
+  (`u_textureMatrix`, `u_reflectionMap`, `u_tint`, `u_opacity`,
+  `u_fresnelScale`, `u_fresnelPower`, `u_baseColor`, `u_reflectionMapEnabled`).
+- Shader logic validation: perspective divide, tint multiply, Fresnel
+  Schlick, baseColor mix, UV clamp.
+- Integration with `Reflector.computeTextureMatrix()` output.
 
 #### `WireframeMaterial` (`WireframeMaterial.ts`)
 
