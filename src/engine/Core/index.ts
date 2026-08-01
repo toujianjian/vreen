@@ -1,6 +1,9 @@
 // Core barrel.
 
 export { Object3D, DirtyFlag } from './Object3D';
+// 陀螺仪对象 (Gyroscope) — 位置跟随父节点,朝向锁定世界坐标。
+// 适配 three.js Gyroscope.js,用于 billboard / HUD / 指南针 / 粒子广告牌。
+export { Gyroscope } from './Gyroscope';
 export { Scene } from './Scene';
 export { SceneGraphProcessor, type SceneGraphStats } from './SceneGraphProcessor';
 export { SceneStats, type SceneStatsData } from './SceneStats';
