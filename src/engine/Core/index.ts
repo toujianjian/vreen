@@ -7,6 +7,18 @@ export { Gyroscope } from './Gyroscope';
 // 程序化金属薄片纹理 (Flakes Texture) — 车漆/金属漆/珠光漆效果。
 // 适配 three.js FlakesTexture.js,支持确定性 RNG + 平铺 + 法线贴图转换。
 export { FlakesTexture, type FlakesTextureOptions, type FlakesTextureResult } from './FlakesTexture';
+// 预积分皮肤着色 LUT (Pre-Integrated Skin) — Penner 2011 + d'Eon 2007 散射剖面。
+// 生成 2D RGB LUT(N·L × 曲率),高曲率区域红移散射;纯 CPU,无 GL 绑定。
+// 与 SubsurfaceScatteringMaterial(薄壁透射)互补,组合实现完整皮肤渲染。
+export {
+  generatePreIntegratedSkinLUT,
+  samplePreIntegratedSkinLUT,
+  skinScatterProfile,
+  curvatureFromRadius,
+  type PreIntegratedSkinLUTOptions,
+  type PreIntegratedSkinLUTResult,
+  type SkinColor,
+} from './PreIntegratedSkinLUT';
 export { Scene } from './Scene';
 export { SceneGraphProcessor, type SceneGraphStats } from './SceneGraphProcessor';
 export { SceneStats, type SceneStatsData } from './SceneStats';

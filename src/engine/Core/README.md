@@ -255,6 +255,65 @@ micro-surface normal input to PBR materials.
 
 Adapted from three.js `FlakesTexture.js`. Pure CPU — no WebGL dependency.
 
+#### `PreIntegratedSkinLUT` (`PreIntegratedSkinLUT.ts`)
+
+Pre-Integrated Skin diffuse LUT generator (Penner & Borshukov 2011),
+using the d'Eon & van Latta 2007 skin scattering profile (sum of
+Gaussians). Produces a 2D RGB lookup texture indexed by
+`(N·L, curvature)` that captures the curvature-dependent diffuse
+response of skin — including the characteristic red bleed across the
+terminator (light/shadow boundary) on high-curvature regions (nose
+tip, ears, lips).
+
+Complementary to `SubsurfaceScatteringMaterial` (which approximates
+thin-wall back transmission): the SSS material handles light passing
+*through* thin skin (ears), while this LUT modulates the *front*
+diffuse response based on local curvature. Combining both yields a
+complete real-time skin model.
+
+| Export | Signature | Role |
+|--------|-----------|------|
+| `generatePreIntegratedSkinLUT` | `(opts?) → { data, width, height, maxCurvature }` | Generate 2D RGB Float32 LUT. `data` ∈ [0,1], uploadable as RGB16F texture. |
+| `samplePreIntegratedSkinLUT` | `(lut, NdotL, curvature) → SkinColor` | Bilinear sample with `NdotL` clamped to [-1,1], `curvature` clamped to [0, maxCurvature]. |
+| `skinScatterProfile` | `(distanceMM) → SkinColor` | d'Eon 2007 scattering profile `R_d(s) = Σ a_k·exp(−s²/2v_k)` per channel. Red has the long-range Gaussian (`v=0.842`). |
+| `curvatureFromRadius` | `(radiusMM) → number` | Convenience `1/radius` (mm⁻¹). |
+
+**Integration model.** For each texel `(NdotL, curvature)`:
+1. `radius = 1/curvature`; `θ = acos(NdotL)`.
+2. Sample surface distance `s ∈ [−maxScatter, +maxScatter]`; angle
+   `φ = s/radius`.
+3. Accumulate `max(cos(θ+φ), 0) · R_d(|s|)`, normalize by `Σ R_d(|s|)`.
+
+**Invariants (tested):**
+- Flat surface (`curvature→0`) → standard Lambert `max(N·L, 0)`.
+- Flat full-lit (`N·L=1`, `curvature=0`) → exactly `1.0`; curved
+  full-lit `< 1.0` (arc-averaged cos) but remains the row maximum.
+- At the terminator (`N·L≈0`) on high-curvature rows: `R > G > B`
+  (red-shift), and red bleed increases monotonically with curvature.
+- `R_d(s)` monotonically decreasing; red decays slower than blue.
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `width` / `height` | `256` | LUT resolution. |
+| `maxCurvature` | `2.0` | mm⁻¹ at V=1 (radius 0.5mm, nose-tip scale). V=0 is flat. |
+| `maxScatter` | `4.0` | mm; arc integration surface-distance range. |
+| `samples` | `64` | Arc integration sample count. |
+
+```ts
+import { generatePreIntegratedSkinLUT, samplePreIntegratedSkinLUT } from '@vreen/engine/core';
+
+const lut = generatePreIntegratedSkinLUT({ width: 256, height: 256 });
+// Upload lut.data as RGB16F texture; in shader:
+//   vec3 diffuse = texture(skinLUT, vec2(NdotL*0.5+0.5, curvature/2.0)).rgb;
+// CPU preview:
+const c = samplePreIntegratedSkinLUT(lut, 0.0 /*terminator*/, 2.0 /*nose tip*/);
+// c.r > c.g > c.b  (red-shift at shadow edge)
+```
+
+Adapted from Penner 2011 + d'Eon 2007 (GPU Gems 3 Ch.14). Pure CPU —
+no WebGL dependency. No direct three.js equivalent; fills VREEN's
+skin-rendering gap relative to o3de Atom's `Skin` material.
+
 ---
 
 ## Usage Example
