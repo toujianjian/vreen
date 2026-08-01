@@ -317,4 +317,13 @@ export {
   type PMREMFace,
   type PMREMFaceMip,
 } from './PMREMGenerator';
+// BRDFLUT — split-sum BRDF 积分查找表 (Karis 2013 第二部分)。
+// 生成 2D RG LUT (NoV × roughness → scale/bias),与 PMREMGenerator 配对
+// 完成完整 PBR IBL:specularIBL = prefilteredEnv * (scale*F0 + bias)。
+// 纯 CPU,离线烘焙一次,运行时作为 RG 纹理上传。
+export {
+  BRDFLUT,
+  type BRDFLUTOptions,
+  type BRDFLUTData,
+} from './BRDFLUT';
 

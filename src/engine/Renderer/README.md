@@ -496,6 +496,89 @@ const diffuse = pmrem.diffuseIrradiance(cube, 64);
 - V=N approximation means the result is slightly inaccurate for grazing
   angles where V ≠ N; this matches the standard Karis split-sum tradeoff.
 
+### `BRDFLUT` (`BRDFLUT.ts`)
+
+Split-sum BRDF integration lookup table — the **second half** of the Karis
+2013 IBL approximation. While `PMREMGenerator` produces the prefiltered
+environment radiance (the LD term), `BRDFLUT` produces a 2D RG texture
+encoding the BRDF's geometry + Fresnel response (the R term):
+
+```
+specularIBL = prefilteredEnv(L) * (scale * F0 + bias)
+                                    ↑               ↑
+                              BRDFLUT.r       BRDFLUT.g
+```
+
+The LUT is a fixed 2D table (typically 256×256, generated once at startup
+or offline) that maps `(N·V, roughness) → (scale, bias)`. At runtime the
+shader samples it with `texture(brdfLUT, vec2(NoV, roughness)).rg`.
+
+| Export | Role |
+|--------|------|
+| `BRDFLUT` | Static class with `generate(opts)` method. |
+| `BRDFLUTOptions` | `{ size?: number; samples?: number }` — LUT edge length (default 256) and MC samples per texel (default 1024). |
+| `BRDFLUTData` | `{ size: number; data: Float32Array }` — RG float, `length = size * size * 2`. |
+
+```ts
+import { BRDFLUT } from '@vreen/engine';
+
+// Generate once at startup (offline bake or first frame)
+const lut = BRDFLUT.generate({ size: 256, samples: 1024 });
+// Upload as RG8/ RG16F texture: tex.rg = lut.data
+
+// In shader:
+// vec2 envBRDF = texture(brdfLUT, vec2(NoV, roughness)).rg;
+// vec3 F = F0 * envBRDF.x + F90 * envBRDF.y;
+// vec3 specularIBL = prefilteredEnv * F;
+```
+
+**Algorithm** (Karis 2013, Section 3.4):
+- For each `(NoV, roughness)` texel:
+  - `V = (sin θ, 0, cos θ)`, `θ = acos(NoV)`; `N = (0, 0, 1)`.
+  - Hammersley low-discrepancy sequence generates `sampleCount` half-vectors
+    H via GGX importance sampling (`α = roughness²`).
+  - For each H: `L = reflect(-V, H)`, compute `NoL = max(N·L, 0)`.
+    If `NoL > 0`:
+    1. **Smith G** (uncorrelated GGX): `G = G1(NoV) * G1(NoL)` where
+       `G1(n, α) = 2n / (n + sqrt(α² + (1-α²)·n²))`.
+       Note: the formula uses `(1-α²)·n²`, NOT `(1-n²)`. The latter is the
+       erroneous "Karis fast" approximation that gives `G1=2` at `α=0, n=1`
+       (should be 1), causing `scale > 1` and energy conservation violation.
+    2. **Visibility**: `G_vis = G * VdotH / (NoV * NoH)`.
+    3. **Schlick Fresnel**: `Fc = (1 - VdotH)^5`.
+    4. Accumulate: `scale += (1 - Fc) * G_vis`, `bias += Fc * G_vis`.
+  - Normalize by `sampleCount`, clamp to `[0, 1]`.
+
+**Key properties verified by tests**:
+- `scale ∈ [0, 1]`, `bias ∈ [0, 1]` (clamped).
+- `scale + bias ≤ 1` (energy conservation).
+- At `roughness=0, NoV=1`: `scale ≈ 1, bias ≈ 0` (perfect mirror, F=F0).
+- At `roughness=0`: `scale = 1 - (1-NoV)^5`, `bias = (1-NoV)^5` (analytic
+  for the delta-function case, all samples have `VdotH = NoV`).
+- `scale` decreases with roughness (F0 contribution drops).
+- Deterministic: same parameters → identical output (Hammersley sequence).
+
+**Differences from three.js**:
+- three.js generates the LUT via a GL fragment shader (`Mesh` with
+  `OrthographicCamera` rendering a fullscreen quad). VREEN generates it
+  on the CPU — same math, no GL dependency, headless-testable.
+- three.js uses the "Smith Correlated" G form
+  (`G = 0.5 / (GGXV + GGXL)`). VREEN uses the uncorrelated Smith G
+  (`G = G1(NoV) * G1(NoL)`) with the exact `G1` formula. Both are valid;
+  the uncorrelated form is simpler and gives `G=1` at `α=0` (matching
+  the physical mirror case), while the correlated form gives `G=0.25`
+  at the same point (the correlation reduces effective reflectance).
+
+**Limitations**:
+- CPU generation is O(size² × samples); 256² × 1024 ≈ 67M operations
+  (~3s on a modern CPU). Generate once, cache forever.
+- The LUT assumes Schlick Fresnel (F0 / F90 parametrization). For more
+  complex Fresnel models (conductor IOR), use an analytic BRDF integration
+  instead.
+- The V=N approximation (split-sum) introduces slight inaccuracy at
+  grazing angles; this is the standard Karis tradeoff shared by UE4,
+  Filament, and three.js.
+
 ### `DeferredRenderer` (`DeferredRenderer.ts`)
 
 Alternative deferred backend. G-Buffer pass → fullscreen lighting pass.
