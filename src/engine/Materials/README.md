@@ -61,19 +61,92 @@ share programs.
 
 #### `StandardMaterial` (`StandardMaterial.ts`)
 
-PBR material — the default for scene rendering.
+PBR material — the default for scene rendering. Implements a Cook-Torrance
+metallic-roughness BRDF with GGX NDF, Smith-GGX-correlated visibility,
+Schlick Fresnel, and image-based lighting (IBL) from a cubemap. Supports
+four PBR texture maps (albedo / normal / metallic-roughness / emissive)
+plus shadow, SSAO, and ambient hemisphere lighting.
 
-| Property | Type | Default |
-|----------|------|---------|
-| `baseColor` | `{ r, g, b }` | `{ 1, 1, 1 }` |
-| `metallic` | `number` | `0` |
-| `roughness` | `number` | `1` |
-| `emissive` | `{ r, g, b }` | `{ 0, 0, 0 }` |
-| `opacity` | `number` | `1` |
-| `wireframe` | `boolean` | `false` |
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `baseColor` | `{ r, g, b }` | `{ 0.8, 0.8, 0.8 }` | Linear RGB albedo (multiplied with `map` when present). |
+| `metallic` | `number` | `0` | 0 = dielectric, 1 = metal. Multiplied with `metallicRoughnessMap.b` when present. |
+| `roughness` | `number` | `0.5` | 0 = mirror, 1 = fully diffuse. Multiplied with `metallicRoughnessMap.g` when present. |
+| `emissive` | `{ r, g, b }` | `{ 0, 0, 0 }` | Linear RGB emissive color (multiplied with `emissiveMap` when present). |
+| `emissiveIntensity` | `number` | `1` | Emissive multiplier (HDR-friendly, >1 allowed). |
+| `opacity` | `number` | `1` | Surface opacity (0..1). |
+| `wireframe` | `boolean` | `false` | Render as wireframe (`gl.LINES`). |
+| `depthTest` / `depthWrite` | `boolean` | `true` / `true` | Depth buffer control. |
+| `renderOrder` | `number` | `0` | Render sort weight. |
+| `receiveShadow` | `boolean` | `true` | Whether this material receives shadows. |
+| `map` | `Texture \| null` | `null` | Albedo texture (sRGB, sampled as `vec3`, multiplied with `baseColor`). |
+| `normalMap` | `Texture \| null` | `null` | Tangent-space normal map (linear, decoded `[0,1] → [-1,1]`). Sampled with derivative-based TBN — no `a_tangent` attribute required. |
+| `normalScale` | `number` | `1.0` | Normal map strength (0 = no effect, 1 = full, >1 = exaggerated). Scales the tangent-space `xy` before TBN transform. |
+| `metallicRoughnessMap` | `Texture \| null` | `null` | GLTF 2.0 convention: G channel = roughness, B channel = metallic. R channel unused. |
+| `emissiveMap` | `Texture \| null` | `null` | Emissive texture (sRGB, multiplied with `emissive` uniform × `emissiveIntensity`). |
+| `program` | `ShaderProgram \| null` | `null` | Renderer-compiled program (cache). |
+| `programKey` | `string` | `'standard'` | Stable cache key (variants: `'standard-skinning'` for `SkinnedMesh`). |
 
-Procedural texture slots: `map`, `normalMap`, `metallicMap`,
-`roughnessMap`, `emissiveMap`, `aoMap`.
+**Texture unit bindings** (owned by `WebGL2Renderer`):
+
+| Unit | Sampler | sRGB | Source |
+|------|---------|------|--------|
+| 0 | `u_baseColorMap` | yes | `mat.map` |
+| 1 | `u_shadowMap` | — | shadow pass |
+| 2 | `u_ssaoMap` | — | SSAO pass |
+| 3 | `u_metallicRoughnessMap` | no | `mat.metallicRoughnessMap` |
+| 4 | `u_envMap` (samplerCube) | — | scene environment |
+| 5 | `u_normalMap` | no | `mat.normalMap` |
+| 6 | `u_emissiveMap` | yes | `mat.emissiveMap` |
+
+**PBR shader walkthrough** (`PBR_VERT` + `PBR_FRAG`, GLSL ES 3.0):
+
+1. **Vertex shader** — `a_position` / `a_normal` / `a_uv` → `v_worldPos` /
+   `v_worldNormal` / `v_uv`. `USE_SKINNING` define enables linear-blend
+   skinning (4 bones per vertex, `u_boneMatrices[64]` +
+   `u_bindMatrixInverse`). `USE_INSTANCING` define swaps `u_model` for
+   per-instance `a_instanceMatrix` (mat4 at locations 7..10).
+2. **Normal map** (derivative-based TBN, after Christian Schüler
+   "Normal Mapping Without Precomputed Tangents"):
+   - `dp1 = dFdx(v_worldPos)`, `dp2 = dFdy(v_worldPos)`
+   - `duv1 = dFdx(v_uv)`, `duv2 = dFdy(v_uv)`
+   - `T = dp2perp * duv1.x + dp1perp * duv2.x`
+   - `B = dp2perp * duv1.y + dp1perp * duv2.y`
+   - `TBN = mat3(T, B, N)` (renormalised)
+   - `sampled = texture(u_normalMap, v_uv).xyz * 2.0 - 1.0`
+   - `sampled.xy *= u_normalScale`
+   - `N = normalize(TBN * sampled)`
+   - This approach requires **no tangent attribute** — works on any mesh.
+3. **BRDF** — Cook-Torrance metallic-roughness:
+   - `D = D_GGX(NoH, α)` where `α = roughness²`
+   - `V = V_SmithGGXCorrelated(NoV, NoL, α)` (Smith height-correlated)
+   - `F = F_Schlick(VoH, f0)` where `f0 = mix(vec3(0.04), baseColor, metallic)`
+   - `spec = D * V * F`
+   - `kd = (1 - F) * (1 - metallic)`
+   - `diff = kd * baseColor / PI`
+4. **Lighting** — `lighting = (diff + spec) * NoL * u_lightColor * u_lightIntensity`
+5. **Ambient** — hemisphere blend:
+   `ambient = mix(u_ambientGround, u_ambientSky, 0.5 + 0.5 * N.y) * baseColor * u_ambientColor`
+6. **IBL** — `getIBLContribution(N, V, f0, roughness, metallic)`:
+   - `R = reflect(-V, N)`, `mipLevel = roughness * 4.0`
+   - `envColor = textureLod(u_envMap, R, mipLevel)` (specular IBL)
+   - `diffEnv = textureLod(u_envMap, N, 4.0)` (diffuse IBL)
+   - `F = F_Schlick_Rough(NoV, f0, roughness)` (roughness-aware Fresnel)
+   - `return kd * diffEnv * 0.5 + F * envColor * 0.5`
+7. **Shadow** — PCF 16-tap Poisson-disk sampling with screen-space-derivative
+   adaptive radius:
+   - `radius = max(1/shadowMapSize.x, length(vec2(dFdx(depth), dFdy(depth))) * 4.0)`
+   - `sum += (depth - bias > sampledDepth) ? 0.0 : 1.0` per tap
+   - Returns visibility factor in `[0, 1]`.
+8. **SSAO** — `ao = texture(u_ssaoMap, gl_FragCoord.xy / u_shadowMapSize).r`
+   (modulates ambient + IBL only, not direct lighting).
+9. **Emissive** — `emissive = u_emissive; if (u_emissiveMapEnabled == 1) emissive *= texture(u_emissiveMap, v_uv).rgb;`
+10. **Composite** — `color = ambient * ao + ibl * ao + lighting * shadow + emissive * u_emissiveIntensity`
+11. **Tonemap** — Reinhard: `color = color / (color + vec3(1.0))`
+12. **Output** — `outColor = vec4(color, u_opacity)`
+
+**Convenience constructor**: `StandardMaterial.fromHex('#ff8800')` parses
+3-digit / 6-digit hex strings (with or without `#`) into `baseColor`.
 
 #### `MeshPhysicalMaterial` (`MeshPhysicalMaterial.ts`)
 
@@ -788,6 +861,39 @@ const glass = new MeshPhysicalMaterial({
 });
 ```
 
+### PBR with full texture pipeline
+
+```ts
+import { StandardMaterial } from '@vreen/engine/materials';
+import { Texture } from '@vreen/engine/core';
+
+// Load GLTF 2.0-style PBR textures (albedo / normal / MR / emissive).
+// No tangent attribute required — derivative-based TBN derives the
+// tangent space on-the-fly from screen-space derivatives.
+const material = new StandardMaterial();
+material.baseColor = { r: 1.0, g: 1.0, b: 1.0 }; // tint over albedo map
+material.metallic = 1.0;     // multiplied with MR.b
+material.roughness = 0.5;    // multiplied with MR.g
+material.emissive = { r: 1.0, g: 0.8, b: 0.4 };
+material.emissiveIntensity = 2.5; // HDR-friendly
+material.map = await loadTexture('albedo.png');           // sRGB
+material.normalMap = await loadTexture('normal.png');     // linear
+material.normalScale = 1.2;  // slightly exaggerated relief
+material.metallicRoughnessMap = await loadTexture('mr.png'); // G=roughness, B=metallic
+material.emissiveMap = await loadTexture('emissive.png'); // sRGB
+// Renderer auto-binds units 0, 3, 5, 6 — no manual sampler setup.
+```
+
+### Convenience: `fromHex`
+
+```ts
+import { StandardMaterial } from '@vreen/engine/materials';
+
+const mat = StandardMaterial.fromHex('#ff8800');
+// baseColor ≈ { r: 1.0, g: 0.533, b: 0.0 }
+const mat2 = StandardMaterial.fromHex('f80'); // 3-digit, no '#'
+```
+
 ### Custom shader
 
 ```ts
@@ -951,11 +1057,36 @@ soup3D:
   exactly how soft the terminator should be at each point. soup3D has
   no curvature input.
 
-**Where soup3D still matches.** For non-organic materials (metal, wood,
-plastic, fabric) both engines produce equivalent results — SSS only
-matters for translucent organic surfaces. VREEN's advantage is
-concentrated on skin, wax, jade, milk, and leaves, which are exactly
-the cases where soup3D falls back to hard plastic.
+**PBR texture pipeline advantage.** Beyond SSS, VREEN's `StandardMaterial`
+now ships a complete PBR texture pipeline that soup3D lacks:
+
+| PBR Texture Feature | soup3D | VREEN |
+|---------------------|--------|-------|
+| Albedo map (`map`) | basic | sRGB-aware, multiplied with `baseColor` uniform |
+| Normal map | requires precomputed tangent attribute | **derivative-based TBN** (no `a_tangent` needed) |
+| Normal strength control | none | `normalScale` uniform (0..N, exaggeration allowed) |
+| Metallic-roughness map | none | GLTF 2.0 G=roughness / B=metallic packing |
+| Emissive map | none | multiplied with `emissive` × `emissiveIntensity` (HDR) |
+| IBL cubemap | none | `textureLod(u_envMap, R, roughness*4.0)` specular + diffuse |
+| Adaptive PCF shadow | none | 16-tap Poisson-disk with derivative-driven radius |
+| SSAO integration | none | `ao` modulates ambient + IBL only |
+| Reinhard tonemap | none | `color / (color + 1)` for HDR-friendly output |
+
+The **derivative-based TBN** is the standout: soup3D and most three.js
+PBR implementations require a precomputed `a_tangent` vertex attribute
+(per-vertex tangent space). VREEN follows Christian Schüler's technique
+("Normal Mapping Without Precomputed Tangents", ShaderX 5) to derive
+the TBN matrix from screen-space derivatives of `v_worldPos` and
+`v_uv`, so any mesh — including procedural geometry with no tangent
+data — can use normal maps without an offline tangent-generation pass.
+This is the same approach used by Unreal Engine 5's Material system.
+
+**Where soup3D still matches.** For non-organic, untextured materials
+(flat-color metal, wood, plastic) both engines produce equivalent
+results — the BRDF math is identical. VREEN's advantage is concentrated
+on textured PBR surfaces (where derivative-based TBN saves artist time)
+and on organic surfaces (where SSS is required), which are exactly the
+cases where soup3D falls back to flat or hard-plastic shading.
 
 ---
 
@@ -968,6 +1099,42 @@ larger scenes will need shader keys composed from material attribute
 combinations (Three.js approach — tracked in Phase 3.3, material-graph
 blocks). `onBeforeCompile` invalidates the program cache when the
 material shader-injection signature changes.
+
+**Why derivative-based TBN instead of `a_tangent`?** The standard
+approach to normal mapping requires a precomputed per-vertex tangent
+attribute (typically computed at load time via `mikktspace` or similar).
+This works for artist-authored GLTF meshes, but creates two pain points:
+(1) procedural geometry (parametric spheres, terrain, runtime-generated
+water) has no tangent data, so normal maps silently break; (2) the
+tangent attribute costs 12 bytes/vertex of memory + bandwidth.
+VREEN follows Christian Schüler's "Normal Mapping Without Precomputed
+Tangents" (ShaderX 5) — the TBN matrix is built in the fragment shader
+from `dFdx(v_worldPos)` / `dFdy(v_worldPos)` cross-producted against
+`dFdx(v_uv)` / `dFdy(v_uv)`. This costs ~6 ALU ops per fragment (negligible
+on modern GPUs) but removes the tangent attribute entirely. The same
+technique is used by Unreal Engine 5 and o3de's Atom renderer.
+
+`normalScale` is applied to the tangent-space `xy` before TBN transform,
+not after — this preserves the orthonormality of the resulting world-space
+normal while exaggerating the relief. Scaling after TBN would
+asymmetrically amplify the world-space normal and break specular
+highlights.
+
+**Why GLTF 2.0 packing for `metallicRoughnessMap`?** GLTF 2.0 packs
+roughness into the G channel and metallic into the B channel (R is
+unused/occlusion). This is the industry-standard packing used by every
+GLTF exporter (Blender, Substance, Marmoset), so consuming it directly
+avoids runtime channel-swizzling. `metallic *= mr.b; roughness *= mr.g;`
+preserves the material-uniform multiplier — artists can use a partial
+MR texture (e.g. only roughness) and rely on the uniform for the missing
+channel.
+
+**Why sRGB vs linear sampling matters.** The renderer binds albedo and
+emissive maps with sRGB decoding (`gl.UNPACK_SRGB` / internal format
+`SRGB8_ALPHA8`), but normal and MR maps without sRGB. Getting this wrong
+causes two visible bugs: (1) albedo appears washed-out (double gamma);
+(2) normal map relief is too strong (gamma-curve amplifies midtones).
+The texture unit table above documents which maps need sRGB.
 
 **Why does `FurMaterial` extend `BasicMaterial`?** Fur is rendered with
 many transparent shell layers, each contributing only alpha and a small
