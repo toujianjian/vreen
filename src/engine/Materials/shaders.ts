@@ -2798,3 +2798,183 @@ void main() {
 }
 `;
 
+// ── SSGI (Screen-Space Global Illumination) ──────────────────────
+// 屏幕空间全局光照 —— 在屏幕空间做漫反射间接光采样,产生彩色反弹光。
+// 与 SSR 的区别:
+//   - SSR 反射 viewDir 关于法线的镜像方向(镜面);SSGI 在法线半球内
+//     采多条余弦加权射线(漫反射),累积间接辐照度。
+//   - SSR 输出"反射颜色"(混合替换);SSGI 输出"间接辐照度"(叠加到场景)。
+//   - SSR 受粗糙度调制;SSGI 对漫反射面最有意义(粗糙度高的表面)。
+//
+// 算法:
+//   1. 读 GBuffer:世界位置、世界法线、场景颜色
+//   2. 跳过天空(无法线)
+//   3. 建立法线正交基 TBN
+//   4. 对 NUM_RAYS 条射线(默认 8):
+//      a. 余弦加权半球采样:θ=asin(√ξ₁), φ=2π·ξ₂ + frame·goldenAngle
+//         (每帧旋转采样模式,配合 TAA 消除噪声)
+//      b. 射线方向 = TBN · (sinθcosφ, sinθsinφ, cosθ)
+//      c. 屏幕空间自适应步长射线步进(复用 SSR 的视空间厚度检测)
+//      d. 命中时采样颜色,权重 = N·rayDir(余弦权重)
+//      e. 边缘衰减 + 距离衰减
+//   5. 间接辐照度 = Σ(hitColor × weight) / Σ(weight)
+//   6. 输出 = indirectIrradiance × strength(由调用方叠加到场景颜色)
+//
+// 参考:
+//   - Crytek "Real-time Diffuse Global Illumination in Screen Space" (SSDO)
+//   - o3de Atom "ScreenSpaceGlobalIllumination" pass
+//   - EA SEED "Stable SSAO" GDC 演讲(时序抖动策略)
+export const SSGI_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;       // 场景颜色(反弹光源)
+uniform sampler2D u_positionMap;    // GBuffer 世界位置(RGBA16F)
+uniform sampler2D u_normalMap;      // GBuffer 世界法线(RGBA16F)
+uniform mat4 u_projection;
+uniform mat4 u_view;
+uniform vec3 u_cameraPos;
+uniform vec2 u_screenSize;
+uniform int   u_maxSteps;           // 每射线最大步进次数(默认 32)
+uniform float u_thickness;          // 厚度容差(世界单位,默认 0.5)
+uniform float u_strength;           // 间接光强度(默认 0.5)
+uniform float u_radius;             // 采样半径(世界单位,默认 0.5)
+uniform float u_frame;              // 帧计数(时序旋转)
+uniform int   u_numRays;            // 射线数(1..8,默认 8)
+uniform float u_jitterScale;        // 抖动幅度(0=关,1=默认)
+
+#define MAX_RAYS 8
+
+// Interleaved Gradient Noise (Jorge Jimenez 2014)
+float ign(vec2 p) {
+  return fract(52.9829189 * fract(0.06711056 * p.x + 0.00583715 * p.y));
+}
+
+// 把世界位置投影到屏幕 UV(0..1)
+vec2 projectToUV(vec3 worldPos) {
+  vec4 clip = u_projection * u_view * vec4(worldPos, 1.0);
+  return (clip.xy / clip.w) * 0.5 + 0.5;
+}
+
+// 视空间深度(沿相机轴的距离)
+float viewDepth(vec3 worldPos) {
+  return -(u_view * vec4(worldPos, 1.0)).z;
+}
+
+// 厚度检测(视空间):UV 越界返回 false
+bool hitTestVS(vec3 rayPos, vec2 uv, out float depthDiff) {
+  depthDiff = 1e9;
+  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return false;
+  vec3 sampledPos = texture(u_positionMap, uv).xyz;
+  float rayDepth = viewDepth(rayPos);
+  float sampledDepth = viewDepth(sampledPos);
+  depthDiff = rayDepth - sampledDepth;
+  return depthDiff > 0.0 && depthDiff < u_thickness;
+}
+
+void main() {
+  vec3 worldPos   = texture(u_positionMap, v_uv).xyz;
+  vec3 worldNormal = texture(u_normalMap, v_uv).xyz;
+  vec3 sceneColor = texture(u_colorMap, v_uv).rgb;
+
+  // 跳过天空(无法线)→ 输出黑色(无间接光)
+  if (length(worldNormal) < 0.01) {
+    outColor = vec4(0.0, 0.0, 0.0, 1.0);
+    return;
+  }
+  worldNormal = normalize(worldNormal);
+
+  // 背面剔除:法线背离相机不产生间接光
+  vec3 viewDir = normalize(u_cameraPos - worldPos);
+  if (dot(viewDir, worldNormal) <= 0.0) {
+    outColor = vec4(0.0, 0.0, 0.0, 1.0);
+    return;
+  }
+
+  // 构建 TBN 正交基(不依赖切线属性,由法线推导)
+  vec3 up = abs(worldNormal.z) < 0.999 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);
+  vec3 T = normalize(cross(up, worldNormal));
+  vec3 B = cross(worldNormal, T);
+
+  // 时序旋转角(每帧旋转黄金角 ≈ 137.5°)
+  float goldenAngle = 2.39996323;
+  float frameRot = u_frame * goldenAngle;
+
+  // 每像素抖动(IGN)
+  float jitter = ign(v_uv * u_screenSize + vec2(u_frame * 0.61803398875, 0.0));
+  jitter = (jitter - 0.5) * u_jitterScale;
+
+  vec3 indirect = vec3(0.0);
+  float totalWeight = 0.0;
+  int rays = min(u_numRays, MAX_RAYS);
+
+  for (int r = 0; r < MAX_RAYS; r++) {
+    if (r >= rays) break;
+
+    // 余弦加权半球采样(重要性采样):cos(θ)=√ξ₁
+    float xi1 = fract(ign(v_uv * u_screenSize + vec2(r * 7.13 + u_frame * 0.31, r * 3.17)) + jitter);
+    float xi2 = fract(ign(v_uv * u_screenSize + vec2(r * 5.91, r * 11.37 + u_frame * 0.47)) + jitter);
+
+    float theta = asin(sqrt(xi1));
+    float phi = 2.0 * 3.14159265 * xi2 + frameRot;
+
+    vec3 rayDir = T * (sin(theta) * cos(phi))
+                + B * (sin(theta) * sin(phi))
+                + worldNormal * cos(theta);
+
+    // 射线步进(自适应步长,近小远大)
+    float baseStep = u_radius * 0.1;
+    vec3 rayPos = worldPos + rayDir * baseStep * (0.5 + jitter);
+    vec2 uv = projectToUV(rayPos);
+    vec2 hitUV = uv;
+    bool hit = false;
+
+    for (int i = 0; i < 64; i++) {
+      if (i >= u_maxSteps) break;
+      float dd;
+      if (hitTestVS(rayPos, uv, dd)) {
+        hit = true;
+        hitUV = uv;
+        break;
+      }
+      float stepSize = baseStep * (1.0 + float(i) * 0.5) * (1.0 + jitter * 0.25);
+      rayPos += rayDir * stepSize;
+      uv = projectToUV(rayPos);
+    }
+
+    if (hit) {
+      // 边缘衰减:命中 UV 靠近屏幕边缘 → 权重衰减
+      vec2 edgeDist = min(hitUV, 1.0 - hitUV);
+      float edgeFade = smoothstep(0.0, 0.1, min(edgeDist.x, edgeDist.y));
+
+      // 采样命中点颜色作为间接光
+      vec3 hitColor = texture(u_colorMap, hitUV).rgb;
+
+      // 距离衰减:远处命中贡献更弱(模拟间接光随距离衰减)
+      float hitDist = length(rayPos - worldPos);
+      float distAtten = 1.0 / (1.0 + hitDist * hitDist * 2.0);
+
+      // 余弦权重(采样方向已隐含,显式写出以确保正确性)
+      float cosWeight = max(dot(worldNormal, rayDir), 0.0);
+
+      float w = edgeFade * distAtten * cosWeight;
+      indirect += hitColor * w;
+      totalWeight += w;
+    }
+  }
+
+  // 归一化:除以总权重得到平均辐照度
+  vec3 indirectIrradiance;
+  if (totalWeight > 0.0) {
+    indirectIrradiance = indirect / totalWeight;
+  } else {
+    indirectIrradiance = vec3(0.0);
+  }
+
+  // 乘以强度(由调用方决定是否再乘 albedo / π)
+  outColor = vec4(indirectIrradiance * u_strength, 1.0);
+}
+`;
+

@@ -1,7 +1,7 @@
 // PostProcess barrel — 增强后处理 Pass 集合。
 //
 // 与 RenderPass.ts 中的基础后处理 Bloom/CA/Vignette/FinalCompose 平行。
-// 本模块提供 17 个增强 Pass:
+// 本模块提供 18 个增强 Pass:
 //   - ColorGradingPass  : 色彩分级(8 个 ASC-CDL 参数)
 //   - LUTPass           : LUT 色彩查找表(3D 或 2D strip)
 //   - ChromaticAberrationPass : 增强色差(Vector2 偏移 + 径向调制)
@@ -20,11 +20,12 @@
 //   - DOFEnhancedPass  : 增强景深(CoC + 圆/六/八边形散景)
 //   - SMAAPass         : 子像素形态学抗锯齿(3 pass + procedural LUT)
 //   - UnrealBloomPass  : Unreal 风格多层 mip 高斯 Bloom + lens dirt
+//   - SSGIPass         : 屏幕空间全局光照(8 射线余弦半球采样 + 时序抖动)
 //
 // 注意:
 //   - 前 7 个 Pass 都实现 RenderPass 接口,可直接加入 PostProcessingPipeline。
 //   - SSRPass / VolumetricFogPass / VelocityPass / TAAPass / MotionBlurPass /
-//     AutoExposurePass / GTAOPass / SSSSPass / DOFEnhancedPass 签名包含
+//     AutoExposurePass / GTAOPass / SSSSPass / DOFEnhancedPass / SSGIPass 签名包含
 //     额外的 GBuffer 纹理参数,不适配 RenderPass.apply(input, ctx) 抽象,
 //     因此独立管理 FBO / program。
 //
@@ -59,3 +60,4 @@ export {
   UnrealBloomPass,
   type UnrealBloomOptions,
 } from './UnrealBloomPass';
+export { SSGIPass, type SSGIPassOptions } from './SSGIPass';
