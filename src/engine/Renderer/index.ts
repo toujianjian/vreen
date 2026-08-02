@@ -342,4 +342,12 @@ export {
   type PreIntegratedSkinLUTResult,
   type SkinColor,
 } from './SubsurfaceScattering';
+// TexturePool — 无绑定纹理池(适配自 o3de Atom Bindless)。
+// 将多张纹理打包到 TEXTURE_2D_ARRAY,着色器通过整数索引访问。
+// 用于 GPU 驱动渲染、地形材质混合、Instanced 渲染、Decal 系统。
+export {
+  TexturePool,
+  type TexturePoolOptions,
+  type TexturePoolStats,
+} from './TexturePool';
 

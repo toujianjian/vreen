@@ -742,6 +742,46 @@ const finalColor = [diffuse[0] + transmission[0], diffuse[1] + transmission[1], 
 - The LUT is 2D (N·L × curvature); a 3D LUT (adding thickness) would be
   more accurate but increases memory 8×–64×.
 
+### `TexturePool` (`TexturePool.ts`)
+
+Bindless texture pool — adapted from o3de Atom's [Bindless](https://github.com/o3de/o3de/blob/development/Gems/Atom/RHI/Bindless.md) resource access concept. Packs multiple textures into a single `TEXTURE_2D_ARRAY` so shaders can sample any texture by integer index without per-draw binding.
+
+**Why bindless?** In GPU-driven rendering, terrain material blending, decal systems, and instanced rendering, the set of textures needed per draw is not known on the CPU. A texture pool lets the shader select textures dynamically:
+
+```glsl
+// GLSL — bindless sampling via sampler2DArray
+uniform sampler2DArray u_texturePool;
+uniform int u_diffuseIndex;  // from TexturePool.allocate()
+vec4 color = texture(u_texturePool, vec3(v_uv, float(u_diffuseIndex)));
+```
+
+**API:**
+
+| Method | Description |
+|--------|-------------|
+| `allocate(label?)` | Allocate a slot, returns index (or -1 if full). |
+| `free(slot)` | Release a slot back to the free list. |
+| `update(slot, data)` | Copy pixel data into the slot's layer. Marks `layerUpdates`. |
+| `getSlotVersion(slot)` | Version counter (increments on allocate/update). |
+| `isAllocated(slot)` | Check if slot is occupied. |
+| `clear()` | Free all slots. |
+| `getStats()` | Returns `{capacity, allocated, free, width, height, format, type}`. |
+
+**Config:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `capacity` | 512 | Max textures in pool. |
+| `width` / `height` | 1024 | Per-texture dimensions (all textures share size). |
+| `format` | `'rgba'` | Pixel format (`rgba`/`rgb`/`rg`/`r`). |
+| `type` | `'unsigned-byte'` | Pixel type (`unsigned-byte`/`float`/`half-float`). |
+| `generateMipmaps` | false | Generate mip chain. |
+| `colorSpace` | `'srgb'` | Color space. |
+
+**Integration:** The pool exposes `arrayTexture` (a `DataArrayTexture`) for the renderer to upload via `texStorage3D` / `texSubImage3D`. Dirty layers are tracked in `layerUpdates` for partial updates.
+
+**o3de comparison:** o3de uses DX12/Vulkan descriptor heaps with bindless flags; VREEN uses WebGL2 `TEXTURE_2D_ARRAY` + `sampler2DArray`, achieving the same concept within WebGL2 constraints.
+
 ### `DeferredRenderer` (`DeferredRenderer.ts`)
 
 Alternative deferred backend. G-Buffer pass → fullscreen lighting pass.
