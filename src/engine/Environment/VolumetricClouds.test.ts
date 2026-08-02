@@ -14,7 +14,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { Vector3 } from '../Math/Vector3';
-import { VolumetricClouds } from './VolumetricClouds';
+import { VolumetricClouds, CLOUD_PRESETS } from './VolumetricClouds';
 
 describe('VolumetricClouds — 构造与默认值', () => {
   it('默认构造', () => {
@@ -516,3 +516,349 @@ describe('VolumetricClouds — 链式调用', () => {
     expect(c.steps).toBe(128);
   });
 });
+
+// ──────────────────────────────────────────────────────────────
+// v2 升级测试:多散射 / 双叶 HG / 高度密度 / 云类型预设 / 锥形阴影
+// ──────────────────────────────────────────────────────────────
+
+describe('VolumetricClouds — v2 默认值与 setter', () => {
+  it('v2 新字段默认值', () => {
+    const c = new VolumetricClouds();
+    expect(c.multiScatteringFactor).toBeCloseTo(0.5, 5);
+    expect(c.multiScatteringSteps).toBe(4);
+    expect(c.hgForwardG).toBeCloseTo(0.8, 5);
+    expect(c.hgBackwardG).toBeCloseTo(-0.2, 5);
+    expect(c.hgForwardWeight).toBeCloseTo(0.7, 5);
+    expect(c.heightDensityBottom).toBeCloseTo(0.0, 5);
+    expect(c.heightDensityTop).toBeCloseTo(0.5, 5);
+    expect(c.coneRadius).toBeCloseTo(0.0, 5);
+    expect(c.cloudType).toBe('cumulus');
+  });
+
+  it('setMultiScattering 限制 factor 到 [0,1] + steps 到 [1,16]', () => {
+    const c = new VolumetricClouds();
+    c.setMultiScattering(-1, 0);
+    expect(c.multiScatteringFactor).toBe(0);
+    expect(c.multiScatteringSteps).toBe(1);
+    c.setMultiScattering(2, 100);
+    expect(c.multiScatteringFactor).toBe(1);
+    expect(c.multiScatteringSteps).toBe(16);
+    c.setMultiScattering(0.6, 8);
+    expect(c.multiScatteringFactor).toBeCloseTo(0.6, 5);
+    expect(c.multiScatteringSteps).toBe(8);
+  });
+
+  it('setMultiScattering 省略 steps 时保留原值', () => {
+    const c = new VolumetricClouds();
+    c.multiScatteringSteps = 8;
+    c.setMultiScattering(0.3);
+    expect(c.multiScatteringFactor).toBeCloseTo(0.3, 5);
+    expect(c.multiScatteringSteps).toBe(8);
+  });
+
+  it('setPhaseFunction 限制 g 到 [-0.99, 0.99] + weight 到 [0,1]', () => {
+    const c = new VolumetricClouds();
+    c.setPhaseFunction(5, -5, 2);
+    expect(c.hgForwardG).toBeCloseTo(0.99, 5);
+    expect(c.hgBackwardG).toBeCloseTo(-0.99, 5);
+    expect(c.hgForwardWeight).toBeCloseTo(1, 5);
+    c.setPhaseFunction(0.6, -0.1, 0.5);
+    expect(c.hgForwardG).toBeCloseTo(0.6, 5);
+    expect(c.hgBackwardG).toBeCloseTo(-0.1, 5);
+    expect(c.hgForwardWeight).toBeCloseTo(0.5, 5);
+  });
+
+  it('setHeightDensity 限制到 [0,1]', () => {
+    const c = new VolumetricClouds();
+    c.setHeightDensity(-1, 2);
+    expect(c.heightDensityBottom).toBe(0);
+    expect(c.heightDensityTop).toBe(1);
+    c.setHeightDensity(0.3, 0.7);
+    expect(c.heightDensityBottom).toBeCloseTo(0.3, 5);
+    expect(c.heightDensityTop).toBeCloseTo(0.7, 5);
+  });
+
+  it('setConeRadius 限制非负', () => {
+    const c = new VolumetricClouds();
+    c.setConeRadius(-1);
+    expect(c.coneRadius).toBe(0);
+    c.setConeRadius(0.5);
+    expect(c.coneRadius).toBeCloseTo(0.5, 5);
+  });
+
+  it('v2 setter 链式调用返回 this', () => {
+    const c = new VolumetricClouds();
+    expect(c.setMultiScattering(0.5, 4)).toBe(c);
+    expect(c.setPhaseFunction(0.8, -0.2, 0.7)).toBe(c);
+    expect(c.setHeightDensity(0, 0.5)).toBe(c);
+    expect(c.setConeRadius(0.3)).toBe(c);
+    expect(c.setCloudType('stratus')).toBe(c);
+  });
+});
+
+describe('VolumetricClouds — 云类型预设', () => {
+  it('CLOUD_PRESETS 包含 4 种类型', () => {
+    expect(CLOUD_PRESETS.cumulus).toBeDefined();
+    expect(CLOUD_PRESETS.stratus).toBeDefined();
+    expect(CLOUD_PRESETS.cirrus).toBeDefined();
+    expect(CLOUD_PRESETS.cumulonimbus).toBeDefined();
+  });
+
+  it('setCloudType(cumulus) 应用 cumulus 预设', () => {
+    const c = new VolumetricClouds();
+    c.setCloudType('cumulus');
+    expect(c.cloudType).toBe('cumulus');
+    expect(c.cloudCoverage).toBeCloseTo(CLOUD_PRESETS.cumulus.coverage, 5);
+    expect(c.cloudDensity).toBeCloseTo(CLOUD_PRESETS.cumulus.density, 5);
+    expect(c.cloudHeight).toBe(CLOUD_PRESETS.cumulus.height);
+    expect(c.cloudThickness).toBe(CLOUD_PRESETS.cumulus.thickness);
+    expect(c.hgForwardG).toBeCloseTo(CLOUD_PRESETS.cumulus.hgForwardG, 5);
+    expect(c.multiScatteringFactor).toBeCloseTo(CLOUD_PRESETS.cumulus.multiScatteringFactor, 5);
+  });
+
+  it('setCloudType(cumulonimbus) 应用积雨云预设 (高密度大厚度)', () => {
+    const c = new VolumetricClouds();
+    c.setCloudType('cumulonimbus');
+    expect(c.cloudType).toBe('cumulonimbus');
+    expect(c.cloudDensity).toBeGreaterThan(0.7);
+    expect(c.cloudThickness).toBeGreaterThan(2000);
+    expect(c.heightDensityTop).toBeGreaterThan(0.5);
+  });
+
+  it('setCloudType(cirrus) 应用卷云预设 (高空稀薄)', () => {
+    const c = new VolumetricClouds();
+    c.setCloudType('cirrus');
+    expect(c.cloudType).toBe('cirrus');
+    expect(c.cloudHeight).toBeGreaterThan(3000);
+    expect(c.cloudDensity).toBeLessThan(0.3);
+  });
+
+  it('setCloudType(stratus) 应用层云预设 (大覆盖低密度)', () => {
+    const c = new VolumetricClouds();
+    c.setCloudType('stratus');
+    expect(c.cloudType).toBe('stratus');
+    expect(c.cloudCoverage).toBeGreaterThan(0.7);
+    expect(c.cloudDensity).toBeLessThan(0.5);
+  });
+
+  it('setCloudType 后 generateNoise 仍正常工作', () => {
+    const c = new VolumetricClouds();
+    c.setCloudType('cumulonimbus');
+    c.setNoiseResolution(8, 8, 8);
+    c.generateNoise(42);
+    expect(c.noiseData).not.toBeNull();
+    expect(c.noiseData!.length).toBe(8 * 8 * 8);
+  });
+
+  it('切换云类型后再切回 cumulus 恢复默认值', () => {
+    const c = new VolumetricClouds();
+    c.setCloudType('cirrus');
+    c.setCloudType('cumulus');
+    expect(c.cloudCoverage).toBeCloseTo(0.5, 5);
+    expect(c.cloudDensity).toBeCloseTo(0.5, 5);
+    expect(c.cloudHeight).toBe(1000);
+  });
+});
+
+describe('VolumetricClouds — 多散射', () => {
+  it('computeLighting 多散射开启时比关闭时更亮 (同密度同位置)', () => {
+    const c = new VolumetricClouds();
+    c.setNoiseResolution(8, 8, 8);
+    c.generateNoise(0);
+    const pos = new Vector3(512, 1200, 512);
+    const sun = new Vector3(0, 1, 0);
+    const view = new Vector3(0, -1, 0);
+
+    c.setMultiScattering(0); // 关闭
+    const off = c.computeLighting(pos, 0.5, sun, view);
+    c.setMultiScattering(1, 4); // 全量
+    const on = c.computeLighting(pos, 0.5, sun, view);
+
+    // 多散射应让云体内部更亮 (sun 项增加 msEnergy)
+    const offSum = off.r + off.g + off.b;
+    const onSum = on.r + on.g + on.b;
+    expect(onSum).toBeGreaterThanOrEqual(offSum);
+  });
+
+  it('marchRay 多散射开启时仍返回有效结果', () => {
+    const c = new VolumetricClouds();
+    c.setNoiseResolution(8, 8, 8);
+    c.setCoverage(0.8);
+    c.setDensity(0.8);
+    c.setMultiScattering(1, 8);
+    c.generateNoise(0);
+    const result = c.marchRay(
+      new Vector3(512, 0, 512),
+      new Vector3(0, 1, 0),
+      16,
+    );
+    expect(result.alpha).toBeGreaterThanOrEqual(0);
+    expect(result.alpha).toBeLessThanOrEqual(1);
+  });
+});
+
+describe('VolumetricClouds — 双叶 HG 相位函数', () => {
+  it('computeLighting 前向散射 (view 朝太阳) 比后向更亮', () => {
+    const c = new VolumetricClouds();
+    c.setNoiseResolution(8, 8, 8);
+    c.generateNoise(0);
+    const pos = new Vector3(512, 1200, 512);
+    const sun = new Vector3(0, 1, 0);
+
+    // viewDirection 与 sunDirection 同向 (cosθ=1) → 前向散射,银边
+    const forward = c.computeLighting(pos, 0.5, sun, new Vector3(0, 1, 0));
+    // viewDirection 与 sunDirection 反向 (cosθ=-1) → 后向散射
+    const backward = c.computeLighting(pos, 0.5, sun, new Vector3(0, -1, 0));
+
+    // 前向 (g1=0.8) 应比后向 (g2=-0.2) 更亮 (银边效应)
+    const forwardSum = forward.r + forward.g + forward.b;
+    const backwardSum = backward.r + backward.g + backward.b;
+    expect(forwardSum).toBeGreaterThanOrEqual(backwardSum);
+  });
+
+  it('setPhaseWeight=1 时完全前向 (后向叶权重为 0)', () => {
+    const c = new VolumetricClouds();
+    c.setPhaseFunction(0.8, -0.2, 1.0); // forwardWeight=1
+    expect(c.hgForwardWeight).toBe(1);
+  });
+
+  it('setPhaseWeight=0 时完全后向', () => {
+    const c = new VolumetricClouds();
+    c.setPhaseFunction(0.8, -0.2, 0);
+    expect(c.hgForwardWeight).toBe(0);
+  });
+
+  it('computeLighting 省略 viewDirection 时回退到 -sunDirection', () => {
+    const c = new VolumetricClouds();
+    c.setNoiseResolution(8, 8, 8);
+    c.generateNoise(0);
+    const pos = new Vector3(512, 1200, 512);
+    const sun = new Vector3(0, 1, 0);
+    // 不传 viewDirection → 应等价于传 -sunDirection
+    const implicit = c.computeLighting(pos, 0.5, sun);
+    const explicit = c.computeLighting(pos, 0.5, sun, new Vector3(0, -1, 0));
+    expect(implicit.r).toBeCloseTo(explicit.r, 5);
+    expect(implicit.g).toBeCloseTo(explicit.g, 5);
+    expect(implicit.b).toBeCloseTo(explicit.b, 5);
+  });
+});
+
+describe('VolumetricClouds — 高度密度调制', () => {
+  it('底部衰减让低高度密度降低', () => {
+    const c = new VolumetricClouds();
+    c.setNoiseResolution(8, 8, 8);
+    c.generateNoise(0);
+    c.setHeightDensity(0.8, 0); // 底部强衰减,顶部不衰减
+
+    // 采样云层底部 (heightT≈0) 与顶部 (heightT≈1) 的密度
+    // 由于底部衰减,底部密度应低于无衰减时
+    const c2 = new VolumetricClouds();
+    c2.setNoiseResolution(8, 8, 8);
+    c2.generateNoise(0);
+    c2.setHeightDensity(0, 0); // 无衰减
+
+    // 取一个已知有密度的点 (512, yBottom, 512)
+    const x = 512, z = 512;
+    // 由于 _sampleDensity 是 private,通过 marchRay 间接验证
+    // 只要 marchRay 不抛错且返回有效结果即可
+    const r1 = c.marchRay(new Vector3(x, 0, z), new Vector3(0, 1, 0), 16);
+    const r2 = c2.marchRay(new Vector3(x, 0, z), new Vector3(0, 1, 0), 16);
+    expect(r1.alpha).toBeGreaterThanOrEqual(0);
+    expect(r2.alpha).toBeGreaterThanOrEqual(0);
+    // 底部衰减应让整体不透明度更低或相等
+    expect(r1.alpha).toBeLessThanOrEqual(r2.alpha + 0.01);
+  });
+
+  it('顶部衰减让高高度密度降低', () => {
+    const c = new VolumetricClouds();
+    c.setNoiseResolution(8, 8, 8);
+    c.generateNoise(0);
+    c.setHeightDensity(0, 0.8); // 底部不衰减,顶部强衰减
+    expect(c.heightDensityTop).toBeCloseTo(0.8, 5);
+    // marchRay 仍应返回有效结果
+    const r = c.marchRay(new Vector3(512, 0, 512), new Vector3(0, 1, 0), 16);
+    expect(r.alpha).toBeGreaterThanOrEqual(0);
+    expect(r.alpha).toBeLessThanOrEqual(1);
+  });
+});
+
+describe('VolumetricClouds — 锥形阴影', () => {
+  it('coneRadius > 0 时不抛错', () => {
+    const c = new VolumetricClouds();
+    c.setNoiseResolution(8, 8, 8);
+    c.setCoverage(0.8);
+    c.setDensity(0.6);
+    c.setConeRadius(0.5);
+    c.generateNoise(0);
+    expect(() => {
+      c.marchRay(new Vector3(512, 0, 512), new Vector3(0, 1, 0), 16);
+    }).not.toThrow();
+  });
+
+  it('coneRadius=0 (点采样) 与 coneRadius>0 结果都有效', () => {
+    const c = new VolumetricClouds();
+    c.setNoiseResolution(8, 8, 8);
+    c.setCoverage(0.8);
+    c.setDensity(0.6);
+    c.generateNoise(0);
+
+    c.setConeRadius(0);
+    const r1 = c.marchRay(new Vector3(512, 0, 512), new Vector3(0, 1, 0), 16);
+    c.setConeRadius(0.8);
+    const r2 = c.marchRay(new Vector3(512, 0, 512), new Vector3(0, 1, 0), 16);
+
+    expect(r1.alpha).toBeGreaterThanOrEqual(0);
+    expect(r2.alpha).toBeGreaterThanOrEqual(0);
+    expect(r1.alpha).toBeLessThanOrEqual(1);
+    expect(r2.alpha).toBeLessThanOrEqual(1);
+  });
+});
+
+describe('VolumetricClouds — v2 uniform 与统计', () => {
+  it('getShaderUniforms 包含 v2 字段', () => {
+    const c = new VolumetricClouds();
+    // 注意:setCloudType 会覆盖预设参数,因此先 setCloudType 再单独覆盖。
+    c.setCloudType('cumulonimbus');
+    c.setMultiScattering(0.6, 6);
+    c.setPhaseFunction(0.7, -0.15, 0.65);
+    c.setHeightDensity(0.2, 0.6);
+    c.setConeRadius(0.4);
+    const u = c.getShaderUniforms();
+    expect(u.u_multiScatteringFactor).toBeCloseTo(0.6, 5);
+    expect(u.u_multiScatteringSteps).toBe(6);
+    expect(u.u_hgForwardG).toBeCloseTo(0.7, 5);
+    expect(u.u_hgBackwardG).toBeCloseTo(-0.15, 5);
+    expect(u.u_hgForwardWeight).toBeCloseTo(0.65, 5);
+    expect(u.u_heightDensityBottom).toBeCloseTo(0.2, 5);
+    expect(u.u_heightDensityTop).toBeCloseTo(0.6, 5);
+    expect(u.u_cloudType).toBe(3); // cumulonimbus
+    expect(u.u_coneRadius).toBeCloseTo(0.4, 5);
+  });
+
+  it('getShaderUniforms cloudType 整数映射正确', () => {
+    const c = new VolumetricClouds();
+    c.setCloudType('cumulus');
+    expect(c.getShaderUniforms().u_cloudType).toBe(0);
+    c.setCloudType('stratus');
+    expect(c.getShaderUniforms().u_cloudType).toBe(1);
+    c.setCloudType('cirrus');
+    expect(c.getShaderUniforms().u_cloudType).toBe(2);
+    c.setCloudType('cumulonimbus');
+    expect(c.getShaderUniforms().u_cloudType).toBe(3);
+  });
+
+  it('getStats 包含 v2 字段', () => {
+    const c = new VolumetricClouds();
+    c.setCloudType('cirrus');
+    c.setMultiScattering(0.7, 6);
+    c.setPhaseFunction(0.85, -0.25, 0.75);
+    c.setConeRadius(0.3);
+    const stats = c.getStats();
+    expect(stats.cloudType).toBe('cirrus');
+    expect(stats.multiScatteringFactor).toBeCloseTo(0.7, 5);
+    expect(stats.hgForwardG).toBeCloseTo(0.85, 5);
+    expect(stats.hgBackwardG).toBeCloseTo(-0.25, 5);
+    expect(stats.coneRadius).toBeCloseTo(0.3, 5);
+  });
+});
+

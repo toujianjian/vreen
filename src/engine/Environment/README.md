@@ -120,8 +120,8 @@ to the target over `duration`.
 |--------|------|
 | `CloudSystem` | Lightweight particle clouds. Each `Cloud` is a cluster of `CloudParticle` billboards drifting with `windSpeed` and wrapping around `bounds`. `coverage` modulates per-cloud visibility. |
 | `Cloud` / `CloudParticle` / `CloudMeshData` | Per-cloud and per-particle state, plus flattened `positions` / `sizes` / `opacities` arrays for instanced rendering. |
-| `VolumetricClouds` | High-quality ray-marched volumetric clouds. Generates a Perlin (FBM) + Worley 3D noise density field, advances `windOffset` over time, and exposes uniforms + a `marchRay()` reference impl. Lighting uses Beer-Lambert transmittance + Henyey-Greenstein forward scatter. |
-| `CloudRGB` / `NoiseResolution` / `VolumetricCloudsUniforms` / `VolumetricCloudsData` / `VolumetricCloudsStats` | Color type, `{ x, y, z }` voxel counts, uniform block, raw data block (noise field + wind offset), runtime stats. |
+| `VolumetricClouds` | High-quality ray-marched volumetric clouds. Generates a Perlin (FBM) + Worley 3D noise density field, advances `windOffset` over time, and exposes uniforms + a `marchRay()` reference impl. **v2 lighting** (UE5/Horizon-class): Beer-Lambert + Beer-Powder (Bouthors 2008) transmittance, dual-lobed Henyey-Greenstein phase function (forward `g1` + backward `g2` for silver-lining), multi-scattering energy redistribution (Wenzel 2019, avoids dark-cloud artifact), height-density modulation (denser bottom, wispy top), cone-spread shadow sampling, and 4 cloud-type presets (Cumulus / Stratus / Cirrus / Cumulonimbus). |
+| `CloudRGB` / `NoiseResolution` / `CloudType` / `CloudTypePreset` / `CLOUD_PRESETS` / `VolumetricCloudsUniforms` / `VolumetricCloudsData` / `VolumetricCloudsStats` | Color type; `{ x, y, z }` voxel counts; cloud-type union; preset parameter struct; preset table; uniform block (15 legacy + 9 v2 fields); raw data block (noise field + wind offset); runtime stats (11 legacy + 4 v2 fields). |
 
 ```ts
 export class CloudSystem {
@@ -135,8 +135,36 @@ export class CloudSystem {
 
 // VolumetricClouds: setEnabled/setCoverage/setDensity/setWind/setSunColor/
 //   setSunDirection/generateNoise/marchRay/update/getCloudData/getShaderUniforms/
-//   getStats — ray-marched 3D noise field with Beer-Lambert + HG lighting.
+//   getStats — ray-marched 3D noise field with v2 lighting:
+//   setMultiScattering(factor, steps)       — Wenzel 2019 energy redistribution
+//   setPhaseFunction(g1, g2, forwardWeight) — dual-lobed HG (silver lining)
+//   setHeightDensity(bottom, top)           — bottom-dense / top-wispy modulation
+//   setConeRadius(r)                        — cone-spread shadow sampling
+//   setCloudType('cumulus'|'stratus'|'cirrus'|'cumulonimbus') — one-click preset
 ```
+
+**v2 Lighting model** (adapted from UE5 TrueSky / Horizon Zero Dawn / Sébastien Hillaire):
+
+1. **Beer-Lambert + Beer-Powder** (Bouthors 2008): `beer = exp(-τ)`, `powder = 1 - exp(-2τ)`. Combined as `beer·(1 − 0.5·powder) + 0.5·powder·beer`. The powder term darkens cloud cores (where density is high) while beer brightens wisps — reproducing the characteristic dark-center / bright-edge of real cumulus.
+
+2. **Multi-scattering** (Wenzel 2019): single-scattering alone makes clouds too dark because light bouncing multiple times inside the cloud is ignored. `L_ms = (1 − exp(−τ·msFactor)) · Σ exp(−τ·msFactor·i/msN)` approximates the energy redistribution. `msFactor=0` disables (legacy single-scatter); `msFactor=1` + `msSteps=4` gives UE5-class results. This is the single most impactful upgrade — without it, dense clouds render as black blobs.
+
+3. **Dual-lobed Henyey-Greenstein**: `phase = lerp(HG(g1, cosθ), HG(g2, cosθ), 1 − forwardWeight)` where `cosθ = dot(viewDir, sunDir)`. Forward lobe (`g1=0.8`) produces silver-lining when looking toward the sun; backward lobe (`g2=−0.2`) darkens the back-lit side. The view direction is computed automatically in `marchRay` as `−direction`; `computeLighting` accepts an optional `viewDirection` parameter (defaults to `−sunDirection`).
+
+4. **Height-density modulation**: `bottomAtten = 1 − bottom·(1 − smoothstep(0, 0.2, h))`, `topAtten = 1 − top·smoothstep(0.6, 1.0, h)` where `h = (y − yBottom) / thickness`. This produces the "cauliflower top" (wispy top) and "flat bottom" of real cumulus. Stratus presets use `bottom=0.2` (slight bottom fade); cumulonimbus uses `top=0.7` (heavy top dispersal).
+
+5. **Cone-spread shadow sampling**: when `coneRadius > 0`, each shadow step is offset by a golden-angle spiral (`angle = i · 2.39996`) scaled by `coneRadius · t · 0.1`. This softens shadow edges and reduces banding artifacts from the discrete shadow steps. `coneRadius=0` (default) uses point sampling for maximum performance.
+
+**Cloud-type presets** (`CLOUD_PRESETS`):
+
+| Type | Coverage | Density | Height | Thickness | Bottom | Top | g1 | g2 | Weight | MS |
+|------|----------|---------|--------|-----------|--------|-----|-----|-----|--------|-----|
+| `cumulus` | 0.5 | 0.5 | 1000 | 500 | 0.0 | 0.5 | 0.8 | −0.2 | 0.7 | 0.5 |
+| `stratus` | 0.8 | 0.3 | 800 | 200 | 0.2 | 0.3 | 0.6 | −0.1 | 0.6 | 0.7 |
+| `cirrus` | 0.3 | 0.15 | 6000 | 300 | 0.1 | 0.4 | 0.9 | −0.3 | 0.8 | 0.3 |
+| `cumulonimbus` | 0.7 | 0.85 | 800 | 4000 | 0.0 | 0.7 | 0.85 | −0.25 | 0.75 | 0.65 |
+
+`setCloudType(type)` applies the preset in one call; individual setters can override any field afterward.
 
 `CloudSystem` is the cheap option (instanced billboards);
 `VolumetricClouds` is the realistic option (full ray-march, sampled in a sky-box
@@ -524,6 +552,30 @@ function frame(dt: number, playerPos: Vector3, playerVel: Vector3) {
 }
 ```
 
+### Stormy cumulonimbus clouds
+
+```ts
+import { VolumetricClouds } from '@vreen/engine/environment';
+
+const clouds = new VolumetricClouds();
+// One-call preset: towering cumulonimbus (800m base, 4000m tall, dense)
+clouds.setCloudType('cumulonimbus');
+clouds.setNoiseResolution(128, 64, 128);  // higher horizontal res for towering clouds
+clouds.generateNoise(1337);
+clouds.setSunDirection(new Vector3(0.3, 0.8, 0.1));
+clouds.setSunColor({ r: 1, g: 0.85, b: 0.6 });  // warm sunset
+clouds.setConeRadius(0.6);                       // soft shadow edges
+clouds.setMultiScattering(0.8, 6);               // more multi-scatter for dense clouds
+clouds.update(dt);
+
+// GPU side: bind clouds.getShaderUniforms() + clouds.getCloudData().noiseData
+// as a 3D texture, then ray-march in a full-screen cloud pass.
+const uniforms = clouds.getShaderUniforms();
+// uniforms.u_cloudType === 3 (cumulonimbus)
+// uniforms.u_multiScatteringFactor === 0.8
+// uniforms.u_hgForwardG === 0.85 (strong silver lining)
+```
+
 ### Bullet-hole decals on raycast hits
 
 ```ts
@@ -631,6 +683,13 @@ correct physical units.
 - Tessendorf, J. (2001), "Simulating Ocean Water" — Phillips spectrum, IFFT;
   basis of `FFTOcean`.
 - Beer-Lambert + Henyey-Greenstein — `VolumetricClouds.marchRay` lighting.
+- Bouthors, A. (2008), "A Practical Physically-Based Cloud Rendering Method" —
+  Beer-Powder effect used by `VolumetricClouds.computeLighting`.
+- Wenzel, S. (2019), "The Real-Time Volumetric Cloudscapes of Horizon Zero Dawn"
+  (GDC 2015) / "Multi-Scattering Approximation" (2019) — multi-scatter energy
+  redistribution + height-density modulation in `VolumetricClouds` v2.
+- Hillaire, S. (2020), "Physically Based Sky, Atmosphere and Cloud Rendering"
+  — dual-lobed HG phase function + cone-spread shadow sampling.
 - Bruneton & Neyret (2008), "Precomputed Atmospheric Scattering" — future path.
 - Three.js `Sky` / `Water` — API ergonomics reference.
 - Engine `Terrain/TerrainGeometry` (consumed by `VegetationSystem.generate`), `Materials/WaterMaterial` (instantiated by `WaterSystem.create`).

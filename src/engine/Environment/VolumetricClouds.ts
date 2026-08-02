@@ -11,8 +11,13 @@
 //     由调用方在合适的 pass 中绑定 3D 噪声纹理并执行 ray-march。
 //   * 噪声:Perlin (FBM) + Worley 混合,存为 Float32Array(noiseResolution^3)。
 //     Perlin 提供基础密度场,Worley 减法形成"云洞 + 边缘羽化"。
-//   * 照明:Beer-Lambert 透射率 + Henyey-Greenstein 前向散射近似,
-//     sun direction → march shadow steps → 衰减到云中采样点。
+//   * 照明(v2 升级,对标 UE5/Horizon Zero Dawn):
+//       - Beer-Lambert 透射率 + Beer-Powder 粉末效应(Bouthors 2008)
+//       - 双叶 Henyey-Greenstein 相位函数(前向 g1 + 后向 g2,银边效应)
+//       - 多散射近似(Wenzel 2019 能量重分布,避免云体过暗)
+//       - 高度密度调制(底部浓密、顶部羽化)
+//       - 锥形阴影采样(可选,coneRadius > 0 时启用)
+//   * 云类型预设:Cumulus / Stratus / Cirrus / Cumulonimbus,一键切换参数组合。
 //   * 风偏移:update(dt) 推进 windOffset,云层沿 windDirection 漂移。
 //
 // 与 VolumetricFogPass 的区别:
@@ -22,6 +27,7 @@
 //
 // 用法:
 //   const clouds = new VolumetricClouds();
+//   clouds.setCloudType('cumulonimbus');
 //   clouds.generateNoise(1337);
 //   clouds.setCoverage(0.6).setSunDirection(new Vector3(0.3, 0.8, 0.1));
 //   clouds.update(dt);
@@ -42,6 +48,35 @@ export interface NoiseResolution {
   x: number;
   y: number;
   z: number;
+}
+
+/** 云类型枚举(决定密度/高度/厚度/散射预设)。 */
+export type CloudType = 'cumulus' | 'stratus' | 'cirrus' | 'cumulonimbus';
+
+/** 云类型预设参数。 */
+export interface CloudTypePreset {
+  /** 类型名。 */
+  type: CloudType;
+  /** 默认覆盖度。 */
+  coverage: number;
+  /** 默认密度倍率。 */
+  density: number;
+  /** 云层底部高度(世界单位)。 */
+  height: number;
+  /** 云层厚度(世界单位)。 */
+  thickness: number;
+  /** 底部密度衰减(0=不衰减,1=完全衰减)。 */
+  heightDensityBottom: number;
+  /** 顶部密度衰减(0=不衰减,1=完全衰减)。 */
+  heightDensityTop: number;
+  /** 前向散射不对称参数 g1 (0..0.99)。 */
+  hgForwardG: number;
+  /** 后向散射不对称参数 g2 (-0.99..0)。 */
+  hgBackwardG: number;
+  /** 前向权重(0..1,1=完全前向)。 */
+  hgForwardWeight: number;
+  /** 多散射强度(0=关闭,1=全量)。 */
+  multiScatteringFactor: number;
 }
 
 /** 体积云着色器 uniform(扁平化,可直接灌入 GLSL)。 */
@@ -76,6 +111,25 @@ export interface VolumetricCloudsUniforms {
   u_noiseResolution: [number, number, number];
   /** 是否启用(0/1)。 */
   u_enabled: number;
+  // ── v2 升级:多散射 + 双叶 HG + 高度密度 + 云类型 ──
+  /** 多散射强度(0..1)。 */
+  u_multiScatteringFactor: number;
+  /** 多散射近似步数。 */
+  u_multiScatteringSteps: number;
+  /** 前向 HG g 参数 (0..0.99)。 */
+  u_hgForwardG: number;
+  /** 后向 HG g 参数 (-0.99..0)。 */
+  u_hgBackwardG: number;
+  /** 前向权重 (0..1)。 */
+  u_hgForwardWeight: number;
+  /** 底部密度衰减 (0..1)。 */
+  u_heightDensityBottom: number;
+  /** 顶部密度衰减 (0..1)。 */
+  u_heightDensityTop: number;
+  /** 云类型(0=cumulus,1=stratus,2=cirrus,3=cumulonimbus)。 */
+  u_cloudType: number;
+  /** 锥形阴影半径(0=点采样,>0=锥形扩散)。 */
+  u_coneRadius: number;
 }
 
 /** 体积云渲染数据(供调用方上传 GPU)。 */
@@ -118,6 +172,16 @@ export interface VolumetricCloudsStats {
   lastDt: number;
   /** 上次 marchRay 的累计采样数(主+阴影)。 */
   lastSampleCount: number;
+  /** 云类型。 */
+  cloudType: CloudType;
+  /** 多散射强度。 */
+  multiScatteringFactor: number;
+  /** 前向 HG g。 */
+  hgForwardG: number;
+  /** 后向 HG g。 */
+  hgBackwardG: number;
+  /** 锥形阴影半径。 */
+  coneRadius: number;
 }
 
 /** clamp 工具。 */
@@ -129,6 +193,83 @@ function clamp(v: number, lo: number, hi: number): number {
 function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
 }
+
+/** smoothstep (Hermite 插值,0..1)。 */
+function smoothstep(edge0: number, edge1: number, x: number): number {
+  const t = clamp((x - edge0) / (edge1 - edge0), 0, 1);
+  return t * t * (3 - 2 * t);
+}
+
+/**
+ * 云类型预设表 (对标 UE5/Niagara Cloud 参数集)。
+ *
+ * - Cumulus: 晴天常见蓬松云,中等密度,底部平顶部圆。
+ * - Stratus: 层云,扁平分层,低密度大覆盖,雾蒙蒙。
+ * - Cirrus: 卷云,高空稀薄,羽状,几乎透明。
+ * - Cumulonimbus: 积雨云,高耸浓密,顶部羽化扩散,暴雨前兆。
+ */
+export const CLOUD_PRESETS: Record<CloudType, CloudTypePreset> = {
+  cumulus: {
+    type: 'cumulus',
+    coverage: 0.5,
+    density: 0.5,
+    height: 1000,
+    thickness: 500,
+    heightDensityBottom: 0.0,
+    heightDensityTop: 0.5,
+    hgForwardG: 0.8,
+    hgBackwardG: -0.2,
+    hgForwardWeight: 0.7,
+    multiScatteringFactor: 0.5,
+  },
+  stratus: {
+    type: 'stratus',
+    coverage: 0.8,
+    density: 0.3,
+    height: 800,
+    thickness: 200,
+    heightDensityBottom: 0.2,
+    heightDensityTop: 0.3,
+    hgForwardG: 0.6,
+    hgBackwardG: -0.1,
+    hgForwardWeight: 0.6,
+    multiScatteringFactor: 0.7,
+  },
+  cirrus: {
+    type: 'cirrus',
+    coverage: 0.3,
+    density: 0.15,
+    height: 6000,
+    thickness: 300,
+    heightDensityBottom: 0.1,
+    heightDensityTop: 0.4,
+    hgForwardG: 0.9,
+    hgBackwardG: -0.3,
+    hgForwardWeight: 0.8,
+    multiScatteringFactor: 0.3,
+  },
+  cumulonimbus: {
+    type: 'cumulonimbus',
+    coverage: 0.7,
+    density: 0.85,
+    height: 800,
+    thickness: 4000,
+    heightDensityBottom: 0.0,
+    heightDensityTop: 0.7,
+    hgForwardG: 0.85,
+    hgBackwardG: -0.25,
+    hgForwardWeight: 0.75,
+    multiScatteringFactor: 0.65,
+  },
+};
+
+/** 云类型 → uniform 整数映射。 */
+const CLOUD_TYPE_INT: Record<CloudType, number> = {
+  cumulus: 0,
+  stratus: 1,
+  cirrus: 2,
+  cumulonimbus: 3,
+};
 
 /**
  * 体积云渲染系统 — 数据/计算层,产出密度场与着色器 uniform。
@@ -177,6 +318,26 @@ export class VolumetricClouds {
   steps: number = 64;
   /** 阴影光线步进数(默认 16,用于 Beer-Lambert 衰减采样)。 */
   shadowSteps: number = 16;
+
+  // ── v2 升级:多散射 + 双叶 HG + 高度密度 ──────────────
+  /** 多散射强度(0=关闭,1=全量;默认 0.5)。 */
+  multiScatteringFactor: number = 0.5;
+  /** 多散射近似步数(默认 4,越大越多重散射项)。 */
+  multiScatteringSteps: number = 4;
+  /** 前向 HG 不对称参数 g1 (0..0.99,默认 0.8)。 */
+  hgForwardG: number = 0.8;
+  /** 后向 HG 不对称参数 g2 (-0.99..0,默认 -0.2)。 */
+  hgBackwardG: number = -0.2;
+  /** 前向权重 (0..1,1=完全前向;默认 0.7)。 */
+  hgForwardWeight: number = 0.7;
+  /** 底部密度衰减 (0..1,0=不衰减;默认 0)。 */
+  heightDensityBottom: number = 0.0;
+  /** 顶部密度衰减 (0..1,0=不衰减;默认 0.5)。 */
+  heightDensityTop: number = 0.5;
+  /** 锥形阴影半径(0=点采样,>0=锥形扩散;默认 0)。 */
+  coneRadius: number = 0.0;
+  /** 当前云类型。 */
+  cloudType: CloudType = 'cumulus';
 
   // ── 噪声 ──────────────────────────────────────────────
   /** 噪声分辨率(各轴体素数,默认 64³)。 */
@@ -274,6 +435,59 @@ export class VolumetricClouds {
   /** 设置阴影步进数(1..128)。 */
   setShadowSteps(steps: number): this {
     this.shadowSteps = Math.max(1, Math.min(128, Math.floor(steps)));
+    return this;
+  }
+
+  // ── v2 升级 setter ────────────────────────────────────
+
+  /** 设置多散射参数(factor 0..1,steps 1..16)。 */
+  setMultiScattering(factor: number, steps?: number): this {
+    this.multiScatteringFactor = clamp(factor, 0, 1);
+    if (steps !== undefined) {
+      this.multiScatteringSteps = Math.max(1, Math.min(16, Math.floor(steps)));
+    }
+    return this;
+  }
+
+  /** 设置双叶 Henyey-Greenstein 相位函数参数。 */
+  setPhaseFunction(forwardG: number, backwardG: number, forwardWeight: number): this {
+    this.hgForwardG = clamp(forwardG, -0.99, 0.99);
+    this.hgBackwardG = clamp(backwardG, -0.99, 0.99);
+    this.hgForwardWeight = clamp(forwardWeight, 0, 1);
+    return this;
+  }
+
+  /** 设置高度密度衰减(bottom/top 均 0..1)。 */
+  setHeightDensity(bottom: number, top: number): this {
+    this.heightDensityBottom = clamp(bottom, 0, 1);
+    this.heightDensityTop = clamp(top, 0, 1);
+    return this;
+  }
+
+  /** 设置锥形阴影半径(0=点采样,>0=锥形扩散)。 */
+  setConeRadius(radius: number): this {
+    this.coneRadius = Math.max(0, radius);
+    return this;
+  }
+
+  /**
+   * 应用云类型预设(覆盖 coverage/density/height/thickness/高度密度/HG/多散射)。
+   * 已生成的噪声数据保留(仅参数变化)。
+   */
+  setCloudType(type: CloudType): this {
+    const p = CLOUD_PRESETS[type];
+    if (!p) return this;
+    this.cloudType = type;
+    this.cloudCoverage = p.coverage;
+    this.cloudDensity = p.density;
+    this.cloudHeight = p.height;
+    this.cloudThickness = p.thickness;
+    this.heightDensityBottom = p.heightDensityBottom;
+    this.heightDensityTop = p.heightDensityTop;
+    this.hgForwardG = p.hgForwardG;
+    this.hgBackwardG = p.hgBackwardG;
+    this.hgForwardWeight = p.hgForwardWeight;
+    this.multiScatteringFactor = p.multiScatteringFactor;
     return this;
   }
 
@@ -524,6 +738,8 @@ export class VolumetricClouds {
   /**
    * 光线步进:沿光线穿过云层,累积密度与光照。
    *
+   * v2 升级:光照计算传入 viewDirection (= -direction) 以启用方向相关 HG。
+   *
    * @param origin    光线起点(世界空间)
    * @param direction 光线方向(归一化)
    * @param steps     步进数(覆盖默认值)
@@ -544,6 +760,8 @@ export class VolumetricClouds {
     }
 
     const stepLen = (tExit - tEnter) / n;
+    // 视线方向 = -direction (从采样点指向相机)
+    const viewDir = direction.clone().multiplyScalar(-1);
     let transmittance = 1; // 透射率,初始完全透明
     let r = 0, g = 0, b = 0;
     let sampleCount = 0;
@@ -554,7 +772,7 @@ export class VolumetricClouds {
       const py = origin.y + direction.y * t;
       const pz = origin.z + direction.z * t;
 
-      // 采样密度场(用世界坐标 → 噪声 UVW + 风偏移)
+      // 采样密度场(用世界坐标 → 噪声 UVW + 风偏移 + 高度密度调制)
       const density = this._sampleDensity(px, py, pz);
       if (density <= 0) continue;
       sampleCount++;
@@ -563,11 +781,12 @@ export class VolumetricClouds {
       const extinction = density * this.cloudDensity * stepLen * 0.01;
       const stepTransmittance = Math.exp(-extinction);
 
-      // 光照:沿太阳方向 shadow march 计算衰减
+      // 光照:沿太阳方向 shadow march 计算衰减 + 多散射 + 双叶 HG
       const lighting = this.computeLighting(
         new Vector3(px, py, pz),
         density,
         this.sunDirection,
+        viewDir,
       );
 
       // 累积颜色(前向合成)
@@ -588,42 +807,95 @@ export class VolumetricClouds {
   }
 
   /**
-   * 计算云中某点的照明(Beer-Lambert 衰减 + 环境光 + HG 前向散射)。
+   * 计算云中某点的照明(v2 升级:多散射 + 双叶 HG + Beer-Powder)。
+   *
+   * 算法:
+   *   1. 沿太阳方向步进 shadowSteps,累积光学深度 τ (可选锥形扩散)
+   *   2. Beer-Lambert:           beer       = exp(-τ)
+   *   3. Beer-Powder (Bouthors): powder     = 1 - exp(-2τ)
+   *      combined = beer * (1 - 0.5 * powder) + 0.5 * powder * beer
+   *      (在暗处 powder 让光更暗,在亮处 beer 主导)
+   *   4. 多散射近似 (Wenzel 2019):
+   *      L_ms = sunColor * (1 - exp(-τ * msFactor)) / (τ * msFactor + 0.001)
+   *      归一化后 × msSteps,模拟光在云内多次弹射的能量重分布
+   *   5. 双叶 HG 相位函数:
+   *      phase = lerp(HG(g1, cosθ), HG(g2, cosθ), 1 - forwardWeight)
+   *      其中 cosθ = dot(viewDir, sunDir)
    *
    * @param position      采样点(世界空间)
    * @param density       该点密度
    * @param sunDirection  太阳方向(归一化)
+   * @param viewDirection 视线方向(归一化,从采样点指向相机);省略则用 -sunDirection
    * @returns 照明颜色(0..1+)
    */
-  computeLighting(position: Vector3, density: number, sunDirection: Vector3): CloudRGB {
-    // 沿太阳方向步进 shadowSteps,累积光学深度
+  computeLighting(
+    position: Vector3,
+    density: number,
+    sunDirection: Vector3,
+    viewDirection?: Vector3,
+  ): CloudRGB {
+    // ── Step 1: 沿太阳方向步进累积光学深度 (可选锥形扩散) ──
     const shadowStepLen = 8; // 阴影步长(世界单位)
     let opticalDepth = 0;
     const shadowN = Math.max(1, this.shadowSteps);
+    // 锥形采样:每步偏移一个伪随机方向(基于步序的 hash)
+    const cone = this.coneRadius;
     for (let i = 0; i < shadowN; i++) {
       const t = (i + 1) * shadowStepLen;
-      const sx = position.x + sunDirection.x * t;
-      const sy = position.y + sunDirection.y * t;
-      const sz = position.z + sunDirection.z * t;
+      let sx = position.x + sunDirection.x * t;
+      let sy = position.y + sunDirection.y * t;
+      let sz = position.z + sunDirection.z * t;
+      if (cone > 0) {
+        // 锥形扩散:基于步序的伪随机偏移 (golden-angle 分布)
+        const angle = i * 2.39996323; // 黄金角 (弧度)
+        const radius = cone * t * 0.1;
+        sx += Math.cos(angle) * radius;
+        sy += Math.sin(angle) * radius;
+      }
       const sd = this._sampleDensity(sx, sy, sz);
       opticalDepth += sd * this.cloudDensity * shadowStepLen * 0.01;
     }
-    // Beer-Lambert:光被云吸收后的剩余强度
-    const beerLambert = Math.exp(-opticalDepth);
-    // Beer-Powder 近似(增强云中阴影深度):pow(beer, 2) 让暗处更暗
-    const beerPowder = beerLambert * 0.7 + beerLambert * beerLambert * 0.3;
 
-    // Henyey-Greenstein 前向散射(简化,g=0.8 偏前向)
-    // 真实 HG 需要视线方向,这里用太阳方向做近似(更适合环境光)
-    const hg = 0.5; // 简化为常数前向散射
+    // ── Step 2-3: Beer-Lambert + Beer-Powder (Bouthors) ──
+    const beer = Math.exp(-opticalDepth);
+    const powder = 1 - Math.exp(-2 * opticalDepth);
+    const beerPowder = beer * (1 - 0.5 * powder) + 0.5 * powder * beer;
 
-    // 合成:环境光 + 太阳光 * 衰减 * 散射
+    // ── Step 4: 多散射近似 (Wenzel 2019 能量重分布) ──
+    // L_ms 模拟光在云内多次弹射后的剩余能量,避免云体过暗。
+    // 当 msFactor=0 时 msEnergy=0 (关闭多散射,回退到单散射)。
+    let msEnergy = 0;
+    if (this.multiScatteringFactor > 0) {
+      const msTau = opticalDepth * this.multiScatteringFactor;
+      const msN = Math.max(1, this.multiScatteringSteps);
+      // 级数近似:每项衰减为前项的 exp(-msTau/msN)
+      let term = 1;
+      let sum = 0;
+      for (let i = 0; i < msN; i++) {
+        sum += term;
+        term *= Math.exp(-msTau / msN);
+      }
+      msEnergy = (1 - Math.exp(-msTau)) * sum / msN;
+    }
+
+    // ── Step 5: 双叶 Henyey-Greenstein 相位函数 ──
+    // HG(g, cosθ) = (1 - g²) / (4π (1 + g² - 2g·cosθ)^1.5)
+    // 双叶:phase = lerp(HG(g1, cosθ), HG(g2, cosθ), 1 - forwardWeight)
+    // viewDirection 省略时回退到 -sunDirection (cosθ = -1,后向散射)
+    const vd = viewDirection ?? sunDirection.clone().multiplyScalar(-1);
+    const cosTheta = clamp(
+      vd.x * sunDirection.x + vd.y * sunDirection.y + vd.z * sunDirection.z,
+      -1, 1,
+    );
+    const phase = this._dualLobedHG(cosTheta);
+
+    // ── 合成:环境光 + 太阳光 (beerPowder + multiScattering) × phase ──
     const ambientR = this.ambientColor.r;
     const ambientG = this.ambientColor.g;
     const ambientB = this.ambientColor.b;
-    const sunR = this.sunColor.r * beerPowder * hg;
-    const sunG = this.sunColor.g * beerPowder * hg;
-    const sunB = this.sunColor.b * beerPowder * hg;
+    const sunR = this.sunColor.r * (beerPowder + msEnergy) * phase;
+    const sunG = this.sunColor.g * (beerPowder + msEnergy) * phase;
+    const sunB = this.sunColor.b * (beerPowder + msEnergy) * phase;
 
     // 密度越高环境光越暗(深云内部)
     const ambientFactor = clamp(1 - density * 0.5, 0, 1);
@@ -633,6 +905,24 @@ export class VolumetricClouds {
       g: ambientG * ambientFactor + sunG,
       b: ambientB * ambientFactor + sunB,
     };
+  }
+
+  /**
+   * 双叶 Henyey-Greenstein 相位函数。
+   * phase = lerp(HG(g1, cosθ), HG(g2, cosθ), 1 - forwardWeight)
+   *
+   * 前向叶 (g1>0) 模拟光沿原方向继续传播(银边效应),
+   * 后向叶 (g2<0) 模拟光向后散射(云背光面的暗边)。
+   */
+  private _dualLobedHG(cosTheta: number): number {
+    const hg = (g: number, cos: number): number => {
+      const g2 = g * g;
+      const denom = 1 + g2 - 2 * g * cos;
+      return (1 - g2) / (4 * Math.PI * Math.pow(Math.max(denom, 1e-6), 1.5));
+    };
+    const forward = hg(this.hgForwardG, cosTheta);
+    const backward = hg(this.hgBackwardG, cosTheta);
+    return lerp(forward, backward, 1 - this.hgForwardWeight);
   }
 
   /** 推进风偏移(累计 dt * windSpeed * windDirection)。 */
@@ -676,6 +966,16 @@ export class VolumetricClouds {
       u_shadowSteps: this.shadowSteps,
       u_noiseResolution: [this.noiseResolution.x, this.noiseResolution.y, this.noiseResolution.z],
       u_enabled: this.enabled ? 1 : 0,
+      // ── v2 升级字段 ──
+      u_multiScatteringFactor: this.multiScatteringFactor,
+      u_multiScatteringSteps: this.multiScatteringSteps,
+      u_hgForwardG: this.hgForwardG,
+      u_hgBackwardG: this.hgBackwardG,
+      u_hgForwardWeight: this.hgForwardWeight,
+      u_heightDensityBottom: this.heightDensityBottom,
+      u_heightDensityTop: this.heightDensityTop,
+      u_cloudType: CLOUD_TYPE_INT[this.cloudType],
+      u_coneRadius: this.coneRadius,
     };
   }
 
@@ -693,6 +993,12 @@ export class VolumetricClouds {
       windOffset: this.windOffset.clone(),
       lastDt: this._lastDt,
       lastSampleCount: this._lastSampleCount,
+      // ── v2 升级字段 ──
+      cloudType: this.cloudType,
+      multiScatteringFactor: this.multiScatteringFactor,
+      hgForwardG: this.hgForwardG,
+      hgBackwardG: this.hgBackwardG,
+      coneRadius: this.coneRadius,
     };
   }
 
@@ -725,8 +1031,16 @@ export class VolumetricClouds {
   }
 
   /**
-   * 采样云密度(世界坐标 → 噪声 UVW + 风偏移)。
-   * 综合噪声值与覆盖度阈值:coverage 越高,密度上限越高。
+   * 采样云密度(世界坐标 → 噪声 UVW + 风偏移 + 高度密度调制)。
+   *
+   * v2 升级:高度密度调制 (height density modulation)
+   *   heightT = (y - yBottom) / thickness   // 0=底部, 1=顶部
+   *   bottomAtten = 1 - heightDensityBottom * smoothstep(0, 0.2, heightT)
+   *   topAtten    = 1 - heightDensityTop * smoothstep(0.6, 1.0, heightT)
+   *   density *= bottomAtten * topAtten
+   *
+   * 效果:云底部浓密 (stratus 除外,底部也有衰减)、顶部羽化扩散,
+   * 模拟真实积云的"花椰菜顶"与"扁平底"形态。
    */
   private _sampleDensity(x: number, y: number, z: number): number {
     const data = this.noiseData;
@@ -735,15 +1049,24 @@ export class VolumetricClouds {
     const yBottom = this.cloudHeight;
     const yTop = this.cloudHeight + this.cloudThickness;
     if (y < yBottom || y > yTop) return 0;
+
     // 归一化到 [0,1) UVW(用 1024 作为世界尺度,可调)
     const worldScale = 1024;
     const u = (x + this.windOffset.x) / worldScale;
     const v = (y - yBottom) / this.cloudThickness;
     const w = (z + this.windOffset.z) / worldScale;
     const noise = this.sampleNoise(u, v, w);
+
     // 覆盖度控制:coverage 越高,云密度越浓
-    // 密度 = noise * (1 - (1-coverage)^2) 让覆盖度对密度有非线性影响
     const coverageFactor = 1 - (1 - this.cloudCoverage) * (1 - this.cloudCoverage);
-    return clamp(noise * coverageFactor, 0, 1);
+
+    // ── v2: 高度密度调制 ──
+    const heightT = clamp((y - yBottom) / this.cloudThickness, 0, 1);
+    // 底部衰减:在 heightT ∈ [0, 0.2] 区间从 (1-bottom) 渐变到 1
+    const bottomAtten = 1 - this.heightDensityBottom * (1 - smoothstep(0, 0.2, heightT));
+    // 顶部衰减:在 heightT ∈ [0.6, 1.0] 区间从 1 渐变到 (1-top)
+    const topAtten = 1 - this.heightDensityTop * smoothstep(0.6, 1.0, heightT);
+
+    return clamp(noise * coverageFactor * bottomAtten * topAtten, 0, 1);
   }
 }

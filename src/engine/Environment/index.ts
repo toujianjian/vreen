@@ -91,10 +91,14 @@ export {
 } from './FFTOcean';
 // VolumetricClouds — 体积云渲染系统(噪声生成 + 光线步进 + 照明)。
 // 数据/计算层,产出密度场与着色器 uniform,由 renderer / 天空盒 shader 消费。
+// v2 升级:多散射 / 双叶 HG / 高度密度调制 / 云类型预设 / 锥形阴影。
 export {
   VolumetricClouds,
+  CLOUD_PRESETS,
   type CloudRGB,
   type NoiseResolution,
+  type CloudType,
+  type CloudTypePreset,
   type VolumetricCloudsUniforms,
   type VolumetricCloudsData,
   type VolumetricCloudsStats,
