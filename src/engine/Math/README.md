@@ -26,6 +26,9 @@ Geometric primitives (collision / bounds):
    OBB ─SAT── OBB ─intersects── Sphere / Box3 / Ray / Plane
 
 Color ──converts── HSL / RGB / hex
+Tonemapping ──ACES/Reinhard/Hable── LDR + sRGB/ACEScg color space
+Noise ──ImprovedNoise (Perlin) / SimplexNoise ── fBm / procedural
+Spherical / Cylindrical ── coordinate conversion
 MathUtils ──helpers── clamp / lerp / degToRad / randInt / smoothstep
 ```
 
@@ -153,6 +156,125 @@ const aabb = obb.computeBoundingBox(new Box3());
 |--------|------|
 | `Color` | RGB (`r`, `g`, `b` in 0..1). `setHex` / `setRGB` / `setHSL` / `getHSL` / `convertSRGBToLinear` / `convertLinearToSRGB` / `lerp` / `copy`. |
 | `HSL` (type) | `{ h: number; s: number; l: number }` returned by `getHSL`. |
+
+### Tonemapping (`Tonemapping.ts`)
+
+HDR → LDR tone-mapping operators + colour space conversion (CPU-side pure
+functions). Adapted from three.js `tonemapping_pars_fragment.glsl.js`. Each
+operator has a **scalar** version (for luminance / single-channel) and a
+**colour** version (per-channel `RGBColor`). Constants are identical to the
+GLSL implementation, ensuring CPU preview / offline baking / tests match
+GPU rendering numerically.
+
+#### Operators
+
+| `TonemappingOperator` | Formula | Reference |
+|-----------------------|---------|-----------|
+| `'Linear'` | `clamp₀₁(x)` | Pass-through (no mapping) |
+| `'Reinhard'` | `x / (x + 1)` | Reinhard 2002 |
+| `'ReinhardExtended'` | `x·(1 + x/Lw²) / (1 + x)` | Reinhard with white point `Lw` (default 11.2) |
+| `'ACESFilmic'` | `(x·(2.51x+0.03)) / (x·(2.43x+0.59)+0.14)` | Narkowicz 2015 ACES approximation |
+| `'Filmic'` | Hable Uncharted2 curve + exposure bias (2.0) + white scale | Hable 2010 (Uncharted 2) |
+
+#### Scalar functions
+
+| Function | Description |
+|----------|-------------|
+| `acesFilmicScalar(x)` | ACES Filmic (Narkowicz), `a=2.51 b=0.03 c=2.43 d=0.59 e=0.14` |
+| `reinhardScalar(x)` | `x/(x+1)` |
+| `reinhardExtendedScalar(x, Lw)` | White-point Reinhard, `Lw` = white luminance |
+| `hableCurve(x)` | Raw Hable Uncharted2 curve (pre-normalisation) |
+| `filmicScalar(x, exposureBias?)` | Hable + exposure bias + white-scale normalisation |
+
+#### Colour application
+
+| Function | Description |
+|----------|-------------|
+| `applyTonemapping(color, mode, opts?)` | Apply operator per-channel to `RGBColor`; output clamped to [0,1] |
+| `applyExposure(color, stops)` | `color *= 2^stops` (EV stops) |
+| `luminance(color, weights?)` | Rec.709 luminance `0.2126R + 0.7152G + 0.0722B` |
+| `middleGrayOutput(mode, opts?)` | 18% grey calibration — returns `applyTonemapping({0.18,0.18,0.18}, mode).r` |
+
+#### Colour space conversion
+
+| Function | Description |
+|----------|-------------|
+| `linearToSRGB(x)` / `sRGBToLinear(x)` | Precise IEC 61966-2-1 transfer function |
+| `linearToSRGBGamma(x)` / `sRGBGammaToLinear(x)` | γ 2.2 fast approximation |
+| `linearToSRGBColor(c)` / `sRGBToLinearColor(c)` | Per-channel RGB versions |
+| `linearSRGBToACEScg(c)` / `acescgToLinearSRGB(c)` | 3×3 AP1 primaries matrix (ampas/aces-dev IDT); inverse computed from forward to guarantee round-trip ≈ 0 error |
+
+#### `ColorManagement` — linear workflow
+
+Three.js-style static colour management. When `enabled = true` (default),
+all input colours are auto-converted to the working space; output is
+converted back to display sRGB.
+
+| Static field | Default | Description |
+|--------------|---------|-------------|
+| `enabled` | `true` | Auto-convert input/output colours |
+| `workingSpace` | `'sRGB-linear'` | Working space (`'sRGB-linear'` or `'ACEScg'`) |
+
+| Method | Description |
+|--------|-------------|
+| `fromSRGB(c)` | sRGB display → working space (linear or ACEScg) |
+| `toSRGB(c)` | Working space → sRGB display |
+| `setWorkingSpace(space)` | Switch working space |
+| `setEnabled(bool)` | Enable / disable |
+
+```ts
+import { applyTonemapping, ColorManagement, linearToSRGBColor } from '@vreen/engine/math';
+
+ColorManagement.setWorkingSpace('ACEScg');
+const hdrColor = { r: 2.5, g: 1.8, b: 0.9 };
+const ldr = applyTonemapping(hdrColor, 'ACESFilmic');
+const display = linearToSRGBColor(ldr);  // → sRGB for screen output
+```
+
+### Spherical / Cylindrical (`Spherical.ts` / `Cylindrical.ts`)
+
+Coordinate conversion utilities for camera orbit controls and polar
+parameterisation.
+
+| Export | Fields | Key Methods |
+|--------|--------|-------------|
+| `Spherical` | `radius`, `phi` (polar from +Y), `theta` (azimuthal from +Z) | `setFromVector3(v)` / `setFromCartesianCoords(x,y,z)` / `makeSafe()` (clamps `phi` to `[ε, π−ε]`) / `applyToVector3(target)` |
+| `Cylindrical` | `radius`, `theta` (azimuthal), `y` (height) | `setFromVector3(v)` / `setFromCartesianCoords(x,y,z)` / `applyToVector3(target)` |
+
+### ConvexHull (`ConvexHull.ts`)
+
+Standalone convex hull computation via incremental QuickHull with
+horizon-edge detection and outward-facing normals. Adapted from three.js
+`ConvexHull.js`. Returns structured face data consumed by collision,
+shadow, and LOD pipelines.
+
+| Static method | Returns | Description |
+|---------------|---------|-------------|
+| `ConvexHull.compute(points: Vector3[])` | `ConvexHullResult` | Build hull from point cloud |
+| `ConvexHull.volume(result)` | `number` | Enclosed volume |
+| `ConvexHull.surfaceArea(result)` | `number` | Total surface area |
+
+`ConvexHullResult = { faces: ConvexHullFace[], vertexIndices: number[][], vertices: Vector3[] }`
+where each `ConvexHullFace = { normal: Vector3, point: Vector3, indices: number[] }`.
+
+### Noise (`ImprovedNoise.ts` / `SimplexNoise.ts`)
+
+Procedural noise primitives for terrain, textures, and volumetric effects.
+
+| Export | Algorithm | Key Methods | Artifacts |
+|--------|-----------|-------------|-----------|
+| `ImprovedNoise` | Ken Perlin 2002 improved noise (3D) | `noise(x,y,z)` / `noise2D(x,y)` / `noise1D(x)` / `fbm(x,y,z, octaves?, persistence?, lacunarity?)` / `fbm2D(x,y, ...)` | Fade `6t⁵−15t⁴+10t³` (C² continuous); axis-aligned grid artifacts at large scales |
+| `SimplexNoise` | Stefan Gustavson simplex (2D/3D/4D) | `noise2D(x,y)` / `noise3D(x,y,z)` / `noise4D(x,y,z,w)` / `fbm2D` / `fbm3D` | Skew grid + radial falloff `(0.5−x²−y²−z²)⁴`; no axis-aligned artifacts; lower computational cost |
+
+**fBm (Fractal Brownian Motion)**: sums `octaves` noise layers with
+`persistence` amplitude decay and `lacunarity` frequency growth. Defaults:
+`octaves=4`, `persistence=0.5`, `lacunarity=2.0`.
+
+```ts
+import { SimplexNoise } from '@vreen/engine/math';
+const n = new SimplexNoise();
+const height = n.fbm2D(x * 0.01, z * 0.01, 6, 0.5, 2.0);  // 6-octave terrain
+```
 
 ### Utilities
 
