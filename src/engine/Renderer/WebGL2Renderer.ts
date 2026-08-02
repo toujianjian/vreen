@@ -943,6 +943,35 @@ export class WebGL2Renderer implements Renderer {
     } else {
       program.setUniform1i('u_metallicRoughnessMapEnabled', 0);
     }
+    // Normal map — derivative-based TBN, no tangent attribute needed.
+    if (mat.normalMap) {
+      const tex = this._ensureStandardTexture(mat.normalMap, /* srgb */ false);
+      if (tex) {
+        gl.activeTexture(gl.TEXTURE5);
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        program.setUniformSampler('u_normalMap', 5);
+        program.setUniform1i('u_normalMapEnabled', 1);
+        program.setUniform1f('u_normalScale', mat.normalScale);
+      } else {
+        program.setUniform1i('u_normalMapEnabled', 0);
+      }
+    } else {
+      program.setUniform1i('u_normalMapEnabled', 0);
+    }
+    // Emissive map — multiplied with u_emissive uniform.
+    if (mat.emissiveMap) {
+      const tex = this._ensureStandardTexture(mat.emissiveMap, /* srgb */ true);
+      if (tex) {
+        gl.activeTexture(gl.TEXTURE6);
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        program.setUniformSampler('u_emissiveMap', 6);
+        program.setUniform1i('u_emissiveMapEnabled', 1);
+      } else {
+        program.setUniform1i('u_emissiveMapEnabled', 0);
+      }
+    } else {
+      program.setUniform1i('u_emissiveMapEnabled', 0);
+    }
 
     if (dirLight) {
       program.setUniform3f('u_lightDir', dirLight.direction.x, dirLight.direction.y, dirLight.direction.z);

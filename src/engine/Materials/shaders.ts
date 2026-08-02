@@ -96,6 +96,11 @@ uniform sampler2D u_baseColorMap;
 uniform int       u_baseColorMapEnabled;
 uniform sampler2D u_metallicRoughnessMap;
 uniform int       u_metallicRoughnessMapEnabled;
+uniform sampler2D u_normalMap;
+uniform int       u_normalMapEnabled;
+uniform float     u_normalScale;
+uniform sampler2D u_emissiveMap;
+uniform int       u_emissiveMapEnabled;
 
 uniform vec3  u_lightDir;     // direction the light points TOWARD (world space)
 uniform vec3  u_lightColor;
@@ -201,6 +206,29 @@ vec3 getIBLContribution(vec3 N, vec3 V, vec3 f0, float roughness, float metallic
 
 void main() {
   vec3 N = normalize(v_worldNormal);
+
+  // ── Normal map (derivative-based TBN, no precomputed tangents) ──
+  // 参考 Christian Schüler "Normal Mapping Without Precomputed Tangents"
+  // 用屏幕导数构建 TBN,无需 a_tangent 顶点属性,所有 mesh 通用。
+  if (u_normalMapEnabled == 1) {
+    vec3 dp1 = dFdx(v_worldPos);
+    vec3 dp2 = dFdy(v_worldPos);
+    vec2 duv1 = dFdx(v_uv);
+    vec2 duv2 = dFdy(v_uv);
+    vec3 dp2perp = cross(dp2, N);
+    vec3 dp1perp = cross(N, dp1);
+    vec3 T = dp2perp * duv1.x + dp1perp * duv2.x;
+    vec3 B = dp2perp * duv1.y + dp1perp * duv2.y;
+    float invLen = inversesqrt(max(dot(T, T), dot(B, B)));
+    T *= invLen;
+    B *= invLen;
+    mat3 TBN = mat3(T, B, N);
+    // 解码切线空间法线 [0,1] → [-1,1],乘 normalScale 控制强度
+    vec3 sampled = texture(u_normalMap, v_uv).xyz * 2.0 - 1.0;
+    sampled.xy *= u_normalScale;
+    N = normalize(TBN * sampled);
+  }
+
   vec3 V = normalize(u_cameraPos - v_worldPos);
   vec3 L = normalize(-u_lightDir);
   vec3 H = normalize(V + L);
@@ -245,7 +273,13 @@ void main() {
 
   float ao = u_ssaoEnabled == 1 ? texture(u_ssaoMap, gl_FragCoord.xy / u_shadowMapSize).r : 1.0;
 
-  vec3 color = ambient * ao + ibl * ao + lighting * shadow + u_emissive * u_emissiveIntensity;
+  // ── Emissive map(自发光贴图,与 u_emissive uniform 相乘)──
+  vec3 emissive = u_emissive;
+  if (u_emissiveMapEnabled == 1) {
+    emissive *= texture(u_emissiveMap, v_uv).rgb;
+  }
+
+  vec3 color = ambient * ao + ibl * ao + lighting * shadow + emissive * u_emissiveIntensity;
 
   color = color / (color + vec3(1.0));
 

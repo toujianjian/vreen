@@ -31,11 +31,15 @@ export class StandardMaterial implements Material {
   /** Whether this material receives shadows. */
   receiveShadow: boolean = true;
 
-  /** Optional PBR texture maps. Currently advisory — renderer integration
-   *  ships in a follow-up. Materials that want to drive IBL specular use
-   *  `envMap` from a HDRI / cubemap sampler (see HDRLoader). */
+  /** Optional PBR texture maps. All four maps are fully wired into the
+   *  PBR_FRAG shader and renderer: albedo (`map`), normal (`normalMap`
+   *  with derivative-based TBN, no tangent attribute required),
+   *  metallic-roughness (`metallicRoughnessMap`, GLTF G=roughness B=metallic),
+   *  and emissive (`emissiveMap`, multiplied by `emissive` uniform). */
   map: Texture | null = null;
   normalMap: Texture | null = null;
+  /** Normal map strength (0 = no effect, 1 = full, >1 = exaggerated). */
+  normalScale: number = 1.0;
   metallicRoughnessMap: Texture | null = null;
   emissiveMap: Texture | null = null;
 
