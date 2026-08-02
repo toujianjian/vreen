@@ -94,31 +94,271 @@ apply(input: WebGLTexture, ctx: PassContext): WebGLTexture
 
 ### LUTPass
 
-Color lookup table — supports both 3D LUT (`sampler3D`) and 2D strip LUT.
-Pairs with `LUTCubeLoader.toData3DTexture()` for end-to-end `.cube` file workflow.
+Color lookup table (LUT) post-processing — applies a pre-baked color
+grade to the rendered frame in a single GPU pass. Supports both **3D
+LUT** (`sampler3D` via `TEXTURE_3D`, the recommended high-precision
+path) and **2D strip LUT** (a horizontally-tiled `sampler2D`, for
+platforms or asset pipelines that store LUTs as 2D textures). Pairs
+with `LUTCubeLoader.toData3DTexture()` for an end-to-end `.cube` file
+workflow: load → parse → upload → grade.
 
 **Class**: `LUTPass extends RenderPass`
-**Shaders**: `LUT_3D_FRAG` (3D), `LUT_2D_STRIP_FRAG` (2D strip)
+**Shaders**: `LUT_3D_FRAG` (3D path), `LUT_2D_STRIP_FRAG` (2D strip path)
+**Vertex**: shared `POST_VERT` (fullscreen triangle)
+**Draw calls**: 1 per `apply()` (0 when `lut === null`, passthrough)
+
+#### Architecture
+
+```
+┌─────────────┐    ┌──────────────────────────────────────┐
+│ input (2D)  │───▶│ LUTPass.apply()                      │
+│ HDR color  │    │  1. bind finalFbo                     │
+└─────────────┘    │  2. resolve lut → WebGLTexture        │
+                    │  3. select shader (3D or 2D strip)    │
+┌─────────────┐    │  4. bind input → TEXTURE0             │
+│ LUT texture │───▶│  5. bind lut   → TEXTURE1             │
+│ 3D or 2D    │    │  6. set uniforms (size, intensity)    │
+└─────────────┘    │  7. drawArrays(fullscreen triangle)   │
+                    │  8. return finalTexture               │
+                    └────────────────┬─────────────────────┘
+                                     ▼
+                            ┌─────────────────┐
+                            │ finalTexture    │
+                            │ graded color    │
+                            └─────────────────┘
+```
+
+When `lut === null`, the pass **bypasses all GPU work** and returns the
+input texture directly — this lets the pipeline stay wired with a
+disabled LUTPass without paying a blit cost.
 
 #### Options
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `lut` | `WebGLTexture \| Texture \| Data3DTexture \| null` | `null` | LUT texture |
-| `lutSize` | `number` | `32` | LUT size (N×N×N for 3D, N×N² for strip) |
-| `is3D` | `boolean` | `true` | True = 3D LUT, false = 2D strip |
-| `intensity` | `number` | `1` | Blend factor (0=original, 1=full LUT) |
-| `enabled` | `boolean` | `false` | Enable toggle |
+| `lut` | `WebGLTexture \| Texture \| Data3DTexture \| null` | `null` | LUT texture. `WebGLTexture` = pre-uploaded handle; `Texture` = VREEN texture (resolved via `renderer.getGLTexture()` at apply time); `null` = passthrough. |
+| `lutSize` | `number` | `16` | LUT grid points per axis (N×N×N for 3D, N×N² for 2D strip). Common values: 16, 32, 33, 64. |
+| `is3D` | `boolean` | `true` | `true` = use `sampler3D` / `TEXTURE_3D` (high precision, recommended); `false` = use `sampler2D` / 2D strip (compatibility). |
+| `intensity` | `number` | `1.0` | Blend factor: `0` = original color (no grading), `1` = full LUT color, `0.5` = 50/50 mix. The shader uses `mix(src, graded, intensity)`. |
+| `enabled` | `boolean` | `false` | Master toggle. `false` = pipeline skips this pass entirely. |
+
+#### Shader: `LUT_3D_FRAG` (3D path)
+
+```glsl
+vec4 src = texture(u_colorMap, v_uv);
+// Half-pixel inset: map [0,1] → [0.5/N, 1-0.5/N] so samples land on
+// texel centers (avoids bleeding from neighboring cells at edges).
+float pixelWidth = 1.0 / u_lutSize;
+float halfPixel  = 0.5 / u_lutSize;
+vec3 uvw = vec3(halfPixel) + src.rgb * (1.0 - pixelWidth);
+vec3 graded = texture(u_lut3D, uvw).rgb;
+outColor = vec4(mix(src.rgb, graded, u_intensity), src.a);
+```
+
+The **half-pixel inset** is critical: without it, `src.rgb = 0.0` or
+`1.0` would sample at the LUT edge, which (with `LINEAR` filtering)
+bleeds into the wrap-around neighbor. The inset maps the input `[0,1]`
+range to the interior `[0.5/N, 1−0.5/N]`, centering each sample within
+its texel.
+
+#### Shader: `LUT_2D_STRIP_FRAG` (2D strip path)
+
+```glsl
+// The 2D strip is a horizontal layout of N slices, each N×N pixels.
+// Total texture size: (N*N) × N. B channel selects the slice;
+// R/G select the position within the slice. Two neighboring slices
+// are sampled and linearly interpolated by the B fractional part.
+float slice  = clamp(src.b, 0.0, 1.0) * (u_lutSize - 1.0);
+float sliceF = floor(slice);
+float sliceT = fract(slice);
+// ... compute uv0 (sliceF) and uv1 (sliceF+1) ...
+vec3 c0 = texture(u_lut2D, uv0).rgb;
+vec3 c1 = texture(u_lut2D, uv1).rgb;
+vec3 graded = mix(c0, c1, sliceT);
+outColor = vec4(mix(src.rgb, graded, u_intensity), src.a);
+```
+
+The 2D strip path performs **trilinear interpolation manually** (two
+bilinear samples + one linear blend) because `sampler2D` cannot do 3D
+interpolation natively. This is why the 3D path is preferred when
+available — `sampler3D` does trilinear in hardware.
+
+#### Texture resolution (`_resolveLut`)
+
+The `lut` field accepts three types, resolved in priority order:
+
+| Input type | Detection | Resolution |
+|------------|-----------|------------|
+| `WebGLTexture` | Not a VREEN `Texture` (no `uuid`/`glTexture`) | Used directly. |
+| VREEN `Texture` (uploaded) | Has `uuid` + `glTexture` | `renderer.getGLTexture(tex)` if available, else `tex.glTexture` fallback. |
+| VREEN `Texture` (not yet uploaded) | Has `uuid`, `glTexture === null` | `renderer.getGLTexture(tex)` triggers lazy upload. |
+| `null` | — | Passthrough: `apply()` returns `input` immediately, 0 draw calls. |
 
 #### Usage
 
+**Basic — 3D LUT from `.cube` file:**
+
 ```ts
 import { LUTCubeLoader } from '@/engine/Loaders/LUTCubeLoader';
+import { LUTPass } from '@vreen/engine';
 
 const loader = new LUTCubeLoader();
 const lut3D = loader.parse(cubeText).toData3DTexture();
 const pass = new LUTPass({ lut: lut3D, lutSize: 32, is3D: true, intensity: 0.8 });
+pipeline.add(pass);
 ```
+
+**Runtime intensity tween (time-of-day color grading):**
+
+```ts
+const pass = new LUTPass({ lut: dayLUT, lutSize: 32, enabled: true });
+pipeline.add(pass);
+
+// Each frame: blend from day (0) to night (1) LUT
+function update(dayFactor: number) {
+  pass.intensity = 1.0 - dayFactor;  // day: intensity=1 (full day LUT)
+  if (dayFactor < 0.5) {
+    pass.lut = dayLUT;
+    pass.intensity = 1.0 - dayFactor * 2;  // 1→0 as dayFactor goes 0→0.5
+  } else {
+    pass.lut = nightLUT;
+    pass.intensity = (dayFactor - 0.5) * 2;  // 0→1 as dayFactor goes 0.5→1
+  }
+}
+```
+
+**2D strip LUT (for DCC-exported strip textures):**
+
+```ts
+const stripTex = await textureLoader.load('lut_strip_16.png');
+const pass = new LUTPass({
+  lut: stripTex,
+  lutSize: 16,      // 16×16 slices × 16 rows = 256×16 strip
+  is3D: false,
+  intensity: 1.0,
+});
+```
+
+**Passthrough (disable grading without removing pass):**
+
+```ts
+const pass = new LUTPass({ lut: myLUT, enabled: true });
+pipeline.add(pass);
+
+// Later: temporarily disable grading
+pass.lut = null;  // apply() returns input, 0 draw calls
+// Re-enable:
+pass.lut = myLUT;
+```
+
+#### End-to-end `.cube` workflow
+
+```
+.cube file (text)                    VREEN engine
+┌────────────────┐                   ┌──────────────────────────┐
+│ TITLE "..."    │   LUTCubeLoader   │ 1. fetch('/grade.cube')  │
+│ LUT_3D_SIZE 32 │   .parse(text)    │ 2. loader.parse(text)    │
+│ 0.0 0.0 0.0    │ ────────────────▶ │ 3. .toData3DTexture()    │
+│ ...            │                   │ 4. new LUTPass({lut,...}) │
+│ 1.0 1.0 1.0    │                   │ 5. pipeline.add(pass)    │
+└────────────────┘                   └──────────────────────────┘
+                                             │
+                                             ▼
+                                     ┌───────────────┐
+                                     │ Graded frame  │
+                                     │ (finalTexture)│
+                                     └───────────────┘
+```
+
+`LUTCubeLoader` parses the Adobe Cube LUT 1.0 spec (1D or 3D, with
+`DOMAIN_MIN`/`DOMAIN_MAX` and `TITLE` metadata), then `toData3DTexture()`
+packages the data as a VREEN `Texture` ready for `LUTPass` upload. No
+manual `gl.texImage3D` calls required.
+
+#### Test coverage (`LUTPass.test.ts`, 23 tests)
+
+- **Construction** (3): defaults, custom options, explicit `null` lut.
+- **3D LUT apply** (3): no-throw, 1 draw call, returns `finalTexture`.
+- **2D strip LUT apply** (3): no-throw, 1 draw call, returns `finalTexture`.
+- **Null LUT passthrough** (3): returns input directly, 0 draw calls,
+  no `finalFbo` binding side effects.
+- **VREEN Texture resolution** (3): `renderer.getGLTexture()` path,
+  `glTexture` fallback, lazy-upload via renderer.
+- **Intensity & lutSize** (2): `intensity=0` still draws (shader mix),
+  multiple `lutSize` values (2/8/16/32/64) without error.
+- **Multiple apply()** (3): 10× repeated 3D, 10× repeated 2D strip,
+  lut switching between calls (3D → 3D → null passthrough).
+- **dispose()** (2): noop, idempotent (3× calls).
+- **Name** (1): stable `"lut"` across instances.
+
+#### Comparison with soup3D
+
+`soup3D` has **no LUT color grading** — frames are rendered with
+fixed shader color math and cannot be re-graded at runtime without
+recompiling shaders. VREEN's `LUTPass` + `LUTCubeLoader` provide a
+complete industry-standard color grading pipeline:
+
+| Capability | soup3D | VREEN |
+|------------|--------|-------|
+| Runtime LUT color grading | **None** | `LUTPass` (3D + 2D strip) |
+| `.cube` file parsing | **None** | `LUTCubeLoader` (Adobe Cube LUT 1.0) |
+| 3D `sampler3D` path | **None** | Hardware trilinear via `TEXTURE_3D` |
+| 2D strip fallback | **None** | Manual trilinear (2 bilinear + blend) |
+| Intensity blending | **None** | `mix(src, graded, intensity)` per-pixel |
+| Passthrough (null LUT) | **None** | 0 draw calls, returns input |
+| Time-of-day grading | **None** | Runtime `lut` + `intensity` tweening |
+| Half-pixel inset | **None** | Texel-center sampling (no edge bleed) |
+
+**Where VREEN pulls ahead.** Color grading is a **post-production
+essential** — every film, every AAA game, every DCC tool (DaVinci
+Resolve, Nuke, Photoshop) uses LUTs to establish visual mood. soup3D
+has no path to this workflow. VREEN's `LUTPass` lets artists author a
+grade in DaVinci, export a `.cube` file, and apply it in-engine with
+two lines of code. The 3D `sampler3D` path gives hardware-accelerated
+trilinear interpolation for free; the 2D strip path supports legacy
+strip textures from DCC exports. The `intensity` uniform enables
+runtime blending between multiple grades (day → night, healthy →
+damaged, normal → nightmare) without shader recompilation.
+
+#### Design Notes
+
+**Why 3D is preferred over 2D strip.** A 3D LUT uses `sampler3D` +
+`TEXTURE_3D`, which gives hardware trilinear interpolation — the GPU
+blends across all 3 axes (R, G, B) in a single `texture()` call. A 2D
+strip LUT stores the same data in a flat 2D texture (N slices of N×N
+arranged horizontally), but `sampler2D` cannot do 3D interpolation
+natively, so the shader must manually sample two neighboring slices
+and blend by the B fractional part. This doubles the texture fetches
+and adds ALU overhead. The 2D strip path exists for compatibility
+with asset pipelines that pre-bake strip textures (e.g. Photoshop
+export), but the 3D path is always preferred when the LUT data is
+available as a flat array.
+
+**Why the half-pixel inset.** A 3D LUT of size N maps the input
+`[0, 1]` range to N discrete texels. With `LINEAR` filtering, sampling
+at exactly `0.0` or `1.0` would place the sample on the texel edge,
+causing the GPU to blend with the wrap-around neighbor (or clamp,
+depending on `TEXTURE_WRAP`). The half-pixel inset
+`uvw = 0.5/N + src.rgb * (1 - 1/N)` maps `[0,1]` to the interior
+`[0.5/N, 1−0.5/N]`, centering each sample within its texel. This is
+standard practice in every production LUT shader (three.js, Unreal,
+o3de all do the same).
+
+**Why `null` LUT is a true passthrough.** When `lut === null`, the
+`apply()` method returns the input texture immediately without
+binding the framebuffer or issuing a draw call. This means a
+disabled LUTPass costs zero GPU time — not even a blit. This is
+important for pipelines that wire the pass once and toggle it at
+runtime (e.g. a "color grade" checkbox in a settings menu).
+
+**Why `renderer.getGLTexture()` over direct `glTexture` access.** A
+VREEN `Texture` may not yet be uploaded to the GPU when the LUTPass is
+constructed (e.g. the LUT data was loaded asynchronously). The
+`_resolveLut` method calls `renderer.getGLTexture(tex)` first, which
+triggers a lazy upload if needed. The `tex.glTexture` fallback exists
+for cases where the renderer doesn't expose `getGLTexture` (e.g. in
+unit tests with a mock renderer), but in production the renderer path
+ensures the texture is always uploaded before sampling.
 
 ---
 
