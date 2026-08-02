@@ -102,3 +102,15 @@ export {
 // GroundedSkybox — 地面投影天空盒 (适配自 three.js r159+)。
 // 将环境贴图无缝投影到穹顶 + 地面,消除传统天空盒的天地夹角。
 export { GroundedSkybox } from './GroundedSkybox';
+// SkyAtmosphere — GPU 物理大气散射 (UE5 SkyAtmosphere / Unity HDRP 风格)。
+// 光线步进 Rayleigh + Mie + Ozone 吸收 + 多重散射近似 + 地面反射。
+// 与 ProceduralSky (CPU Preetham 解析) 互补,面向影视级真实天空。
+export {
+  SkyAtmosphere,
+  type AtmosphereRGB,
+  type SkyAtmosphereUniforms,
+  type SkyAtmosphereStats,
+  type AtmospherePreset,
+  EARTH_ATMOSPHERE,
+  MARS_ATMOSPHERE,
+} from './SkyAtmosphere';

@@ -2409,3 +2409,211 @@ void main() {
 }
 `;
 
+// ── SkyAtmosphere ───────────────────────────────────────────────
+// GPU 物理大气散射(UE5 SkyAtmosphere / Unity HDRP 风格)。
+// 光线步进单次散射 + Ozone 臭氧吸收 + 简化多重散射(Bruneton ψ 近似)。
+// 超越 three.js Preetham 解析模型(仅 Rayleigh+Mie,无 Ozone,无多重散射)。
+//
+// 物理参数(归一化到行星半径 = 1.0,即 6371km):
+//   - Rayleigh 散射系数 βR (海平面),波长相关(蓝>红)
+//   - Mie 散射系数 βM,Henyey-Greenstein g
+//   - Ozone 吸收系数 βO,层中心 ~25km,厚度 ~30km(吸收而非散射,Chappuis 吸收带)
+//   - Rayleigh 标高 HR ≈ 8km,Mie 标高 HM ≈ 1.2km
+//   - 大气层顶半径 ≈ 1.0157(=6471km)
+
+/** SkyAtmosphere 顶点着色器:输出世界方向供片元光线步进。 */
+export const SKY_ATMOSPHERE_VERT = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec3 a_position;
+
+uniform mat4 u_viewMatrix;
+uniform mat4 u_projectionMatrix;
+uniform vec3 u_cameraPos;       // 相机世界位置(归一化单位,地表≈1.0)
+
+out vec3 v_worldDir;            // 天空盒方向(世界空间,已归一化)
+
+void main() {
+  // 天空盒以相机为中心,移除平移分量
+  vec4 worldPos = u_viewMatrix * vec4(a_position, 0.0);
+  gl_Position = u_projectionMatrix * worldPos;
+  gl_Position.z = gl_Position.w; // 强制 z=w → 深度永远最远
+  v_worldDir = normalize(a_position);
+}
+`;
+
+/** SkyAtmosphere 片元着色器:沿视线方向光线步进积分大气散射。 */
+export const SKY_ATMOSPHERE_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec3 v_worldDir;
+
+out vec4 outColor;
+
+// ── 大气参数(归一化单位,行星半径=1.0) ──────────────────────
+uniform vec3  u_sunDirection;      // 归一化太阳方向
+uniform vec3  u_sunColor;          // 太阳光颜色(线性,已含强度)
+uniform float u_sunIntensity;      // 太阳辐照强度倍率
+uniform vec3  u_betaR;             // Rayleigh 海平面散射系数 (1/长度)
+uniform vec3  u_betaM;             // Mie 海平面散射系数
+uniform float u_betaO;             // Ozone 吸收系数(峰值,标量,作用于绿光)
+uniform float u_g;                 // Henyey-Greenstein 非对称参数 [-1,1],典型 0.76
+uniform float u_planetRadius;      // 行星半径,默认 1.0
+uniform float u_atmosphereRadius;  // 大气层顶半径,默认 1.0157
+uniform float u_HR;                // Rayleigh 标高,默认 8/6371
+uniform float u_HM;                // Mie 标高,默认 1.2/6371
+uniform float u_multiScatter;      // 多重散射强度(0=单次,0.3~1.0 推荐范围)
+uniform float u_showSunDisc;       // 1=绘制太阳圆盘,0=隐藏
+uniform vec3  u_groundAlbedo;      // 地面反照率(多次反射用)
+
+const float PI = 3.14159265358979;
+
+// ── 相位函数 ──────────────────────────────────────────────────
+float rayleighPhase(float cosTheta) {
+  // 3/(16π) * (1 + cos²θ)
+  return 0.05968310365946075 * (1.0 + cosTheta * cosTheta);
+}
+
+float miePhase(float cosTheta, float g) {
+  float g2 = g * g;
+  float inv = 1.0 / pow(1.0 - 2.0 * g * cosTheta + g2, 1.5);
+  // 1/(4π) * (1-g²) / (...)，HG 相位函数
+  return 0.07957747154594767 * (1.0 - g2) * inv;
+}
+
+// ── Ozone 高度剖面(钟形,中心 ~25km,半宽 ~15km) ───────────
+// 归一化单位:25km → 25/6371, 15km → 15/6371
+float ozoneDensity(float h) {
+  float center = 25.0 / 6371.0;
+  float width  = 15.0 / 6371.0;
+  float d = (h - center) / width;
+  return exp(-d * d);
+}
+
+// ── 射线-球求交 ──────────────────────────────────────────────
+// 返回 tNear/tFar(从原点沿 dir 的参数)。无交点返回 false。
+bool raySphere(vec3 ro, vec3 rd, vec3 center, float radius, out float tNear, out float tFar) {
+  vec3 oc = ro - center;
+  float b = dot(oc, rd);
+  float c = dot(oc, oc) - radius * radius;
+  float disc = b * b - c;
+  if (disc < 0.0) return false;
+  float sq = sqrt(disc);
+  tNear = -b - sq;
+  tFar  = -b + sq;
+  return true;
+}
+
+// ── 沿太阳方向计算从点 p 到大气层顶的透射率 ─────────────────
+vec3 transmittanceToSun(vec3 p, vec3 sunDir) {
+  float tNear, tFar;
+  if (!raySphere(p, sunDir, vec3(0.0), u_atmosphereRadius, tNear, tFar)) {
+    return vec3(1.0); // 在大气外或方向背离
+  }
+  // 从 p 到大气层顶的距离
+  float dist = max(0.0, tFar);
+  const int SUN_SAMPLES = 8;
+  float ds = dist / float(SUN_SAMPLES);
+  vec3 opticalDepth = vec3(0.0);
+  for (int i = 0; i < SUN_SAMPLES; i++) {
+    float t = (float(i) + 0.5) * ds;
+    vec3 sp = p + sunDir * t;
+    float h = length(sp) - u_planetRadius;
+    if (h < 0.0) return vec3(0.0); // 被行星遮挡
+    float dR = exp(-h / u_HR) * ds;
+    float dM = exp(-h / u_HM) * ds;
+    float dO = ozoneDensity(h) * ds;
+    opticalDepth += vec3(u_betaR * dR + u_betaM * dM + vec3(u_betaO * 0.4, u_betaO, u_betaO * 0.4) * dO);
+  }
+  return exp(-opticalDepth);
+}
+
+void main() {
+  vec3 dir = normalize(v_worldDir);
+  vec3 cam = vec3(0.0, u_planetRadius + 0.0001, 0.0); // 相机贴地表(可外置)
+
+  // 主视线与大气层求交
+  float tNear, tFar;
+  if (!raySphere(cam, dir, vec3(0.0), u_atmosphereRadius, tNear, tFar)) {
+    outColor = vec4(0.0, 0.0, 0.0, 1.0);
+    return;
+  }
+  tNear = max(0.0, tNear);
+
+  // 与行星求交(若视线朝下,会被地面截断)
+  float tGround = 1e9;
+  float gNear, gFar;
+  if (raySphere(cam, dir, vec3(0.0), u_planetRadius, gNear, gFar)) {
+    if (gNear > 0.0) tGround = gNear;
+  }
+  float tEnd = min(tFar, tGround);
+  float tStart = tNear;
+
+  if (tEnd <= tStart) {
+    // 视线指向地下
+    outColor = vec4(u_groundAlbedo * 0.1, 1.0);
+    return;
+  }
+
+  const int PRIMARY_SAMPLES = 32;
+  float segLen = (tEnd - tStart) / float(PRIMARY_SAMPLES);
+
+  vec3 transmittance = vec3(1.0);
+  vec3 luminance = vec3(0.0);
+  float cosTheta = dot(dir, u_sunDirection);
+
+  // 主环:沿视线步进,累积单次散射
+  for (int i = 0; i < PRIMARY_SAMPLES; i++) {
+    float t = tStart + (float(i) + 0.5) * segLen;
+    vec3 p = cam + dir * t;
+    float h = length(p) - u_planetRadius;
+    if (h < 0.0) break;
+
+    float dR = exp(-h / u_HR) * segLen;
+    float dM = exp(-h / u_HM) * segLen;
+    float dO = ozoneDensity(h) * segLen;
+
+    // 该点散射系数(参与衰减)
+    vec3 extinction = u_betaR * dR + u_betaM * dM + vec3(u_betaO * 0.4, u_betaO, u_betaO * 0.4) * dO;
+
+    // 太阳到该点的透射率
+    vec3 sunTrans = transmittanceToSun(p, u_sunDirection);
+
+    // 单次散射相位
+    float pR = rayleighPhase(cosTheta);
+    float pM = miePhase(cosTheta, u_g);
+
+    // 散射到视线方向的光(Rayleigh + Mie)
+    vec3 scattering = (u_betaR * dR * pR + u_betaM * dM * pM) * sunTrans * u_sunColor * u_sunIntensity;
+
+    // 简化多重散射(Bruneton ψ 近似):用一个恒定环境项代表被大气散射多次的光,
+    // 强度正比于当前点的太阳透射率与多重散射因子
+    vec3 multiScatter = u_betaR * dR * sunTrans * u_sunColor * u_sunIntensity * u_multiScatter * 0.15;
+    scattering += multiScatter;
+
+    // 累积:散射光 × 当前透射率
+    luminance += transmittance * scattering;
+
+    // 衰减透射率(Beer-Lambert)
+    transmittance *= exp(-extinction);
+  }
+
+  // 地面反射:视线击中地面时,加入地面反照率 × 到达地面的透射率 × 太阳光
+  if (tGround < tFar) {
+    vec3 groundPos = cam + dir * tGround;
+    vec3 groundSunTrans = transmittanceToSun(groundPos, u_sunDirection);
+    vec3 groundLit = u_groundAlbedo * groundSunTrans * u_sunColor * u_sunIntensity / PI;
+    luminance += transmittance * groundLit;
+  }
+
+  // 太阳圆盘(高光圆盘,角度 ~0.53°)
+  if (u_showSunDisc > 0.5) {
+    float sunCos = 0.999956676946448443553574619906976478926848692873900859324;
+    float disc = smoothstep(sunCos - 0.0008, sunCos + 0.0008, cosTheta);
+    luminance += u_sunColor * u_sunIntensity * disc * 200.0;
+  }
+
+  outColor = vec4(luminance, 1.0);
+}
+`;
+

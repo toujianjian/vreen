@@ -13,20 +13,21 @@
 
 ## Overview
 
-The module groups six concerns, each with at least one complementary
-implementation. Data-tier classes (`ProceduralSky`, `VolumetricClouds`,
-`FFTOcean`, `WaterInteraction`, `VegetationRenderer`) produce `Float32Array`
-fields and flat uniform structs; render-tier classes (`SkySystem`, `CloudSystem`,
-`PrecipitationSystem`, `VegetationSystem`, `WaterSystem`) additionally build
-engine `Mesh` / `InstancedMesh` instances ready to drop into a scene.
+The module groups seven concerns, each with at least one complementary
+implementation. Data-tier classes (`ProceduralSky`, `SkyAtmosphere`,
+`VolumetricClouds`, `FFTOcean`, `WaterInteraction`, `VegetationRenderer`)
+produce `Float32Array` fields and flat uniform structs; render-tier classes
+(`SkySystem`, `CloudSystem`, `PrecipitationSystem`, `VegetationSystem`,
+`WaterSystem`) additionally build engine `Mesh` / `InstancedMesh` instances
+ready to drop into a scene.
 
 ```
 WeatherSystem ── drives params ──→ SkySystem / CloudSystem / PrecipitationSystem
    (type · intensity · wind · fog · lightning)
 
-SkySystem (keyframe art)        ProceduralSky (Preetham physics)
-  timeOfDay → sun/moon pos       turbidity/Rayleigh → sun alt/azim + stars
-  sky/horizon color              getShaderUniforms()
+SkySystem (keyframe art)        ProceduralSky (Preetham physics)     SkyAtmosphere (GPU ray-march)
+  timeOfDay → sun/moon pos       turbidity/Rayleigh → sun alt/azim     Rayleigh+Mie+Ozone+multi-scatter
+  sky/horizon color              getShaderUniforms()                   getShaderUniforms() → SKY_ATMOSPHERE_FRAG
 
 CloudSystem (particle billboards)  VolumetricClouds (ray-march 3D noise field)
   coverage → getMeshData()          Beer-Lambert + HG → getShaderUniforms()
@@ -150,6 +151,76 @@ const skybox = new GroundedSkybox(envTexture, height, radius);
 skybox.position.y = height;
 scene.add(skybox);
 ```
+
+### Sky Atmosphere (GPU Physical)
+
+| Export | Role |
+|--------|------|
+| `SkyAtmosphere` | GPU physical atmospheric scattering component (UE5 `SkyAtmosphere` / Unity HDRP style). Manages sun position (astronomy formula shared with `ProceduralSky`) + physical atmosphere parameters, exposes `getShaderUniforms()` for the `SKY_ATMOSPHERE_VERT` / `SKY_ATMOSPHERE_FRAG` skydome shader. Complements `ProceduralSky` (CPU Preetham analytic) — `SkyAtmosphere` targets cinematic-grade realism with ray-marched integration. |
+| `AtmosphereRGB` / `SkyAtmosphereUniforms` / `SkyAtmosphereStats` / `AtmospherePreset` | Color type, uniform struct, stats, preset interface. |
+| `EARTH_ATMOSPHERE` / `MARS_ATMOSPHERE` | Built-in atmosphere presets (Bruneton 2008 wavelengths / red dust). |
+
+#### Physical Model (normalized to planet radius = 1.0, i.e. 6371 km)
+
+| Phenomenon | Symbol | Description |
+|------------|--------|-------------|
+| Rayleigh scattering | `βR`, `HR` | Molecule scattering, wavelength-dependent (blue > red). Scale height `HR ≈ 8 km`. Phase `3/(16π)·(1+cos²θ)`. Causes blue sky. |
+| Mie scattering | `βM`, `HM`, `g` | Aerosol scattering, neutral-gray. Scale height `HM ≈ 1.2 km`. Henyey-Greenstein phase with asymmetry `g ≈ 0.76`. Causes sun halo / haze. |
+| Ozone absorption | `βO` | Chappuis absorption band, layer centered ~25 km (absorption, not scattering). Absorbs green-yellow → deepens high-altitude blue. **soup3D has no ozone.** |
+| Multi-scattering | `multiScatter` | Bruneton ψ simplified approximation — a constant ambient term proportional to sun transmittance, so shadowed sky is not pure black. |
+| Ground reflection | `groundAlbedo` | Lambertian ground × transmittance-to-ground × sun light — low-altitude sky picks up ground tint (green grass, yellow desert). |
+
+#### Shader Pipeline (skydome, `SKY_ATMOSPHERE_FRAG`)
+
+| Stage | Samples | Description |
+|-------|---------|-------------|
+| Ray-sphere intersect | — | Primary view ray vs atmosphere top + planet. Clamp `tStart..tEnd`. |
+| Primary ray march | 32 | Accumulate single scattering + multi-scatter ψ + Beer-Lambert transmittance. |
+| Sun transmittance sub-march | 8 | Per sample, march sun-direction to atmosphere top for `transmittanceToSun(p)`. |
+| Ground reflection | — | If ray hits planet, add `albedo · sunTrans · sunColor / π · viewTransmittance`. |
+| Sun disc | — | 0.53° angular disc via `smoothstep` on `cosTheta`. |
+
+**Total per sky pixel**: 32 × (1 + 8) = ~288 texture-less math ops — cheap for a skydome drawn once per frame.
+
+#### API
+
+```ts
+export class SkyAtmosphere {
+  // sun + time + geography
+  sunDirection: Vector3;  sunColor: AtmosphereRGB;  sunIntensity: number;
+  timeOfDay: number;  latitude: number;  dayOfYear: number;  daySpeed: number;
+  // atmosphere physics (normalized)
+  betaR: [number, number, number];  betaM: [number, number, number];
+  betaO: number;  g: number;
+  HR: number;  HM: number;  planetRadius: number;  atmosphereRadius: number;
+  multiScatter: number;  showSunDisc: boolean;  groundAlbedo: AtmosphereRGB;
+
+  constructor(initialHours = 12);
+  update(dt: number): this;                   // advance time (60s = 1h @ speed=1)
+  setTimeOfDay(t: number): this;
+  setLatitude(lat: number): this;             // clamp [-90, 90]
+  setDayOfYear(day: number): this;            // clamp [1, 365]
+  applyPreset(p: AtmospherePreset): this;     // EARTH / MARS / custom
+  computeSunDirection(): Vector3;             // astronomy: declination + hour angle
+  getShaderUniforms(): SkyAtmosphereUniforms; // bind to SKY_ATMOSPHERE_FRAG
+  getStats(): SkyAtmosphereStats;
+  isDaytime(): boolean;
+}
+```
+
+#### soup3D Feature Parity — Why It Wins
+
+`soup3D` ships only a flat sky-color / gradient background. `SkyAtmosphere`
+delivers UE5/HDRP-grade physical sky:
+
+- **Rayleigh + Mie + Ozone** — full three-channel wavelength-dependent
+  extinction; soup3D has none.
+- **Ray-marched integration** — physically correct horizon reddening at
+  sunset (blue light scattered away), not a hand-tuned gradient.
+- **Multi-scattering ψ** — shadowed sky retains ambient blue, not black.
+- **Ground reflection** — low sky takes on terrain albedo.
+- **Mars preset** — demonstrates the model is not Earth-hardcoded
+  (red dust Mie, no ozone, strong forward scattering).
 
 ### Precipitation
 
@@ -316,6 +387,29 @@ function frame(dt: number) {
   const cloudUniforms = clouds.getShaderUniforms();
   const cloudData = clouds.getCloudData();   // bind noiseData as 3D texture
 }
+```
+
+### GPU physical atmosphere (cinematic sky)
+
+```ts
+import { SkyAtmosphere, EARTH_ATMOSPHERE, MARS_ATMOSPHERE } from '@vreen/engine/environment';
+import { SKY_ATMOSPHERE_VERT, SKY_ATMOSPHERE_FRAG } from '@vreen/engine/materials/shaders';
+
+// Earth mid-latitude summer noon
+const atmos = new SkyAtmosphere(12);
+atmos.setLatitude(35).setDayOfYear(172);
+atmos.multiScatter = 0.6;
+atmos.groundAlbedo = { r: 0.25, g: 0.35, b: 0.15 }; // grass-tinted low sky
+
+function frame(dt: number) {
+  atmos.update(dt);
+  const u = atmos.getShaderUniforms();
+  // bind u.* to a skydome Mesh using SKY_ATMOSPHERE_VERT/FRAG
+}
+
+// Swap to Mars for an alien scene
+atmos.applyPreset(MARS_ATMOSPHERE);
+atmos.groundAlbedo = { r: 0.5, g: 0.25, b: 0.15 }; // rust desert
 ```
 
 ### FFT ocean + player-driven ripples
