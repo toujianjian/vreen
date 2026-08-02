@@ -455,50 +455,168 @@
     "coreClasses": "core classes",
     "hint": "All 34 top-level @vreen/engine modules. Click a module to expand its core classes.",
     "categories": {
-      "rendering": { "title": "RENDERING" },
-      "scene": { "title": "SCENE & ASSETS" },
-      "animation": { "title": "ANIMATION & CHARACTERS" },
-      "physics": { "title": "PHYSICS & SIMULATION" },
-      "architecture": { "title": "ARCHITECTURE & SYSTEMS" },
-      "gameplay": { "title": "GAMEPLAY INFRASTRUCTURE" },
-      "profiling": { "title": "PROFILING & DEBUG" },
-      "ui": { "title": "UI & DELIVERY" }
+      "rendering": {
+        "title": "RENDERING"
+      },
+      "scene": {
+        "title": "SCENE & ASSETS"
+      },
+      "animation": {
+        "title": "ANIMATION & CHARACTERS"
+      },
+      "physics": {
+        "title": "PHYSICS & SIMULATION"
+      },
+      "architecture": {
+        "title": "ARCHITECTURE & SYSTEMS"
+      },
+      "gameplay": {
+        "title": "GAMEPLAY INFRASTRUCTURE"
+      },
+      "profiling": {
+        "title": "PROFILING & DEBUG"
+      },
+      "ui": {
+        "title": "UI & DELIVERY"
+      }
     },
     "modules": {
-      "core": { "title": "Core", "desc": "Scene graph, object hierarchy, geometry, materials, textures, morph targets, fog, raycasting" },
-      "renderer": { "title": "Renderer", "desc": "WebGL2Renderer, deferred pipeline, shadow maps, MRT/GBuffer, reflection probes, path tracer" },
-      "materials": { "title": "Materials", "desc": "PBR, physical, basic, phong, normal, shadow, sprite, shader + special (fur/toon/matcap/water)" },
-      "cameras": { "title": "Cameras", "desc": "Perspective and orthographic cameras" },
-      "lights": { "title": "Lights", "desc": "Ambient, directional, point, spot, hemisphere, rect area + shadow maps" },
-      "helpers": { "title": "Helpers", "desc": "Grid, axes, box, camera, arrow, line + physics debug renderer" },
-      "math": { "title": "Math", "desc": "Vectors, matrices, quaternions, euler, color, box3, sphere, plane, ray, frustum" },
-      "loaders": { "title": "Loaders", "desc": "GLB/OBJ/FBX/HDR/KTX2/STL/PLY/TGA/MTL/EXR + 4 exporters + AssetManager" },
-      "geometries": { "title": "Geometries", "desc": "15 procedural primitives: box, sphere, cylinder, cone, torus, plane, capsule, etc." },
-      "acceleration": { "title": "Acceleration", "desc": "BVH with SAH build, consumed by Raycaster for fast intersection" },
-      "assets": { "title": "Assets", "desc": "AssetCache (LRU), AssetRegistry (ref counting), AssetLoader (async batch)" },
-      "serialization": { "title": "Serialization", "desc": "Scene/Geometry/Material to/from JSON round-trip" },
-      "pipeline": { "title": "Pipeline", "desc": "Asset processing: texture resize/compress, geometry merge/optimize/LOD, import flow" },
-      "animation": { "title": "Animation", "desc": "Mixer, clips, state machine, BlendSpace1D, layers, IK (FABRIK/CCD/Humanoid)" },
-      "timeline": { "title": "Timeline", "desc": "Sequencer with clips, tracks, events, property keyframes, play/pause/seek/export" },
-      "ecs": { "title": "ECS", "desc": "World, ComponentType, Systems, QueryBuilder, Broadphase, Prefab" },
-      "physics": { "title": "Physics", "desc": "Constraints (Ball/Hinge/Slider/Fixed/Distance), cloth (Verlet), fluid (SPH), destruction (Voronoi)" },
-      "particles": { "title": "Particles", "desc": "ParticleSystem2, emitter, modifiers, curves, trails — advanced CPU particles" },
-      "events": { "title": "Events", "desc": "EventBus (pub/sub), EventQueue (buffered), typed GameEvent union" },
-      "scripting": { "title": "Scripting", "desc": "ScriptComponent lifecycle hooks, ScriptRegistry, CoroutineSystem" },
-      "controls": { "title": "Controls", "desc": "Orbit, Fly, PointerLock, Map, CharacterController (kinematic)" },
-      "input": { "title": "Input", "desc": "Unified keyboard/mouse/touch/gamepad + InputAction mapping + JSON config" },
-      "network": { "title": "Network", "desc": "Server-authoritative sync, binary snapshots, WebSocket/Mock transport, prediction" },
-      "saveSystem": { "title": "Save System", "desc": "Multi-slot saves, autosave, import/export, localStorage/memory backend" },
-      "sceneManager": { "title": "Scene Manager", "desc": "Multi-scene registry, transitions (Fade/Crossfade/Slide/Wipe/None)" },
-      "audio": { "title": "Audio", "desc": "AudioListener, PositionalAudio (3D), AudioLoader, AudioAnalyser (FFT)" },
-      "ai": { "title": "AI", "desc": "NavMesh, A* pathfinder, steering behaviors, behavior trees + blackboard" },
-      "environment": { "title": "Environment", "desc": "Weather, sky/day-night, clouds, precipitation, vegetation, water simulation" },
-      "voxel": { "title": "Voxel", "desc": "16³ chunks, greedy meshing, DDA raycaster, multi-chunk world, palette" },
-      "editor": { "title": "Editor", "desc": "Selection, TransformGizmo, UndoRedo (with groups), EditorCommands, SnapSystem" },
-      "pcg": { "title": "PCG", "desc": "Noise (Perlin/Simplex/Worley/FBM), building/city/dungeon/tree generators" },
-      "terrain": { "title": "Terrain", "desc": "Heightfield geometry, heightmap generator (fractal/hydraulic), splat blending" },
-      "gameplayMod": { "title": "Gameplay", "desc": "Dialogue system, dialogue trees, quest system, inventory system" },
-      "tools": { "title": "Tools", "desc": "Profiler, FrameProfiler, SystemProfiler, MemoryTracker, GpuProfiler, PerformanceReport" }
+      "core": {
+        "title": "Core",
+        "desc": "Scene graph, object hierarchy, geometry, materials, textures, morph targets, fog, raycasting"
+      },
+      "renderer": {
+        "title": "Renderer",
+        "desc": "WebGL2Renderer, deferred pipeline, shadow maps, MRT/GBuffer, reflection probes, path tracer"
+      },
+      "materials": {
+        "title": "Materials",
+        "desc": "PBR, physical, basic, phong, normal, shadow, sprite, shader + special (fur/toon/matcap/water)"
+      },
+      "cameras": {
+        "title": "Cameras",
+        "desc": "Perspective and orthographic cameras"
+      },
+      "lights": {
+        "title": "Lights",
+        "desc": "Ambient, directional, point, spot, hemisphere, rect area + shadow maps"
+      },
+      "helpers": {
+        "title": "Helpers",
+        "desc": "Grid, axes, box, camera, arrow, line + physics debug renderer"
+      },
+      "math": {
+        "title": "Math",
+        "desc": "Vectors, matrices, quaternions, euler, color, box3, sphere, plane, ray, frustum"
+      },
+      "loaders": {
+        "title": "Loaders",
+        "desc": "GLB/OBJ/FBX/HDR/KTX2/STL/PLY/TGA/MTL/EXR + 4 exporters + AssetManager"
+      },
+      "geometries": {
+        "title": "Geometries",
+        "desc": "15 procedural primitives: box, sphere, cylinder, cone, torus, plane, capsule, etc."
+      },
+      "acceleration": {
+        "title": "Acceleration",
+        "desc": "BVH with SAH build, consumed by Raycaster for fast intersection"
+      },
+      "assets": {
+        "title": "Assets",
+        "desc": "AssetCache (LRU), AssetRegistry (ref counting), AssetLoader (async batch)"
+      },
+      "serialization": {
+        "title": "Serialization",
+        "desc": "Scene/Geometry/Material to/from JSON round-trip"
+      },
+      "pipeline": {
+        "title": "Pipeline",
+        "desc": "Asset processing: texture resize/compress, geometry merge/optimize/LOD, import flow"
+      },
+      "animation": {
+        "title": "Animation",
+        "desc": "Mixer, clips, state machine, BlendSpace1D, layers, IK (FABRIK/CCD/Humanoid)"
+      },
+      "timeline": {
+        "title": "Timeline",
+        "desc": "Sequencer with clips, tracks, events, property keyframes, play/pause/seek/export"
+      },
+      "ecs": {
+        "title": "ECS",
+        "desc": "World, ComponentType, Systems, QueryBuilder, Broadphase, Prefab"
+      },
+      "physics": {
+        "title": "Physics",
+        "desc": "Constraints (Ball/Hinge/Slider/Fixed/Distance), cloth (Verlet), fluid (SPH), destruction (Voronoi)"
+      },
+      "particles": {
+        "title": "Particles",
+        "desc": "ParticleSystem2, emitter, modifiers, curves, trails — advanced CPU particles"
+      },
+      "events": {
+        "title": "Events",
+        "desc": "EventBus (pub/sub), EventQueue (buffered), typed GameEvent union"
+      },
+      "scripting": {
+        "title": "Scripting",
+        "desc": "ScriptComponent lifecycle hooks, ScriptRegistry, CoroutineSystem"
+      },
+      "controls": {
+        "title": "Controls",
+        "desc": "Orbit, Fly, PointerLock, Map, CharacterController (kinematic)"
+      },
+      "input": {
+        "title": "Input",
+        "desc": "Unified keyboard/mouse/touch/gamepad + InputAction mapping + JSON config"
+      },
+      "network": {
+        "title": "Network",
+        "desc": "Server-authoritative sync, binary snapshots, WebSocket/Mock transport, prediction"
+      },
+      "saveSystem": {
+        "title": "Save System",
+        "desc": "Multi-slot saves, autosave, import/export, localStorage/memory backend"
+      },
+      "sceneManager": {
+        "title": "Scene Manager",
+        "desc": "Multi-scene registry, transitions (Fade/Crossfade/Slide/Wipe/None)"
+      },
+      "audio": {
+        "title": "Audio",
+        "desc": "AudioListener, PositionalAudio (3D), AudioLoader, AudioAnalyser (FFT)"
+      },
+      "ai": {
+        "title": "AI",
+        "desc": "NavMesh, A* pathfinder, steering behaviors, behavior trees + blackboard"
+      },
+      "environment": {
+        "title": "Environment",
+        "desc": "Weather, sky/day-night, clouds, precipitation, vegetation, water simulation"
+      },
+      "voxel": {
+        "title": "Voxel",
+        "desc": "16³ chunks, greedy meshing, DDA raycaster, multi-chunk world, palette"
+      },
+      "editor": {
+        "title": "Editor",
+        "desc": "Selection, TransformGizmo, UndoRedo (with groups), EditorCommands, SnapSystem"
+      },
+      "pcg": {
+        "title": "PCG",
+        "desc": "Noise (Perlin/Simplex/Worley/FBM), building/city/dungeon/tree generators"
+      },
+      "terrain": {
+        "title": "Terrain",
+        "desc": "Heightfield geometry, heightmap generator (fractal/hydraulic), splat blending"
+      },
+      "gameplayMod": {
+        "title": "Gameplay",
+        "desc": "Dialogue system, dialogue trees, quest system, inventory system"
+      },
+      "tools": {
+        "title": "Tools",
+        "desc": "Profiler, FrameProfiler, SystemProfiler, MemoryTracker, GpuProfiler, PerformanceReport"
+      }
     }
   },
   "performanceMonitor": {
@@ -703,5 +821,54 @@
   },
   "engineDemo": {
     "title": "ENGINE DEMO"
+  },
+  "capabilities": {
+    "section": "RENDERING CAPABILITIES",
+    "title": "Cinematic Rendering Pipeline",
+    "subtitle": "Physical-based HDR pipeline surpassing soup3D — mip-chain bloom, atmospheric scattering, morphological AA and more.",
+    "vsSoup3D": "VS soup3D",
+    "advantageLabel": "ADV:",
+    "items": {
+      "bloom": {
+        "title": "UnrealBloom",
+        "desc": "5-level mip Gaussian bloom with soft-knee threshold and lens dirt.",
+        "advantage": "soup3D has single box blur"
+      },
+      "sky": {
+        "title": "SkyAtmosphere",
+        "desc": "GPU ray-marched Rayleigh + Mie + Ozone multi-scatter sky.",
+        "advantage": "soup3D has flat sky color"
+      },
+      "smaa": {
+        "title": "SMAA",
+        "desc": "Subpixel Morphological Antialiasing with procedural LUTs.",
+        "advantage": "soup3D has FXAA only"
+      },
+      "gtao": {
+        "title": "GTAO",
+        "desc": "Ground Truth ambient occlusion via hemisphere horizon integration.",
+        "advantage": "soup3D has no AO"
+      },
+      "sss": {
+        "title": "SSSS",
+        "desc": "Screen-space subsurface scattering for skin translucency.",
+        "advantage": "soup3D has no SSS"
+      },
+      "taa": {
+        "title": "TAA",
+        "desc": "Temporal antialiasing with Halton jitter and history clipping.",
+        "advantage": "soup3D has no TAA"
+      },
+      "ssr": {
+        "title": "SSR",
+        "desc": "Screen-space reflections with roughness-modulated blur.",
+        "advantage": "soup3D has no SSR"
+      },
+      "volfog": {
+        "title": "Volumetric Fog",
+        "desc": "Ray-marched volumetric fog with god rays and scattering.",
+        "advantage": "soup3D has no volfog"
+      }
+    }
   }
 }

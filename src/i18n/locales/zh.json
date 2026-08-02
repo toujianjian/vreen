@@ -455,50 +455,168 @@
     "coreClasses": "核心类",
     "hint": "全部 34 个 @vreen/engine 顶层模块。点击模块展开其核心类列表。",
     "categories": {
-      "rendering": { "title": "渲染" },
-      "scene": { "title": "场景与资源" },
-      "animation": { "title": "动画与角色" },
-      "physics": { "title": "物理与模拟" },
-      "architecture": { "title": "架构与系统" },
-      "gameplay": { "title": "游戏基础设施" },
-      "profiling": { "title": "性能与调试" },
-      "ui": { "title": "UI 与交付" }
+      "rendering": {
+        "title": "渲染"
+      },
+      "scene": {
+        "title": "场景与资源"
+      },
+      "animation": {
+        "title": "动画与角色"
+      },
+      "physics": {
+        "title": "物理与模拟"
+      },
+      "architecture": {
+        "title": "架构与系统"
+      },
+      "gameplay": {
+        "title": "游戏基础设施"
+      },
+      "profiling": {
+        "title": "性能与调试"
+      },
+      "ui": {
+        "title": "UI 与交付"
+      }
     },
     "modules": {
-      "core": { "title": "核心", "desc": "场景图、对象层级、几何体、材质、纹理、形变目标、雾、射线检测" },
-      "renderer": { "title": "渲染器", "desc": "WebGL2Renderer、延迟管线、阴影贴图、MRT/GBuffer、反射探针、路径追踪" },
-      "materials": { "title": "材质", "desc": "PBR、物理、基础、Phong、法线、阴影、精灵、着色器 + 特殊(毛发/卡通/Matcap/水)" },
-      "cameras": { "title": "相机", "desc": "透视相机与正交相机" },
-      "lights": { "title": "灯光", "desc": "环境光、平行光、点光、聚光灯、半球光、矩形光 + 阴影贴图" },
-      "helpers": { "title": "辅助", "desc": "网格、坐标轴、包围盒、相机、箭头、线条 + 物理调试渲染器" },
-      "math": { "title": "数学", "desc": "向量、矩阵、四元数、欧拉、颜色、Box3、球、平面、射线、视锥" },
-      "loaders": { "title": "加载器", "desc": "GLB/OBJ/FBX/HDR/KTX2/STL/PLY/TGA/MTL/EXR + 4 导出器 + AssetManager" },
-      "geometries": { "title": "几何体", "desc": "15 个程序化基元:盒、球、圆柱、圆锥、圆环、平面、胶囊等" },
-      "acceleration": { "title": "加速结构", "desc": "BVH(SAH 构建),由 Raycaster 优先消费以加速求交" },
-      "assets": { "title": "资源", "desc": "AssetCache(LRU)、AssetRegistry(引用计数)、AssetLoader(异步批量)" },
-      "serialization": { "title": "序列化", "desc": "场景/几何体/材质与 JSON 往返" },
-      "pipeline": { "title": "资源管线", "desc": "纹理缩放/压缩、几何体合并/优化/LOD、导入流程" },
-      "animation": { "title": "动画", "desc": "混合器、片段、状态机、BlendSpace1D、动画层、IK(FABRIK/CCD/Humanoid)" },
-      "timeline": { "title": "时间轴", "desc": "Sequencer:片段、轨道、事件、属性关键帧、播放/暂停/跳转/导出" },
-      "ecs": { "title": "ECS", "desc": "World、ComponentType、Systems、QueryBuilder、Broadphase、Prefab" },
-      "physics": { "title": "物理", "desc": "约束(Ball/Hinge/Slider/Fixed/Distance)、布料(Verlet)、流体(SPH)、破坏(Voronoi)" },
-      "particles": { "title": "粒子", "desc": "ParticleSystem2、发射器、修改器、曲线、拖尾 — 高级 CPU 粒子" },
-      "events": { "title": "事件", "desc": "EventBus(发布订阅)、EventQueue(缓冲)、类型化 GameEvent 联合" },
-      "scripting": { "title": "脚本", "desc": "ScriptComponent 生命周期钩子、ScriptRegistry、CoroutineSystem" },
-      "controls": { "title": "控制器", "desc": "轨道、飞行、指针锁定、地图、CharacterController(运动学角色)" },
-      "input": { "title": "输入", "desc": "统一键盘/鼠标/触摸/手柄 + InputAction 映射 + JSON 配置" },
-      "network": { "title": "网络", "desc": "服务器权威同步、二进制快照、WebSocket/Mock 传输、预测" },
-      "saveSystem": { "title": "存档", "desc": "多槽位存档、自动保存、导入导出、localStorage/内存后端" },
-      "sceneManager": { "title": "场景管理", "desc": "多场景注册、过渡(Fade/Crossfade/Slide/Wipe/None)" },
-      "audio": { "title": "音频", "desc": "AudioListener、PositionalAudio(3D)、AudioLoader、AudioAnalyser(FFT)" },
-      "ai": { "title": "AI", "desc": "NavMesh、A* 寻路、转向行为、行为树 + 黑板" },
-      "environment": { "title": "环境", "desc": "天气、天空/日夜、云层、降水、植被、水体模拟" },
-      "voxel": { "title": "体素", "desc": "16³ 区块、贪婪网格合并、DDA 射线、多块世界、调色板" },
-      "editor": { "title": "编辑器", "desc": "选择、变换手柄、撤销重做(含分组)、编辑器命令、吸附系统" },
-      "pcg": { "title": "PCG", "desc": "噪声(Perlin/Simplex/Worley/FBM)、建筑/城市/地牢/树木生成器" },
-      "terrain": { "title": "地形", "desc": "高度场几何体、高度图生成器(分形/水力侵蚀)、Splat 混合" },
-      "gameplayMod": { "title": "玩法", "desc": "对话系统、对话树、任务系统、物品栏系统" },
-      "tools": { "title": "工具", "desc": "Profiler、FrameProfiler、SystemProfiler、MemoryTracker、GpuProfiler、PerformanceReport" }
+      "core": {
+        "title": "核心",
+        "desc": "场景图、对象层级、几何体、材质、纹理、形变目标、雾、射线检测"
+      },
+      "renderer": {
+        "title": "渲染器",
+        "desc": "WebGL2Renderer、延迟管线、阴影贴图、MRT/GBuffer、反射探针、路径追踪"
+      },
+      "materials": {
+        "title": "材质",
+        "desc": "PBR、物理、基础、Phong、法线、阴影、精灵、着色器 + 特殊(毛发/卡通/Matcap/水)"
+      },
+      "cameras": {
+        "title": "相机",
+        "desc": "透视相机与正交相机"
+      },
+      "lights": {
+        "title": "灯光",
+        "desc": "环境光、平行光、点光、聚光灯、半球光、矩形光 + 阴影贴图"
+      },
+      "helpers": {
+        "title": "辅助",
+        "desc": "网格、坐标轴、包围盒、相机、箭头、线条 + 物理调试渲染器"
+      },
+      "math": {
+        "title": "数学",
+        "desc": "向量、矩阵、四元数、欧拉、颜色、Box3、球、平面、射线、视锥"
+      },
+      "loaders": {
+        "title": "加载器",
+        "desc": "GLB/OBJ/FBX/HDR/KTX2/STL/PLY/TGA/MTL/EXR + 4 导出器 + AssetManager"
+      },
+      "geometries": {
+        "title": "几何体",
+        "desc": "15 个程序化基元:盒、球、圆柱、圆锥、圆环、平面、胶囊等"
+      },
+      "acceleration": {
+        "title": "加速结构",
+        "desc": "BVH(SAH 构建),由 Raycaster 优先消费以加速求交"
+      },
+      "assets": {
+        "title": "资源",
+        "desc": "AssetCache(LRU)、AssetRegistry(引用计数)、AssetLoader(异步批量)"
+      },
+      "serialization": {
+        "title": "序列化",
+        "desc": "场景/几何体/材质与 JSON 往返"
+      },
+      "pipeline": {
+        "title": "资源管线",
+        "desc": "纹理缩放/压缩、几何体合并/优化/LOD、导入流程"
+      },
+      "animation": {
+        "title": "动画",
+        "desc": "混合器、片段、状态机、BlendSpace1D、动画层、IK(FABRIK/CCD/Humanoid)"
+      },
+      "timeline": {
+        "title": "时间轴",
+        "desc": "Sequencer:片段、轨道、事件、属性关键帧、播放/暂停/跳转/导出"
+      },
+      "ecs": {
+        "title": "ECS",
+        "desc": "World、ComponentType、Systems、QueryBuilder、Broadphase、Prefab"
+      },
+      "physics": {
+        "title": "物理",
+        "desc": "约束(Ball/Hinge/Slider/Fixed/Distance)、布料(Verlet)、流体(SPH)、破坏(Voronoi)"
+      },
+      "particles": {
+        "title": "粒子",
+        "desc": "ParticleSystem2、发射器、修改器、曲线、拖尾 — 高级 CPU 粒子"
+      },
+      "events": {
+        "title": "事件",
+        "desc": "EventBus(发布订阅)、EventQueue(缓冲)、类型化 GameEvent 联合"
+      },
+      "scripting": {
+        "title": "脚本",
+        "desc": "ScriptComponent 生命周期钩子、ScriptRegistry、CoroutineSystem"
+      },
+      "controls": {
+        "title": "控制器",
+        "desc": "轨道、飞行、指针锁定、地图、CharacterController(运动学角色)"
+      },
+      "input": {
+        "title": "输入",
+        "desc": "统一键盘/鼠标/触摸/手柄 + InputAction 映射 + JSON 配置"
+      },
+      "network": {
+        "title": "网络",
+        "desc": "服务器权威同步、二进制快照、WebSocket/Mock 传输、预测"
+      },
+      "saveSystem": {
+        "title": "存档",
+        "desc": "多槽位存档、自动保存、导入导出、localStorage/内存后端"
+      },
+      "sceneManager": {
+        "title": "场景管理",
+        "desc": "多场景注册、过渡(Fade/Crossfade/Slide/Wipe/None)"
+      },
+      "audio": {
+        "title": "音频",
+        "desc": "AudioListener、PositionalAudio(3D)、AudioLoader、AudioAnalyser(FFT)"
+      },
+      "ai": {
+        "title": "AI",
+        "desc": "NavMesh、A* 寻路、转向行为、行为树 + 黑板"
+      },
+      "environment": {
+        "title": "环境",
+        "desc": "天气、天空/日夜、云层、降水、植被、水体模拟"
+      },
+      "voxel": {
+        "title": "体素",
+        "desc": "16³ 区块、贪婪网格合并、DDA 射线、多块世界、调色板"
+      },
+      "editor": {
+        "title": "编辑器",
+        "desc": "选择、变换手柄、撤销重做(含分组)、编辑器命令、吸附系统"
+      },
+      "pcg": {
+        "title": "PCG",
+        "desc": "噪声(Perlin/Simplex/Worley/FBM)、建筑/城市/地牢/树木生成器"
+      },
+      "terrain": {
+        "title": "地形",
+        "desc": "高度场几何体、高度图生成器(分形/水力侵蚀)、Splat 混合"
+      },
+      "gameplayMod": {
+        "title": "玩法",
+        "desc": "对话系统、对话树、任务系统、物品栏系统"
+      },
+      "tools": {
+        "title": "工具",
+        "desc": "Profiler、FrameProfiler、SystemProfiler、MemoryTracker、GpuProfiler、PerformanceReport"
+      }
     }
   },
   "performanceMonitor": {
@@ -703,5 +821,54 @@
   },
   "engineDemo": {
     "title": "引擎演示"
+  },
+  "capabilities": {
+    "section": "渲染能力",
+    "title": "影视级渲染管线",
+    "subtitle": "超越 soup3D 的基于物理 HDR 管线 —— 多层泛光、大气散射、形态学抗锯齿等。",
+    "vsSoup3D": "对比 soup3D",
+    "advantageLabel": "优势:",
+    "items": {
+      "bloom": {
+        "title": "UnrealBloom",
+        "desc": "5 级 mip 高斯泛光,软阈值 + 镜头污渍。",
+        "advantage": "soup3D 仅单级盒式模糊"
+      },
+      "sky": {
+        "title": "SkyAtmosphere",
+        "desc": "GPU 光线步进 Rayleigh + Mie + Ozone 多重散射天空。",
+        "advantage": "soup3D 仅纯色天空"
+      },
+      "smaa": {
+        "title": "SMAA",
+        "desc": "子像素形态学抗锯齿,程序化 LUT。",
+        "advantage": "soup3D 仅 FXAA"
+      },
+      "gtao": {
+        "title": "GTAO",
+        "desc": "Ground Truth 环境光遮蔽,半球地平线积分。",
+        "advantage": "soup3D 无 AO"
+      },
+      "sss": {
+        "title": "SSSS",
+        "desc": "屏幕空间次表面散射,皮肤透光。",
+        "advantage": "soup3D 无 SSS"
+      },
+      "taa": {
+        "title": "TAA",
+        "desc": "时间抗锯齿,Halton 抖动 + 历史裁剪。",
+        "advantage": "soup3D 无 TAA"
+      },
+      "ssr": {
+        "title": "SSR",
+        "desc": "屏幕空间反射,粗糙度调制模糊。",
+        "advantage": "soup3D 无 SSR"
+      },
+      "volfog": {
+        "title": "体积雾",
+        "desc": "光线步进体积雾,丁达尔光 + 散射。",
+        "advantage": "soup3D 无体积雾"
+      }
+    }
   }
 }
