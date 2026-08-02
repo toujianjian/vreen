@@ -195,4 +195,125 @@ describe('FurMaterial', () => {
     expect(m.programKey).toBe('fur');
     expect(m.program).toBeNull();
   });
+
+  // ── Kajiya-Kay 各向异性毛发着色 ──
+
+  it('Kajiya-Kay 默认值:lightDir 归一化、specPower=64、shift=0.1', () => {
+    const m = new FurMaterial();
+    expect(m.lightDirection.length()).toBeCloseTo(1, 5);
+    expect(m.specularPower).toBe(64);
+    expect(m.secondarySpecularPower).toBe(16);
+    expect(m.specularShift).toBeCloseTo(0.1, 6);
+    expect(m.rootColor).toBeNull();
+    expect(m.tipColor).toBeNull();
+    expect(m.lightColor).toEqual({ r: 1, g: 1, b: 1 });
+    expect(m.specularColor).toEqual({ r: 1, g: 1, b: 1 });
+    expect(m.secondarySpecularColor).toEqual({ r: 0.8, g: 0.7, b: 0.5 });
+  });
+
+  it('Kajiya-Kay 选项覆盖生效', () => {
+    const m = new FurMaterial({
+      lightDirection: new Vector3(0, 1, 0),
+      lightColor: new Color(1, 0.9, 0.8),
+      rootColor: new Color(0.2, 0.1, 0.05),
+      tipColor: new Color(0.9, 0.8, 0.6),
+      specularColor: new Color(0.9, 0.9, 1.0),
+      specularPower: 128,
+      secondarySpecularColor: new Color(0.5, 0.4, 0.3),
+      secondarySpecularPower: 8,
+      specularShift: 0.2,
+    });
+    expect(m.lightDirection).toEqual({ x: 0, y: 1, z: 0 });
+    expect(m.lightColor).toEqual({ r: 1, g: 0.9, b: 0.8 });
+    expect(m.rootColor).toEqual({ r: 0.2, g: 0.1, b: 0.05 });
+    expect(m.tipColor).toEqual({ r: 0.9, g: 0.8, b: 0.6 });
+    expect(m.specularPower).toBe(128);
+    expect(m.secondarySpecularPower).toBe(8);
+    expect(m.specularShift).toBeCloseTo(0.2, 6);
+  });
+
+  it('lightDirection 被归一化', () => {
+    const m = new FurMaterial({ lightDirection: new Vector3(3, 0, 0) });
+    expect(m.lightDirection.x).toBeCloseTo(1, 5);
+    expect(m.lightDirection.length()).toBeCloseTo(1, 5);
+  });
+
+  it('Kajiya-Kay Color/Vector3 不跨实例共享', () => {
+    const a = new FurMaterial();
+    const b = new FurMaterial();
+    a.specularColor.r = 0;
+    a.secondarySpecularColor.g = 0;
+    a.lightColor.b = 0;
+    a.lightDirection.x = 0;
+    expect(b.specularColor.r).toBe(1);
+    expect(b.secondarySpecularColor.g).toBeCloseTo(0.7, 5);
+    expect(b.lightColor.b).toBe(1);
+    expect(b.lightDirection.x).toBeCloseTo(0.577, 2);
+  });
+
+  it('fragment shader 包含 Kajiya-Kay 各向异性着色逻辑', () => {
+    expect(FUR_FRAG).toContain('u_lightDir');
+    expect(FUR_FRAG).toContain('u_lightColor');
+    expect(FUR_FRAG).toContain('u_cameraPos');
+    expect(FUR_FRAG).toContain('u_rootColor');
+    expect(FUR_FRAG).toContain('u_tipColor');
+    expect(FUR_FRAG).toContain('u_specularColor');
+    expect(FUR_FRAG).toContain('u_specularPower');
+    expect(FUR_FRAG).toContain('u_secondarySpecularColor');
+    expect(FUR_FRAG).toContain('u_secondarySpecularPower');
+    expect(FUR_FRAG).toContain('u_specularShift');
+    expect(FUR_FRAG).toContain('Kajiya');
+    expect(FUR_FRAG).toContain('sinTL');   // diffuse
+    expect(FUR_FRAG).toContain('sinTH');   // specular
+    expect(FUR_FRAG).toContain('tipAlpha'); // tip fade
+  });
+
+  it('vertex shader 传递 worldPos', () => {
+    expect(FUR_VERT).toContain('v_worldPos');
+  });
+
+  it('copy 复制 Kajiya-Kay 字段且独立', () => {
+    const src = new FurMaterial({
+      lightDirection: new Vector3(0, 0, 1),
+      lightColor: new Color(0.5, 0.5, 0.5),
+      rootColor: new Color(0.1, 0.1, 0.1),
+      tipColor: new Color(0.9, 0.9, 0.9),
+      specularColor: new Color(0.3, 0.3, 0.3),
+      specularPower: 96,
+      secondarySpecularColor: new Color(0.2, 0.2, 0.2),
+      secondarySpecularPower: 12,
+      specularShift: 0.15,
+    });
+    const dst = new FurMaterial();
+    dst.copy(src);
+
+    expect(dst.lightDirection).toEqual({ x: 0, y: 0, z: 1 });
+    expect(dst.lightColor).toEqual({ r: 0.5, g: 0.5, b: 0.5 });
+    expect(dst.rootColor).toEqual({ r: 0.1, g: 0.1, b: 0.1 });
+    expect(dst.tipColor).toEqual({ r: 0.9, g: 0.9, b: 0.9 });
+    expect(dst.specularPower).toBe(96);
+    expect(dst.secondarySpecularPower).toBe(12);
+    expect(dst.specularShift).toBeCloseTo(0.15, 6);
+
+    // 修改 dst 不影响 src
+    dst.specularPower = 32;
+    expect(src.specularPower).toBe(96);
+    dst.rootColor!.r = 1;
+    expect(src.rootColor!.r).toBeCloseTo(0.1, 5);
+  });
+
+  it('clone 复制 Kajiya-Kay 字段', () => {
+    const src = new FurMaterial({
+      specularPower: 80,
+      specularShift: 0.2,
+      rootColor: new Color(0.3, 0.2, 0.1),
+    });
+    const cl = src.clone();
+    expect(cl.specularPower).toBe(80);
+    expect(cl.specularShift).toBeCloseTo(0.2, 6);
+    expect(cl.rootColor).toEqual({ r: 0.3, g: 0.2, b: 0.1 });
+    // 修改 clone 不影响 src
+    cl.specularPower = 10;
+    expect(src.specularPower).toBe(80);
+  });
 });

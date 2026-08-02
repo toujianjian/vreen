@@ -894,6 +894,17 @@ const BUILTIN_TEMPLATES: ShaderTemplate[] = [
       { name: 'u_furColor', type: 'vec3', default: [0.6, 0.4, 0.2] },
       { name: 'u_density', type: 'float', default: 0.5 },
       { name: 'u_opacity', type: 'float', default: 1 },
+      // Kajiya-Kay 各向异性毛发着色
+      { name: 'u_lightDir', type: 'vec3', default: [0.577, 0.577, 0.577] },
+      { name: 'u_lightColor', type: 'vec3', default: [1, 1, 1] },
+      { name: 'u_cameraPos', type: 'vec3' },
+      { name: 'u_rootColor', type: 'vec3', default: [0.6, 0.45, 0.3] },
+      { name: 'u_tipColor', type: 'vec3', default: [0.6, 0.45, 0.3] },
+      { name: 'u_specularColor', type: 'vec3', default: [1, 1, 1] },
+      { name: 'u_specularPower', type: 'float', default: 64 },
+      { name: 'u_secondarySpecularColor', type: 'vec3', default: [0.8, 0.7, 0.5] },
+      { name: 'u_secondarySpecularPower', type: 'float', default: 16 },
+      { name: 'u_specularShift', type: 'float', default: 0.1 },
     ],
     attributes: [
       { name: 'a_position', type: 'vec3', location: 0 },

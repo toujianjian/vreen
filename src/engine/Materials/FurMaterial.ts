@@ -63,6 +63,25 @@ export interface FurMaterialOptions {
   depthTest?: boolean;
   /** 是否写深度。 */
   depthWrite?: boolean;
+  // ── Kajiya-Kay 各向异性毛发着色 ──
+  /** 光照方向(世界空间,指向光源,默认 (1,1,1) 归一化)。 */
+  lightDirection?: Vector3;
+  /** 光照颜色(默认白)。 */
+  lightColor?: Color;
+  /** 毛根颜色(默认 null = 用 furColor)。 */
+  rootColor?: Color | null;
+  /** 毛尖颜色(默认 null = 用 furColor)。 */
+  tipColor?: Color | null;
+  /** 主高光颜色(默认白)。 */
+  specularColor?: Color;
+  /** 主高光指数(默认 64,越大高光越锐)。 */
+  specularPower?: number;
+  /** 次高光颜色(Marschner glint,默认暖色 (0.8,0.7,0.5))。 */
+  secondarySpecularColor?: Color;
+  /** 次高光指数(默认 16,比主高光更宽)。 */
+  secondarySpecularPower?: number;
+  /** 次高光切线偏移(朝毛根偏移,默认 0.1)。 */
+  specularShift?: number;
 }
 
 /** FurMaterial 顶点 shader:沿法线外推 + 重力/风偏移。 */
@@ -88,6 +107,7 @@ uniform float u_time;            // 时间(用于风摆动)
 out vec2 v_uv;
 out float v_layer;               // 传给 frag 的当前层
 out vec3 v_worldNormal;
+out vec3 v_worldPos;              // 世界位置(用于视方向)
 
 void main() {
   // 沿法线外推:毛根 (layer=0) 不外推,毛尖 (layer=1) 外推 furLength
@@ -111,26 +131,40 @@ void main() {
   v_uv = a_uv;
   v_layer = u_shellLayer;
   v_worldNormal = normalize(u_normalMatrix * a_normal);
+  v_worldPos = worldPos.xyz;
   gl_Position = u_projection * u_view * worldPos;
 }
 `;
 
-/** FurMaterial 片段 shader:噪声密度 + 颜色 + 遮蔽。 */
+/** FurMaterial 片段 shader:噪声密度 + Kajiya-Kay 各向异性毛发着色 + 根尖色梯度 + 尖端透明衰减。 */
 export const FUR_FRAG = /* glsl */ `#version 300 es
 precision highp float;
 
 in vec2 v_uv;
 in float v_layer;
 in vec3 v_worldNormal;
+in vec3 v_worldPos;
 
 out vec4 outColor;
 
-uniform vec3  u_furColor;
-uniform float u_furDensity;       // 密度阈值 [0,1]
-uniform float u_furOcclusion;     // 毛根遮蔽 [0,1]
+uniform vec3  u_furColor;          // 基础毛色(向后兼容,根/尖色未设时使用)
+uniform float u_furDensity;        // 密度阈值 [0,1]
+uniform float u_furOcclusion;      // 毛根遮蔽 [0,1]
 uniform float u_opacity;
 uniform int   u_noiseTexEnabled;
 uniform sampler2D u_noiseTex;
+
+// Kajiya-Kay 各向异性毛发着色 uniforms
+uniform vec3  u_lightDir;          // 光照方向(世界空间,指向光源)
+uniform vec3  u_lightColor;        // 光照颜色
+uniform vec3  u_cameraPos;         // 相机位置(世界空间)
+uniform vec3  u_rootColor;         // 毛根颜色
+uniform vec3  u_tipColor;          // 毛尖颜色
+uniform vec3  u_specularColor;     // 主高光颜色
+uniform float u_specularPower;     // 主高光指数
+uniform vec3  u_secondarySpecularColor; // 次高光颜色(Marschner glint)
+uniform float u_secondarySpecularPower; // 次高光指数
+uniform float u_specularShift;     // 次高光切线偏移(朝毛根偏移)
 
 // 简易 hash 噪声(无纹理时使用)
 float hash(vec2 p) {
@@ -151,15 +185,49 @@ void main() {
   // 密度阈值:层越靠毛尖越稀疏(layer² 让毛尖更细)
   float threshold = u_furDensity * (1.0 - v_layer * v_layer * 0.7);
   if (n < threshold) {
-    // 该像素不属于毛发 → 丢弃
     discard;
   }
 
+  // === Kajiya-Kay 各向异性毛发着色 ===
+  // 毛发切线 T ≈ 生长方向(壳层沿法线外推,法线即切线)
+  vec3 T = normalize(v_worldNormal);
+  vec3 L = normalize(u_lightDir);
+  vec3 V = normalize(u_cameraPos - v_worldPos);
+  vec3 H = normalize(L + V);
+
+  // Kajiya-Kay 漫反射(圆柱体投影宽度 ∝ sinθ)
+  float dotTL = dot(T, L);
+  float sinTL = sqrt(max(0.0, 1.0 - dotTL * dotTL));
+  float diffuse = sinTL;
+
+  // 主高光(Kajiya-Kay specular:cos 叶沿切线 → sin 沿垂直平面)
+  float dotTH = dot(T, H);
+  float sinTH = sqrt(max(0.0, 1.0 - dotTH * dotTH));
+  float spec1 = pow(sinTH, u_specularPower);
+
+  // 次高光(偏移切线朝毛根,模拟 Marschner 的 glint 反射)
+  vec3 Tshift = normalize(T - v_worldNormal * u_specularShift);
+  float dotTH2 = dot(Tshift, H);
+  float sinTH2 = sqrt(max(0.0, 1.0 - dotTH2 * dotTH2));
+  float spec2 = pow(sinTH2, u_secondarySpecularPower);
+
+  // 根/尖颜色梯度
+  vec3 hairColor = mix(u_rootColor, u_tipColor, v_layer);
+
   // 毛根遮蔽:layer 越小越暗
   float occlusion = mix(1.0 - u_furOcclusion, 1.0, v_layer);
-  vec3 color = u_furColor * occlusion;
 
-  outColor = vec4(color, u_opacity);
+  // 组合光照:环境 + 漫反射 + 主高光 + 次高光
+  vec3 color = hairColor * 0.2                                  // 环境
+             + hairColor * u_lightColor * diffuse * 0.7         // 漫反射
+             + u_specularColor * u_lightColor * spec1           // 主高光
+             + u_secondarySpecularColor * u_lightColor * spec2 * 0.6; // 次高光
+  color *= occlusion;
+
+  // 尖端透明衰减(毛尖更透明,柔和轮廓)
+  float tipAlpha = mix(1.0, 0.3, smoothstep(0.7, 1.0, v_layer));
+
+  outColor = vec4(color, u_opacity * tipAlpha);
 }
 `;
 
@@ -198,6 +266,26 @@ export class FurMaterial extends BasicMaterial {
   /** Program cache key。 */
   programKey: string = 'fur';
 
+  // ── Kajiya-Kay 各向异性毛发着色参数 ──
+  /** 光照方向(世界空间,指向光源)。 */
+  lightDirection: Vector3;
+  /** 光照颜色。 */
+  lightColor: Color;
+  /** 毛根颜色(null = 用 furColor)。 */
+  rootColor: Color | null;
+  /** 毛尖颜色(null = 用 furColor)。 */
+  tipColor: Color | null;
+  /** 主高光颜色。 */
+  specularColor: Color;
+  /** 主高光指数(越大越锐)。 */
+  specularPower: number;
+  /** 次高光颜色(Marschner glint)。 */
+  secondarySpecularColor: Color;
+  /** 次高光指数(比主高光更宽)。 */
+  secondarySpecularPower: number;
+  /** 次高光切线偏移(朝毛根偏移)。 */
+  specularShift: number;
+
   constructor(opts: FurMaterialOptions = {}) {
     super();
     this.furLength = opts.furLength ?? 0.1;
@@ -213,6 +301,20 @@ export class FurMaterial extends BasicMaterial {
     if (opts.wireframe !== undefined) this.wireframe = opts.wireframe;
     if (opts.depthTest !== undefined) this.depthTest = opts.depthTest;
     if (opts.depthWrite !== undefined) this.depthWrite = opts.depthWrite;
+    // Kajiya-Kay 着色参数
+    this.lightDirection = opts.lightDirection
+      ? opts.lightDirection.clone().normalize()
+      : new Vector3(1, 1, 1).normalize();
+    this.lightColor = opts.lightColor ? opts.lightColor.clone() : new Color(1, 1, 1);
+    this.rootColor = opts.rootColor ? opts.rootColor.clone() : null;
+    this.tipColor = opts.tipColor ? opts.tipColor.clone() : null;
+    this.specularColor = opts.specularColor ? opts.specularColor.clone() : new Color(1, 1, 1);
+    this.specularPower = opts.specularPower ?? 64;
+    this.secondarySpecularColor = opts.secondarySpecularColor
+      ? opts.secondarySpecularColor.clone()
+      : new Color(0.8, 0.7, 0.5);
+    this.secondarySpecularPower = opts.secondarySpecularPower ?? 16;
+    this.specularShift = opts.specularShift ?? 0.1;
   }
 
   /** Convenience constructor: 从 hex 颜色构造。 */
@@ -245,6 +347,16 @@ export class FurMaterial extends BasicMaterial {
     this.wireframe = source.wireframe;
     this.renderOrder = source.renderOrder;
     this.userData = { ...source.userData };
+    // Kajiya-Kay 着色参数
+    this.lightDirection = source.lightDirection.clone();
+    this.lightColor = source.lightColor.clone();
+    this.rootColor = source.rootColor ? source.rootColor.clone() : null;
+    this.tipColor = source.tipColor ? source.tipColor.clone() : null;
+    this.specularColor = source.specularColor.clone();
+    this.specularPower = source.specularPower;
+    this.secondarySpecularColor = source.secondarySpecularColor.clone();
+    this.secondarySpecularPower = source.secondarySpecularPower;
+    this.specularShift = source.specularShift;
     return this;
   }
 

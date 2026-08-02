@@ -135,6 +135,24 @@ export class FurShell {
     mat.opacity = this.furMaterial.opacity;
     mat.transparent = this.furMaterial.transparent;
     mat.doubleSided = this.furMaterial.doubleSided;
+    // Kajiya-Kay 着色参数同步
+    mat.lightDirection.copy(this.furMaterial.lightDirection);
+    mat.lightColor.copy(this.furMaterial.lightColor);
+    if (this.furMaterial.rootColor) {
+      mat.rootColor = this.furMaterial.rootColor.clone();
+    } else {
+      mat.rootColor = null;
+    }
+    if (this.furMaterial.tipColor) {
+      mat.tipColor = this.furMaterial.tipColor.clone();
+    } else {
+      mat.tipColor = null;
+    }
+    mat.specularColor.copy(this.furMaterial.specularColor);
+    mat.specularPower = this.furMaterial.specularPower;
+    mat.secondarySpecularColor.copy(this.furMaterial.secondarySpecularColor);
+    mat.secondarySpecularPower = this.furMaterial.secondarySpecularPower;
+    mat.specularShift = this.furMaterial.specularShift;
   }
 
   /** 设置 shell 层数(重新 generate 后生效)。
