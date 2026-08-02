@@ -2978,3 +2978,109 @@ void main() {
 }
 `;
 
+// ── Screen-Space Shadow (光照方向射线步进接触阴影) ──────────────
+// 沿光照方向在屏幕空间射线步进深度缓冲,产生阴影贴图无法捕捉的
+// 小尺度方向性接触阴影。
+//
+// 与 ContactShadowsPass 的区别:
+//   - ContactShadowsPass 用亮度作为高度代理,不使用深度,无方向性
+//   - SSShadowPass 用实际深度缓冲,沿光照方向步进,有正确方向性
+//
+// 与 PCSS 的区别:
+//   - PCSS 采样阴影贴图(大范围阴影,受阴影贴图分辨率限制)
+//   - SSShadowPass 采样深度缓冲(小范围接触阴影,像素级精度)
+//
+// 算法:
+//   1. 从深度缓冲重建视空间位置
+//   2. 将光向变换到视空间
+//   3. 沿视空间光向步进,每步投影到屏幕空间
+//   4. 比较射线深度与采样深度:射线在几何体后方 → 被遮挡
+//   5. 距离衰减:远离接触点 → 阴影渐消(避免大范围假阴影)
+//
+// 参考:
+//   - UE5 ScreenSpaceContactShadows
+//   - o3de Atom ScreenSpaceShadow pass
+export const SSSHADOW_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_depthMap;       // 场景深度(GL_DEPTH_COMPONENT 或 RGBA16F 打包)
+uniform mat4 u_invProjection;       // 投影逆矩阵(用于位置重建)
+uniform mat4 u_projection;          // 投影矩阵(用于步进投影)
+uniform vec3 u_lightDirVS;          // 视空间光向(已归一化,指向光源)
+uniform vec2 u_screenSize;
+uniform int   u_maxSteps;           // 最大步进次数(默认 16)
+uniform float u_stepSize;           // 步长(视空间单位,默认 0.1)
+uniform float u_thickness;          // 厚度容差(视空间,默认 0.05)
+uniform float u_maxDistance;        // 最大射线距离(视空间,默认 1.0)
+uniform float u_bias;               // 深度偏移(避免自阴影,默认 0.001)
+
+// 从深度 + UV 重建视空间位置(NDC → 逆投影)
+vec3 reconstructViewPos(vec2 uv, float depth) {
+  vec4 ndc = vec4(uv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
+  vec4 viewPos = u_invProjection * ndc;
+  return viewPos.xyz / viewPos.w;
+}
+
+// 视空间位置 → 屏幕 UV
+vec2 projectToUV(vec3 viewPos) {
+  vec4 clip = u_projection * vec4(viewPos, 1.0);
+  return (clip.xy / clip.w) * 0.5 + 0.5;
+}
+
+void main() {
+  float depth = texture(u_depthMap, v_uv).r;
+  // 深度 = 1.0 → 天空(远裁面),跳过
+  if (depth >= 1.0) {
+    outColor = vec4(1.0, 1.0, 1.0, 1.0); // 无遮挡
+    return;
+  }
+
+  vec3 viewPos = reconstructViewPos(v_uv, depth);
+
+  // 沿光向步进(指向光源)
+  vec3 rayDir = normalize(u_lightDirVS);
+  vec3 rayPos = viewPos + rayDir * (u_stepSize + u_bias);
+
+  float shadow = 1.0; // 1 = 无遮挡
+
+  for (int i = 0; i < 64; i++) {
+    if (i >= u_maxSteps) break;
+
+    // 射线已超出最大距离 → 停止
+    float rayDist = length(rayPos - viewPos);
+    if (rayDist > u_maxDistance) break;
+
+    vec2 uv = projectToUV(rayPos);
+    // 射线超出屏幕 → 停止
+    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) break;
+
+    float sampledDepth = texture(u_depthMap, uv).r;
+    if (sampledDepth >= 1.0) {
+      // 采样点为天空 → 无遮挡,继续
+      rayPos += rayDir * u_stepSize;
+      continue;
+    }
+
+    vec3 sampledPos = reconstructViewPos(uv, sampledDepth);
+    float rayDepth = -rayPos.z;   // 视空间深度(正值,越远越大)
+    float sampledDepthVS = -sampledPos.z;
+
+    // 射线在几何体后方(射线比采样点更远 → 被遮挡)
+    float depthDiff = rayDepth - sampledDepthVS;
+    if (depthDiff > 0.0 && depthDiff < u_thickness) {
+      // 距离衰减:越远 → 阴影越淡
+      float fade = 1.0 - smoothstep(0.0, u_maxDistance, rayDist);
+      shadow = min(shadow, 1.0 - fade);
+      break; // 找到遮挡即停止
+    }
+
+    rayPos += rayDir * u_stepSize;
+  }
+
+  outColor = vec4(shadow, shadow, shadow, 1.0);
+}
+`;
+

@@ -865,6 +865,7 @@ same `PostProcessingPipeline`.
 | `MotionBlurPass` | Camera/object motion blur using a velocity buffer. |
 | `SSRPass` | Screen-space reflections — ray-marches GBuffer position/normal buffers with temporal jitter, adaptive step, roughness-modulated composite, and separable Gaussian rough-reflection blur (H+V 9-tap, edge-aware). Surpasses soup3D (no SSR). |
 | `SSGIPass` | Screen-space global illumination — 8-ray cosine-weighted hemisphere sampling with golden-angle temporal rotation, producing diffuse color bleeding / bounce light. Outputs RGBA16F indirect irradiance for additive composite. Surpasses soup3D (no GI). |
+| `ScreenSpaceShadowPass` | Screen-space directional contact shadows — ray-marches depth buffer along light direction to find small-scale occlusion that shadow maps miss. Complements PCSS (pixel-precision vs shadow-map-precision). Surpasses soup3D (no shadows at all). |
 | `SSSSPass` | Screen-space subsurface scattering. |
 | `GlitchPass` | Digital glitch effect (cyberpunk) — RGB shift + band distortion + snow noise. Adapted from three.js `GlitchPass.js` / `DigitalGlitch.js`. Random trigger (120-240 frames) or `goWild` continuous mode. |
 | `SMAAPass` | Subpixel Morphological Antialiasing — 3-pass pipeline (edge detection → blending weights → neighborhood blending) with procedurally generated area/search LUT textures. Adapted from three.js `SMAAPass.js` / `SMAAShader.js` (SMAA v2.8 by Iryoku). Higher quality than FXAA, handles L/U/Z-shaped edges. |

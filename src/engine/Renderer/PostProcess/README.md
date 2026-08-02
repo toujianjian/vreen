@@ -2,7 +2,7 @@
 
 > Path: `src/engine/Renderer/PostProcess/`
 >
-> The enhanced post-processing pass family of the VREEN engine. Provides **19**
+> The enhanced post-processing pass family of the VREEN engine. Provides **20**
 > passes covering color grading, anti-aliasing, screen-space effects, depth-of-field,
 > motion blur, exposure adaptation, and stylized effects. Each pass is a
 > self-contained class that manages its own GPU resources (FBOs, textures,
@@ -23,9 +23,10 @@ PostProcess/
   │     ├── AfterimagePass
   │     └── PixelationPass
   │
-  ├── GBuffer-dependent (12 passes)           ← independent FBO/program
+  ├── GBuffer-dependent (13 passes)           ← independent FBO/program
   │     ├── SSRPass          ← needs position + normal
   │     ├── SSGIPass         ← needs position + normal + color
+  │     ├── ScreenSpaceShadowPass ← needs depth + light direction
   │     ├── VolumetricFogPass ← needs depth
   │     ├── VelocityPass     ← needs depth + matrices
   │     ├── TAAPass          ← needs color + velocity
