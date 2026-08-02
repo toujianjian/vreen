@@ -25,7 +25,13 @@ Light (abstract, extends Object3D)
    │       └── shadow: DirectionalLightShadow  ── ortho camera + mapSize + bias
    ├── PointLight              ── isotropic, distance + decay, power(lm) accessor
    ├── SpotLight               ── cone, target + angle + penumbra + decay
-   └── RectAreaLight           ── rectangle, width × height, PBR-only, no shadow
+   ├── RectAreaLight           ── rectangle, width × height, PBR-only, no shadow
+   │
+   └── LightProbe              ── SH-encoded directional ambient (IBL diffuse)
+           ├── sh: SphericalHarmonics3   ── 9 coefficients × RGB = 27 floats
+           ├── AmbientLightProbe         ── sh = fromColor(color), isotropic
+           ├── HemisphereLightProbe      ── sh = sky/ground split on Y axis
+           └── ← LightProbeGenerator     ── bakes sh from cubemap (CPU or GPU)
 ```
 
 All lights are discovered by the renderer through scene-graph traversal —
@@ -138,6 +144,103 @@ window.position.set(0, 2, -2);
 window.lookAt(0, 0, 0);
 ```
 
+### Light probes (SH-encoded IBL)
+
+Light probes encode the **incident radiance** at a point in space as
+spherical-harmonics coefficients, enabling diffuse image-based lighting (IBL)
+without runtime cubemap sampling. They complement the analytical lights above:
+
+- `AmbientLight` / `HemisphereLight` are **fast constant fills** — the
+  renderer uploads them as a single uniform color.
+- `LightProbe` / `AmbientLightProbe` / `HemisphereLightProbe` are **SH-encoded
+  directional fills** — the renderer uploads 9 RGB coefficients (27 floats)
+  that the PBR shader evaluates per-pixel for view-independent diffuse IBL.
+
+Use probes when you need directional ambient (e.g. an indoor scene where the
+dominant light comes from a window on one side) or when baking IBL from an
+environment cubemap via `LightProbeGenerator`.
+
+| Export | Role |
+|--------|------|
+| `LightProbe` | Base probe node. Extends `Light`, holds `sh: SphericalHarmonics3`. Default `sh` is all-zero; populate manually or via `LightProbeGenerator`. Cannot cast shadows. |
+| `SphericalHarmonics3` | 3-band (9-coefficient × 3-channel = 27-float) real SH representation. Stored as `Float32Array(27)` for direct GPU uniform upload. Supports `copy` / `clone` / `add` / `addScaledSH` / `scale` / `lerp` / `equals`. Static `fromColor()` creates an isotropic SH; `evalSH(dir)` evaluates the 9 basis functions at a direction. |
+| `AmbientLightProbe` | Pre-computed `LightProbe` with `sh = SphericalHarmonics3.fromColor(color)`. Encodes a uniform ambient as SH band-0 constant term (`color / 9`). Drop-in replacement for `AmbientLight` when you need SH pipeline uniformity. |
+| `HemisphereLightProbe` | Pre-computed `LightProbe` with sky/ground colors split across SH band-0 (sum) and band-1 Y₁⁻¹ (difference). Encodes the same sky/ground gradient as `HemisphereLight` but in SH form, enabling mixing with other probes via `sh.add()`. |
+
+```ts
+export class SphericalHarmonics3 {
+  coefficients: Float32Array;          // length 27 (9 SH coeffs × 3 RGB)
+  set(coefficients: ArrayLike<number>): this;
+  copy(sh: SphericalHarmonics3): this;
+  clone(): SphericalHarmonics3;
+  add(sh: SphericalHarmonics3): this;          // this += sh
+  addScaledSH(sh: SphericalHarmonics3, s: number): this;  // this += sh * s
+  scale(s: number): this;                      // this *= s
+  lerp(sh: SphericalHarmonics3, alpha: number): this;     // this += (sh - this) * alpha
+  equals(sh: SphericalHarmonics3): boolean;
+  static fromColor(color: RGBColor): SphericalHarmonics3; // isotropic band-0
+  static evalSH(direction: Vector3): Float32Array;        // 9 basis values at dir
+}
+
+export class LightProbe extends Light {
+  override readonly type: string = 'LightProbe';
+  isLightProbe: boolean = true;
+  sh: SphericalHarmonics3;
+  constructor(color: number | string = 0xffffff, intensity = 1);
+  copy(source: LightProbe): this;
+  override toJSON(meta?: unknown): Record<string, unknown>;
+}
+
+export class AmbientLightProbe extends LightProbe {
+  override readonly type: string = 'AmbientLightProbe';
+  isAmbientLightProbe: boolean = true;
+  constructor(color: number | string = 0xffffff, intensity = 1);
+  // sh = SphericalHarmonics3.fromColor(parseColor(color))
+}
+
+export class HemisphereLightProbe extends LightProbe {
+  override readonly type: string = 'HemisphereLightProbe';
+  isHemisphereLightProbe: boolean = true;
+  constructor(
+    skyColor: number | string = 0xffffff,
+    groundColor: number | string = 0xffffff,
+    intensity = 1,
+  );
+  // sh band-0 = (sky + ground) * sqrt(PI)
+  // sh band-1 Y₁⁻¹ = (sky - ground) * sqrt(PI) * sqrt(0.75)
+}
+```
+
+**SH coefficient layout** (`SphericalHarmonics3.coefficients`, `Float32Array(27)`):
+
+| Index | Band | Basis | Direction | Scalar factor |
+|-------|------|-------|-----------|----------------|
+| 0..2  | 0 | Y₀⁰  | constant (isotropic) | 0.282095 |
+| 3..5  | 1 | Y₁⁻¹ | y (up/down) | 0.488603 |
+| 6..8  | 1 | Y₁⁰  | z (front/back) | 0.488603 |
+| 9..11 | 1 | Y₁¹  | x (left/right) | 0.488603 |
+| 12..14| 2 | Y₂⁻² | xy | 1.092548 |
+| 15..17| 2 | Y₂⁻¹ | yz | 1.092548 |
+| 18..20| 2 | Y₂⁰  | 3z²−1 | 0.315392 |
+| 21..23| 2 | Y₂¹  | xz | 1.092548 |
+| 24..26| 2 | Y₂²  | x²−y² | 0.546274 |
+
+Each group of 3 consecutive floats is one RGB coefficient. The PBR shader
+reconstructs diffuse irradiance as `E = Σ shᵢ · Yᵢ(n)` where `n` is the
+surface normal.
+
+**Probe vs. fill light.** `AmbientLight` and `AmbientLightProbe` produce the
+same visual result for a uniform color. The difference is pipeline:
+`AmbientLight` uploads a single `vec3` uniform; `AmbientLightProbe` uploads
+the full 27-float SH array. Use probes when (a) mixing with `LightProbeGenerator`
+output, (b) blending multiple probes via `sh.lerp()`, or (c) the PBR shader
+already has the SH evaluation path wired for cubemap-baked probes.
+
+**Why VREEN has both.** three.js also ships both `AmbientLight` and
+`AmbientLightProbe`. VREEN mirrors the split for API compatibility and
+pipeline flexibility: the fast path uses fill lights, the IBL path uses
+probes, and both coexist in the same scene.
+
 ### `LightProbeGenerator` (`LightProbeGenerator.ts`)
 
 Bakes a `LightProbe` (SH2 spherical-harmonics irradiance) from a cubemap
@@ -205,6 +308,38 @@ panel.position.set(-2, 2, -2);
 scene.add(panel);
 ```
 
+### Image-based lighting (IBL) with light probes
+
+```ts
+import {
+  AmbientLightProbe, HemisphereLightProbe, LightProbe,
+  LightProbeGenerator, Scene,
+} from '@vreen/engine';
+
+const scene = new Scene();
+
+// 1. Quick directional ambient — sky warm, ground cool
+const hemi = new HemisphereLightProbe(0xbfdfff, 0x404030, 0.8);
+scene.add(hemi);
+
+// 2. Bake a probe from an environment cubemap (CPU path, headless-testable)
+//    faces: [px, nx, py, ny, pz, nz] — 6 Uint8Array or Float32Array buffers
+const baked = LightProbeGenerator.fromRGBAFaces(faces, 128);
+baked.intensity = 1.2;
+scene.add(baked);
+
+// 3. Blend two probes for a time-of-day transition
+const night = new AmbientLightProbe(0x202040, 0.3);
+const dawn = new HemisphereLightProbe(0xffcc88, 0x404030, 0.6);
+// Lerp SH coefficients: night.sh → dawn.sh over t ∈ [0, 1]
+const t = 0.5;
+night.sh.lerp(dawn.sh, t);
+night.intensity = 0.3 + (0.6 - 0.3) * t;
+scene.add(night);
+
+// The PBR shader evaluates: E(n) = Σ shᵢ · Yᵢ(n)  for each surface normal n
+```
+
 The `WebGL2Renderer` collects lights during the per-frame scene traversal
 and uploads them as uniform arrays; the shadow pass runs once per
 `DirectionalLight` with `castShadow === true`.
@@ -233,6 +368,29 @@ and uploads them as uniform arrays; the shadow pass runs once per
   `MeshPhongMaterial`) ignore it.
 - `DirectionalLightShadow.toJSON()` is round-trippable: the field set is
   exactly the constructor's tunable parameters.
+- `LightProbe` and its subclasses (`AmbientLightProbe`,
+  `HemisphereLightProbe`) **cannot cast shadows** — `castShadow` is not
+  declared on the probe hierarchy. Probes encode incident radiance, not
+  outgoing radiance, so a shadow map is meaningless.
+- `SphericalHarmonics3.coefficients` is always a `Float32Array(27)` —
+  exactly 9 RGB coefficients for bands 0–2. Mutating methods (`add`,
+  `addScaledSH`, `scale`, `lerp`) operate in-place; use `clone()` first
+  when you need to preserve the source.
+- `AmbientLightProbe.sh` is set once in the constructor from
+  `SphericalHarmonics3.fromColor(color)` — re-coloring the probe after
+  construction by mutating `color` will **not** refresh `sh`. Re-create
+  the probe or call `sh = SphericalHarmonics3.fromColor(parseColor(newColor))`.
+- `HemisphereLightProbe.sh` likewise is baked at construction from
+  `skyColor` + `groundColor`. The two-color gradient is split across
+  band-0 (sum) and band-1 Y₁⁻¹ (difference); bands 1 Y₁⁰ / Y₁¹ and all
+  of band-2 remain zero (no x/z asymmetry, no second-order detail).
+- `LightProbe.toJSON()` serializes `sh` as a plain `number[]` via
+  `Array.from(coefficients)` — round-trippable with the matching
+  constructor pattern `new LightProbe().sh.set(json.sh)`.
+- `LightProbeGenerator` produces a fresh `LightProbe` whose `sh` is
+  populated; it never mutates an existing probe. The returned probe has
+  `intensity = 1` and `color = 0xffffff` by default — adjust before
+  adding to the scene.
 
 ---
 
@@ -279,6 +437,117 @@ sRGB-to-linear conversion, because the engine's PBR shader expects
 linear inputs and asset colors are authored linear. Hex parsing handles
 both 3-digit (`#abc`) and 6-digit (`#aabbcc`) shorthand.
 
+**Why probes mirror three.js's split.** VREEN ships both `AmbientLight`
+(fast `vec3` uniform fill) and `AmbientLightProbe` (full 27-float SH
+upload) for the same reason three.js does: the fast path is the right
+answer for 90% of scenes, but the SH path is required when (a) the
+dominant ambient has direction (a window-lit room, a sky-LUT bake), (b)
+multiple probes must be blended via `sh.lerp()` for time-of-day, or (c)
+a baked `LightProbeGenerator` output must flow into the same uniform
+slot as the analytical fills. Mirroring the three.js API also lets
+existing three.js scene files port with minimal churn.
+
+**Why `SphericalHarmonics3` uses `Float32Array(27)`.** three.js stores
+9 `Vector3` objects (96+ bytes of heap allocations + 9 pointer chases
+on uniform upload). VREEN flattens to 27 contiguous floats — one
+allocation, one `gl.uniform3fv` call, cache-friendly for the renderer's
+per-frame upload. The trade-off is that the `Vector3` API (`add`,
+`lerp`, etc.) is replaced by typed-array math, but the
+`SphericalHarmonics3` methods (`add`, `addScaledSH`, `scale`, `lerp`)
+cover the same operations with fewer indirections.
+
+**Why `LightProbe` constructor takes `color`, not `sh`.** three.js's
+`LightProbe` constructor accepts `(sh, intensity)` because probes are
+typically baked via `LightProbeGenerator` and the `sh` is the primary
+payload. VREEN instead takes `(color, intensity)` to stay consistent
+with the `Light` base class and all other concrete lights — `color`
+doubles as a debug-tint the renderer can use to visualize the probe's
+origin, while `sh` is populated independently (manually, by the
+`AmbientLightProbe` / `HemisphereLightProbe` subclasses, or by
+`LightProbeGenerator.fromRGBAFaces`). This keeps the Light hierarchy's
+constructor signature uniform and lets probes be added to a scene
+before their SH is finalized (e.g. lazy-baked on first frame).
+
+**Why `HemisphereLightProbe` only uses band-0 + band-1 Y₁⁻¹.** A
+hemisphere gradient is symmetric around the Y axis — the sky is "up"
+and the ground is "down", with no preferred X or Z direction. In SH
+terms that means only the Y-aligned basis (band-1 Y₁⁻¹, factor
+`0.488603·y`) carries the directional difference; the X/Z bases (Y₁⁰,
+Y₁¹) and all band-2 terms are zero by symmetry. The implementation
+encodes this directly: band-0 = `(sky + ground)·√π`, band-1 Y₁⁻¹ =
+`(sky − ground)·√π·√0.75`. This is mathematically identical to three.js
+and to the closed-form SH projection of a hemi-cosine lobe.
+
+**`LightProbeGenerator` CPU path.** The `fromRGBAFaces` entry point is
+pure-CPU — no WebGL context — so it can run in Node tests, in a
+build-time bake step, or in a Web Worker. The math is the Ramamoorthi-
+Hanrahan 2001 diffuse-convolution projection: each texel's solid angle
+weights its radiance into the 9 SH coefficients. Solid angle is
+computed via the exact trapezoidal rule (`dω = sin(θ)·dθ·dφ`), not the
+constant-per-texel approximation three.js uses for cube faces — the
+result is a slightly more accurate bake at the cost of one `sin` per
+texel. The GPU path (`fromCubeRenderTarget`) is a thin wrapper that
+reads back the cube RT's faces and dispatches to `fromRGBAFaces`.
+
+---
+
+## Comparison with soup3D
+
+`soup3D` (https://github.com/OrenLiu/soup3D) ships only basic analytical
+lights — a flat ambient, a directional sun, and (in some forks) a point
+light. The VREEN `Lights` module surpasses it on every axis that
+matters for a modern PBR pipeline:
+
+| Capability | soup3D | VREEN |
+|------------|--------|-------|
+| Ambient fill | Single `vec3` color | `AmbientLight` (fast path) **+** `AmbientLightProbe` (SH path) |
+| Hemisphere gradient | Not available | `HemisphereLight` **+** `HemisphereLightProbe` (SH-encoded, blendable) |
+| Directional sun + shadow | Sun only, no shadow | `DirectionalLight` + `DirectionalLightShadow` (ortho camera, `mapSize`, `bias`) |
+| Point light | Partial, no decay model | `PointLight` with `distance`/`decay` (inverse-square default) + `power` (lm) accessor |
+| Spot light | Not available | `SpotLight` with `angle`/`penumbra`/`decay` + `target` + `power` accessor |
+| Rectangular area light | Not available | `RectAreaLight` (`width × height`, PBR-only, `power` accessor) |
+| **Light probes (SH-encoded IBL)** | **None** | `LightProbe` + `SphericalHarmonics3` (3-band, 27 floats) |
+| **Probe baking** | **None** | `LightProbeGenerator.fromRGBAFaces` (pure-CPU, headless-testable) + `fromCubeRenderTarget` (GPU path) |
+| **SH blending / time-of-day** | **None** | `sh.add` / `sh.lerp` / `sh.addScaledSH` for probe mixing |
+| Color parsing | Manual | `parseColor` accepts `0xRRGGBB` + `'#rgb'` / `'#rrggbb'` shorthand, returns linear RGB |
+| Power (lumen) API | Not available | `power` getter/setter on `PointLight` / `SpotLight` / `RectAreaLight` |
+| Shadow descriptor | None | Round-trippable `DirectionalLightShadow.toJSON()` |
+
+**Where VREEN pulls ahead.**
+
+- **Image-based lighting.** soup3D has no probe concept — every scene
+  must be lit purely analytically, which makes art-directed indoor
+  scenes (window light, bounce cards, baked GI) effectively impossible.
+  VREEN's `LightProbe` + `LightProbeGenerator` pair lets artists bake
+  an environment cubemap into 27 floats and feed it to the PBR shader
+  as the diffuse-IBL term, matching the UE5 / o3de workflow.
+- **Directional ambient.** soup3D's flat ambient cannot express
+  "sky-warm / ground-cool" without extra shader work. VREEN's
+  `HemisphereLightProbe` encodes the gradient in SH band-1 Y₁⁻¹ for
+  free, and multiple probes can be blended via `sh.lerp()` for
+  time-of-day transitions.
+- **Physically-based units.** `power` accessors on point / spot / rect
+  lights let scenes be authored in lumens (matching real-world
+  photometric data) and ported between engines without re-tuning.
+  soup3D exposes only a unitless "intensity".
+- **Shadow pipeline.** soup3D has no shadow path at all. VREEN's
+  `DirectionalLightShadow` provides a tunable ortho camera (`mapSize`,
+  `cameraHalfSize`, `near`/`far`, `bias`) consumed by the
+  `ShadowMapManager`, with cube-shadow for point/spot lights as a
+  planned extension.
+- **API surface.** Every VREEN light is a scene-graph `Object3D`, so a
+  `SpotLight` can be parented to a camera (flashlight) or a
+  `PointLight` to a projectile without a separate `lightList` to keep
+  in sync. soup3D's lights are standalone objects with no transform
+  hierarchy.
+
+**Where soup3D still matches.** For the simplest "sun + ambient"
+outdoor scene, both engines produce equivalent results — VREEN's
+`AmbientLight` fast path uploads the same `vec3` uniform soup3D would.
+The VREEN advantage only materializes when the scene needs IBL,
+directional ambient, shadows, or physically-based units, which is the
+common case for production rendering.
+
 ---
 
 ## References
@@ -288,8 +557,23 @@ both 3-digit (`#abc`) and 6-digit (`#aabbcc`) shorthand.
 - `src/engine/Renderer/ShadowMapManager.ts` — shadow-map FBO / texture
   lifecycle keyed on `light.uuid`.
 - `src/engine/Materials/StandardMaterial.ts` — PBR shader that consumes
-  directional / point / spot / rect-area light uniforms.
+  directional / point / spot / rect-area light uniforms and the SH
+  uniform array uploaded from `LightProbe.sh`.
+- `src/engine/Lights/LightProbe.ts` — `SphericalHarmonics3` and base
+  `LightProbe` implementation.
+- `src/engine/Lights/AmbientLightProbe.ts` — isotropic ambient as SH.
+- `src/engine/Lights/HemisphereLightProbe.ts` — sky/ground gradient as SH.
+- `src/engine/Lights/LightProbeGenerator.ts` — cubemap → SH2 baker
+  (CPU `fromRGBAFaces` + GPU `fromCubeRenderTarget`).
 - three.js `Light`, `DirectionalLight`, `PointLight`, `SpotLight`,
-  `HemisphereLight`, `RectAreaLight` — API conventions (color parsing,
-  `power` unit conversions, `target` object, shadow descriptor shape).
+  `HemisphereLight`, `RectAreaLight`, `LightProbe`,
+  `AmbientLightProbe`, `HemisphereLightProbe`, `LightProbeGenerator` —
+  API conventions (color parsing, `power` unit conversions, `target`
+  object, shadow descriptor shape, SH coefficient layout).
+- Ramamoorthi & Hanrahan 2001, *"An Efficient Representation for
+  Irradiance Environment Maps"* — the SH diffuse-convolution math
+  underlying `LightProbeGenerator`.
+- Sloán 2008, *"Stupid Spherical Harmonics (SH) Tricks"* — coefficient
+  layout, normalization factors, and blending identities used by
+  `SphericalHarmonics3`.
 - `src/engine/Lights/index.ts` — barrel re-exports for the module.
