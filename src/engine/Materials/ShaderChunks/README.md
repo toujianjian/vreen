@@ -95,6 +95,36 @@ const vertexShader = `
 | `fog_pars` | Fog uniform declarations |
 | `fog_fragment` | Apply fog to final color |
 
+#### Shadow (`shadow.ts`)
+
+Three shadow sampling functions of increasing quality:
+
+| Function | Taps | Description |
+|----------|------|-------------|
+| `sampleShadowHard` | 1 | Hard shadow (single depth test). Fastest; aliased edges. |
+| `sampleShadowPCF` | 9 | 3×3 PCF at fixed 1.5-texel radius. Smooth edges; uniform blur width. |
+| `sampleShadowPCSS` | 32 | **PCSS** (Percentage-Closer Soft Shadows). 3-stage physical soft shadows: blocker search (16-tap Poisson) → penumbra estimation → variable-radius PCF (16-tap Poisson). Contact points render sharp; distant occluders render soft — matching real-world light behavior. Requires `u_lightSize` uniform. |
+
+**PCSS algorithm** (UE5 / o3de Atom grade):
+
+| Stage | Description |
+|-------|-------------|
+| ① Blocker Search | Sample 16 Poisson-disk points within `searchRadius = u_lightSize × texel × 10`. Average the depth of samples that are closer than the receiver (blockers). Early-out if no blockers → fully lit. |
+| ② Penumbra Estimation | `penumbra = (receiverDepth − avgBlockerDepth) × u_lightSize / avgBlockerDepth`. Near blocker → small penumbra → sharp shadow; far blocker → large penumbra → soft shadow. Clamped to `maxRadius = 50 texels`. |
+| ③ PCF Filter | 16-tap Poisson-disk PCF at the estimated penumbra radius. Returns average visibility [0, 1]. |
+
+**Required uniforms** (all three functions):
+
+```glsl
+uniform sampler2D u_shadowMap;
+uniform mat4      u_lightVP;
+uniform float     u_shadowBias;
+uniform vec2      u_shadowMapSize;
+uniform int       u_shadowEnabled;
+// PCSS only:
+uniform float     u_lightSize;   // 光源尺寸(世界单位,控制半影宽度)
+```
+
 ---
 
 ## GLSL Composer (`index.ts`)

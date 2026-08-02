@@ -35,25 +35,28 @@ function makeCamera(): Camera {
 
 describe('ShadowMapManager', () => {
   describe('构造与默认值', () => {
-    it('默认:type=pcf, enabled=false, renderSingleSided=true, defaultMapSize=1024', () => {
+    it('默认:type=pcf, enabled=false, renderSingleSided=true, defaultMapSize=1024, lightSize=0.5', () => {
       const m = new ShadowMapManager({} as WebGL2RenderingContext);
       expect(m.type).toBe('pcf');
       expect(m.enabled).toBe(false);
       expect(m.renderSingleSided).toBe(true);
       expect(m.defaultMapSize).toBe(1024);
+      expect(m.lightSize).toBe(0.5);
     });
 
-    it('接受选项覆盖', () => {
+    it('接受选项覆盖(含 pcss + lightSize)', () => {
       const m = new ShadowMapManager({} as WebGL2RenderingContext, {
-        type: 'basic',
+        type: 'pcss',
         enabled: true,
         renderSingleSided: false,
         defaultMapSize: 2048,
+        lightSize: 1.5,
       });
-      expect(m.type).toBe('basic');
+      expect(m.type).toBe('pcss');
       expect(m.enabled).toBe(true);
       expect(m.renderSingleSided).toBe(false);
       expect(m.defaultMapSize).toBe(2048);
+      expect(m.lightSize).toBe(1.5);
     });
 
     it('gl 引用被保留', () => {
@@ -64,13 +67,22 @@ describe('ShadowMapManager', () => {
   });
 
   describe('属性切换', () => {
-    it('type 可在 basic 与 pcf 间切换', () => {
+    it('type 可在 basic / pcf / pcss 间切换', () => {
       const m = makeManager();
-      const types: ShadowType[] = ['basic', 'pcf', 'basic', 'pcf'];
+      const types: ShadowType[] = ['basic', 'pcf', 'pcss', 'basic', 'pcss', 'pcf'];
       for (const t of types) {
         m.type = t;
         expect(m.type).toBe(t);
       }
+    });
+
+    it('lightSize 可调整', () => {
+      const m = makeManager();
+      expect(m.lightSize).toBe(0.5);
+      m.lightSize = 2.0;
+      expect(m.lightSize).toBe(2.0);
+      m.lightSize = 0.0;
+      expect(m.lightSize).toBe(0.0);
     });
 
     it('enabled 可切换 true/false', () => {

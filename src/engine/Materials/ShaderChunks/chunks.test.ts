@@ -161,12 +161,52 @@ describe('ShaderChunks — 内容完整性', () => {
       expect(SHADOW_CHUNK).toContain('sampleShadowHard');
     });
 
+    it('provides sampleShadowPCSS function', () => {
+      expect(SHADOW_CHUNK).toContain('sampleShadowPCSS');
+    });
+
     it('references required uniforms', () => {
       expect(SHADOW_CHUNK).toContain('u_shadowMap');
       expect(SHADOW_CHUNK).toContain('u_lightVP');
       expect(SHADOW_CHUNK).toContain('u_shadowBias');
       expect(SHADOW_CHUNK).toContain('u_shadowMapSize');
       expect(SHADOW_CHUNK).toContain('u_shadowEnabled');
+    });
+
+    it('PCSS references u_lightSize uniform', () => {
+      expect(SHADOW_CHUNK).toContain('u_lightSize');
+    });
+
+    it('PCSS has 16-sample Poisson disk', () => {
+      expect(SHADOW_CHUNK).toContain('POISSON_DISK[16]');
+      expect(SHADOW_CHUNK).toContain('vec2[16]');
+    });
+
+    it('PCSS implements 3-stage algorithm (blocker search + penumbra + PCF)', () => {
+      expect(SHADOW_CHUNK).toContain('Stage 1: Blocker Search');
+      expect(SHADOW_CHUNK).toContain('Stage 2: Penumbra Estimation');
+      expect(SHADOW_CHUNK).toContain('Stage 3: PCF Filter');
+    });
+
+    it('PCSS computes average blocker depth', () => {
+      expect(SHADOW_CHUNK).toContain('blockerSum');
+      expect(SHADOW_CHUNK).toContain('blockerCount');
+      expect(SHADOW_CHUNK).toContain('avgBlockerDepth');
+    });
+
+    it('PCSS estimates penumbra width from blocker-receiver distance', () => {
+      expect(SHADOW_CHUNK).toContain('penumbra');
+      expect(SHADOW_CHUNK).toContain('receiverDepth - avgBlockerDepth');
+    });
+
+    it('PCSS clamps penumbra to max radius', () => {
+      expect(SHADOW_CHUNK).toContain('clamp(penumbra');
+      expect(SHADOW_CHUNK).toContain('maxRadius');
+    });
+
+    it('PCSS early-outs when no blockers found', () => {
+      expect(SHADOW_CHUNK).toContain('blockerCount < 0.5');
+      expect(SHADOW_CHUNK).toContain('return 1.0');
     });
   });
 

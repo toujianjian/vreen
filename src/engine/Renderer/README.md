@@ -151,8 +151,23 @@ G-Buffer shader writing to the 4 `layout(location = N) out` outputs.
 ### `ShadowMapManager` (`ShadowMapManager.ts`)
 
 Centralised shadow-map FBO / texture lifecycle for cast-shadow lights.
-Per-light depth target reuse and resize policy. PCF 16-tap sampling in
-the shadow shader.
+Per-light depth target reuse and resize policy. Supports three shadow
+modes via `ShadowType`:
+
+| Type | Taps | Filter | Description |
+|------|------|--------|-------------|
+| `'basic'` | 1 | NEAREST | Hard shadow (single depth test). Fastest; aliased edges. |
+| `'pcf'` | 9 | LINEAR | 3×3 PCF at fixed 1.5-texel radius. Smooth edges; uniform blur width. |
+| `'pcss'` | 32 | LINEAR | **PCSS** (Percentage-Closer Soft Shadows). 3-stage physical soft shadows: blocker search (16-tap Poisson) → penumbra estimation → variable-radius PCF (16-tap Poisson). Contact points render sharp; distant occluders render soft — matching real-world light behavior. Requires `lightSize` property (world units, controls penumbra width). **Surpasses soup3D** (which only has basic hard shadows). |
+
+```ts
+const sm = new ShadowMapManager(gl, {
+  type: 'pcss',
+  enabled: true,
+  lightSize: 0.5,   // larger = softer shadows
+});
+// Consumer shader calls sampleShadowPCSS(worldPos) — see ShaderChunks/shadow.glsl.ts
+```
 
 ### `CascadedShadowMap` (`CascadedShadowMap.ts`)
 

@@ -46,7 +46,7 @@ import { createLogger } from '@/lib/logger';
 const log = createLogger('ShadowMapManager');
 
 /** 阴影模式。 */
-export type ShadowType = 'basic' | 'pcf';
+export type ShadowType = 'basic' | 'pcf' | 'pcss';
 
 /** 内部缓存的阴影 FBO 资源(每个 castShadow 光源一份)。 */
 interface ShadowResources {
@@ -69,6 +69,8 @@ export interface ShadowMapManagerOptions {
   renderSingleSided?: boolean;
   /** 默认阴影贴图分辨率,默认 1024。 */
   defaultMapSize?: number;
+  /** PCSS 光源尺寸(世界单位,控制半影宽度)。仅 type='pcss' 时使用。默认 0.5。 */
+  lightSize?: number;
 }
 
 /**
@@ -84,7 +86,7 @@ export interface ShadowMapManagerOptions {
 export class ShadowMapManager {
   readonly gl: WebGL2RenderingContext;
 
-  /** 阴影模式:'basic'(硬阴影,单采样)或 'pcf'(软阴影,9-tap)。 */
+  /** 阴影模式:'basic'(硬阴影) / 'pcf'(9-tap PCF) / 'pcss'(物理软阴影)。 */
   type: ShadowType;
   /** 是否启用。false 时 render() 立即返回。 */
   enabled: boolean;
@@ -92,6 +94,8 @@ export class ShadowMapManager {
   renderSingleSided: boolean;
   /** 默认阴影贴图分辨率(正方形边长)。 */
   defaultMapSize: number;
+  /** PCSS 光源尺寸(世界单位)。仅 type='pcss' 时由 consumer shader 读取。 */
+  lightSize: number;
 
   /** 每光源的 FBO 缓存。 */
   private _cache: WeakMap<DirectionalLight, ShadowResources> = new WeakMap();
@@ -115,6 +119,7 @@ export class ShadowMapManager {
     this.enabled = opts.enabled ?? false;
     this.renderSingleSided = opts.renderSingleSided ?? true;
     this.defaultMapSize = opts.defaultMapSize ?? 1024;
+    this.lightSize = opts.lightSize ?? 0.5;
   }
 
   /**
@@ -353,7 +358,7 @@ export class ShadowMapManager {
     const gl = this.gl;
     const desiredSize = light.shadow.mapSize || this.defaultMapSize;
     const desiredFilter: 'nearest' | 'linear' =
-      this.type === 'pcf' ? 'linear' : 'nearest';
+      this.type === 'basic' ? 'nearest' : 'linear';
 
     const cached = this._cache.get(light);
     if (cached && cached.size === desiredSize && cached.filter === desiredFilter) {
