@@ -1989,3 +1989,283 @@ void main() {
 }
 `;
 
+// ── SMAA (Subpixel Morphological Antialiasing) ──────────────────────
+// 3-pass 抗锯齿管线:边缘检测 → 混合权重计算 → 邻域混合。
+// 适配自 three.js examples/jsm/shaders/SMAAShader.js (SMAA v2.8, MIT)。
+// 关键改动:
+//   - GLSL ES 3.0 语法(varying→in/out, texture2D→texture, gl_FragColor→outColor)
+//   - 偏移计算从顶点着色器移至片元着色器(复用 POST_VERT)
+//   - uniform 命名遵循 VREEN 约定(u_ 前缀)
+// 参考: Jorge Jimenez et al., "SMAA: Enhanced Subpixel Morphological Antialiasing"
+//   https://www.iryoku.com/smaa/
+
+/** SMAA Pass 1 — 颜色边缘检测。 */
+export const SMAA_EDGES_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;
+uniform vec2 u_resolution;
+
+#define SMAA_THRESHOLD 0.1
+
+vec4 SMAAColorEdgeDetectionPS(vec2 texcoord, sampler2D colorTex) {
+  vec2 threshold = vec2(SMAA_THRESHOLD);
+  vec4 delta;
+  vec3 C = texture(colorTex, texcoord).rgb;
+
+  // 左 / 上 邻居
+  vec3 Cleft = texture(colorTex, texcoord + u_resolution * vec2(-1.0, 0.0)).rgb;
+  vec3 t = abs(C - Cleft);
+  delta.x = max(max(t.r, t.g), t.b);
+
+  vec3 Ctop = texture(colorTex, texcoord + u_resolution * vec2(0.0, 1.0)).rgb;
+  t = abs(C - Ctop);
+  delta.y = max(max(t.r, t.g), t.b);
+
+  // 阈值化
+  vec2 edges = step(threshold, delta.xy);
+
+  // 无边缘则 discard(节省后续带宽)
+  if (dot(edges, vec2(1.0)) == 0.0) discard;
+
+  // 右 / 下 邻居
+  vec3 Cright = texture(colorTex, texcoord + u_resolution * vec2(1.0, 0.0)).rgb;
+  t = abs(C - Cright);
+  delta.z = max(max(t.r, t.g), t.b);
+
+  vec3 Cbottom = texture(colorTex, texcoord + u_resolution * vec2(0.0, -1.0)).rgb;
+  t = abs(C - Cbottom);
+  delta.w = max(max(t.r, t.g), t.b);
+
+  // 邻域最大 delta
+  float maxDelta = max(max(max(delta.x, delta.y), delta.z), delta.w);
+
+  // 左左 / 上上 邻居
+  vec3 Cleftleft = texture(colorTex, texcoord + u_resolution * vec2(-2.0, 0.0)).rgb;
+  t = abs(C - Cleftleft);
+  delta.z = max(max(t.r, t.g), t.b);
+
+  vec3 Ctoptop = texture(colorTex, texcoord + u_resolution * vec2(0.0, 2.0)).rgb;
+  t = abs(C - Ctoptop);
+  delta.w = max(max(t.r, t.g), t.b);
+
+  maxDelta = max(max(maxDelta, delta.z), delta.w);
+
+  // 局部对比度自适应
+  edges.xy *= step(0.5 * maxDelta, delta.xy);
+
+  return vec4(edges, 0.0, 0.0);
+}
+
+void main() {
+  outColor = SMAAColorEdgeDetectionPS(v_uv, u_colorMap);
+}
+`;
+
+/** SMAA Pass 2 — 混合权重计算(需要 area + search LUT)。 */
+export const SMAA_WEIGHTS_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_edgesMap;
+uniform sampler2D u_areaMap;
+uniform sampler2D u_searchMap;
+uniform vec2 u_resolution;
+
+#define SMAA_MAX_SEARCH_STEPS 8
+#define SMAA_AREATEX_MAX_DISTANCE 16
+#define SMAA_AREATEX_PIXEL_SIZE (1.0 / vec2(160.0, 560.0))
+#define SMAA_AREATEX_SUBTEX_SIZE (1.0 / 7.0)
+
+vec2 round2(vec2 x) {
+  return sign(x) * floor(abs(x) + 0.5);
+}
+
+float SMAASearchLength(sampler2D searchTex, vec2 e, float bias, float scale) {
+  e.r = bias + e.r * scale;
+  return 255.0 * texture(searchTex, e, 0.0).r;
+}
+
+float SMAASearchXLeft(sampler2D edgesTex, sampler2D searchTex, vec2 texcoord, float end) {
+  vec2 e = vec2(0.0, 1.0);
+  for (int i = 0; i < SMAA_MAX_SEARCH_STEPS; i++) {
+    e = texture(edgesTex, texcoord, 0.0).rg;
+    texcoord -= vec2(2.0, 0.0) * u_resolution;
+    if (!(texcoord.x > end && e.g > 0.8281 && e.r == 0.0)) break;
+  }
+  texcoord.x += 0.25 * u_resolution.x;
+  texcoord.x += u_resolution.x;
+  texcoord.x += 2.0 * u_resolution.x;
+  texcoord.x -= u_resolution.x * SMAASearchLength(searchTex, e, 0.0, 0.5);
+  return texcoord.x;
+}
+
+float SMAASearchXRight(sampler2D edgesTex, sampler2D searchTex, vec2 texcoord, float end) {
+  vec2 e = vec2(0.0, 1.0);
+  for (int i = 0; i < SMAA_MAX_SEARCH_STEPS; i++) {
+    e = texture(edgesTex, texcoord, 0.0).rg;
+    texcoord += vec2(2.0, 0.0) * u_resolution;
+    if (!(texcoord.x < end && e.g > 0.8281 && e.r == 0.0)) break;
+  }
+  texcoord.x -= 0.25 * u_resolution.x;
+  texcoord.x -= u_resolution.x;
+  texcoord.x -= 2.0 * u_resolution.x;
+  texcoord.x += u_resolution.x * SMAASearchLength(searchTex, e, 0.5, 0.5);
+  return texcoord.x;
+}
+
+float SMAASearchYUp(sampler2D edgesTex, sampler2D searchTex, vec2 texcoord, float end) {
+  vec2 e = vec2(1.0, 0.0);
+  for (int i = 0; i < SMAA_MAX_SEARCH_STEPS; i++) {
+    e = texture(edgesTex, texcoord, 0.0).rg;
+    texcoord += vec2(0.0, 2.0) * u_resolution;
+    if (!(texcoord.y > end && e.r > 0.8281 && e.g == 0.0)) break;
+  }
+  texcoord.y -= 0.25 * u_resolution.y;
+  texcoord.y -= u_resolution.y;
+  texcoord.y -= 2.0 * u_resolution.y;
+  texcoord.y += u_resolution.y * SMAASearchLength(searchTex, e.gr, 0.0, 0.5);
+  return texcoord.y;
+}
+
+float SMAASearchYDown(sampler2D edgesTex, sampler2D searchTex, vec2 texcoord, float end) {
+  vec2 e = vec2(1.0, 0.0);
+  for (int i = 0; i < SMAA_MAX_SEARCH_STEPS; i++) {
+    e = texture(edgesTex, texcoord, 0.0).rg;
+    texcoord -= vec2(0.0, 2.0) * u_resolution;
+    if (!(texcoord.y < end && e.r > 0.8281 && e.g == 0.0)) break;
+  }
+  texcoord.y += 0.25 * u_resolution.y;
+  texcoord.y += u_resolution.y;
+  texcoord.y += 2.0 * u_resolution.y;
+  texcoord.y -= u_resolution.y * SMAASearchLength(searchTex, e.gr, 0.5, 0.5);
+  return texcoord.y;
+}
+
+vec2 SMAAArea(sampler2D areaTex, vec2 dist, float e1, float e2, float offset) {
+  // Rounding prevents precision errors of bilinear filtering
+  vec2 texcoord = float(SMAA_AREATEX_MAX_DISTANCE) * round2(4.0 * vec2(e1, e2)) + dist;
+  texcoord = SMAA_AREATEX_PIXEL_SIZE * texcoord + (0.5 * SMAA_AREATEX_PIXEL_SIZE);
+  texcoord.y += SMAA_AREATEX_SUBTEX_SIZE * offset;
+  return texture(areaTex, texcoord, 0.0).rg;
+}
+
+vec4 SMAABlendingWeightCalculationPS(vec2 texcoord, vec2 pixcoord, sampler2D edgesTex,
+                                      sampler2D areaTex, sampler2D searchTex) {
+  vec4 weights = vec4(0.0);
+  vec2 e = texture(edgesTex, texcoord).rg;
+
+  vec2 vOffset0 = texcoord.xyxy.xy + u_resolution.xyxy * vec4(-0.25, 0.125, 1.25, 0.125);
+  vec2 vOffset1 = texcoord.xyxy.xy + u_resolution.xyxy * vec4(-0.125, 0.25, -0.125, -1.25);
+  // 搜索终点
+  float endX0 = vOffset0.x - 2.0 * u_resolution.x * float(SMAA_MAX_SEARCH_STEPS);
+  float endX1 = vOffset0.z + 2.0 * u_resolution.x * float(SMAA_MAX_SEARCH_STEPS);
+  float endY0 = vOffset1.y + 2.0 * u_resolution.y * float(SMAA_MAX_SEARCH_STEPS);
+  float endY1 = vOffset1.w - 2.0 * u_resolution.y * float(SMAA_MAX_SEARCH_STEPS);
+
+  if (e.g > 0.0) {
+    // North edge
+    vec2 d;
+    vec2 coords;
+    coords.x = SMAASearchXLeft(edgesTex, searchTex, vOffset0.xy, endX0);
+    coords.y = vOffset1.y;
+    d.x = coords.x;
+    float e1 = texture(edgesTex, coords, 0.0).r;
+    coords.x = SMAASearchXRight(edgesTex, searchTex, vOffset0.zw, endX1);
+    d.y = coords.x;
+    d = d / u_resolution.x - pixcoord.x;
+    vec2 sqrt_d = sqrt(abs(d));
+    coords.y -= 1.0 * u_resolution.y;
+    float e2 = texture(edgesTex, coords + u_resolution * vec2(1.0, 0.0), 0.0).r;
+    weights.rg = SMAAArea(areaTex, sqrt_d, e1, e2, 0.0);
+  }
+
+  if (e.r > 0.0) {
+    // West edge
+    vec2 d;
+    vec2 coords;
+    coords.y = SMAASearchYUp(edgesTex, searchTex, vOffset1.xy, endY0);
+    coords.x = vOffset0.x;
+    d.x = coords.y;
+    float e1 = texture(edgesTex, coords, 0.0).g;
+    coords.y = SMAASearchYDown(edgesTex, searchTex, vOffset1.zw, endY1);
+    d.y = coords.y;
+    d = d / u_resolution.y - pixcoord.y;
+    vec2 sqrt_d = sqrt(abs(d));
+    coords.y -= 1.0 * u_resolution.y;
+    float e2 = texture(edgesTex, coords + u_resolution * vec2(0.0, 1.0), 0.0).g;
+    weights.ba = SMAAArea(areaTex, sqrt_d, e1, e2, 0.0);
+  }
+
+  return weights;
+}
+
+void main() {
+  vec2 pixcoord = v_uv / u_resolution;
+  outColor = SMAABlendingWeightCalculationPS(v_uv, pixcoord, u_edgesMap, u_areaMap, u_searchMap);
+}
+`;
+
+/** SMAA Pass 3 — 邻域混合。 */
+export const SMAA_BLEND_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;
+uniform sampler2D u_blendMap;
+uniform vec2 u_resolution;
+
+vec4 SMAANeighborhoodBlendingPS(vec2 texcoord, sampler2D colorTex, sampler2D blendTex) {
+  // 当前像素 + 4 邻居的偏移
+  vec4 offset0 = texcoord.xyxy + u_resolution.xyxy * vec4(-1.0, 0.0, 0.0, 1.0);
+  vec4 offset1 = texcoord.xyxy + u_resolution.xyxy * vec4(1.0, 0.0, 0.0, -1.0);
+
+  // 获取混合权重
+  vec4 a;
+  a.xz = texture(blendTex, texcoord).xz;
+  a.y = texture(blendTex, offset1.zw).g;
+  a.w = texture(blendTex, offset1.xy).a;
+
+  // 无权重 → 直通
+  if (dot(a, vec4(1.0)) < 1e-5) {
+    return texture(colorTex, texcoord, 0.0);
+  }
+
+  // 选择最大权重方向
+  vec2 offset;
+  offset.x = a.a > a.b ? a.a : -a.b;  // left vs right
+  offset.y = a.g > a.r ? -a.g : a.r;  // top vs bottom
+
+  if (abs(offset.x) > abs(offset.y)) {
+    offset.y = 0.0;
+  } else {
+    offset.x = 0.0;
+  }
+
+  // 混合
+  vec4 C = texture(colorTex, texcoord, 0.0);
+  texcoord += sign(offset) * u_resolution;
+  vec4 Cop = texture(colorTex, texcoord, 0.0);
+  float s = abs(offset.x) > abs(offset.y) ? abs(offset.x) : abs(offset.y);
+
+  // Gamma 校正后混合(避免线性空间插值偏暗)
+  C.xyz = pow(C.xyz, vec3(2.2));
+  Cop.xyz = pow(Cop.xyz, vec3(2.2));
+  vec4 mixed = mix(C, Cop, s);
+  mixed.xyz = pow(mixed.xyz, vec3(1.0 / 2.2));
+
+  return mixed;
+}
+
+void main() {
+  outColor = SMAANeighborhoodBlendingPS(v_uv, u_colorMap, u_blendMap);
+}
+`;
+

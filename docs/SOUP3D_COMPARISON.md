@@ -92,7 +92,7 @@
 | 等值面提取 (Marching Cubes) | ✗         | ✓ MarchingCubes (密度场/Metaball + 256 构型查表 + 梯度法线) | VREEN  |
 | 物体描边 (OutlinePass)  | ✗             | ✓ OutlinePass (CPU 高斯模糊 mask + 边缘检测 + 可配置颜色/强度/发光) | VREEN  |
 | 后处理基础              | ✗             | ✓ Bloom/CA/Vignette/SSAO/FXAA/ToneMap/Gamma/DOF    | VREEN  |
-| 后处理增强              | ✗             | ✓ GTAO/SSR/SSSS/TAA/MotionBlur/VolumetricFog/LUT   | VREEN  |
+| 后处理增强              | ✗             | ✓ GTAO/SSR/SSSS/TAA/SMAA/MotionBlur/VolumetricFog/LUT   | VREEN  |
 | 路径追踪(CPU 参考)    | ✗             | ✓ PathTracer(Möller–Trumbore + 俄罗斯轮盘)       | VREEN  |
 | Forward+ 簇渲染         | ✗             | ✓ ForwardPlusRenderer(3D 簇光源剔除)             | VREEN  |
 | 全局光照                | ✗             | ✓ GlobalIllumination(DDGI / 探针体素)            | VREEN  |
@@ -131,6 +131,7 @@
 | 3D 纹理(TEXTURE_3D)   | ✗             | ✓ Data3DTexture + WebGL2Renderer texImage3D + 三线性插值        | VREEN  |
 | 地面投影天空盒          | ✗             | ✓ GroundedSkybox(three.js r159+) — 下半球压平 + Z 翻转 + 平滑过渡 | VREEN  |
 | 数字故障后处理          | ✗             | ✓ GlitchPass(RGB 位移 + 条带扭曲 + 雪花噪声 + goWild 持续模式) | VREEN  |
+| 子像素形态学抗锯齿(SMAA)| ✗            | ✓ SMAAPass(3 pass:边缘检测 + 权重计算 + 邻域混合 + procedural LUT) | VREEN  |
 | 无绑定纹理池(Bindless) | ✗             | ✓ TexturePool(o3de 概念,TEXTURE_2D_ARRAY + sampler2DArray 索引访问) | VREEN  |
 | GPU 驱动纹理索引        | ✗             | ✓ TexturePool 版本追踪 + layerUpdates 部分更新                   | VREEN  |
 
@@ -320,6 +321,7 @@
 | three.js `examples/shaders/LUTShader.js` | LUT 颜色查找表后处理 | ✗ | LUTCubeLoader(.cube) + Data3DTexture(TEXTURE_3D) + LUTPass | **DaVinci Resolve/PS .cube 文件端到端直读** |
 | three.js `r159+ GroundedSkybox.js` | 地面投影天空盒 | ✗ | GroundedSkybox(下半球压平 + 平滑过渡 + Z 翻转) | — |
 | three.js `GlitchPass.js` + `DigitalGlitch.js` | 数字故障后处理 | ✗ | GlitchPass(RGB shift + 条带扭曲 + goWild) | **与赛博朋克主页视觉风格紧密集成** |
+| three.js `SMAAPass.js` + `SMAAShader.js` | 子像素形态学抗锯齿 | ✗ | SMAAPass(3 pass + procedural area/search LUT) | **无 DOM 依赖,LUT 程序化生成(浏览器 + Node 通用)** |
 | three.js `r152+ Data3DTexture` | 真 3D 纹理(TEXTURE_3D) | ✗ | Data3DTexture + texImage3D 上传路径 | **渲染器公开 getGLTexture() 简化 Pass 对接** |
 | three.js `examples/shaders/MikkTSpace` | MikkTSpace 切线空间 | ✗ | BufferGeometry.computeTangents(退化 UV + Gram-Schmidt + handedness) | — |
 | o3de Atom **Bindless** | 无绑定纹理池(DescriptorHeap) | ✗ | TexturePool(TEXTURE_2D_ARRAY + 整数索引 + 版本追踪) | **WebGL2 限制内等价实现 + layerUpdates 增量更新** |

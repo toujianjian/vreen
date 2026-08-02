@@ -1,7 +1,7 @@
 // PostProcess barrel — 增强后处理 Pass 集合。
 //
 // 与 RenderPass.ts 中的基础后处理 Bloom/CA/Vignette/FinalCompose 平行。
-// 本模块提供 16 个增强 Pass:
+// 本模块提供 17 个增强 Pass:
 //   - ColorGradingPass  : 色彩分级(8 个 ASC-CDL 参数)
 //   - LUTPass           : LUT 色彩查找表(3D 或 2D strip)
 //   - ChromaticAberrationPass : 增强色差(Vector2 偏移 + 径向调制)
@@ -18,6 +18,7 @@
 //   - GTAOPass         : Ground Truth 环境光遮蔽(半球地平线积分)
 //   - SSSSPass         : 屏幕空间次表面散射(可分离高斯 + 深度感知)
 //   - DOFEnhancedPass  : 增强景深(CoC + 圆/六/八边形散景)
+//   - SMAAPass         : 子像素形态学抗锯齿(3 pass + procedural LUT)
 //
 // 注意:
 //   - 前 7 个 Pass 都实现 RenderPass 接口,可直接加入 PostProcessingPipeline。
@@ -52,3 +53,4 @@ export { GTAOPass, type GTAOPassOptions } from './GTAOPass';
 export { SSSSPass, type SSSSPassOptions } from './SSSSPass';
 export { DOFEnhancedPass, type DOFEnhancedPassOptions } from './DOFEnhancedPass';
 export { GlitchPass, type GlitchPassOptions } from './GlitchPass';
+export { SMAAPass, type SMAAPassOptions } from './SMAAPass';
