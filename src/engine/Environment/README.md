@@ -13,13 +13,13 @@
 
 ## Overview
 
-The module groups seven concerns, each with at least one complementary
+The module groups eight concerns, each with at least one complementary
 implementation. Data-tier classes (`ProceduralSky`, `SkyAtmosphere`,
 `VolumetricClouds`, `FFTOcean`, `WaterInteraction`, `VegetationRenderer`)
 produce `Float32Array` fields and flat uniform structs; render-tier classes
 (`SkySystem`, `CloudSystem`, `PrecipitationSystem`, `VegetationSystem`,
-`WaterSystem`) additionally build engine `Mesh` / `InstancedMesh` instances
-ready to drop into a scene.
+`WaterSystem`, `DecalSystem`) additionally build engine `Mesh` /
+`InstancedMesh` instances ready to drop into a scene.
 
 ```
 WeatherSystem ── drives params ──→ SkySystem / CloudSystem / PrecipitationSystem
@@ -41,6 +41,9 @@ WaterSystem ── owns Mesh + WaterMaterial ── attachSimulation(WaterSimula
 WaterSimulation ── 2D wave equation grid (ripples, small pools)
 WaterInteraction ── analytic ripples + splashes (large open water, sparse events)
 FFTOcean ── Phillips spectrum + IFFT (open sea wind waves)
+
+DecalSystem ── DecalGeometry per hit + MeshBasicMaterial ── FIFO cap + lifetime + fade
+  spawnFromHit(target, point, normal) → Quaternion.setFromUnitVectors(+Z, normal)
 ```
 
 All systems are decoupled: `WeatherSystem` only publishes parameters; the
@@ -339,6 +342,90 @@ Three water models cover different scales: `WaterSimulation` (small pools),
 waves). They are decoupled and can be layered (e.g. `FFTOcean` base +
 `WaterInteraction` player ripples).
 
+### Decals
+
+| Export | Role |
+|--------|------|
+| `DecalSystem` | Render-tier projected-decal manager. Wraps `DecalGeometry` (Sutherland–Hodgman triangle clipping) with a CPU-side pool that enforces both a `maxDecals` FIFO cap and a per-decal `maxAge` lifetime. Each `spawn()` builds a `DecalGeometry` from the target mesh's triangles, wraps it in a `Mesh` with a cloned `MeshBasicMaterial`, and attaches it to an internal `Group`. `update(dt)` advances age, applies linear opacity fade in the last `1 − fadeStartRatio` of life, and removes expired records. `spawnFromHit(target, point, normal, …)` auto-aligns the projector's +Z to the surface normal (via `Quaternion.setFromUnitVectors`) and offsets along the normal by `normalBias` (default 1 cm) to prevent z-fighting. |
+| `DecalRecord` | Per-decal runtime state: `id`, `mesh`, `position`, `orientation`, `size`, `age`, `maxAge`, `fadeStartRatio`, `targetId`, `dead`. |
+| `DecalSystemOptions` | Config: `maxDecals` (default 64), `defaultLifetime` (10 s), `defaultFadeStartRatio` (0.75), `defaultSize` (0.5), `defaultTexture`, `defaultColor`, `renderOrder` (1). |
+| `DecalSystemStats` | `count`, `peakCount`, `evicted` (FIFO), `expired` (lifetime), `spawned` (total). |
+
+```ts
+export class DecalSystem {
+  readonly group: Group;            // attach to scene; all decal Meshes live here
+  decals: DecalRecord[];            // active records, ordered by spawn time
+  maxDecals: number;                // FIFO cap (default 64)
+  defaultLifetime: number;          // seconds (default 10)
+  defaultFadeStartRatio: number;    // 0..1, last fraction of life fades to 0
+  defaultSize: number;              // sx=sy=sz when spawn() omits size
+  defaultTexture: Texture | null;
+  defaultColor: { r; g; b };
+
+  attach(parent: Object3D): this;
+  detach(): this;
+  spawn(target, position, orientation?, size?, opts?): DecalRecord | null;
+  spawnFromHit(target, hitPoint, normal, size?, opts?): DecalRecord | null;
+  update(dt: number): this;        // advance age, fade, reap expired
+  removeById(id: number): boolean;
+  clear(): this;
+  getMeshes(): Mesh[];
+  getById(id: number): DecalRecord | undefined;
+  getStats(): DecalSystemStats;
+  resetStats(): this;
+}
+```
+
+**Algorithm (per spawn).** `DecalGeometry.create(target, position, orientation, size)`
+builds the projector matrix `M = T(position) · R(orientation)`, transforms
+every target triangle vertex `mesh-local → world → projector-local` via
+`M⁻¹`, then runs Sutherland–Hodgman clipping against the 6 axis-aligned
+planes `±X, ±Y, ±Z` (threshold `s = ½ · |size · planeNormal|`). UVs are
+normalised to `[0,1]` within the projector box; positions are written back
+to world space via `M`. See [`Geometries/DecalGeometry.ts`](../Geometries/DecalGeometry.ts)
+for details.
+
+**Lifetime & fade.** `update(dt)` advances `record.age` by `dt`. The opacity
+is `1` while `age/maxAge < fadeStartRatio`, then linearly decreases to `0` at
+`maxAge`. When `age ≥ maxAge`, the record is marked `dead` and removed at
+the end of the update pass (geometry + material `dispose()`'d, mesh detached
+from `group`). A `fadeStartRatio` of `1` disables fading entirely (decals
+stay opaque until they vanish).
+
+**FIFO eviction.** When `decals.length ≥ maxDecals` at `spawn()` time, the
+oldest record (index 0) is shifted and disposed before the new one is
+pushed. This bounds both CPU memory and draw-call count regardless of spawn
+rate; tune `maxDecals` to your scene's budget (64 default, 256 for combat-
+heavy scenes, 1024 max recommended before switching to GPU instancing).
+
+**Normal alignment.** `spawnFromHit` calls
+`Quaternion.setFromUnitVectors((0,0,1), normalize(normal))` to orient the
+projector's +Z axis along the surface normal. A `normalBias` (default 0.01)
+offsets the hit point along the normal to lift the decal off the surface
+and avoid z-fighting / depth bleed. A degenerate normal (length < 1e-6)
+falls back to the identity quaternion.
+
+**Why it beats soup3D.** soup3D has no decal subsystem at all — every
+projected-texture effect must be hand-rolled per game. VREEN ships a
+complete runtime: geometry clipping + lifetime + fade + FIFO + normal
+alignment + per-decal material cloning, matching the feature set of o3de's
+`DecalComponent` (CPU path) while remaining free of editor / asset-pipeline
+dependencies. The `getMeshes()` / `group` integration point lets the
+renderer treat decals as ordinary transparent meshes — no special render
+pass required.
+
+**Limitations.** (1) CPU-side management caps scalability around ~1024
+active decals; for higher counts, migrate to `InstancedMesh` + a per-
+instance atlas. (2) Fade uses material `opacity`, which requires
+`transparent=true` and imposes back-to-front sort cost. (3) No automatic
+re-projection if the target mesh's `matrixWorld` changes after `spawn()`;
+call `removeById` + `spawn` again. (4) `spawnFromHit` returns `null` if
+the projector box misses every triangle (e.g. the hit point was on a
+back-face within `size`); callers should treat `null` as a silent no-op.
+
+Adapted from three.js `src/geometries/DecalGeometry.js` (geometry) and o3de
+`DecalComponent` (lifetime / FIFO / fade model).
+
 ---
 
 ## Usage
@@ -434,6 +521,48 @@ function frame(dt: number, playerPos: Vector3, playerVel: Vector3) {
   const disp = ocean.getDisplacementMap();   // base swell
   const ripples = interaction.sampleHeight(x, z, time); // local disturbance
   const uniforms = ocean.getShaderUniforms();
+}
+```
+
+### Bullet-hole decals on raycast hits
+
+```ts
+import { DecalSystem } from '@vreen/engine/environment';
+import { Vector3 } from '@vreen/engine';
+import { Raycaster } from '@vreen/engine/core';
+
+const decals = new DecalSystem({
+  maxDecals: 128,           // FIFO cap: oldest evicted beyond this
+  defaultLifetime: 12,      // 12 s before expiry
+  defaultFadeStartRatio: 0.75, // last 25% of life fades out
+  defaultSize: 0.4,         // 40 cm bullet hole
+  defaultTexture: bulletHoleTex,
+});
+decals.attach(scene);
+
+const ray = new Raycaster();  // set ray from mouse / muzzle
+
+function onShot() {
+  const hits = ray.intersectObjects(walls);
+  if (hits.length === 0) return;
+  const hit = hits[0];
+  decals.spawnFromHit(
+    hit.object,               // target mesh (project triangles)
+    hit.point,                // world-space hit point
+    hit.face?.normal ?? new Vector3(0, 1, 0), // surface normal
+    undefined,                // use defaultSize
+    {
+      normalBias: 0.015,      // 1.5 cm lift to avoid z-fighting
+      lifetime: 8,            // shorter than default for combat FX
+      fadeStartRatio: 0.6,    // start fading at 4.8 s
+    },
+  );
+}
+
+function frame(dt: number) {
+  decals.update(dt);          // advance age, fade, reap expired
+  const stats = decals.getStats();
+  // stats.count, stats.peakCount, stats.evicted, stats.expired, stats.spawned
 }
 ```
 

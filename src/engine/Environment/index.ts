@@ -102,6 +102,15 @@ export {
 // GroundedSkybox — 地面投影天空盒 (适配自 three.js r159+)。
 // 将环境贴图无缝投影到穹顶 + 地面,消除传统天空盒的天地夹角。
 export { GroundedSkybox } from './GroundedSkybox';
+// DecalSystem — 贴花管理系统 (子弹孔 / 血迹 / 弹痕 / 涂鸦 / 车辙)。
+// 整合 DecalGeometry + 寿命/FIFO/渐隐/法线对齐,对标 o3de DecalComponent。
+// CPU 端管理 Mesh pool,适合中小型 (< 1024) 贴花;未来可平滑升级到 instancing。
+export {
+  DecalSystem,
+  type DecalRecord,
+  type DecalSystemOptions,
+  type DecalSystemStats,
+} from './DecalSystem';
 // SkyAtmosphere — GPU 物理大气散射 (UE5 SkyAtmosphere / Unity HDRP 风格)。
 // 光线步进 Rayleigh + Mie + Ozone 吸收 + 多重散射近似 + 地面反射。
 // 与 ProceduralSky (CPU Preetham 解析) 互补,面向影视级真实天空。
