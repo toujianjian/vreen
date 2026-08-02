@@ -151,6 +151,46 @@ const sm = new ShadowMapManager(gl, {
 // Consumer shader calls sampleShadowPCSS(worldPos) — see ShaderChunks/shadow.glsl.ts
 ```
 
+#### Cascaded Shadow Maps (`CSMShadowMap`)
+
+For large outdoor scenes, a single shadow map cannot cover the entire
+view frustum at adequate resolution. `CSMShadowMap` (in
+`src/engine/Renderer/CSMShadowMap.ts`) splits the camera frustum into
+N cascades (default 4), each with its own shadow map. Near cascades
+get high-resolution shadows; far cascades get lower effective
+resolution — matching human visual sensitivity to near detail.
+
+| Feature | Description |
+|---------|-------------|
+| Split scheme | PSSM (logarithmic + uniform blend), configurable via `splitFactor` (0=log, 1=uniform) |
+| Cascade count | Default 4; configurable (2/4/8 typical) |
+| Map size | Per-cascade; default 1024² |
+| Shadow distance | Configurable `shadowDistance` (default 100) |
+| Cascade blend | `blendMargin` (default 0.1) — smooth transition at cascade boundaries |
+| Frustum fitting | Tight orthographic per cascade (8-corner AABB in light view space) |
+
+**Shader chunk** (`ShaderChunks/csm.glsl.ts`): `sampleCSM(worldPos, viewDepth)` —
+selects the cascade by view-space depth, samples with 9-tap PCF, and
+blends across the cascade boundary using `smoothstep`.
+
+```ts
+import { CSMShadowMap } from '@vreen/engine';
+
+const csm = new CSMShadowMap({
+  cascadeCount: 4,
+  mapSize: 1024,
+  splitFactor: 0.5,    // PSSM blend
+  shadowDistance: 200,
+});
+
+// Each frame:
+csm.update(camera, directionalLight);
+// Upload to shader:
+//   u_csmVP[4]      = csm.getViewProjectionArray()
+//   u_csmSplits[4]  = csm.getSplitDistances()
+//   u_csmMaps[4]    = per-cascade shadow map textures
+```
+
 #### Screen-space contact shadows (`ScreenSpaceShadowPass`)
 
 In addition to shadow-map shadows, VREEN provides
