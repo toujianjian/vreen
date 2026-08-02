@@ -79,8 +79,18 @@ Built-in components (in `Components.ts`):
 | `Lifetime` | `remaining: number` |
 
 Physics components (in `PhysicsComponents.ts`):
-`Rigidbody`, `Collider` (AABB / Sphere / Capsule), `Particle`,
-`ParticleEmitter`, `PhysicsConfig`, `PhysicsDebug`.
+
+| Component | Key Fields | Description |
+|-----------|------------|-------------|
+| `Collider` | `shape: 'aabb'\|'sphere'\|'capsule'`, `halfExtents`, `radius`, `height`, `friction`, `restitution`, `layerMask`, `isStatic` | 碰撞体形状+物理材质参数;与 Transform 一起决定 world AABB |
+| `Rigidbody` | `velocity`, `angularVelocity`, `mass`, `linearDamping`, `angularDamping`, `gravityScale`, `sleeping`, `force`, `torque`, `layerMask`, `bodyId` | 刚体动力学状态;position/rotation 由 Transform 持有 |
+| `PhysicsConfig` | `gravity`, `fixedDelta`, `maxSubsteps`, `sleepSpeedThreshold`, `baumgarte`, `enableDebug` | 全局物理世界配置(挂在名为 'physics' 的 entity 上) |
+| `Particle` | `position`, `velocity`, `age`, `lifetime`, `color`, `size`, `gravityScale` | CPU 端粒子数据;System 更新 |
+| `ParticleEmitter` | `rate`, `speedMin/Max`, `lifeMin/Max`, `colorA/B`, `spawnRadius`, `maxParticles`, `particleIds` | 周期性 spawn 粒子;持有已发射 entity id 避免每帧 query |
+| `PhysicsDebug` | `contactPoints: Float32Array(7*64)`, `contactCount`, `showColliders`, `showContacts`, `showVelocities`, `velocityScale` | 调试可视化;记录最近 N 帧 contact points |
+
+**Rigidbody 方法**:`addForce(x,y,z)` / `addTorque(x,y,z)` 累积外力(每帧物理 step 后清零);
+`setHorizontalSpeed(speed, yaw)` 设置朝向速度(忽略 Y 分量,便于玩家移动)。
 
 `NON_POJO_COMPONENTS` is a `Set<string>` listing components that hold
 runtime object references and must be re-attached by the caller after
@@ -141,6 +151,37 @@ Physics systems (in `PhysicsSystems.ts`):
 `Prefab` holds a list of entity templates (components + transforms) and
 instantiates them with `instantiate(world): EntityId[]`. Supports nested
 prefabs and per-instance overrides via `InstantiateOptions`.
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `addEntity(template)` | `number` (slot index) | 添加实体模板;NON_POJO 组件自动过滤并 warn |
+| `size()` | `number` | 模板数量 |
+| `templates()` | `readonly PrefabEntityTemplate[]` | 取所有模板(只读) |
+| `instantiate(world, opts?)` | `EntityId[]` | 在 world 中实例化所有模板;应用偏移+TRS+parentSlot+组件深拷贝 |
+| `toJSON()` | `PrefabJson` | 序列化(版本号 `0.1.0`) |
+| `loadJSON(json)` | `void` | 反序列化 |
+
+**PrefabEntityTemplate 结构**:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `slot` | `number` | 模板索引(自动分配) |
+| `name` | `string` | 实体名 |
+| `sceneNode.position` | `[x, y, z]` | 局部位置 |
+| `sceneNode.rotation` | `[x, y, z, w]` | 局部旋转(四元数) |
+| `sceneNode.scale` | `[x, y, z]` | 局部缩放 |
+| `components` | `Record<string, Record<string, unknown>>` | 组件数据(键 = ComponentType.name) |
+| `parentSlot` | `number?` | 父模板 slot;不设 = 挂在 world.sceneRoot |
+
+**InstantiateOptions**:
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `position` | `[x,y,z]?` | `[0,0,0]` | 实例根节点世界位置偏移 |
+| `rotation` | `[x,y,z,w]?` | identity | 实例根节点旋转偏移 |
+| `scale` | `[x,y,z]?` | `[1,1,1]` | 实例缩放(乘到每个模板的 position/scale) |
+| `nameSuffix` | `string?` | — | 实体名后缀(避免多次实例化撞名) |
+| `nameStart` | `number?` | `0` | 名字计数起始 |
 
 ### `QueryBuilder`
 
@@ -262,6 +303,22 @@ const restored = new World();
 restored.loadJSON(json);
 // re-attach non-POJO components (MeshRef / SkinnedMeshRef)
 ```
+
+---
+
+## Subsystem Map
+
+| File | Exports | Layer |
+|------|---------|-------|
+| `World.ts` | `World`, `EntityId`, `packEntityId`/`entityIndex`/`entityVersion`/`isValidEntityId`, `WorldJson`, `WorldDiff`, `WorldSnapshot` | Core — entity/component/system registry + serialization |
+| `ComponentType.ts` | `ComponentType<T>`, `defineComponentType`, `ComponentTypeRegistry` | Core — string-ID type singleton (breaks circular import) |
+| `Components.ts` | `Transform`, `Velocity`, `MeshRef`, `SkinnedMeshRef`, `AnimState`, `Health`, `Tag`, `Lifetime`, `PlayerInput` + `*C` singletons | Built-in game components |
+| `PhysicsComponents.ts` | `Collider`, `Rigidbody`, `PhysicsConfig`, `Particle`, `ParticleEmitter`, `PhysicsDebug` + `*C` singletons | Physics components |
+| `Systems.ts` | `MovementSystem`, `AnimationTickSystem`, `AnimStateSystem`, `PlayerInputSystem`, `LifetimeSystem` | Built-in game systems |
+| `PhysicsSystems.ts` | `PhysicsSystem`, `CollisionSystem`, `ParticleSystem`, `PhysicsDebugSystem` | Physics systems |
+| `Prefab.ts` | `Prefab`, `PrefabEntityTemplate`, `PrefabJson`, `InstantiateOptions` | Prefab instantiation + serialization |
+| `QueryBuilder.ts` | `QueryBuilder` | Cached fluent query API |
+| `Broadphase.test.ts` | (tests) | Broadphase integration tests (broadphase impl lives in `Physics/`) |
 
 ---
 
