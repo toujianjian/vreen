@@ -868,6 +868,31 @@
         "title": "Niebla Volumétrica",
         "desc": "Niebla volumétrica ray-march con rayos de luz y dispersión.",
         "advantage": "soup3D sin niebla vol"
+      },
+      "ssgi": {
+        "title": "SSGI",
+        "desc": "Iluminación global en espacio de pantalla con muestreo hemisférico coseno de 8 rayos.",
+        "advantage": "soup3D sin GI"
+      },
+      "pcss": {
+        "title": "PCSS",
+        "desc": "Sombras suaves percentage-closer con búsqueda de bloqueadores y estimación de penumbra.",
+        "advantage": "soup3D solo sombras duras"
+      },
+      "lut": {
+        "title": "Gradación LUT",
+        "desc": "Gradación de color LUT 3D/2D strip con soporte .cube.",
+        "advantage": "soup3D sin gradación de color"
+      },
+      "decal": {
+        "title": "Decals",
+        "desc": "Sistema de decals proyectados con vida, desvanecimiento y alineación de normales.",
+        "advantage": "soup3D sin decals"
+      },
+      "skin": {
+        "title": "Skin SSS",
+        "desc": "BSSRDF de piel pre-integrado con LUTs difusa/transmitancia d'Eon 2007.",
+        "advantage": "soup3D sin shader de piel"
       }
     }
   }

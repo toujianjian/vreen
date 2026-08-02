@@ -868,6 +868,31 @@
         "title": "ボリュームフォグ",
         "desc": "レイマーチボリュームフォグ、ゴッドレイ + 散乱。",
         "advantage": "soup3D にボリュームフォグなし"
+      },
+      "ssgi": {
+        "title": "SSGI",
+        "desc": "スクリーン空間グローバルイルミネーション、8 レイ余弦半球サンプリング。",
+        "advantage": "soup3D に GI なし"
+      },
+      "pcss": {
+        "title": "PCSS",
+        "desc": "パーセンテージクローサーソフトシャドウ、ブロッカー検索 + ペンブラ推定。",
+        "advantage": "soup3D はハードシャドウのみ"
+      },
+      "lut": {
+        "title": "LUTグレーディング",
+        "desc": "3D/2D ストリップ LUT カラーグレーディング、.cube ファイル対応。",
+        "advantage": "soup3D にカラーグレーディングなし"
+      },
+      "decal": {
+        "title": "デカール",
+        "desc": "投影デカールシステム、ライフタイム、フェード、法線整列。",
+        "advantage": "soup3D にデカールなし"
+      },
+      "skin": {
+        "title": "スキン SSS",
+        "desc": "事前積分スキン BSSRDF、d'Eon 2007 拡散/透過 LUT。",
+        "advantage": "soup3D にスキンシェーダーなし"
       }
     }
   }

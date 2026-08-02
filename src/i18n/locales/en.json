@@ -868,6 +868,31 @@
         "title": "Volumetric Fog",
         "desc": "Ray-marched volumetric fog with god rays and scattering.",
         "advantage": "soup3D has no volfog"
+      },
+      "ssgi": {
+        "title": "SSGI",
+        "desc": "Screen-space global illumination with 8-ray cosine hemisphere sampling.",
+        "advantage": "soup3D has no GI"
+      },
+      "pcss": {
+        "title": "PCSS",
+        "desc": "Percentage-closer soft shadows with blocker search and penumbra estimation.",
+        "advantage": "soup3D has hard shadows only"
+      },
+      "lut": {
+        "title": "LUT Grading",
+        "desc": "3D/2D strip LUT color grading with .cube file support.",
+        "advantage": "soup3D has no color grading"
+      },
+      "decal": {
+        "title": "Decals",
+        "desc": "Projected decal system with lifetime, fading, and normal alignment.",
+        "advantage": "soup3D has no decals"
+      },
+      "skin": {
+        "title": "Skin SSS",
+        "desc": "Pre-integrated skin BSSRDF with d'Eon 2007 diffuse/transmittance LUTs.",
+        "advantage": "soup3D has no skin shader"
       }
     }
   }

@@ -868,6 +868,31 @@
         "title": "볼륨 포그",
         "desc": "레이마치 볼륨 포그, 갓레이 + 산란.",
         "advantage": "soup3D에 볼륨 포그 없음"
+      },
+      "ssgi": {
+        "title": "SSGI",
+        "desc": "스크린 공간 글로벌 일루미네이션, 8레이 코사인 반구 샘플링.",
+        "advantage": "soup3D에 GI 없음"
+      },
+      "pcss": {
+        "title": "PCSS",
+        "desc": "퍼센티지 클로저 소프트 섀도우, 블로커 검색 + 펜움브라 추정.",
+        "advantage": "soup3D는 하드 섀도우만"
+      },
+      "lut": {
+        "title": "LUT 그레이딩",
+        "desc": "3D/2D 스트립 LUT 컬러 그레이딩, .cube 파일 지원.",
+        "advantage": "soup3D에 컬러 그레이딩 없음"
+      },
+      "decal": {
+        "title": "데칼",
+        "desc": "투영 데칼 시스템, 수명, 페이드, 노멀 얼라인먼트.",
+        "advantage": "soup3D에 데칼 없음"
+      },
+      "skin": {
+        "title": "스킨 SSS",
+        "desc": "사전 통합 스킨 BSSRDF, d'Eon 2007 디퓨즈/트랜스미턴스 LUT.",
+        "advantage": "soup3D에 스킨 셰이더 없음"
       }
     }
   }

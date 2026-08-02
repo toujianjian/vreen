@@ -868,6 +868,31 @@
         "title": "体积雾",
         "desc": "光线步进体积雾,丁达尔光 + 散射。",
         "advantage": "soup3D 无体积雾"
+      },
+      "ssgi": {
+        "title": "SSGI",
+        "desc": "屏幕空间全局光照,8 射线余弦半球采样。",
+        "advantage": "soup3D 无 GI"
+      },
+      "pcss": {
+        "title": "PCSS",
+        "desc": "物理软阴影,遮挡体搜索 + 半影估算。",
+        "advantage": "soup3D 仅硬阴影"
+      },
+      "lut": {
+        "title": "LUT 调色",
+        "desc": "3D/2D strip LUT 调色,支持 .cube 文件。",
+        "advantage": "soup3D 无调色"
+      },
+      "decal": {
+        "title": "贴花",
+        "desc": "投影贴花系统,支持生命周期、淡出、法线对齐。",
+        "advantage": "soup3D 无贴花"
+      },
+      "skin": {
+        "title": "皮肤 SSS",
+        "desc": "预积分皮肤 BSSRDF,d'Eon 2007 漫反射/透射 LUT。",
+        "advantage": "soup3D 无皮肤着色"
       }
     }
   }
