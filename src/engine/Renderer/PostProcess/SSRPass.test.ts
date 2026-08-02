@@ -31,6 +31,7 @@ class MockGL2 {
   static readonly TEXTURE0 = 0x84C0;
   static readonly TEXTURE1 = 0x84C1;
   static readonly TEXTURE2 = 0x84C2;
+  static readonly TEXTURE3 = 0x84C3;
   static readonly TRIANGLES = 0x0004;
   static readonly COLOR_ATTACHMENT0 = 0x8CE0;
   static readonly RGBA = 0x1908;
@@ -58,6 +59,7 @@ class MockGL2 {
   readonly TEXTURE0 = MockGL2.TEXTURE0;
   readonly TEXTURE1 = MockGL2.TEXTURE1;
   readonly TEXTURE2 = MockGL2.TEXTURE2;
+  readonly TEXTURE3 = MockGL2.TEXTURE3;
   readonly TRIANGLES = MockGL2.TRIANGLES;
   readonly COLOR_ATTACHMENT0 = MockGL2.COLOR_ATTACHMENT0;
   readonly RGBA = MockGL2.RGBA;
@@ -275,6 +277,78 @@ describe('SSRPass apply lifecycle', () => {
     const t1 = p.apply(gl as unknown as WebGL2RenderingContext, makeTexture('a'), makeTexture('p'), makeTexture('n'), makeCamera());
     const t2 = p.apply(gl as unknown as WebGL2RenderingContext, makeTexture('b'), makeTexture('p'), makeTexture('n'), makeCamera());
     expect(t1).toBe(t2);
+  });
+});
+
+// ── SSR 升级特性(抖动 / 自适应步长 / 视空间厚度 / 粗糙度调制) ──────
+
+describe('SSRPass upgrade defaults', () => {
+  it('defaults: roughnessCutoff=0.6, jitterScale=1.0, stepGrowth=0.5, frame=0', () => {
+    const p = new SSRPass();
+    expect(p.roughnessCutoff).toBe(0.6);
+    expect(p.jitterScale).toBe(1.0);
+    expect(p.stepGrowth).toBe(0.5);
+    expect(p.frame).toBe(0);
+  });
+
+  it('accepts upgrade options', () => {
+    const p = new SSRPass({
+      roughnessCutoff: 0.4,
+      jitterScale: 0.0,
+      stepGrowth: 1.0,
+    });
+    expect(p.roughnessCutoff).toBe(0.4);
+    expect(p.jitterScale).toBe(0.0);
+    expect(p.stepGrowth).toBe(1.0);
+  });
+});
+
+describe('SSRPass frame counter', () => {
+  it('frame increments per apply', () => {
+    const gl = new MockGL2();
+    const p = new SSRPass();
+    expect(p.frame).toBe(0);
+    p.apply(gl as unknown as WebGL2RenderingContext, makeTexture('a'), makeTexture('p'), makeTexture('n'), makeCamera());
+    expect(p.frame).toBe(1);
+    p.apply(gl as unknown as WebGL2RenderingContext, makeTexture('b'), makeTexture('p'), makeTexture('n'), makeCamera());
+    expect(p.frame).toBe(2);
+  });
+});
+
+describe('SSRPass roughness texture', () => {
+  it('apply() accepts optional roughnessTexture (6th param) without error', () => {
+    const gl = new MockGL2();
+    const p = new SSRPass();
+    const rough = makeTexture('rough');
+    const out = p.apply(
+      gl as unknown as WebGL2RenderingContext,
+      makeTexture('a'), makeTexture('p'), makeTexture('n'),
+      makeCamera(), rough,
+    );
+    expect(out).toBeDefined();
+    expect(gl.drawCalls).toBeGreaterThan(0);
+  });
+
+  it('apply() works without roughnessTexture (backward compatible)', () => {
+    const gl = new MockGL2();
+    const p = new SSRPass();
+    const out = p.apply(
+      gl as unknown as WebGL2RenderingContext,
+      makeTexture('a'), makeTexture('p'), makeTexture('n'),
+      makeCamera(),
+    );
+    expect(out).toBeDefined();
+  });
+
+  it('apply() with null roughnessTexture works (explicit null)', () => {
+    const gl = new MockGL2();
+    const p = new SSRPass();
+    const out = p.apply(
+      gl as unknown as WebGL2RenderingContext,
+      makeTexture('a'), makeTexture('p'), makeTexture('n'),
+      makeCamera(), null,
+    );
+    expect(out).toBeDefined();
   });
 });
 

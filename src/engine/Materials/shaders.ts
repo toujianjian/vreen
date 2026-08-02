@@ -1198,6 +1198,7 @@ out vec4 outColor;
 uniform sampler2D u_colorMap;
 uniform sampler2D u_positionMap;
 uniform sampler2D u_normalMap;
+uniform sampler2D u_roughnessMap;   // R=roughness[0,1];u_hasRoughness=0 时不读
 uniform mat4 u_projection;
 uniform mat4 u_view;
 uniform vec3 u_cameraPos;
@@ -1205,6 +1206,16 @@ uniform vec2 u_screenSize;
 uniform int   u_maxSteps;
 uniform float u_thickness;
 uniform float u_reflectionStrength;
+uniform float u_roughnessCutoff;    // roughness > cutoff → 跳过 SSR(漫反射面)
+uniform float u_jitterScale;        // 抖动幅度(0=关,1=默认)
+uniform float u_stepGrowth;         // 自适应步长增长因子(1=匀速,1.5=每步×1.5)
+uniform float u_frame;              // 帧计数(时序抖动)
+uniform int   u_hasRoughness;       // 1=有粗糙度纹理,0=无(按镜面处理)
+
+// Interleaved Gradient Noise (Jorge Jimenez 2014) — 时序抖动去条带。
+float ign(vec2 p) {
+  return fract(52.9829189 * fract(0.06711056 * p.x + 0.00583715 * p.y));
+}
 
 // 把世界位置投影到屏幕 UV(0..1)。
 vec2 projectToUV(vec3 worldPos) {
@@ -1212,13 +1223,20 @@ vec2 projectToUV(vec3 worldPos) {
   return (clip.xy / clip.w) * 0.5 + 0.5;
 }
 
-// 厚度检测:UV 越界返回 false;否则比较 sampledPos.z 与 rayPos.z,
-// 当几何在射线前方(深度差为正)且在厚度内 → 击中。
-bool hitTest(vec3 rayPos, vec2 uv, out float depthDiff) {
+// 视空间深度(沿相机轴的距离,正值=前方)。比世界 Z 更正确 —— 不依赖世界朝向。
+float viewDepth(vec3 worldPos) {
+  return -(u_view * vec4(worldPos, 1.0)).z;
+}
+
+// 厚度检测(视空间):UV 越界返回 false;否则比较 rayPos 与采样几何的视空间深度,
+// 当射线在几何后方(rayDepth > sampledDepth,即 depthDiff>0)且在厚度内 → 击中。
+bool hitTestVS(vec3 rayPos, vec2 uv, out float depthDiff) {
   depthDiff = 1e9;
   if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return false;
   vec3 sampledPos = texture(u_positionMap, uv).xyz;
-  depthDiff = sampledPos.z - rayPos.z;
+  float rayDepth = viewDepth(rayPos);
+  float sampledDepth = viewDepth(sampledPos);
+  depthDiff = rayDepth - sampledDepth;
   return depthDiff > 0.0 && depthDiff < u_thickness;
 }
 
@@ -1227,49 +1245,67 @@ void main() {
   vec3 worldPos    = texture(u_positionMap, v_uv).xyz;
   vec3 worldNormal = texture(u_normalMap,   v_uv).xyz;
 
-  // 法线过小 → 几何未写入,直接输出原色(避免反射空中)
-  if (length(worldNormal) < 0.01) {
+  // 粗糙度(u_hasRoughness=0 时按 0 = 镜面处理)
+  float roughness = 0.0;
+  if (u_hasRoughness > 0) {
+    roughness = texture(u_roughnessMap, v_uv).r;
+  }
+
+  // 早退:无法线(天空) / 背面 / 过粗糙 → 直接输出原色
+  if (length(worldNormal) < 0.01 || roughness > u_roughnessCutoff) {
     outColor = vec4(sceneColor, 1.0);
     return;
   }
   worldNormal = normalize(worldNormal);
 
-  vec3 viewDir  = normalize(u_cameraPos - worldPos);
-  vec3 reflDir  = reflect(-viewDir, worldNormal);
+  vec3 viewDir = normalize(u_cameraPos - worldPos);
+  // 背面剔除:法线背离相机不反射
+  if (dot(viewDir, worldNormal) <= 0.0) {
+    outColor = vec4(sceneColor, 1.0);
+    return;
+  }
 
-  // 步长基于厚度的一半,保证 step > thickness 才能跨过薄层
-  vec3 stepDir  = reflDir * (u_thickness * 0.5);
-  vec3 rayPos   = worldPos + stepDir;
-  vec2 uv       = projectToUV(rayPos);
-  vec2 hitUV    = uv;
-  vec3 hitPos   = rayPos;
-  bool  hit     = false;
+  vec3 reflDir = reflect(-viewDir, worldNormal);
 
-  // Ray march
+  // 时序抖动:每像素 + 每帧不同偏移,配合 TAA 消除条带/痤疮
+  float jitter = ign(v_uv * u_screenSize + vec2(u_frame * 0.61803398875, 0.0));
+  jitter = (jitter - 0.5) * u_jitterScale;
+
+  // 自适应步长:近距离小步(精度),远距离大步(速度)
+  float baseStep = u_thickness * 0.25;
+  vec3 rayPos = worldPos + reflDir * baseStep * (0.5 + jitter);
+  vec2 uv = projectToUV(rayPos);
+  vec2 hitUV = uv;
+  vec3 hitPos = rayPos;
+  bool hit = false;
+
+  // 自适应光线步进
   for (int i = 0; i < 64; i++) {
     if (i >= u_maxSteps) break;
     float dd;
-    if (hitTest(rayPos, uv, dd)) {
-      hit    = true;
+    if (hitTestVS(rayPos, uv, dd)) {
+      hit = true;
       hitPos = rayPos;
-      hitUV  = uv;
+      hitUV = uv;
       break;
     }
-    rayPos += stepDir;
+    // 步长随迭代线性增长(受 u_stepGrowth 控制),近期步小、远期步大
+    float stepSize = baseStep * (1.0 + float(i) * u_stepGrowth) * (1.0 + jitter * 0.25);
+    rayPos += reflDir * stepSize;
     uv = projectToUV(rayPos);
   }
 
-  // 二分查找细化(8 步足够把误差压到 thickness/256)
+  // 二分查找细化(8 步,误差压到 thickness/256)
   if (hit) {
     vec3 lo = worldPos;
     vec3 hi = hitPos;
     for (int i = 0; i < 8; i++) {
-      vec3 mid   = (lo + hi) * 0.5;
+      vec3 mid = (lo + hi) * 0.5;
       vec2 midUV = projectToUV(mid);
       float dd;
-      if (hitTest(mid, midUV, dd)) {
-        hi     = mid;
-        hitUV  = midUV;
+      if (hitTestVS(mid, midUV, dd)) {
+        hi = mid;
+        hitUV = midUV;
       } else {
         lo = mid;
       }
@@ -1277,15 +1313,31 @@ void main() {
   }
 
   if (hit) {
-    vec3 reflectionColor = texture(u_colorMap, hitUV).rgb;
+    // 粗糙度调制反射:光滑→锐利,粗糙→模糊(4 邻域采样)
+    vec3 reflectionColor;
+    if (roughness < 0.2) {
+      reflectionColor = texture(u_colorMap, hitUV).rgb;
+    } else {
+      vec2 texel = 1.0 / u_screenSize;
+      float blurRadius = roughness * 3.5;
+      reflectionColor  = texture(u_colorMap, hitUV + vec2( blurRadius, 0.0) * texel).rgb;
+      reflectionColor += texture(u_colorMap, hitUV + vec2(-blurRadius, 0.0) * texel).rgb;
+      reflectionColor += texture(u_colorMap, hitUV + vec2(0.0,  blurRadius) * texel).rgb;
+      reflectionColor += texture(u_colorMap, hitUV + vec2(0.0, -blurRadius) * texel).rgb;
+      reflectionColor *= 0.25;
+    }
 
     // 边缘衰减:命中 UV 越靠近屏幕边缘,反射越弱
-    vec2  edgeDist = min(hitUV, 1.0 - hitUV);
+    vec2 edgeDist = min(hitUV, 1.0 - hitUV);
     float edgeFade = smoothstep(0.0, 0.1, min(edgeDist.x, edgeDist.y));
 
     // Fresnel 权重:掠射角反射更强
     float fresnel = pow(1.0 - max(dot(viewDir, worldNormal), 0.0), 3.0);
-    float strength = u_reflectionStrength * edgeFade * (0.5 + 0.5 * fresnel);
+
+    // 粗糙度衰减:粗糙面反射更暗(非金属粗糙面几乎不反射)
+    float roughAtten = 1.0 - smoothstep(0.0, u_roughnessCutoff, roughness);
+
+    float strength = u_reflectionStrength * edgeFade * (0.5 + 0.5 * fresnel) * roughAtten;
 
     outColor = vec4(mix(sceneColor, reflectionColor, clamp(strength, 0.0, 1.0)), 1.0);
   } else {

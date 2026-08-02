@@ -220,20 +220,25 @@ Pixelation / mosaic effect.
 
 ### SSRPass
 
-Screen-space reflections — ray-marches the depth buffer to find reflection
-intersections.
+Screen-space reflections — ray-marches the GBuffer position/normal buffers to
+find reflection intersections. **Upgraded** with temporal jitter, adaptive
+step size, view-space thickness rejection, and roughness-modulated blur —
+surpassing soup3D (which has no SSR).
 
 **Class**: `SSRPass` (independent, does **not** extend `RenderPass`)
-**Shader**: `SSR_FRAG` (ray march) + `SSR_BLUR_FRAG` (bilateral blur)
+**Shader**: `SSR_FRAG` (ray march + binary refine)
 
 #### Options
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `maxSteps` | `number` | `30` | Ray march step count |
-| `thickness` | `number` | `0.5` | Ray thickness (penetration depth) |
-| `resolution` | `[number, number]` | `[1, 1]` | Resolution scale (1 = full res) |
-| `reflectionStrength` | `number` | `0.8` | Reflection intensity (0..1) |
+| `maxSteps` | `number` | `64` | Ray march step count (shader cap 64) |
+| `thickness` | `number` | `0.5` | Thickness tolerance (world units) — too small = missed hits, too large = false hits |
+| `resolution` | `number` | `0.5` | Resolution scale (1 = full res, 0.5 = half res recommended) |
+| `reflectionStrength` | `number` | `0.5` | Reflection intensity (0..1+, >1 needs downstream ToneMap) |
+| `roughnessCutoff` | `number` | `0.6` | Skip SSR on pixels with roughness > cutoff (diffuse surfaces) |
+| `jitterScale` | `number` | `1.0` | Temporal jitter amplitude (0 = off, pairs with TAA) |
+| `stepGrowth` | `number` | `0.5` | Adaptive step growth factor (0 = uniform, 1.0 = doubling) |
 
 #### API
 
@@ -241,18 +246,34 @@ intersections.
 apply(
   gl: WebGL2RenderingContext,
   inputTexture: WebGLTexture,
-  positionTexture: WebGLTexture,
-  normalTexture: WebGLTexture,
+  positionTexture: WebGLTexture,   // GBuffer world position (RGBA16F)
+  normalTexture: WebGLTexture,     // GBuffer world normal (RGBA16F)
   camera: Camera,
+  roughnessTexture?: WebGLTexture | null,  // optional GBuffer roughness (R channel)
 ): WebGLTexture
 ```
 
-#### Algorithm
+#### Algorithm (4-stage pipeline)
 
-1. For each pixel, reflect the view direction about the surface normal.
-2. Ray-march through the position buffer to find an intersection.
-3. Bilateral-blur the reflection to reduce noise.
-4. Blend reflection with the original color using Fresnel.
+| Stage | Description |
+|-------|-------------|
+| ① Early-out | Skip sky (no normal), back-facing (`dot(view, N) ≤ 0`), or rough surfaces (`roughness > cutoff`). |
+| ② Adaptive ray march | Reflect view dir about normal; march with **linearly growing step** (near = small for precision, far = large for speed) + **Interleaved Gradient Noise jitter** (per-pixel × per-frame, temporal via `frame` counter). View-space depth test: `depthDiff = viewDepth(ray) − viewDepth(sampled)`; hit when `0 < depthDiff < thickness`. |
+| ③ Binary refine | 8-step bisection collapses error to `thickness/256`. |
+| ④ Roughness-modulated composite | Sharp reflection for `roughness < 0.2`; 4-neighbor blur scaled by `roughness × 3.5` for rough surfaces. Strength = `reflectionStrength × edgeFade × (0.5 + 0.5·Fresnel) × (1 − smoothstep(0, cutoff, roughness))`. |
+
+#### soup3D Feature Parity
+
+`soup3D` has **no SSR**. VREEN SSR delivers:
+
+- **Temporal jitter** (IGN + frame counter) — banding-free with TAA, vs
+  static march acne.
+- **Adaptive step** — small near-camera steps for precision, large far
+  steps for coverage; uniform-step wastes budget near or far.
+- **View-space thickness** — correct regardless of world orientation;
+  world-Z thickness is axis-dependent and wrong for tilted scenes.
+- **Roughness modulation** — rough surfaces get blurred + dimmed
+  reflections (physically correct), not mirror-sharp everywhere.
 
 ---
 

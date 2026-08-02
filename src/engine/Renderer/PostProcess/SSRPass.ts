@@ -40,6 +40,12 @@ export interface SSRPassOptions {
   resolution?: number;
   /** 反射强度 0..1+(默认 0.5)。 */
   reflectionStrength?: number;
+  /** 粗糙度截止(默认 0.6)。roughness > cutoff 的像素跳过 SSR(漫反射面)。 */
+  roughnessCutoff?: number;
+  /** 时序抖动幅度(默认 1.0,0=关闭)。配合 TAA 消除条带/痤疮。 */
+  jitterScale?: number;
+  /** 自适应步长增长因子(默认 0.5,线性增长)。1.0=每步翻倍。 */
+  stepGrowth?: number;
 }
 
 /**
@@ -60,6 +66,14 @@ export class SSRPass {
   resolution: number = 0.5;
   /** 反射强度(0..1+,>1 会过亮,需配合下游 ToneMappingPass)。 */
   reflectionStrength: number = 0.5;
+  /** 粗糙度截止。roughness > cutoff 的像素跳过 SSR(漫反射面)。 */
+  roughnessCutoff: number = 0.6;
+  /** 时序抖动幅度(0=关闭,1=默认)。配合 TAA 消除条带/痤疮。 */
+  jitterScale: number = 1.0;
+  /** 自适应步长增长因子(线性增长,0=匀速,1.0=每步翻倍)。 */
+  stepGrowth: number = 0.5;
+  /** 帧计数(每 apply 自增,用于时序抖动)。 */
+  frame: number = 0;
 
   /** 当前输出纹理(apply 后可用,null 表示尚未渲染或已 dispose)。 */
   private _outputTexture: WebGLTexture | null = null;
@@ -81,6 +95,9 @@ export class SSRPass {
     if (opts.thickness !== undefined) this.thickness = opts.thickness;
     if (opts.resolution !== undefined) this.resolution = opts.resolution;
     if (opts.reflectionStrength !== undefined) this.reflectionStrength = opts.reflectionStrength;
+    if (opts.roughnessCutoff !== undefined) this.roughnessCutoff = opts.roughnessCutoff;
+    if (opts.jitterScale !== undefined) this.jitterScale = opts.jitterScale;
+    if (opts.stepGrowth !== undefined) this.stepGrowth = opts.stepGrowth;
   }
 
   /**
@@ -91,6 +108,7 @@ export class SSRPass {
    * @param positionTexture GBuffer 世界位置纹理(RGBA16F)
    * @param normalTexture   GBuffer 世界法线纹理(RGBA16F)
    * @param camera          当前相机(读取 projection / view / position)
+   * @param roughnessTexture 可选 GBuffer 粗糙度纹理(R 通道 [0,1]);null=按镜面处理
    * @returns               SSR 输出纹理(本 Pass 持有,不要释放)
    */
   apply(
@@ -99,6 +117,7 @@ export class SSRPass {
     positionTexture: WebGLTexture,
     normalTexture: WebGLTexture,
     camera: Camera,
+    roughnessTexture: WebGLTexture | null = null,
   ): WebGLTexture {
     const targetW = Math.max(1, Math.floor(gl.canvas.width * this.resolution));
     const targetH = Math.max(1, Math.floor(gl.canvas.height * this.resolution));
@@ -129,6 +148,19 @@ export class SSRPass {
     gl.bindTexture(gl.TEXTURE_2D, normalTexture);
     prog.setUniformSampler('u_normalMap', 2);
 
+    // 粗糙度纹理(可选):有则绑定 TEXTURE3 + u_hasRoughness=1;无则用颜色纹理占位 + 0
+    gl.activeTexture(gl.TEXTURE3);
+    if (roughnessTexture) {
+      gl.bindTexture(gl.TEXTURE_2D, roughnessTexture);
+      prog.setUniformSampler('u_roughnessMap', 3);
+      prog.setUniform1i('u_hasRoughness', 1);
+    } else {
+      // 绑定一个有效纹理占位(避免采样未绑定纹理单元的 UB);hasRoughness=0 时不读取
+      gl.bindTexture(gl.TEXTURE_2D, inputTexture);
+      prog.setUniformSampler('u_roughnessMap', 3);
+      prog.setUniform1i('u_hasRoughness', 0);
+    }
+
     prog.setUniformMatrix4fv('u_projection', camera.projectionMatrix.elements);
     prog.setUniformMatrix4fv('u_view', camera.matrixWorldInverse.elements);
     prog.setUniform3f('u_cameraPos', camera.position.x, camera.position.y, camera.position.z);
@@ -137,6 +169,10 @@ export class SSRPass {
     prog.setUniform1i('u_maxSteps', Math.max(0, Math.min(64, Math.floor(this.maxSteps))));
     prog.setUniform1f('u_thickness', this.thickness);
     prog.setUniform1f('u_reflectionStrength', this.reflectionStrength);
+    prog.setUniform1f('u_roughnessCutoff', this.roughnessCutoff);
+    prog.setUniform1f('u_jitterScale', this.jitterScale);
+    prog.setUniform1f('u_stepGrowth', this.stepGrowth);
+    prog.setUniform1f('u_frame', this.frame);
 
     gl.bindVertexArray(this._fullscreenQuadVao as WebGLVertexArrayObject);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
@@ -144,6 +180,9 @@ export class SSRPass {
     // 还原默认 FBO + 视口(避免影响后续渲染)
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+
+    // 帧计数自增(时序抖动)
+    this.frame += 1;
 
     return this._outputTexture as WebGLTexture;
   }
