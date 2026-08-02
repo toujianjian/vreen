@@ -59,10 +59,11 @@
 | 图形后端   | 自研 WebGL2 引擎 + Three.js r169 双后端                        |
 | 定位       | 面向独立游戏开发者与 3D 艺术家的可视化检视系统                  |
 | License    | MIT                                                            |
-| 代码规模   | 222K+ 行(引擎 `.ts`)+ 应用 + 测试                            |
+| 代码规模   | 226K+ 行(引擎 `.ts`)+ 应用 + 测试                            |
 | 引擎模块   | 43 个顶层模块                                                  |
-| 源码文件   | 866+ (`src/engine/*.ts`)                                      |
-| 测试       | 7500+ 测试(340+ 文件,43 模块)                              |
+| 源码文件   | 900+ (`src/engine/*.ts`)                                      |
+| 测试       | 7680+ 测试(350+ 文件,43 模块)                              |
+| 参考仓库   | three.js r189+ / o3de Atom(已克隆,`references/` 目录)     |
 | 运行时依赖 | 零(@vreen/engine 仅 Draco 为可选 peer)                       |
 | 构建工具   | Vite 5 + Tailwind CSS 3                                        |
 | 桌面端     | Electron 43 + electron-builder 26(便携 .exe)                |
@@ -121,6 +122,17 @@
 | 圆角盒子几何            | ✗             | ✓ RoundedBoxGeometry(棱角球面/圆柱过渡 + 可配半径/分段) | VREEN  |
 | 凸包几何                | ✗             | ✓ ConvexGeometry + ConvexHull(增量 QuickHull + horizon 边 + 体积/表面积) | VREEN  |
 | 程序化噪声              | ✗             | ✓ ImprovedNoise(Perlin 2002)+ SimplexNoise(Gustavson 2D/3D/4D)+ fBm | VREEN  |
+| MikkTSpace 切线空间     | ✗             | ✓ computeTangents(退化 UV 兜底 + Gram-Schmidt + 手性 sign)      | VREEN  |
+| 平面反射(Reflector)   | ✗             | ✓ ReflectorMaterial(Fresnel + tint + 纹理矩阵 + 镜像相机)       | VREEN  |
+| 平面折射(Refractor)   | ✗             | ✓ RefractorMaterial(Snell 折射 + 色散 + TIR + 表观深度)          | VREEN  |
+| 色散折射(GG/CB/R)     | ✗             | ✓ Refractor 独立 R/G/B IOR(棱镜效果,超 three.js)                | VREEN  |
+| 3D LUT 电影级调色      | ✗             | ✓ LUTCubeLoader(.cube 1D/3D) + Data3DTexture + LUTPass(sampler3D) | VREEN  |
+| DaVinci/PS .cube LUT   | ✗             | ✓ parseCube + TITLE/DOMAIN_MINMAX/auto-size + 布局转换 helper   | VREEN  |
+| 3D 纹理(TEXTURE_3D)   | ✗             | ✓ Data3DTexture + WebGL2Renderer texImage3D + 三线性插值        | VREEN  |
+| 地面投影天空盒          | ✗             | ✓ GroundedSkybox(three.js r159+) — 下半球压平 + Z 翻转 + 平滑过渡 | VREEN  |
+| 数字故障后处理          | ✗             | ✓ GlitchPass(RGB 位移 + 条带扭曲 + 雪花噪声 + goWild 持续模式) | VREEN  |
+| 无绑定纹理池(Bindless) | ✗             | ✓ TexturePool(o3de 概念,TEXTURE_2D_ARRAY + sampler2DArray 索引访问) | VREEN  |
+| GPU 驱动纹理索引        | ✗             | ✓ TexturePool 版本追踪 + layerUpdates 部分更新                   | VREEN  |
 
 ### 3.2 场景与资源
 
@@ -295,9 +307,24 @@
 2. **浏览器零安装** — 保持纯客户端浏览器运行的分发优势。
 3. **可视化脚本** — Blockly 面向非程序员,soup3D 无对应能力。
 4. **.vreen 包生态** — 多语言 SDK(Java/C#/C++/Unity/Unreal)形成跨引擎互操作,soup3D 无包格式。
-5. **测试规模** — 持续扩大 4200+ 测试覆盖,作为质量护城河。
+5. **测试规模** — 持续扩大 7600+ 测试覆盖,作为质量护城河。
 
-### 5.4 总评
+### 5.4 参考三.js / o3de 的适配价值(本轮新增)
+
+> 对应目标要求:「把 three.js 和 o3de clone 下来作为参考,抄写有价值的代码并合理适配」。两个参考仓库已克隆到 `references/`(three.js 完整浅克隆 / o3de Atom RHI 稀疏克隆),本轮完成的适配:
+
+| 适配来源 | 特性 | soup3D 状态 | VREEN 实现 | 超过 three.js/o3de 的亮点 |
+|---------|------|-------------|-----------|----------------------|
+| three.js `Reflector.js` | 平面镜像反射材质 | ✗ | ReflectorMaterial + Fresnel/tint/纹理矩阵 | — |
+| three.js `Refractor.js` | 平面折射材质 | ✗ | RefractorMaterial + Snell/TIR/表观深度 | **独立 R/G/B 色散 IOR(棱镜效果)** |
+| three.js `examples/shaders/LUTShader.js` | LUT 颜色查找表后处理 | ✗ | LUTCubeLoader(.cube) + Data3DTexture(TEXTURE_3D) + LUTPass | **DaVinci Resolve/PS .cube 文件端到端直读** |
+| three.js `r159+ GroundedSkybox.js` | 地面投影天空盒 | ✗ | GroundedSkybox(下半球压平 + 平滑过渡 + Z 翻转) | — |
+| three.js `GlitchPass.js` + `DigitalGlitch.js` | 数字故障后处理 | ✗ | GlitchPass(RGB shift + 条带扭曲 + goWild) | **与赛博朋克主页视觉风格紧密集成** |
+| three.js `r152+ Data3DTexture` | 真 3D 纹理(TEXTURE_3D) | ✗ | Data3DTexture + texImage3D 上传路径 | **渲染器公开 getGLTexture() 简化 Pass 对接** |
+| three.js `examples/shaders/MikkTSpace` | MikkTSpace 切线空间 | ✗ | BufferGeometry.computeTangents(退化 UV + Gram-Schmidt + handedness) | — |
+| o3de Atom **Bindless** | 无绑定纹理池(DescriptorHeap) | ✗ | TexturePool(TEXTURE_2D_ARRAY + 整数索引 + 版本追踪) | **WebGL2 限制内等价实现 + layerUpdates 增量更新** |
+
+### 5.5 总评
 
 | 评估项       | soup3D | VREEN |
 | ------------ | ------ | ----- |
