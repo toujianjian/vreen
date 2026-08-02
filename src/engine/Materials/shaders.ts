@@ -2269,3 +2269,143 @@ void main() {
 }
 `;
 
+// ── UnrealBloomPass ─────────────────────────────────────────────
+// 多层 mip 高斯 Bloom,适配自 three.js UnrealBloomPass.js (MIT, inspired by Unreal Engine 4).
+// 5 级 mip 金字塔 + 可分离高斯 + 加权合成 + TAA 兼容(线性空间工作,不写 alpha)。
+
+/** UnrealBloom Pass 1:亮度高通,提取高亮区域。 */
+export const BLOOM_HIGHPASS_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;
+uniform float u_luminosityThreshold;  // threshold
+uniform float u_smoothWidth;          // knee soft width
+
+float luminance(vec3 c) {
+  return dot(c, vec3(0.2126, 0.7152, 0.0722));
+}
+
+void main() {
+  vec4 texel = texture(u_colorMap, v_uv);
+  float v = luminance(texel.rgb);
+
+  // knee curve: soft rolloff from threshold to threshold+smoothWidth
+  float knee = u_luminosityThreshold * u_smoothWidth + 1e-5;
+  float soft = v - u_luminosityThreshold + knee;
+  soft = clamp(soft, 0.0, 2.0 * knee);
+  soft = soft * soft * (1.0 / (4.0 * knee + 1e-5));
+  float contribution = max(soft, v - u_luminosityThreshold);
+  contribution /= max(v, 1e-5);
+
+  outColor = vec4(texel.rgb * contribution, 1.0);
+}
+`;
+
+/** UnrealBloom Pass 2:可分离高斯模糊(H 或 V,由 u_direction 控制)。 */
+export function BLOOM_GAUSSIAN_FRAG(kernelRadius: number): string {
+  const coeffs: string[] = [];
+  const sigma = kernelRadius / 3.0;
+  for (let i = 0; i < kernelRadius; i++) {
+    const c = (0.39894 * Math.exp(-0.5 * i * i / (sigma * sigma)) / sigma).toFixed(8);
+    coeffs.push(c);
+  }
+  return /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;
+uniform vec2 u_invSize;
+uniform vec2 u_direction;
+
+const int KERNEL_RADIUS = ${kernelRadius};
+const float GAUSSIAN[KERNEL_RADIUS] = float[KERNEL_RADIUS](${coeffs.join(', ')});
+
+void main() {
+  float weightSum = GAUSSIAN[0];
+  vec3 diffuseSum = texture(u_colorMap, v_uv).rgb * weightSum;
+
+  for (int i = 1; i < KERNEL_RADIUS; i++) {
+    float x = float(i);
+    float w = GAUSSIAN[i];
+    vec2 uvOffset = u_direction * u_invSize * x;
+    vec3 s1 = texture(u_colorMap, v_uv + uvOffset).rgb;
+    vec3 s2 = texture(u_colorMap, v_uv - uvOffset).rgb;
+    diffuseSum += (s1 + s2) * w;
+    weightSum += 2.0 * w;
+  }
+
+  outColor = vec4(diffuseSum / max(weightSum, 1e-5), 1.0);
+}
+`;
+}
+
+/** UnrealBloom Pass 3:合成 5 个 mip 层级(加权 + tint + radius)。 */
+export const BLOOM_COMPOSITE_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_blurTex0;
+uniform sampler2D u_blurTex1;
+uniform sampler2D u_blurTex2;
+uniform sampler2D u_blurTex3;
+uniform sampler2D u_blurTex4;
+uniform float u_bloomStrength;
+uniform float u_bloomRadius;
+uniform float u_bloomFactors[5];
+uniform vec3  u_bloomTints[5];
+uniform sampler2D u_dirtTexture;   // 可选污渍纹理,u_dirtStrength=0 时跳过
+uniform float u_dirtStrength;
+
+float lerpBloomFactor(float factor) {
+  float mirrorFactor = 1.2 - factor;
+  return mix(factor, mirrorFactor, u_bloomRadius);
+}
+
+void main() {
+  // 3.0 为与 three.js 向后兼容的强度倍率
+  vec3 bloom = 3.0 * u_bloomStrength * (
+    lerpBloomFactor(u_bloomFactors[0]) * u_bloomTints[0] * texture(u_blurTex0, v_uv).rgb +
+    lerpBloomFactor(u_bloomFactors[1]) * u_bloomTints[1] * texture(u_blurTex1, v_uv).rgb +
+    lerpBloomFactor(u_bloomFactors[2]) * u_bloomTints[2] * texture(u_blurTex2, v_uv).rgb +
+    lerpBloomFactor(u_bloomFactors[3]) * u_bloomTints[3] * texture(u_blurTex3, v_uv).rgb +
+    lerpBloomFactor(u_bloomFactors[4]) * u_bloomTints[4] * texture(u_blurTex4, v_uv).rgb
+  );
+
+  // Lens dirt overlay
+  if (u_dirtStrength > 1e-4) {
+    vec3 dirt = texture(u_dirtTexture, v_uv).rgb;
+    bloom += bloom * dirt * u_dirtStrength;
+  }
+
+  float bloomAlpha = max(bloom.r, max(bloom.g, bloom.b));
+  outColor = vec4(bloom, bloomAlpha);
+}
+`;
+
+/** UnrealBloom Pass 4:加法混合 Bloom 到原图(additive blend,不写 alpha 以兼容 TAA)。 */
+export const BLOOM_ADDITIVE_BLEND_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;     // 原始 color buffer
+uniform sampler2D u_bloomMap;     // composite bloom output
+uniform float u_bloomStrength;   // 最终强度微调
+
+void main() {
+  vec4 color = texture(u_colorMap, v_uv);
+  vec4 bloom = texture(u_bloomMap, v_uv);
+  // Additive:颜色相加 + 独立 alpha。线性空间工作,后续由 OutputPass/ToneMap 做 gamma。
+  vec3 rgb = color.rgb + bloom.rgb * u_bloomStrength;
+  outColor = vec4(rgb, color.a);
+}
+`;
+

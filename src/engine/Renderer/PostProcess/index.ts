@@ -19,6 +19,7 @@
 //   - SSSSPass         : 屏幕空间次表面散射(可分离高斯 + 深度感知)
 //   - DOFEnhancedPass  : 增强景深(CoC + 圆/六/八边形散景)
 //   - SMAAPass         : 子像素形态学抗锯齿(3 pass + procedural LUT)
+//   - UnrealBloomPass  : Unreal 风格多层 mip 高斯 Bloom + lens dirt
 //
 // 注意:
 //   - 前 7 个 Pass 都实现 RenderPass 接口,可直接加入 PostProcessingPipeline。
@@ -54,3 +55,7 @@ export { SSSSPass, type SSSSPassOptions } from './SSSSPass';
 export { DOFEnhancedPass, type DOFEnhancedPassOptions } from './DOFEnhancedPass';
 export { GlitchPass, type GlitchPassOptions } from './GlitchPass';
 export { SMAAPass, type SMAAPassOptions } from './SMAAPass';
+export {
+  UnrealBloomPass,
+  type UnrealBloomOptions,
+} from './UnrealBloomPass';

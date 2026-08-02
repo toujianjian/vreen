@@ -2,7 +2,7 @@
 
 > Path: `src/engine/Renderer/PostProcess/`
 >
-> The enhanced post-processing pass family of the VREEN engine. Provides 17
+> The enhanced post-processing pass family of the VREEN engine. Provides **18**
 > passes covering color grading, anti-aliasing, screen-space effects, depth-of-field,
 > motion blur, exposure adaptation, and stylized effects. Each pass is a
 > self-contained class that manages its own GPU resources (FBOs, textures,
@@ -584,6 +584,95 @@ Image element dependency. Works in both browser and Node.js (test) environments.
 ```ts
 apply(input: WebGLTexture, ctx: PassContext): WebGLTexture
 ```
+
+---
+
+### UnrealBloomPass
+
+Mip-chain Gaussian Bloom in Unreal Engine 4 / three.js style — **5-level
+downsampling pyramid** with per-level separable Gaussian, soft-knee
+luminosity threshold, weighted composite with per-mip tint, and
+optional lens-dirt scattering. Direct replacement for the legacy
+`BloomPass` (single-level box blur).
+
+**Class**: `UnrealBloomPass extends RenderPass`
+**Shaders**: `BLOOM_HIGHPASS_FRAG`, `BLOOM_GAUSSIAN_FRAG` (×5 kernel sizes), `BLOOM_COMPOSITE_FRAG`, `BLOOM_ADDITIVE_BLEND_FRAG`
+
+#### Options
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | `boolean` | `true` | Enable toggle |
+| `strength` | `number` | `1.0` | Global bloom intensity multiplier (3× internal base for three.js compat) |
+| `radius` | `number[0,1]` | `0.5` | Mip-weight interpolation: 0 = sharp fine mips only, 1 = soft coarse mips dominant |
+| `threshold` | `number` | `0.85` | Luminosity threshold (linear). Pixels below contribute 0 bloom |
+| `smoothWidth` | `number` | `0.01` | Knee soft-width relative to threshold. Soft rolloff, hard-edge-free highlights |
+| `mipFactors` | `[5]number` | `[1, .8, .6, .4, .2]` | Per-mip weight from finest (0) to coarsest (4) |
+| `mipTints` | `[5][3]number` | all white | Per-mip RGB tint — e.g. cool neon tint on small highlights |
+| `dirtTexture` | `WebGLTexture \| null` | `null` | Optional lens-dirt / dust texture (multiplies bloom locally) |
+| `dirtStrength` | `number` | `0` | Dirt overlay strength, 0.3~1.0 for cinematic look |
+
+#### 4-Stage Pipeline
+
+| Stage | Target | Description | FS Draw Count |
+|-------|--------|-------------|---------------|
+| 1. High-Pass | bright (½ res) | Luminance knee curve → extract bright pixels | 1 |
+| 2. Separable Gaussian ×5 mips | `hTargets[i]` → `vTargets[i]` | H then V, kernel sizes `[6,10,14,18,22]` σ=R/3 | 10 |
+| 3. Composite + Dirt | `hTargets[0]` | `Σ lerpBloomFactor(fᵢ)·tintᵢ·texᵢ + dirt·bloom` | 1 |
+| 4. Additive Blend | `ctx.resources.bloomTexture2` | `input + bloom·strength` (preserves α for TAA) | 1 |
+
+**Total per frame**: 13 fullscreen draws @ ½ res or smaller → ~3–5× cheaper than single-res wide-kernel blur.
+
+#### Internal FBO Layout
+
+All FBOs `RGBA16F HALF_FLOAT` (HDR linear) + `CLAMP_TO_EDGE + LINEAR`.
+Lazily created on first `apply()` and resized when `ctx.width/height` changes.
+
+| Name | Count | Size | Purpose |
+|------|-------|------|---------|
+| `bright` | 1 | W/2 × H/2 | Post-high-pass input to blur chain |
+| `mips[0..4].texH / .texV` | 10 | W/2…W/64 × H/2…H/64 | Ping-pong per mip level |
+| `_blackTex` | 1 | 1×1, R8 | Null dirt texture when dirtTexture is null |
+
+#### API
+
+```ts
+// Constructor options
+const bloom = new UnrealBloomPass({
+  strength: 1.2,
+  radius: 0.6,
+  threshold: 0.8,
+  smoothWidth: 0.01,
+  mipTints: [
+    [1, 0.9, 0.8],  // warm tint for fine highlights (neon edges)
+    [1, 1, 1],
+    [0.8, 0.9, 1.1], // cool tint for wide sky / area bloom
+    [1, 1, 1],
+    [1, 1, 1],
+  ],
+  dirtTexture: myDirtTexture,
+  dirtStrength: 0.4,
+});
+
+pipeline.add(bloom);        // RenderPass-compatible: drops in directly
+
+apply(input: WebGLTexture, ctx: PassContext): WebGLTexture
+dispose(ctx: PassContext): void
+```
+
+#### soup3D Feature Parity — Why It Wins
+
+`soup3D` (as of v0.x) exposes only one simple `Bloom` slider with a single
+separable blur. The VREEN `UnrealBloomPass` introduces:
+
+- **Mip pyramid** — preserves both sharp neon-edge highlights *and*
+  soft area bloom (sky, big emissive panels).
+- **Per-mip tint** — color-grades each bloom scale, producing UE4-style
+  "warm sparkles + cool halo" signatures.
+- **Lens dirt** — cinematic dust/glare that ties HDR highlights to the
+  physical camera metaphor.
+- **TAA-safe** — additive only, α untouched, linear-space math
+  composes cleanly before tone-mapping.
 
 ---
 
