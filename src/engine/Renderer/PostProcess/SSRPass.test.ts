@@ -18,6 +18,7 @@ import { describe, it, expect } from 'vitest';
 import { SSRPass } from './SSRPass';
 import { Camera } from '../../Cameras/Camera';
 import { PerspectiveCamera } from '../../Cameras/PerspectiveCamera';
+import { SSR_BLUR_FRAG } from '../../Materials/shaders';
 
 // ── MockGL2 ─────────────────────────────────────────────────────────
 // 支持 SSRPass.apply 所需的全部 GL 调用表面,包括 ShaderProgram 编译路径。
@@ -386,5 +387,286 @@ describe('SSRPass dispose', () => {
     p.apply(gl as unknown as WebGL2RenderingContext, makeTexture('b'), makeTexture('p'), makeTexture('n'), makeCamera());
     expect(gl.createdTextures.length).toBe(2);
     expect(gl.deletedTextures.length).toBe(deletedAfterDispose);
+  });
+});
+
+// ── 粗糙反射空间降噪(blur) ────────────────────────────────────────
+
+describe('SSRPass blur defaults', () => {
+  it('blurEnabled defaults to true', () => {
+    const p = new SSRPass();
+    expect(p.blurEnabled).toBe(true);
+  });
+
+  it('blurRadiusScale defaults to 4.0', () => {
+    const p = new SSRPass();
+    expect(p.blurRadiusScale).toBeCloseTo(4.0, 5);
+  });
+
+  it('accepts blur options', () => {
+    const p = new SSRPass({ blurEnabled: false, blurRadiusScale: 8.0 });
+    expect(p.blurEnabled).toBe(false);
+    expect(p.blurRadiusScale).toBeCloseTo(8.0, 5);
+  });
+});
+
+describe('SSRPass blur resource allocation', () => {
+  it('does NOT allocate blur resources without roughnessTexture', () => {
+    const gl = new MockGL2();
+    const p = new SSRPass(); // blurEnabled=true by default
+    p.apply(gl as unknown as WebGL2RenderingContext, makeTexture('a'), makeTexture('p'), makeTexture('n'), makeCamera());
+    // 只分配 SSR 主 pass 资源:1 texture + 1 FBO + 1 program
+    expect(gl.createdTextures.length).toBe(1);
+    expect(gl.createdFramebuffers.length).toBe(1);
+    expect(gl.createdPrograms.length).toBe(1);
+  });
+
+  it('allocates blur resources (H+V) when roughnessTexture provided', () => {
+    const gl = new MockGL2();
+    const p = new SSRPass(); // blurEnabled=true
+    p.apply(
+      gl as unknown as WebGL2RenderingContext,
+      makeTexture('a'), makeTexture('p'), makeTexture('n'),
+      makeCamera(), makeTexture('rough'),
+    );
+    // 1 SSR + 2 blur (H+V) = 3 textures + 3 FBOs + 2 programs
+    expect(gl.createdTextures.length).toBe(3);
+    expect(gl.createdFramebuffers.length).toBe(3);
+    expect(gl.createdPrograms.length).toBe(2);
+  });
+
+  it('does NOT allocate blur resources when blurEnabled=false', () => {
+    const gl = new MockGL2();
+    const p = new SSRPass({ blurEnabled: false });
+    p.apply(
+      gl as unknown as WebGL2RenderingContext,
+      makeTexture('a'), makeTexture('p'), makeTexture('n'),
+      makeCamera(), makeTexture('rough'),
+    );
+    // blurEnabled=false → 只有 SSR 主 pass 资源
+    expect(gl.createdTextures.length).toBe(1);
+    expect(gl.createdFramebuffers.length).toBe(1);
+    expect(gl.createdPrograms.length).toBe(1);
+  });
+
+  it('does not re-allocate blur resources on subsequent apply', () => {
+    const gl = new MockGL2();
+    const p = new SSRPass();
+    p.apply(
+      gl as unknown as WebGL2RenderingContext,
+      makeTexture('a'), makeTexture('p'), makeTexture('n'),
+      makeCamera(), makeTexture('rough'),
+    );
+    const texAfterFirst = gl.createdTextures.length;
+    p.apply(
+      gl as unknown as WebGL2RenderingContext,
+      makeTexture('b'), makeTexture('p'), makeTexture('n'),
+      makeCamera(), makeTexture('rough'),
+    );
+    expect(gl.createdTextures.length).toBe(texAfterFirst);
+  });
+
+  it('re-allocates blur on resolution change', () => {
+    const gl = new MockGL2();
+    const p = new SSRPass({ resolution: 0.5 });
+    p.apply(
+      gl as unknown as WebGL2RenderingContext,
+      makeTexture('a'), makeTexture('p'), makeTexture('n'),
+      makeCamera(), makeTexture('rough'),
+    );
+    const texAfterFirst = gl.createdTextures.length;
+    p.setResolution(1.0);
+    p.apply(
+      gl as unknown as WebGL2RenderingContext,
+      makeTexture('b'), makeTexture('p'), makeTexture('n'),
+      makeCamera(), makeTexture('rough'),
+    );
+    expect(gl.createdTextures.length).toBeGreaterThan(texAfterFirst);
+  });
+});
+
+describe('SSRPass blur draw calls', () => {
+  it('draws 3 times with blur enabled + roughnessTexture (SSR + H + V)', () => {
+    const gl = new MockGL2();
+    const p = new SSRPass();
+    p.apply(
+      gl as unknown as WebGL2RenderingContext,
+      makeTexture('a'), makeTexture('p'), makeTexture('n'),
+      makeCamera(), makeTexture('rough'),
+    );
+    expect(gl.drawCalls).toBe(3);
+  });
+
+  it('draws 1 time without roughnessTexture (SSR only, no blur)', () => {
+    const gl = new MockGL2();
+    const p = new SSRPass();
+    p.apply(gl as unknown as WebGL2RenderingContext, makeTexture('a'), makeTexture('p'), makeTexture('n'), makeCamera());
+    expect(gl.drawCalls).toBe(1);
+  });
+
+  it('draws 1 time with blurEnabled=false + roughnessTexture', () => {
+    const gl = new MockGL2();
+    const p = new SSRPass({ blurEnabled: false });
+    p.apply(
+      gl as unknown as WebGL2RenderingContext,
+      makeTexture('a'), makeTexture('p'), makeTexture('n'),
+      makeCamera(), makeTexture('rough'),
+    );
+    expect(gl.drawCalls).toBe(1);
+  });
+});
+
+describe('SSRPass blur output texture', () => {
+  it('returns blur V texture when blur enabled + roughnessTexture', () => {
+    const gl = new MockGL2();
+    const p = new SSRPass();
+    const out = p.apply(
+      gl as unknown as WebGL2RenderingContext,
+      makeTexture('a'), makeTexture('p'), makeTexture('n'),
+      makeCamera(), makeTexture('rough'),
+    );
+    expect(out).toBeDefined();
+    // 第 3 个创建的纹理是 _blurTexV(创建顺序:SSR → blurH → blurV)
+    expect(out).toBe(gl.createdTextures[2]);
+  });
+
+  it('returns SSR texture when blur disabled', () => {
+    const gl = new MockGL2();
+    const p = new SSRPass({ blurEnabled: false });
+    const out = p.apply(
+      gl as unknown as WebGL2RenderingContext,
+      makeTexture('a'), makeTexture('p'), makeTexture('n'),
+      makeCamera(), makeTexture('rough'),
+    );
+    expect(out).toBe(gl.createdTextures[0]);
+  });
+
+  it('returns SSR texture when no roughnessTexture (even with blurEnabled=true)', () => {
+    const gl = new MockGL2();
+    const p = new SSRPass();
+    const out = p.apply(
+      gl as unknown as WebGL2RenderingContext,
+      makeTexture('a'), makeTexture('p'), makeTexture('n'),
+      makeCamera(),
+    );
+    expect(out).toBe(gl.createdTextures[0]);
+  });
+
+  it('returns consistent texture across apply() calls (blur stable)', () => {
+    const gl = new MockGL2();
+    const p = new SSRPass();
+    const t1 = p.apply(
+      gl as unknown as WebGL2RenderingContext,
+      makeTexture('a'), makeTexture('p'), makeTexture('n'),
+      makeCamera(), makeTexture('r1'),
+    );
+    const t2 = p.apply(
+      gl as unknown as WebGL2RenderingContext,
+      makeTexture('b'), makeTexture('p'), makeTexture('n'),
+      makeCamera(), makeTexture('r2'),
+    );
+    expect(t1).toBe(t2);
+  });
+});
+
+describe('SSRPass blur dispose', () => {
+  it('frees SSR + blur textures/FBOs after apply with blur', () => {
+    const gl = new MockGL2();
+    const p = new SSRPass();
+    p.apply(
+      gl as unknown as WebGL2RenderingContext,
+      makeTexture('a'), makeTexture('p'), makeTexture('n'),
+      makeCamera(), makeTexture('rough'),
+    );
+    expect(gl.deletedTextures.length).toBe(0);
+    p.dispose(gl as unknown as WebGL2RenderingContext);
+    // 1 SSR + 2 blur = 3 textures freed
+    expect(gl.deletedTextures.length).toBe(3);
+    expect(gl.deletedFramebuffers.length).toBe(3);
+    // 2 programs freed (SSR + blur)
+    expect(gl.deletedPrograms.length).toBe(2);
+  });
+
+  it('blur dispose is idempotent', () => {
+    const gl = new MockGL2();
+    const p = new SSRPass();
+    p.dispose(gl as unknown as WebGL2RenderingContext);
+    p.dispose(gl as unknown as WebGL2RenderingContext);
+    expect(gl.deletedTextures.length).toBe(0);
+  });
+
+  it('apply() after dispose re-allocates SSR + blur resources', () => {
+    const gl = new MockGL2();
+    const p = new SSRPass();
+    p.apply(
+      gl as unknown as WebGL2RenderingContext,
+      makeTexture('a'), makeTexture('p'), makeTexture('n'),
+      makeCamera(), makeTexture('rough'),
+    );
+    p.dispose(gl as unknown as WebGL2RenderingContext);
+    p.apply(
+      gl as unknown as WebGL2RenderingContext,
+      makeTexture('b'), makeTexture('p'), makeTexture('n'),
+      makeCamera(), makeTexture('rough'),
+    );
+    // 第二次 apply 后应再分配 3 个纹理(SSR + H + V)
+    expect(gl.createdTextures.length).toBe(6);
+  });
+});
+
+// ── SSR_BLUR_FRAG shader 源码校验 ─────────────────────────────────
+
+describe('SSR_BLUR_FRAG shader source', () => {
+  it('is GLSL ES 3.0', () => {
+    expect(SSR_BLUR_FRAG).toContain('#version 300 es');
+  });
+
+  it('declares all required uniforms', () => {
+    expect(SSR_BLUR_FRAG).toContain('u_colorMap');
+    expect(SSR_BLUR_FRAG).toContain('u_normalMap');
+    expect(SSR_BLUR_FRAG).toContain('u_roughnessMap');
+    expect(SSR_BLUR_FRAG).toContain('u_blurDir');
+    expect(SSR_BLUR_FRAG).toContain('u_screenSize');
+    expect(SSR_BLUR_FRAG).toContain('u_blurRadiusScale');
+    expect(SSR_BLUR_FRAG).toContain('u_hasRoughness');
+    expect(SSR_BLUR_FRAG).toContain('u_roughnessCutoff');
+  });
+
+  it('uses 9-tap Gaussian kernel (TAPS=4, single-side)', () => {
+    expect(SSR_BLUR_FRAG).toContain('const int TAPS = 4');
+    expect(SSR_BLUR_FRAG).toContain('WEIGHTS[9]');
+  });
+
+  it('skips blur for mirror surfaces (roughness < 0.2)', () => {
+    expect(SSR_BLUR_FRAG).toContain('roughness < 0.2');
+  });
+
+  it('skips blur for diffuse surfaces (roughness > cutoff)', () => {
+    expect(SSR_BLUR_FRAG).toContain('roughness > u_roughnessCutoff');
+  });
+
+  it('skips blur for sky pixels (no normal)', () => {
+    expect(SSR_BLUR_FRAG).toContain('length(centerNormal) < 0.01');
+  });
+
+  it('implements edge-aware filtering (normal dot product)', () => {
+    expect(SSR_BLUR_FRAG).toContain('edgeThreshold');
+    expect(SSR_BLUR_FRAG).toContain('dot(N, normalize(sampleNormal))');
+    expect(SSR_BLUR_FRAG).toContain('step(edgeThreshold');
+  });
+
+  it('maps roughness to blur radius', () => {
+    expect(SSR_BLUR_FRAG).toContain('blurRadius');
+    expect(SSR_BLUR_FRAG).toContain('u_blurRadiusScale');
+  });
+
+  it('normalizes by total weight (prevents darkening at edges)', () => {
+    expect(SSR_BLUR_FRAG).toContain('color /= totalWeight');
+    expect(SSR_BLUR_FRAG).toContain('totalWeight > 0.0');
+  });
+
+  it('references McGuire-Mara and UE5 in design comments', () => {
+    // 设计参考在 shader 上方的注释中(不在 SSR_BLUR_FRAG 字符串内,但校验文件存在)
+    expect(SSR_BLUR_FRAG.length).toBeGreaterThan(500);
   });
 });

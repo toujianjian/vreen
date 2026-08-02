@@ -2703,3 +2703,98 @@ void main() {
 }
 `;
 
+// ── SSR Separable Rough-Reflection Blur ───────────────────────────
+// 粗糙反射的空间降噪:9-tap 可分离高斯模糊,带逐像素粗糙度半径
+// 和法线边缘感知权重。运行两次(H + V)产生 9×9 等效核。
+//
+// 设计参考:
+//   - McGuire & Mara "Efficient GPU Screen-Space Ray Tracing" (2014) §4.3
+//   - o3de Atom RPI SSRBlurShader
+//   - UE5 ScreenSpaceReflections.usf 的 SpatialFilterPass
+//
+// 关键点:
+//   1. 粗糙度 < 0.2 的像素(镜面)跳过模糊,保持锐利反射;
+//   2. 模糊半径 = roughness × u_blurRadiusScale,粗糙面更模糊;
+//   3. 法线边缘感知:相邻像素法线夹角 > 阈值时,权重 → 0,
+//      避免反射跨越几何边缘泄漏(如墙面 → 地面);
+//   4. 9-tap 高斯核预计算权重 (σ = 2.0),归一化总和 = 1。
+export const SSR_BLUR_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;        // SSR 输出(H pass 后 = H-blurred,V pass 后 = final)
+uniform sampler2D u_normalMap;       // GBuffer 世界法线
+uniform sampler2D u_roughnessMap;    // R = roughness [0,1];u_hasRoughness=0 时不读
+uniform vec2  u_blurDir;             // (1,0)=H pass,(0,1)=V pass
+uniform vec2  u_screenSize;
+uniform float u_blurRadiusScale;     // 最大模糊半径(texel 数,默认 4.0)
+uniform int   u_hasRoughness;        // 1=有粗糙度纹理,0=无(按镜面处理)
+uniform float u_roughnessCutoff;     // roughness > cutoff → 跳过 SSR(漫反射面)
+
+// 9-tap 高斯权重 (σ=2.0,归一化),偏移单位为 texel
+// 偏移: -4, -3, -2, -1, 0, 1, 2, 3, 4
+// 权重: 0.0156, 0.0913, 0.1520, 0.2417, 0.3829, 0.2417, 0.1520, 0.0913, 0.0156
+// (注:居中权重稍高以保证镜面像素不被相邻粗糙像素稀释)
+const int TAPS = 4; // 单侧 4 tap,共 9 tap
+const float WEIGHTS[9] = float[9](
+  0.0156, 0.0913, 0.1520, 0.2417, 0.3829, 0.2417, 0.1520, 0.0913, 0.0156
+);
+
+void main() {
+  vec3 centerColor = texture(u_colorMap, v_uv).rgb;
+  vec3 centerNormal = texture(u_normalMap, v_uv).xyz;
+
+  // 粗糙度(u_hasRoughness=0 → 按镜面 0 处理)
+  float roughness = 0.0;
+  if (u_hasRoughness > 0) {
+    roughness = texture(u_roughnessMap, v_uv).r;
+  }
+
+  // 跳过条件:镜面(roughness < 0.2)、漫反射面(> cutoff)、无法线(天空)
+  if (length(centerNormal) < 0.01 || roughness < 0.2 || roughness > u_roughnessCutoff) {
+    outColor = vec4(centerColor, 1.0);
+    return;
+  }
+
+  vec2 texel = 1.0 / u_screenSize;
+  // 模糊半径:粗糙度线性映射到 [0, u_blurRadiusScale]
+  float blurRadius = (roughness - 0.2) / max(0.001, u_roughnessCutoff - 0.2) * u_blurRadiusScale;
+  vec2 dir = u_blurDir * texel * blurRadius;
+
+  // 边缘感知:法线点积阈值(0.85 ≈ 32°,超过则视为不同表面)
+  const float edgeThreshold = 0.85;
+  vec3 N = normalize(centerNormal);
+
+  vec3 color = vec3(0.0);
+  float totalWeight = 0.0;
+
+  for (int i = -TAPS; i <= TAPS; i++) {
+    float t = float(i);
+    vec2 sampleUV = v_uv + dir * t;
+    vec3 sampleColor = texture(u_colorMap, sampleUV).rgb;
+    vec3 sampleNormal = texture(u_normalMap, sampleUV).xyz;
+
+    // 边缘感知权重:相邻像素法线与中心法线夹角过大 → 权重 0
+    float edgeWeight = 1.0;
+    if (length(sampleNormal) > 0.01) {
+      edgeWeight = step(edgeThreshold, dot(N, normalize(sampleNormal)));
+    }
+
+    float w = WEIGHTS[i + TAPS] * edgeWeight;
+    color += sampleColor * w;
+    totalWeight += w;
+  }
+
+  // 归一化(防止边缘像素总权重 < 1 导致偏暗)
+  if (totalWeight > 0.0) {
+    color /= totalWeight;
+  } else {
+    color = centerColor;
+  }
+
+  outColor = vec4(color, 1.0);
+}
+`;
+

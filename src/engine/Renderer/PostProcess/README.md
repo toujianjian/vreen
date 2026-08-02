@@ -462,11 +462,13 @@ Pixelation / mosaic effect.
 
 Screen-space reflections — ray-marches the GBuffer position/normal buffers to
 find reflection intersections. **Upgraded** with temporal jitter, adaptive
-step size, view-space thickness rejection, and roughness-modulated blur —
-surpassing soup3D (which has no SSR).
+step size, view-space thickness rejection, roughness-modulated composite,
+and a **separable Gaussian rough-reflection spatial filter** (H+V 9-tap,
+edge-aware) — surpassing soup3D (which has no SSR).
 
 **Class**: `SSRPass` (independent, does **not** extend `RenderPass`)
-**Shader**: `SSR_FRAG` (ray march + binary refine)
+**Shaders**: `SSR_FRAG` (ray march + binary refine) + `SSR_BLUR_FRAG`
+(separable Gaussian rough-reflection blur)
 
 #### Options
 
@@ -479,6 +481,8 @@ surpassing soup3D (which has no SSR).
 | `roughnessCutoff` | `number` | `0.6` | Skip SSR on pixels with roughness > cutoff (diffuse surfaces) |
 | `jitterScale` | `number` | `1.0` | Temporal jitter amplitude (0 = off, pairs with TAA) |
 | `stepGrowth` | `number` | `0.5` | Adaptive step growth factor (0 = uniform, 1.0 = doubling) |
+| `blurEnabled` | `boolean` | `true` | Enable separable Gaussian rough-reflection spatial filter (H+V). Requires `roughnessTexture` to actually run; otherwise skipped. |
+| `blurRadiusScale` | `number` | `4.0` | Max blur radius in texels for rough surfaces. Higher = more blurred rough reflections. |
 
 #### API
 
@@ -490,10 +494,10 @@ apply(
   normalTexture: WebGLTexture,     // GBuffer world normal (RGBA16F)
   camera: Camera,
   roughnessTexture?: WebGLTexture | null,  // optional GBuffer roughness (R channel)
-): WebGLTexture
+): WebGLTexture  // returns blur V texture when blur enabled + roughness provided; otherwise SSR main texture
 ```
 
-#### Algorithm (4-stage pipeline)
+#### Algorithm (5-stage pipeline)
 
 | Stage | Description |
 |-------|-------------|
@@ -501,6 +505,31 @@ apply(
 | ② Adaptive ray march | Reflect view dir about normal; march with **linearly growing step** (near = small for precision, far = large for speed) + **Interleaved Gradient Noise jitter** (per-pixel × per-frame, temporal via `frame` counter). View-space depth test: `depthDiff = viewDepth(ray) − viewDepth(sampled)`; hit when `0 < depthDiff < thickness`. |
 | ③ Binary refine | 8-step bisection collapses error to `thickness/256`. |
 | ④ Roughness-modulated composite | Sharp reflection for `roughness < 0.2`; 4-neighbor blur scaled by `roughness × 3.5` for rough surfaces. Strength = `reflectionStrength × edgeFade × (0.5 + 0.5·Fresnel) × (1 − smoothstep(0, cutoff, roughness))`. |
+| ⑤ Spatial filter (optional) | **H+V separable 9-tap Gaussian** on the SSR output. Per-pixel blur radius = `(roughness − 0.2) / (cutoff − 0.2) × blurRadiusScale`. **Edge-aware**: neighbor weight = `step(0.85, dot(centerN, sampleN))` — prevents reflection leakage across geometry edges (e.g. wall → floor). Skipped for mirrors (`roughness < 0.2`), diffuse (`> cutoff`), and sky. |
+
+#### Texture unit bindings
+
+| Unit | Sampler | Stage(s) | Source |
+|------|---------|----------|--------|
+| 0 | `u_colorMap` | SSR + blur H/V | `inputTexture` → SSR → `_blurTexH` → `_blurTexV` |
+| 1 | `u_positionMap` (SSR) / `u_normalMap` (blur) | SSR + blur | GBuffer position / normal |
+| 2 | `u_normalMap` (SSR) | SSR | GBuffer world normal |
+| 3 | `u_roughnessMap` | SSR + blur | GBuffer roughness (R channel) |
+
+#### Resource layout
+
+| Resource | Count | Allocated when | Format |
+|----------|-------|----------------|--------|
+| SSR FBO + texture | 1 + 1 | first `apply()` | RGBA16F |
+| Blur H FBO + texture | 1 + 1 | `blurEnabled && roughnessTexture` provided | RGBA16F |
+| Blur V FBO + texture | 1 + 1 | `blurEnabled && roughnessTexture` provided | RGBA16F |
+| Fullscreen quad VAO + buffer | 1 + 1 | first `apply()` | vec2 pos + vec2 uv |
+| SSR program | 1 | first `apply()` | `POST_VERT` + `SSR_FRAG` |
+| Blur program | 1 | `blurEnabled && roughnessTexture` provided | `POST_VERT` + `SSR_BLUR_FRAG` |
+
+When `blurEnabled=false` or no `roughnessTexture` is provided, only the SSR
+main pass runs (1 texture, 1 FBO, 1 draw call). When blur is active, the
+total is 3 textures + 3 FBOs + 2 programs + 3 draw calls per frame.
 
 #### soup3D Feature Parity
 
@@ -514,6 +543,19 @@ apply(
   world-Z thickness is axis-dependent and wrong for tilted scenes.
 - **Roughness modulation** — rough surfaces get blurred + dimmed
   reflections (physically correct), not mirror-sharp everywhere.
+- **Separable Gaussian spatial filter** (new) — H+V 9-tap blur produces
+  9×9 equivalent kernel at 18 samples (vs 81 for non-separable). Edge-
+  aware filtering prevents reflection leakage across geometry boundaries.
+  This matches the approach used by UE5's `ScreenSpaceReflections.usf`
+  SpatialFilterPass and o3de Atom's RPI SSRBlurShader.
+
+#### References
+
+- EA SEED, "Stable SSR" GDC presentation
+- McGuire & Mara, "Efficient GPU Screen-Space Ray Tracing" (2014) §4.3
+- Jorge Jimenez, "Interleaved Gradient Noise" (2014) — temporal jitter
+- o3de Atom RPI SSRBlurShader — separable rough-reflection blur
+- UE5 `ScreenSpaceReflections.usf` — SpatialFilterPass reference
 
 ---
 

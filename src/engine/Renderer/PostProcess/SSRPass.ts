@@ -6,26 +6,32 @@
 //   - 不依赖 RenderPass.apply(input, ctx) 抽象,因为 SSR 需要额外的
 //     position / normal 纹理,签名不同;本类独立管理内部 FBO + 程序。
 //   - 支持 resolution 降采样(典型 0.5)以减轻 GPU 负担。
+//   - 可选的粗糙反射空间降噪(blurEnabled):9-tap 可分离高斯模糊,
+//     带逐像素粗糙度半径和法线边缘感知权重,运行 H+V 两遍产生 9×9 等效核。
 //
 // 流程:
 //   1. apply() 首次调用时按 width * resolution × height * resolution
 //      分配内部 FBO + RGBA16F 颜色纹理 + 编译 SSR 程序;
 //   2. 绑定 FBO + 视口 → 画全屏四边形,fragment shader 读 input/position/
 //      normal 三张纹理做 ray march + 二分查找 + 边缘衰减;
-//   3. 输出纹理可被下游 pass 采样或合成回主颜色缓冲。
+//   3. (可选)blurEnabled + roughnessTexture 提供时,运行 H+V 两遍
+//      SSR_BLUR_FRAG,产生平滑的粗糙反射;
+//   4. 输出纹理可被下游 pass 采样或合成回主颜色缓冲。
 //
 // 不变量:
 //   - dispose 后再调用 apply 会重新分配资源(懒重建);
 //   - setResolution() 修改降采样比例后,下一帧 apply 自动重建;
 //   - 内部纹理为 RGBA16F(高动态范围场景反射需要负数 / >1 的值);
+//   - blur 资源仅在 blurEnabled=true 且 apply() 收到 roughnessTexture 时分配;
 //   - 输出纹理所有权归 Pass,调用方不得释放。
 //
 // 参考:
 //   - EA SEED "Stable SSR" GDC 演讲
-//   - three.js examples/jsm/postprocessing/SSRPass(本实现为简化版)
+//   - McGuire & Mara "Efficient GPU Screen-Space Ray Tracing" (2014) §4.3
+//   - three.js examples/jsm/postprocessing/SSRPass(本实现为简化版 + 扩展)
 
 import type { Camera } from '../../Cameras/Camera';
-import { POST_VERT as POST_VERT_SRC, SSR_FRAG } from '../../Materials/shaders';
+import { POST_VERT as POST_VERT_SRC, SSR_FRAG, SSR_BLUR_FRAG } from '../../Materials/shaders';
 import { ShaderProgram } from '../ShaderProgram';
 import { createLogger } from '@/lib/logger';
 
@@ -46,14 +52,19 @@ export interface SSRPassOptions {
   jitterScale?: number;
   /** 自适应步长增长因子(默认 0.5,线性增长)。1.0=每步翻倍。 */
   stepGrowth?: number;
+  /** 是否启用粗糙反射空间降噪(默认 true)。需要 roughnessTexture 才会实际运行。 */
+  blurEnabled?: boolean;
+  /** 粗糙反射模糊最大半径(默认 4.0 texel)。粗糙面更模糊。 */
+  blurRadiusScale?: number;
 }
 
 /**
  * 屏幕空间反射 Pass。独立管理内部 FBO 与程序,不继承 RenderPass。
  *
  * apply() 把 input + position + normal 三张纹理喂给 SSR fragment shader,
- * 输出到内部 FBO 的颜色纹理。调用方拿到返回的 WebGLTexture 后自行决定
- * 如何合成回主颜色缓冲(典型做法:blend 或在下个 pass 中读取)。
+ * 输出到内部 FBO 的颜色纹理。当 blurEnabled=true 且提供 roughnessTexture 时,
+ * 接着运行 H+V 两遍 SSR_BLUR_FRAG 产生平滑的粗糙反射。调用方拿到返回的
+ * WebGLTexture 后自行决定如何合成回主颜色缓冲。
  */
 export class SSRPass {
   readonly name = 'ssr';
@@ -75,17 +86,32 @@ export class SSRPass {
   /** 帧计数(每 apply 自增,用于时序抖动)。 */
   frame: number = 0;
 
-  /** 当前输出纹理(apply 后可用,null 表示尚未渲染或已 dispose)。 */
-  private _outputTexture: WebGLTexture | null = null;
-  private _fbo: WebGLFramebuffer | null = null;
+  /** 是否启用粗糙反射空间降噪(默认 true)。需要 roughnessTexture 才会实际运行。 */
+  blurEnabled: boolean = true;
+  /** 粗糙反射模糊最大半径(texel 数,默认 4.0)。粗糙面更模糊。 */
+  blurRadiusScale: number = 4.0;
+
+  /** SSR 主 pass 输出纹理(apply 后可用)。 */
+  private _ssrTexture: WebGLTexture | null = null;
+  private _ssrFbo: WebGLFramebuffer | null = null;
   private _program: ShaderProgram | null = null;
+
+  /** 粗糙反射模糊资源(H pass 写 _blurTexH,V pass 写 _blurTexV = 最终输出)。 */
+  private _blurTexH: WebGLTexture | null = null;
+  private _blurFboH: WebGLFramebuffer | null = null;
+  private _blurTexV: WebGLTexture | null = null;
+  private _blurFboV: WebGLFramebuffer | null = null;
+  private _blurProgram: ShaderProgram | null = null;
+  /** 标记 blur 资源已分配(仅在 blurEnabled + roughnessTexture 时分配)。 */
+  private _blurInitialized: boolean = false;
+
   /** 全屏四边形 VAO(本 Pass 自管,不依赖外部 ctx)。 */
   private _fullscreenQuadVao: WebGLVertexArrayObject | null = null;
   private _fullscreenQuadBuf: WebGLBuffer | null = null;
   /** 当前内部缓冲尺寸(像素)。 */
   private _width: number = 0;
   private _height: number = 0;
-  /** 是否已初始化。 */
+  /** 是否已初始化(SSR 主 pass 资源)。 */
   private _initialized: boolean = false;
   /** 标记下一帧需要重建(分辨率 / 尺寸变更)。 */
   private _dirty: boolean = true;
@@ -98,10 +124,12 @@ export class SSRPass {
     if (opts.roughnessCutoff !== undefined) this.roughnessCutoff = opts.roughnessCutoff;
     if (opts.jitterScale !== undefined) this.jitterScale = opts.jitterScale;
     if (opts.stepGrowth !== undefined) this.stepGrowth = opts.stepGrowth;
+    if (opts.blurEnabled !== undefined) this.blurEnabled = opts.blurEnabled;
+    if (opts.blurRadiusScale !== undefined) this.blurRadiusScale = opts.blurRadiusScale;
   }
 
   /**
-   * 执行 SSR。
+   * 执行 SSR(可选 + 粗糙反射空间降噪)。
    *
    * @param gl              WebGL2 上下文
    * @param inputTexture    当前帧颜色纹理
@@ -109,7 +137,7 @@ export class SSRPass {
    * @param normalTexture   GBuffer 世界法线纹理(RGBA16F)
    * @param camera          当前相机(读取 projection / view / position)
    * @param roughnessTexture 可选 GBuffer 粗糙度纹理(R 通道 [0,1]);null=按镜面处理
-   * @returns               SSR 输出纹理(本 Pass 持有,不要释放)
+   * @returns               SSR 输出纹理(blur 启用时为 V-blurred 纹理;否则为 SSR 主纹理)
    */
   apply(
     gl: WebGL2RenderingContext,
@@ -127,8 +155,14 @@ export class SSRPass {
       this._dirty = false;
     }
 
-    // 绑定内部 FBO → 写 SSR 输出
-    gl.bindFramebuffer(gl.FRAMEBUFFER, this._fbo as WebGLFramebuffer);
+    // 是否实际运行 blur(需要 blurEnabled + roughnessTexture)
+    const runBlur = this.blurEnabled && roughnessTexture !== null;
+    if (runBlur && !this._blurInitialized) {
+      this._initBlurResources(gl, this._width, this._height);
+    }
+
+    // ── 1. SSR 主 pass ───────────────────────────────────────────────
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this._ssrFbo as WebGLFramebuffer);
     gl.viewport(0, 0, this._width, this._height);
     gl.clearColor(0.0, 0.0, 0.0, 1.0);
     gl.clear(gl.COLOR_BUFFER_BIT);
@@ -177,6 +211,56 @@ export class SSRPass {
     gl.bindVertexArray(this._fullscreenQuadVao as WebGLVertexArrayObject);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
 
+    // ── 2. (可选)粗糙反射空间降噪 H + V ────────────────────────────
+    let outputTexture = this._ssrTexture as WebGLTexture;
+    if (runBlur && this._blurInitialized) {
+      const blurProg = this._getBlurProgram(gl);
+      blurProg.use();
+
+      // 绑定共享纹理:normal + roughness 在 H/V 两遍中相同
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, normalTexture);
+      blurProg.setUniformSampler('u_normalMap', 1);
+
+      gl.activeTexture(gl.TEXTURE3);
+      gl.bindTexture(gl.TEXTURE_2D, roughnessTexture as WebGLTexture);
+      blurProg.setUniformSampler('u_roughnessMap', 3);
+      blurProg.setUniform1i('u_hasRoughness', 1);
+
+      blurProg.setUniform2f('u_screenSize', this._width, this._height);
+      blurProg.setUniform1f('u_blurRadiusScale', this.blurRadiusScale);
+      blurProg.setUniform1f('u_roughnessCutoff', this.roughnessCutoff);
+
+      // H pass: input = SSR 主纹理 → output = _blurTexH
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this._blurFboH as WebGLFramebuffer);
+      gl.viewport(0, 0, this._width, this._height);
+      gl.clearColor(0.0, 0.0, 0.0, 1.0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this._ssrTexture as WebGLTexture);
+      blurProg.setUniformSampler('u_colorMap', 0);
+      blurProg.setUniform2f('u_blurDir', 1.0, 0.0); // H
+
+      gl.bindVertexArray(this._fullscreenQuadVao as WebGLVertexArrayObject);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+      // V pass: input = _blurTexH → output = _blurTexV (最终)
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this._blurFboV as WebGLFramebuffer);
+      gl.viewport(0, 0, this._width, this._height);
+      gl.clearColor(0.0, 0.0, 0.0, 1.0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this._blurTexH as WebGLTexture);
+      blurProg.setUniformSampler('u_colorMap', 0);
+      blurProg.setUniform2f('u_blurDir', 0.0, 1.0); // V
+
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+      outputTexture = this._blurTexV as WebGLTexture;
+    }
+
     // 还原默认 FBO + 视口(避免影响后续渲染)
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
@@ -184,7 +268,7 @@ export class SSRPass {
     // 帧计数自增(时序抖动)
     this.frame += 1;
 
-    return this._outputTexture as WebGLTexture;
+    return outputTexture;
   }
 
   /** 设置降采样比例(0..1)。值变更后下一帧 apply 自动重建。 */
@@ -196,16 +280,17 @@ export class SSRPass {
     }
   }
 
-  /** 释放内部 FBO / 纹理 / VAO / program。可重复调用。 */
+  /** 释放内部 FBO / 纹理 / VAO / program(SSR 主 + blur)。可重复调用。 */
   dispose(gl: WebGL2RenderingContext): void {
-    if (this._outputTexture) {
-      gl.deleteTexture(this._outputTexture);
-      this._outputTexture = null;
+    if (this._ssrTexture) {
+      gl.deleteTexture(this._ssrTexture);
+      this._ssrTexture = null;
     }
-    if (this._fbo) {
-      gl.deleteFramebuffer(this._fbo);
-      this._fbo = null;
+    if (this._ssrFbo) {
+      gl.deleteFramebuffer(this._ssrFbo);
+      this._ssrFbo = null;
     }
+    this._disposeBlur(gl);
     if (this._fullscreenQuadVao) {
       gl.deleteVertexArray(this._fullscreenQuadVao);
       this._fullscreenQuadVao = null;
@@ -234,15 +319,23 @@ export class SSRPass {
     return this._program;
   }
 
-  /** (重新)分配内部 FBO + 纹理 + 全屏四边形 VAO。 */
+  private _getBlurProgram(gl: WebGL2RenderingContext): ShaderProgram {
+    if (this._blurProgram) return this._blurProgram;
+    this._blurProgram = new ShaderProgram(gl, POST_VERT_SRC, SSR_BLUR_FRAG);
+    log.info('SSR blur program compiled (9-tap separable Gaussian, edge-aware)');
+    return this._blurProgram;
+  }
+
+  /** (重新)分配 SSR 主 pass FBO + 纹理 + 全屏四边形 VAO。 */
   private _initResources(gl: WebGL2RenderingContext, width: number, height: number): void {
-    // 释放旧资源
+    // 释放旧 SSR 资源(blur 资源也会一并重建以匹配新尺寸)
     if (this._initialized) {
-      if (this._outputTexture) gl.deleteTexture(this._outputTexture);
-      if (this._fbo) gl.deleteFramebuffer(this._fbo);
-      if (this._fullscreenQuadVao) gl.deleteVertexArray(this._fullscreenQuadVao);
-      if (this._fullscreenQuadBuf) gl.deleteBuffer(this._fullscreenQuadBuf);
+      if (this._ssrTexture) gl.deleteTexture(this._ssrTexture);
+      if (this._ssrFbo) gl.deleteFramebuffer(this._ssrFbo);
     }
+    this._disposeBlur(gl);
+    if (this._fullscreenQuadVao) gl.deleteVertexArray(this._fullscreenQuadVao);
+    if (this._fullscreenQuadBuf) gl.deleteBuffer(this._fullscreenQuadBuf);
 
     // RGBA16F 输出纹理(反射可能 > 1.0,需浮点)
     const tex = gl.createTexture();
@@ -286,8 +379,8 @@ export class SSRPass {
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
-    this._outputTexture = tex;
-    this._fbo = fbo;
+    this._ssrTexture = tex;
+    this._ssrFbo = fbo;
     this._fullscreenQuadVao = vao;
     this._fullscreenQuadBuf = buf;
     this._width = width;
@@ -295,5 +388,61 @@ export class SSRPass {
     this._initialized = true;
 
     log.info(`SSR FBO created: ${width}x${height} (resolution=${this.resolution})`);
+  }
+
+  /** 分配 blur 资源(H + V 两个 FBO + 纹理)。 */
+  private _initBlurResources(gl: WebGL2RenderingContext, width: number, height: number): void {
+    this._disposeBlur(gl);
+
+    // H blur 输出
+    const texH = this._createHalfFloatTexture(gl, width, height);
+    const fboH = gl.createFramebuffer();
+    if (!fboH) throw new Error('SSRPass: blur H createFramebuffer() returned null');
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fboH);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texH, 0);
+
+    // V blur 输出(最终输出)
+    const texV = this._createHalfFloatTexture(gl, width, height);
+    const fboV = gl.createFramebuffer();
+    if (!fboV) throw new Error('SSRPass: blur V createFramebuffer() returned null');
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fboV);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texV, 0);
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+    this._blurTexH = texH;
+    this._blurFboH = fboH;
+    this._blurTexV = texV;
+    this._blurFboV = fboV;
+    this._blurInitialized = true;
+
+    log.info(`SSR blur FBOs created: ${width}x${height} (H+V, 9-tap Gaussian)`);
+  }
+
+  /** 创建一个 RGBA16F 纹理(LINEAR 过滤 + CLAMP_TO_EDGE 包裹)。 */
+  private _createHalfFloatTexture(gl: WebGL2RenderingContext, width: number, height: number): WebGLTexture {
+    const tex = gl.createTexture();
+    if (!tex) throw new Error('SSRPass: blur createTexture() returned null');
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(
+      gl.TEXTURE_2D, 0, gl.RGBA16F,
+      width, height, 0,
+      gl.RGBA, gl.HALF_FLOAT, null,
+    );
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return tex;
+  }
+
+  /** 释放 blur 资源(H + V 纹理 + FBO + program)。 */
+  private _disposeBlur(gl: WebGL2RenderingContext): void {
+    if (this._blurTexH) { gl.deleteTexture(this._blurTexH); this._blurTexH = null; }
+    if (this._blurFboH) { gl.deleteFramebuffer(this._blurFboH); this._blurFboH = null; }
+    if (this._blurTexV) { gl.deleteTexture(this._blurTexV); this._blurTexV = null; }
+    if (this._blurFboV) { gl.deleteFramebuffer(this._blurFboV); this._blurFboV = null; }
+    if (this._blurProgram) { this._blurProgram.dispose(); this._blurProgram = null; }
+    this._blurInitialized = false;
   }
 }
