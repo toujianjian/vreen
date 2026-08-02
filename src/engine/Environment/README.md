@@ -138,6 +138,19 @@ export class CloudSystem {
 `VolumetricClouds` is the realistic option (full ray-march, sampled in a sky-box
 or dedicated cloud pass). They are independent and can coexist.
 
+### Grounded Skybox
+
+| Export | Role |
+|--------|------|
+| `GroundedSkybox` | Ground-projected skybox (adapted from three.js r159+ `GroundedSkybox.js`). Projects an environment map onto a modified sphere where the bottom hemisphere is flattened to a ground plane, creating a seamless sky-to-ground transition with no visible seam. Z-axis is flipped so normals face inward. The flattening uses a smooth transition: vertices below `y1 = -height * 3/2` are fully flattened to `y = -height`; vertices between `y1` and 0 blend smoothly using `f = 1 - y² / (3 * y1²)`. |
+
+```ts
+// Usage: place the skybox at camera height so the ground aligns to y=0
+const skybox = new GroundedSkybox(envTexture, height, radius);
+skybox.position.y = height;
+scene.add(skybox);
+```
+
 ### Precipitation
 
 | Export | Role |

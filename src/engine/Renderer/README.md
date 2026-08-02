@@ -810,6 +810,7 @@ same `PostProcessingPipeline`.
 | `MotionBlurPass` | Camera/object motion blur using a velocity buffer. |
 | `SSRPass` | Screen-space reflections. |
 | `SSSSPass` | Screen-space subsurface scattering. |
+| `GlitchPass` | Digital glitch effect (cyberpunk) — RGB shift + band distortion + snow noise. Adapted from three.js `GlitchPass.js` / `DigitalGlitch.js`. Random trigger (120-240 frames) or `goWild` continuous mode. |
 | `TAAPass` | Temporal anti-aliasing (uses `VelocityPass` data). |
 | `VelocityPass` | Per-pixel motion vectors for TAA / motion blur. |
 | `VolumetricFogPass` | Volumetric fog / light shafts. |

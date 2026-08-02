@@ -51,3 +51,4 @@ export { AutoExposurePass, type AutoExposurePassOptions } from './AutoExposurePa
 export { GTAOPass, type GTAOPassOptions } from './GTAOPass';
 export { SSSSPass, type SSSSPassOptions } from './SSSSPass';
 export { DOFEnhancedPass, type DOFEnhancedPassOptions } from './DOFEnhancedPass';
+export { GlitchPass, type GlitchPassOptions } from './GlitchPass';

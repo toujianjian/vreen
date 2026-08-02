@@ -99,3 +99,6 @@ export {
   type VolumetricCloudsData,
   type VolumetricCloudsStats,
 } from './VolumetricClouds';
+// GroundedSkybox — 地面投影天空盒 (适配自 three.js r159+)。
+// 将环境贴图无缝投影到穹顶 + 地面,消除传统天空盒的天地夹角。
+export { GroundedSkybox } from './GroundedSkybox';

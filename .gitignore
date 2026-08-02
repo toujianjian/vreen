@@ -35,6 +35,9 @@ dist-ssr/
 .vite/
 .cache/
 
+# Reference repos (three.js / o3de — cloned for study, not part of VREEN)
+references/
+
 # Local models (when users upload them at runtime)
 public/uploads/
 

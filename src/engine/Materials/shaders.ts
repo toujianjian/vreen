@@ -1910,3 +1910,82 @@ void main() {
 }
 `;
 
+// ── Digital Glitch (赛博朋克故障效果) ──────────────────────────────
+// 适配自 three.js examples/jsm/shaders/DigitalGlitch.js
+// 基于 staffantans 的 Unity glitch shader + RGB shift。
+//
+// 输入纹理:
+//   u_colorMap — 当前帧颜色
+//   u_dispMap  — 位移噪声纹理(用于数字方块故障)
+// uniforms:
+//   u_byp        — 1=旁路(直通),0=应用故障
+//   u_amount     — 故障量(0..1,越大越剧烈)
+//   u_angle      — RGB shift 角度
+//   u_seed       — 随机种子
+//   u_seedX      — X 位移种子(-1..1)
+//   u_seedY      — Y 位移种子(-1..1)
+//   u_distortionX — 水平扭曲带位置(0..1)
+//   u_distortionY — 垂直扭曲带位置(0..1)
+//   u_colS       — 扭曲带宽度系数
+export const GLITCH_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform int u_byp;
+uniform sampler2D u_colorMap;
+uniform sampler2D u_dispMap;
+uniform float u_amount;
+uniform float u_angle;
+uniform float u_seed;
+uniform float u_seedX;
+uniform float u_seedY;
+uniform float u_distortionX;
+uniform float u_distortionY;
+uniform float u_colS;
+
+float rand(vec2 co) {
+  return fract(sin(dot(co.xy, vec2(12.9898, 78.233))) * 43758.5453);
+}
+
+void main() {
+  if (u_byp < 1) {
+    vec2 p = v_uv;
+    float xs = floor(gl_FragCoord.x / 0.5);
+    float ys = floor(gl_FragCoord.y / 0.5);
+    // 数字方块位移
+    float disp = texture(u_dispMap, p * u_seed * u_seed).r;
+    // 水平扭曲带
+    if (p.y < u_distortionX + u_colS && p.y > u_distortionX - u_colS * u_seed) {
+      if (u_seedX > 0.0) {
+        p.y = 1.0 - (p.y + u_distortionY);
+      } else {
+        p.y = u_distortionY;
+      }
+    }
+    // 垂直扭曲带
+    if (p.x < u_distortionY + u_colS && p.x > u_distortionY - u_colS * u_seed) {
+      if (u_seedY > 0.0) {
+        p.x = u_distortionX;
+      } else {
+        p.x = 1.0 - (p.x + u_distortionX);
+      }
+    }
+    p.x += disp * u_seedX * (u_seed / 5.0);
+    p.y += disp * u_seedY * (u_seed / 5.0);
+    // RGB shift
+    vec2 offset = u_amount * vec2(cos(u_angle), sin(u_angle));
+    vec4 cr = texture(u_colorMap, p + offset);
+    vec4 cga = texture(u_colorMap, p);
+    vec4 cb = texture(u_colorMap, p - offset);
+    outColor = vec4(cr.r, cga.g, cb.b, cga.a);
+    // 雪花噪声
+    vec4 snow = 200.0 * u_amount * vec4(rand(vec2(xs * u_seed, ys * u_seed * 50.0)) * 0.2);
+    outColor += snow;
+  } else {
+    outColor = texture(u_colorMap, v_uv);
+  }
+}
+`;
+
