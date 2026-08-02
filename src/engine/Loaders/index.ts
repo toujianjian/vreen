@@ -83,3 +83,14 @@ export {
   type DRACODecoderLike,
   type KTX2DecoderLike,
 } from './GLTFExtensionLoader';
+// LUTCubeLoader — .cube 3D LUT 颜色查找表加载器 (DaVinci Resolve / Photoshop / Adobe AE 导出)。
+// 解析 Adobe Cube LUT 1.0 规范: 支持 1D/3D LUT、TITLE、DOMAIN_MIN/MAX (HDR 扩展色域)、
+// 注释、自动大小推断(无前缀 LUT_SIZE 时)。提供 cube3DToStrip / stripToCube3D 布局转换
+// (WebGL2 TEXTURE_3D 与 TEXTURE_2D strip 间互转,与 LUTPass 配套)。
+export {
+  LUTCubeLoader,
+  parseCube,
+  cube3DToStrip,
+  stripToCube3D,
+  type LUTCubeResult,
+} from './LUTCubeLoader';

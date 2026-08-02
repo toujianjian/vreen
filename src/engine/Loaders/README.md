@@ -118,11 +118,24 @@ export interface ParsedOBJ {
 | `sniffKtx2(buf)` / `parseKtx2Container(buf)` | `boolean` / `ParsedKtx2` | Sniffer + container-level parser. |
 | `TGALoader` / `parseTGA(buf)` | `TGAResult` | Truevision TGA parser. Uncompressed and RLE RGB / GREY / INDEXED, 8/16/24/32-bit, all four origin orientations. Output is always RGBA8, origin normalised to lower-left. |
 | `EXRLoader` / `parseEXR(buf)` | `EXRResult` | OpenEXR parser (scanline, HALF / FLOAT, NO / RLE / ZIPS / ZIP compression, RGB / RGBA / Y-RY-BY channels). Output is linear RGBA `Float32Array`. No tiled / deep / multi-part / PIZ / B44 / DWA. |
+| `LUTCubeLoader` / `parseCube(text)` | `LUTCubeResult` | **Adobe Cube LUT 1.0** parser (IRIDAS `.cube` format — DaVinci Resolve / Photoshop / Premiere / After Effects LUT export). Supports both 1D and 3D LUTs, `TITLE`, `DOMAIN_MIN` / `DOMAIN_MAX` (incl. HDR extended ranges like `-0.125 → 1.125`), `#` comments, auto size inference (no `LUT_SIZE` header), mixed whitespace. Provides `cube3DToStrip()` / `stripToCube3D()` helpers for TEXTURE_3D ↔ TEXTURE_2D strip layout conversion. Pairs directly with `Renderer/PostProcess/LUTPass.ts` for cinematic color grading. |
 
 ```ts
 export interface LoadedHDR { texture: Texture; width: number; height: number; }
 export interface TGAResult { width: number; height: number; data: Uint8Array; /* RGBA8 */ }
 export interface EXRResult { width: number; height: number; data: Float32Array; /* RGBA linear */ }
+export interface LUTCubeResult {
+  type: '1D' | '3D';
+  size: number;                 // per-axis grid points (16, 33, 64 typical)
+  data: Float32Array;          // RGB, row-major: R-slow → G-mid → B-fast
+  domainMin: [number, number, number];
+  domainMax: [number, number, number];
+  title: string;
+  texture: Texture;            // 2D strip layout for TEXTURE_2D fallback
+}
+// Layout helpers:
+function cube3DToStrip(data: Float32Array, size: number): Float32Array;  // 3D → size × size² strip
+function stripToCube3D(strip: Float32Array, size: number): Float32Array; // strip → 3D
 ```
 
 ### Material & extension loader
@@ -339,6 +352,7 @@ ones.
 - Radiance RGBE — https://www.graphics.cornell.edu/~bjw/rgbe/rgbe_image.html
 - OpenEXR — https://openexr.readthedocs.io/
 - Truevision TGA — https://en.wikipedia.org/wiki/Truevision_TGA
+- Adobe Cube LUT 1.0 — https://wwwimages2.adobe.com/content/dam/acom/en/products/speedgrade/cc/pdfs/cube-lut-specification-1.0.pdf
 - Draco3D — https://github.com/google/draco
 - `Assets/` module — instance-level caching, reference counting, streaming
 - `Pipeline/` module — import-time optimisation, format conversion
