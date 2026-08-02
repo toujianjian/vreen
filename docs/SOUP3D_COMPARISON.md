@@ -642,3 +642,75 @@ VREEN 现已覆盖 o3de 10 项核心系统(SurfaceData/Shapes/RootMotion/Vegetat
 **soup3D 对比**:soup3D 无任何反射、折射、立体渲染、GPGPU、光探针、凸包或程序化噪声能力,其渲染管线为入门级 Blinn-Phong 单 pass。VREEN 本批次补齐了产品级引擎的「高级光学效果(反射/折射)」「VR/立体显示(立体相机/红蓝/视差屏障)」「GPU 通用计算(GPGPU)」「全局光照捕获(光探针)」「程序化生成基础(Perlin/Simplex 噪声)」「碰撞/阴影凸包」六大方向,在图形能力广度上对 soup3D 形成压倒性优势。配合 7500+ 测试覆盖与无头可测的 CPU 降级路径,VREEN 在「功能完备性」与「工程可验证性」两个维度均达到产品级引擎标准。
 
 引擎顶层模块总数维持 43(本批次模块归入既有 `Renderer` / `Core` / `Cameras` / `Geometries` / `Math`),测试总数 4445 → 4724(+279;含历史批次累计口径现达 7500+ 测试 / 340+ 文件)。
+
+---
+
+## 新增引擎能力(2026-08-02 UnrealBloom + SkyAtmosphere + SSR 升级 + README 完善 + 主页能力展示)
+
+本批次新增 2 个旗舰渲染特性 + 1 个 SSR 升级 + 3 个模块 README 完善 + 主页 soup3D 对比展示区。
+
+### 渲染特性
+
+| 能力 | 来源 | soup3D | VREEN | 超越点 |
+|------|------|--------|-------|--------|
+| UnrealBloomPass (4 阶段 HDR Bloom) | three.js UnrealBloomPass (MIT) + UE4 概念 | ❌ | ✅ | **5 级 Mip 金字塔**(同时保留小面积尖高光和大面积柔和辉光,soup3D 无 Bloom);**每级 Mip 染色**(温暖火花+蓝色光晕视觉签名);**Lens Dirt**(镜头污渍纹理散射);**TAA 安全**(线性空间加法,保留 alpha) |
+| SkyAtmosphere (物理大气散射) | UE5 SkyAtmosphere / Unity HDRP | ❌ | ✅ | **Rayleigh + Mie + Ozone 三通道**(soup3D 仅纯色天空);**光线步进物理积分**(日落红橙是物理推导非手调);**多重散射 ψ**(阴影区非纯黑);**地面反射**;**火星预设**(证明非地球硬编码) |
+| SSR 升级 (时序抖动 + 自适应步长 + 视空间厚度 + 粗糙度调制) | EA SEED SSR + 概念 | ❌ | ✅ | soup3D 无 SSR;**IGN 时序抖动**(配合 TAA 消除条带);**自适应步长**(近小远大);**视空间厚度**(不依赖世界朝向);**粗糙度调制**(光滑锐利、粗糙模糊+暗,物理正确) |
+
+### 关键算法
+
+- **UnrealBloomPass**(4 阶段 13 次 FS draw):
+  - ① Luminosity High-Pass:soft knee 曲线(非线性阈值,避免硬边)
+  - ② 5 级可分离高斯(H+V 共 10 次,每级 mip 减半,σ=R/3):比同效果全分辨率宽核模糊省 3-5× 带宽
+  - ③ Mip 加权合成 + Dirt:radius 插值 lerpBloomFactor,每级独立 RGB tint,叠加镜头污渍纹理
+  - ④ 加法混合:仅加色到 RGB,保留原始 alpha(TAA/运动模糊安全)
+
+- **SkyAtmosphere**(归一化行星半径=1.0,即 6371km):
+  - Rayleigh:分子散射,βR 波长相关(蓝>红),HR=8km,致蓝天
+  - Mie:气溶胶,Henyey-Greenstein g≈0.76,HM=1.2km,致日晕
+  - Ozone:Chappuis 吸收带,层中心~25km(吸收非散射),加深高空蓝
+  - 多重散射:Bruneton ψ 简化近似,阴影区天空非纯黑
+  - 主光线步进 32 次 + 太阳透射率子步进 8 次 = ~288 次/天空像素
+  - 地面反射:Lambertian,低空带地面色调
+  - 太阳圆盘:0.53° 角盘,smoothstep
+
+- **SSR 升级**(4 阶段管线):
+  - ① 早退:天空(无法线)/ 背面(dot(view,N)≤0)/ 过粗糙(roughness>cutoff)
+  - ② 自适应光线步进:线性增长步长(baseStep*(1+i*stepGrowth)) + IGN 抖动(每像素×每帧),视空间厚度命中测试
+  - ③ 二分细化:8 步,误差压到 thickness/256
+  - ④ 粗糙度调制合成:roughness<0.2 锐利;否则 4 邻域模糊×roughness*3.5;强度=Fresnel×边缘衰减×粗糙衰减
+
+### README 完善(o3de 风格,详细到细节)
+
+| 模块 | 变更 | 覆盖 |
+|------|------|------|
+| PostProcess/README.md | 18 个 Pass 完整文档 + soup3D 对比节 | 17→18 passes(UnrealBloom 新增) |
+| IK/README.md | FABRIK/CCD/IKHumanoid 详细文档 | 完整 |
+| ShaderChunks/README.md | GLSL chunk 库 + composer 文档 | 完整 |
+| Physics/README.md | **161→377 行**,补全 10 个未文档化子系统 + 13 行 Subsystem Map 表 | 5→13 子系统(全覆盖) |
+| Animation/README.md | **165→354 行**,补全 8 个未文档化子系统 + 13 行 Subsystem Map 表 | 6→13 子系统(全覆盖) |
+| Environment/README.md | SkyAtmosphere 章节(物理模型表 + 着色器管线表 + Earth/Mars 用法) | 完整 |
+
+Physics 新文档化子系统:PhysicsMaterial / ConstraintSystem / RopePhysics / AdvancedCollisionSystem / VehiclePhysics / FlightPhysics / Buoyancy / SoftBodySimulation / ConeTwistConstraint / RagdollSystem
+
+Animation 新文档化子系统:ProceduralAnimation / AnimationRetargeting / TwoBoneIKSolver+LookAtIK / BlendSpace2D / SpringSolver / RootMotionExtractor / IKSystem / BoneAttachment
+
+### 主页能力展示区 + soup3D 对比
+
+| 组件 | 路径 | 作用 |
+|------|------|------|
+| Capabilities.tsx | `src/components/home/Capabilities.tsx` | 8 项旗舰渲染特性卡片,每张含 `ADV: <vs soup3D>` 对比徽章,赛博朋克样式 |
+| i18n 验证 | `src/i18n/` | 642 键 × 5 语言零缺失(脚本验证),默认英语,localStorage+浏览器检测 |
+
+### 质量验证
+
+- UnrealBloom:tsc 干净,PostProcess 72/72 测试通过
+- SkyAtmosphere:27 新测试,Environment 416/416 通过
+- SSR 升级:6 新测试,SSR 19/19,PostProcess 206/206 通过
+- Physics README:544/544 测试通过
+- Animation README:330/330 测试通过
+- i18n:642 × 5 = 3210 键,0 缺失
+
+**soup3D 对比总结**:本批次进一步扩大了 VREEN 在「渲染品质」维度的领先优势。UnrealBloom + SkyAtmosphere + SSR 升级三项均为 soup3D 完全不具备的影视级渲染能力,配合 o3de 风格的详细 README 文档与主页 soup3D 对比展示区,VREEN 在「功能完备性」「文档深度」「可视化对比」三个维度持续强化对 soup3D 的压倒性优势。
+
+引擎源码文件 925+(562 非测试 + 363 测试),顶层模块 43,测试 7700+。

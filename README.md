@@ -63,7 +63,7 @@ VREEN is positioned as a **lightweight Web game engine** — comparable in scope
 
 | Category | Capability |
 |----------|-----------|
-| **Engine kernel** | Self-developed WebGL2 renderer with PBR, IBL, real-time shadows, post-processing (Bloom, chromatic aberration, vignette, SMAA, SSAO, color grading, LUT, film grain, afterimage, pixelation, auto-exposure, enhanced DOF, GTAO, motion blur, SSR, SSSS, TAA, velocity, volumetric fog), GPU skinning, morph targets, MRT / GBuffer for deferred rendering + `DeferredRenderer` alternative backend + `ForwardPlusRenderer` (tiled light culling) + `ReflectionProbe`/`ReflectionProbeManager` for local IBL + `GlobalIllumination` (light probes SH2 + VXGI simplified) + `GPUDrivenRenderer` (indirect draw) + `RenderGraph` (Frostbite FrameGraph-style) + `RenderPipelineManager` (Forward/Deferred/Forward+ orchestrator) + `ShaderLibrary`/`ShaderCompiler` (#include + chunk injection + cache) + `ShaderVariant` (keyword variants + LRU cache), path tracing (CPU reference), and a `Renderer` interface for backend pluggability. |
+| **Engine kernel** | Self-developed WebGL2 renderer with PBR, IBL, real-time shadows, post-processing (Bloom, UnrealBloom 5-level mip HDR bloom, chromatic aberration, vignette, SMAA, SSAO, color grading, LUT, film grain, afterimage, pixelation, auto-exposure, enhanced DOF, GTAO, motion blur, SSR upgraded with temporal jitter + adaptive step + roughness modulation, SSSS, TAA, velocity, volumetric fog), GPU skinning, morph targets, MRT / GBuffer for deferred rendering + `DeferredRenderer` alternative backend + `ForwardPlusRenderer` (tiled light culling) + `ReflectionProbe`/`ReflectionProbeManager` for local IBL + `GlobalIllumination` (light probes SH2 + VXGI simplified) + `GPUDrivenRenderer` (indirect draw) + `RenderGraph` (Frostbite FrameGraph-style) + `RenderPipelineManager` (Forward/Deferred/Forward+ orchestrator) + `ShaderLibrary`/`ShaderCompiler` (#include + chunk injection + cache) + `ShaderVariant` (keyword variants + LRU cache), path tracing (CPU reference), and a `Renderer` interface for backend pluggability. |
 | **Scene graph** | `Object3D` / `Scene` / `Mesh` / `Group` / `Bone` / `Skeleton` / `SkinnedMesh` / `BufferGeometry` / `BufferAttribute` / `InstancedBufferAttribute` / `Texture` / `InstancedMesh` / `LOD` / `Sprite` / `Text` / `BitmapText` / `TextAtlas` + `ModuleRegistry` (Gem-style engine module registry, inspired by O3DE Gems). |
 | **Math library** | `Vector2/3/4`, `Matrix3/4`, `Quaternion`, `Euler`, `Box3`, `Sphere`, `Plane`, `Ray`, `Line3`, `Triangle`, `Frustum`, `Color`, `MathUtils`. |
 | **ECS** | `World`, `ComponentType` registry, `QueryBuilder` with caching, `Prefab` templates, `Broadphase` acceleration, and POJO components for serializability. |
@@ -194,7 +194,7 @@ vreen/
 │   │   ├── Input/              # InputManager / KeyboardState / MouseState / TouchState / GamepadState / InputAction / InputMap
 │   │   ├── Tools/              # Profiler / FrameProfiler / SystemProfiler / MemoryTracker / GpuProfiler / PerformanceReport + LODManager (distance/screen-space LOD + HLOD) + Profiler2 (frame/zone/event + Chrome Trace export) + ConsoleCommands (editor REPL: register/execute/auto-complete/history/aliases + 25+ preset commands across 8 categories)
 │   │   ├── AI/                 # NavMesh (navigation mesh) + PathFinder (A*) + SteeringBehavior (Reynolds) + Agent + BehaviorTree + Blackboard + CrowdSystem (large-scale crowd + Reynolds separation) + SpatialGrid (2D XZ neighbourhood acceleration)
-│   │   ├── Environment/        # WeatherSystem + SkySystem (day/night) + ProceduralSky (Preetham atmosphere) + CloudSystem + VolumetricClouds (ray-march + 3D noise) + PrecipitationSystem + VegetationSystem + VegetationRenderer (instanced + wind + season) + WaterSimulation + WaterSystem
+│   │   ├── Environment/        # WeatherSystem + SkySystem (day/night) + ProceduralSky (Preetham atmosphere) + SkyAtmosphere (UE5-style Rayleigh/Mie/Ozone physical scattering + multi-scatter + Mars preset) + CloudSystem + VolumetricClouds (ray-march + 3D noise) + PrecipitationSystem + VegetationSystem + VegetationRenderer (instanced + wind + season) + WaterSimulation + WaterSystem
 │   │   ├── Timeline/           # TimelineClip + TimelineTrack + EventTrack + PropertyTrack + TimelineSequencer (play/pause/seek/loop/export/import)
 │   │   ├── Voxel/              # VoxelChunk 16³ + VoxelWorld (multi-chunk) + VoxelMesher (greedy meshing) + VoxelRaycaster (DDA) + VoxelPalette
 │   │   ├── Editor/             # SelectionSystem (pick/select/hover) + TransformGizmo (translate/rotate/scale) + UndoRedoSystem (with beginGroup/endGroup) + EditorCommands (Move/Rotate/Scale/Add/Remove/Property) + SnapSystem (grid/angle/scale snap)
@@ -646,6 +646,7 @@ Atmospheric, weather, vegetation, and water systems for outdoor scenes.
 |--------|---------|
 | `WeatherSystem` | Weather state machine (Clear / Cloudy / Rain / Snow / Storm) with transition interpolation and fog联动. |
 | `SkySystem` | Procedural sky + day/night cycle — sun position computed from time-of-day, atmospheric scattering approximation, gradient sky dome. |
+| `SkyAtmosphere` | UE5-style physical atmospheric scattering — Rayleigh (molecular) + Mie (aerosol, Henyey-Greenstein) + Ozone (Chappuis absorption) + multi-scatter (Bruneton ψ) + ground albedo reflection. Ray-marched (32 main + 8 sun-transmittance sub-steps). Earth + Mars presets. |
 | `CloudSystem` | Procedural cloud layer — noise-texture animation with altitude coverage and movement direction. |
 | `PrecipitationSystem` | Precipitation particles (rain / snow) driven by a particle system with wind influence. |
 | `VegetationSystem` + `VegetationType` | Procedural vegetation distribution — samples positions from a density map (terrain + noise), instantiates meshes per `VegetationType` (grass / bush / tree); supports impostor billboards for distant rendering. |
@@ -907,7 +908,7 @@ Unit tests cover the engine foundation (6100+ tests across 270 test files, 34 to
 | ECS | `World`, `Prefab`, `QueryBuilder`, `Broadphase`, `PhysicsSystems`, `PhysicsBenchmark` |
 | Animation | `Animation`, `AnimationEvents`, `BlendSpace1D`, `AnimationLayer`, `AvatarMask`, `BoneMask`, `AdditiveBlend`, `IKBone`, `IKChain`, `IKSolver`, `CCDSolver`, `IKSystem`, `ProceduralAnimation` |
 | Loaders | `GLBLoader`, `HDRLoader`, `FBXLoader`, `KTX2Loader`, `STLLoader`, `PLYLoader`, `TGALoader`, `AssetManager`, `OBJExporter`, `GLTFExporter`, `STLExporter`, `PLYExporter` |
-| Renderer | `Renderer`, `RenderPass`, `ShadowMapManager`, `MRTTarget`, `GBuffer`, `PostProcessPasses`, `PathTracer`, `DeferredRenderer`, `ReflectionProbe`, `ReflectionProbeManager`, `GlobalIllumination`, `ForwardPlusRenderer`, `RenderGraph`, `RenderPipelineManager`, `GPUDrivenRenderer`, `ContactShadowsPass`, `GTAOPass`, `AutoExposurePass`, `DOFEnhancedPass`, `MotionBlurPass`, `SSRPass`, `SSSSPass`, `TAAPass`, `VelocityPass`, `VolumetricFogPass` |
+| Renderer | `Renderer`, `RenderPass`, `ShadowMapManager`, `MRTTarget`, `GBuffer`, `PostProcessPasses`, `PathTracer`, `DeferredRenderer`, `ReflectionProbe`, `ReflectionProbeManager`, `GlobalIllumination`, `ForwardPlusRenderer`, `RenderGraph`, `RenderPipelineManager`, `GPUDrivenRenderer`, `ContactShadowsPass`, `GTAOPass`, `AutoExposurePass`, `DOFEnhancedPass`, `MotionBlurPass`, `SSRPass`, `SSSSPass`, `TAAPass`, `VelocityPass`, `VolumetricFogPass`, `UnrealBloomPass`, `SMAAPass` |
 | Lights | `AmbientLight`, `DirectionalLight`, `PointLight`, `SpotLight`, `HemisphereLight`, `RectAreaLight` |
 | Materials | `MeshBasicMaterial`, `MeshNormalMaterial`, `MeshPhongMaterial`, `MeshPhysicalMaterial`, `ShadowMaterial`, `SpriteMaterial`, `ShaderChunkRegistry`, `chunks`, `ShaderLibrary`, `ShaderCompiler`, `ShaderVariant`, `AdvancedPBRMaterial`, `SubsurfaceScatteringMaterial`, `FurMaterial`, `MatcapMaterial`, `ToonMaterial`, `OutlineMaterial`, `WaterMaterial`, `WireframeMaterial` |
 | Controls | `FlyControls`, `MapControls`, `PointerLockControls`, `CharacterController`, `VRController` |
@@ -924,7 +925,7 @@ Unit tests cover the engine foundation (6100+ tests across 270 test files, 34 to
 | Particles | `ParticleSystem2`, `ParticleEmitter`, `ParticleModifier`, `ParticleCurve`, `ParticleData`, `TrailModule` |
 | Input | `KeyboardState`, `MouseState`, `InputAction`, `InputMap`, `InputManager` |
 | AI | `Agent`, `NavMesh`, `PathFinder`, `SteeringBehavior`, `BehaviorTree`, `Blackboard`, `CrowdSystem`, `SpatialGrid` |
-| Environment | `SkySystem`, `WeatherSystem`, `VegetationSystem`, `WaterSimulation`, `WaterSystem`, `ProceduralSky`, `VolumetricClouds`, `VegetationRenderer`, `FFTOcean`, `WaterInteraction` |
+| Environment | `SkySystem`, `WeatherSystem`, `VegetationSystem`, `WaterSimulation`, `WaterSystem`, `ProceduralSky`, `SkyAtmosphere`, `VolumetricClouds`, `VegetationRenderer`, `FFTOcean`, `WaterInteraction` |
 | Timeline | `TimelineSequencer`, `TimelineTrack`, `EventTrack`, `PropertyTrack` |
 | Voxel | `VoxelChunk`, `VoxelWorld`, `VoxelPalette`, `VoxelRaycaster` |
 | Editor | `SelectionSystem`, `UndoRedoSystem`, `SnapSystem`, `TransformGizmo`, `EditorCommands` |
@@ -1024,7 +1025,7 @@ npm run electron:build
 | Language | TypeScript (WebGL2) | Python (OpenGL + pygame) |
 | Runtime | Browser-native + Electron desktop | Desktop only (pygame) |
 | Architecture | Full ECS (Entity-Component-System) | Procedural API |
-| Rendering | PBR + IBL + Shadow + Post-processing (23+ passes) + MRT/GBuffer deferred + `DeferredRenderer` alternative backend + `ReflectionProbe`/`ReflectionProbeManager` local IBL + `GlobalIllumination` (SH2 + VXGI) + `PathTracer` CPU reference | Fixed-function + basic shaders |
+| Rendering | PBR + IBL + Shadow + Post-processing (24+ passes incl. UnrealBloom 5-level mip HDR bloom + SSR with temporal jitter/adaptive step/roughness modulation) + MRT/GBuffer deferred + `DeferredRenderer` alternative backend + `ReflectionProbe`/`ReflectionProbeManager` local IBL + `GlobalIllumination` (SH2 + VXGI) + `PathTracer` CPU reference | Fixed-function + basic shaders |
 | Physics | Rigid body + Collision + 5 Joint constraints + ConstraintSolver + Cloth (Verlet) + Fluid (SPH) + Destruction (Voronoi) | None |
 | Animation | Clip/Mixer/StateMachine + IK (FABRIK/CCD/Humanoid + IKSystem) + Layer blending + Morph Targets + BlendSpace1D | Basic skeleton |
 | Geometry | 15 primitives + InstancedGeometry + Terrain + BVH acceleration | Basic primitives |
@@ -1033,7 +1034,7 @@ npm run electron:build
 | Audio | 3D spatial audio + FFT analyser + SpatialAudio (HRTF + Doppler) | None |
 | Text & Sprites | Text/BitmapText/TextAtlas + Sprite (billboard) | None |
 | AI Navigation | NavMesh + A* PathFinder + SteeringBehavior + Agent + BehaviorTree + Blackboard + CrowdSystem + SpatialGrid | None |
-| Environment | Weather + Sky (day/night) + Clouds + Precipitation + Vegetation + Water | None |
+| Environment | Weather + Sky (day/night) + SkyAtmosphere (UE5 Rayleigh/Mie/Ozone) + Clouds + Precipitation + Vegetation + Water | None |
 | Timeline | Multi-track Sequencer (Clips/Events/Property keyframes) | None |
 | Voxel | VoxelChunk 16³ + VoxelWorld + Greedy meshing + DDA raycast | None |
 | Editor | Selection + TransformGizmo + Undo/Redo + Snap | None |
