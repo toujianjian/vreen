@@ -118,7 +118,7 @@ export interface ParsedOBJ {
 | `sniffKtx2(buf)` / `parseKtx2Container(buf)` | `boolean` / `ParsedKtx2` | Sniffer + container-level parser. |
 | `TGALoader` / `parseTGA(buf)` | `TGAResult` | Truevision TGA parser. Uncompressed and RLE RGB / GREY / INDEXED, 8/16/24/32-bit, all four origin orientations. Output is always RGBA8, origin normalised to lower-left. |
 | `EXRLoader` / `parseEXR(buf)` | `EXRResult` | OpenEXR parser (scanline, HALF / FLOAT, NO / RLE / ZIPS / ZIP compression, RGB / RGBA / Y-RY-BY channels). Output is linear RGBA `Float32Array`. No tiled / deep / multi-part / PIZ / B44 / DWA. |
-| `LUTCubeLoader` / `parseCube(text)` | `LUTCubeResult` | **Adobe Cube LUT 1.0** parser (IRIDAS `.cube` format — DaVinci Resolve / Photoshop / Premiere / After Effects LUT export). Supports both 1D and 3D LUTs, `TITLE`, `DOMAIN_MIN` / `DOMAIN_MAX` (incl. HDR extended ranges like `-0.125 → 1.125`), `#` comments, auto size inference (no `LUT_SIZE` header), mixed whitespace. Provides `cube3DToStrip()` / `stripToCube3D()` helpers for TEXTURE_3D ↔ TEXTURE_2D strip layout conversion. Pairs directly with `Renderer/PostProcess/LUTPass.ts` for cinematic color grading. |
+| `LUTCubeLoader` / `parseCube(text)` | `LUTCubeResult` | **Adobe Cube LUT 1.0** parser (IRIDAS `.cube` format — DaVinci Resolve / Photoshop / Premiere / After Effects LUT export). Supports both 1D and 3D LUTs, `TITLE`, `DOMAIN_MIN` / `DOMAIN_MAX` (incl. HDR extended ranges like `-0.125 → 1.125`), `#` comments, auto size inference (no `LUT_SIZE` header), mixed whitespace. Provides `cube3DToStrip()` / `stripToCube3D()` helpers for TEXTURE_3D ↔ TEXTURE_2D strip layout conversion, and `toData3DTexture()` for zero-copy conversion to `Data3DTexture` (TEXTURE_3D). Pairs directly with `Renderer/PostProcess/LUTPass.ts` for cinematic color grading. |
 
 ```ts
 export interface LoadedHDR { texture: Texture; width: number; height: number; }
@@ -136,6 +136,7 @@ export interface LUTCubeResult {
 // Layout helpers:
 function cube3DToStrip(data: Float32Array, size: number): Float32Array;  // 3D → size × size² strip
 function stripToCube3D(strip: Float32Array, size: number): Float32Array; // strip → 3D
+function toData3DTexture(parsed: Omit<LUTCubeResult, 'texture'>): Data3DTexture; // 3D LUT → TEXTURE_3D (zero-copy)
 ```
 
 ### Material & extension loader

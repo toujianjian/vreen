@@ -1412,6 +1412,115 @@ export class WebGL2Renderer implements Renderer {
     return tex;
   }
 
+  /**
+   * 上传 Data3DTexture 到 WebGL2 TEXTURE_3D。
+   *
+   * 支持 RGBA/RGB/RG/R × unsigned-byte/float/half-float 组合。
+   * 三线性过滤(LINEAR)在三个维度连续插值,适合体积场/LUT 采样。
+   * 不生成 mipmap(3D mipmap 在 WebGL2 中需要 texStorage3D 预分配,
+   * 且体积数据通常不需要多级渐远)。
+   */
+  private _ensureData3DTexture(
+    texture: import('../Core/Data3DTexture').Data3DTexture,
+  ): WebGLTexture | null {
+    const gl = this.gl;
+    if (texture.glTexture && texture.glVersion === texture.version) {
+      return texture.glTexture;
+    }
+    if (!texture.data) return null;
+
+    let tex = texture.glTexture || gl.createTexture();
+    if (!tex) return null;
+    gl.bindTexture(gl.TEXTURE_3D, tex);
+
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, texture.flipY);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, texture.unpackAlignment);
+
+    // internalFormat / format / type 映射
+    const internalMap: Record<string, Record<string, number>> = {
+      'rgba': {
+        'unsigned-byte': gl.RGBA8,
+        'float': gl.RGBA32F,
+        'half-float': gl.RGBA16F,
+      },
+      'rgb': {
+        'unsigned-byte': gl.RGB8,
+        'float': gl.RGB32F,
+        'half-float': gl.RGB16F,
+      },
+      'rg': {
+        'unsigned-byte': gl.RG8,
+        'float': gl.RG32F,
+        'half-float': gl.RG16F,
+      },
+      'r': {
+        'unsigned-byte': gl.R8,
+        'float': gl.R32F,
+        'half-float': gl.R16F,
+      },
+    };
+    const formatMap: Record<string, number> = {
+      'rgba': gl.RGBA, 'rgb': gl.RGB, 'rg': gl.RG, 'r': gl.RED,
+    };
+    const typeMap: Record<string, number> = {
+      'unsigned-byte': gl.UNSIGNED_BYTE,
+      'float': gl.FLOAT,
+      'half-float': gl.HALF_FLOAT,
+      'unsigned-short': gl.UNSIGNED_SHORT,
+      'unsigned-int': gl.UNSIGNED_INT,
+    };
+
+    const internalFmt =
+      internalMap[texture.format]?.[texture.type] ?? gl.RGBA8;
+    const fmt = formatMap[texture.format] ?? gl.RGBA;
+    const ty = typeMap[texture.type] ?? gl.UNSIGNED_BYTE;
+
+    gl.texImage3D(
+      gl.TEXTURE_3D, 0, internalFmt,
+      texture.width, texture.height, texture.depth, 0,
+      fmt, ty, texture.data,
+    );
+
+    const filterMap: Record<string, number> = {
+      'linear': gl.LINEAR,
+      'nearest': gl.NEAREST,
+      'linear-mipmap-linear': gl.LINEAR_MIPMAP_LINEAR,
+      'linear-mipmap-nearest': gl.LINEAR_MIPMAP_NEAREST,
+    };
+    gl.texParameteri(
+      gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER,
+      filterMap[texture.minFilter] ?? gl.LINEAR,
+    );
+    gl.texParameteri(
+      gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER,
+      filterMap[texture.magFilter] ?? gl.LINEAR,
+    );
+    const wrapMap: Record<string, number> = {
+      'repeat': gl.REPEAT, 'clamp': gl.CLAMP_TO_EDGE, 'mirror': gl.MIRRORED_REPEAT,
+    };
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, wrapMap[texture.wrapS] ?? gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, wrapMap[texture.wrapT] ?? gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, wrapMap[texture.wrapR] ?? gl.CLAMP_TO_EDGE);
+
+    texture.glTexture = tex;
+    texture.glVersion = texture.version;
+    return tex;
+  }
+
+  /**
+   * 公开 API:上传任意 Texture 并返回其 WebGL 句柄。
+   * 支持 2D / Cube / 3D 纹理。用于 PostProcess Pass 需要直接绑定 GL 句柄的场景
+   * (如 LUTPass 绑定 sampler3D)。
+   */
+  getGLTexture(texture: import('../Core/Texture').Texture): WebGLTexture | null {
+    // 3D 纹理
+    if ((texture as { isData3DTexture?: boolean }).isData3DTexture) {
+      return this._ensureData3DTexture(texture as import('../Core/Data3DTexture').Data3DTexture);
+    }
+    // 2D 纹理(标准路径)
+    return this._ensureStandardTexture(texture, texture.colorSpace === 'srgb');
+  }
+
   private _renderPostProcessingPass(_camera: Camera): void {
     const gl = this.gl;
     const res = this._getPostProcessingResources();

@@ -37,8 +37,8 @@ BufferGeometry ──holds──→ BufferAttribute / InstancedBufferAttribute
 
 Texture family:
    Texture (base) ──→ CubeTexture / DataTexture / DataArrayTexture /
-                      DepthTexture / VideoTexture / CanvasTexture /
-                      CompressedTexture
+                      Data3DTexture / DepthTexture / VideoTexture /
+                      CanvasTexture / CompressedTexture
    Source ──wraps──→ pixel data (data / width / height / version)
 
 Scene services:
@@ -267,7 +267,8 @@ sampler.sample(pos, nrm, col);
 | `Texture` | Base 2D texture. Sampling state (`wrapS/T`, `minFilter`, `magFilter`, `anisotropy`) + `version`. |
 | `CubeTexture` | 6-face environment texture (`px/nx/py/ny/pz/nz`). |
 | `DataTexture` | Typed-array backed texture for runtime-generated images. |
-| `DataArrayTexture` | 2D-array texture (`wrapR` added). |
+| `DataArrayTexture` | 2D-array texture (`TEXTURE_2D_ARRAY`, `wrapR` added). Layer-wise updates via `addLayerUpdate()`. |
+| `Data3DTexture` | True 3D texture (`TEXTURE_3D`, trilinear interpolation). For 3D LUT color grading, volumetric fog/density fields, voxel data, 3D noise caches. `wrapR` controls depth-axis wrap. Uploaded via `WebGL2Renderer._ensureData3DTexture()` → `texImage3D()`. |
 | `DepthTexture` | Depth/stencil texture for shadow maps / depth pre-pass; `DepthCompareFunction`. |
 | `VideoTexture` | Texture sourced from a playing `HTMLVideoElement`; `update()` polls `video.readyState`. |
 | `CanvasTexture` | Texture sourced from a `Canvas`; `update()` re-uploads on version bump. |

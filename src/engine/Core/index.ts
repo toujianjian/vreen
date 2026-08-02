@@ -112,6 +112,8 @@ export { DataTexture } from './DataTexture';
 export type { DataTextureBuffer, DataTextureOptions } from './DataTexture';
 export { DataArrayTexture } from './DataArrayTexture';
 export type { WrapR, DataArrayTextureOptions } from './DataArrayTexture';
+export { Data3DTexture } from './Data3DTexture';
+export type { WrapR as WrapR3D, Data3DTextureOptions } from './Data3DTexture';
 export { DepthTexture } from './DepthTexture';
 export type { DepthCompareFunction, DepthTextureOptions } from './DepthTexture';
 export { VideoTexture } from './VideoTexture';

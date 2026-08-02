@@ -4,7 +4,11 @@
 //   - 3D LUT:WebGL2 sampler3D,通过 TEXTURE_3D 上传(推荐,精度高)
 //   - 2D strip LUT:横向排布的 2D 纹理,每片 lutSize×lutSize,共 lutSize 片
 //
-// 调用方负责创建/上传纹理,本 Pass 仅做采样 + 强度混合。
+// 纹理来源(二选一):
+//   1. 直接传入 WebGLTexture(已上传,低级用法)
+//   2. 传入 VREEN Texture(Data3DTexture 或 2D Texture),PassContext.renderer
+//      自动上传并获取 GL 句柄(推荐,与 LUTCubeLoader.toData3DTexture() 配套)
+//
 // intensity = 0 时无效果,1 时完全使用 LUT 颜色。
 //
 // 参考:
@@ -20,10 +24,16 @@ import {
   LUT_3D_FRAG,
   LUT_2D_STRIP_FRAG,
 } from '../../Materials/shaders';
+import type { Texture } from '../../Core/Texture';
 
 export interface LUTPassOptions {
-  /** LUT 纹理(raw WebGL 句柄)。3D 模式下需用 TEXTURE_3D 上传,2D 模式用 TEXTURE_2D。 */
-  lut?: WebGLTexture | null;
+  /**
+   * LUT 纹理。可为:
+   *   - WebGLTexture(已上传的低级句柄)
+   *   - VREEN Texture(Data3DTexture for 3D, Texture for 2D strip)
+   *   - null(无 LUT,直通)
+   */
+  lut?: WebGLTexture | Texture | null;
   /** LUT 每轴格点数(典型 16 或 32)。 */
   lutSize?: number;
   /** true=sampler3D,false=sampler2D strip。默认 true。 */
@@ -38,8 +48,11 @@ export class LUTPass extends RenderPass {
   readonly name = 'lut';
   enabled = false;
 
-  /** LUT 纹理(由外部上传,本 Pass 不持有所有权)。 */
-  lut: WebGLTexture | null = null;
+  /**
+   * LUT 纹理。可为 WebGLTexture 或 VREEN Texture。
+   * 若为 Texture,apply() 时通过 ctx.renderer.getGLTexture() 上传并获取句柄。
+   */
+  lut: WebGLTexture | Texture | null = null;
   /** 每轴格点数。 */
   lutSize = 16;
   /** 是否使用 3D 纹理(true)或 2D strip 纹理(false)。 */
@@ -56,6 +69,24 @@ export class LUTPass extends RenderPass {
     if (opts.enabled !== undefined) this.enabled = opts.enabled;
   }
 
+  /** 解析 lut 字段为 WebGLTexture 句柄。 */
+  private _resolveLut(ctx: PassContext): WebGLTexture | null {
+    if (this.lut === null) return null;
+    // 已是 WebGLTexture
+    if (typeof this.lut === 'object' && 'uuid' in this.lut && 'glTexture' in this.lut) {
+      // VREEN Texture — 通过 renderer 上传
+      const renderer = ctx.renderer as unknown as {
+        getGLTexture?: (t: Texture) => WebGLTexture | null;
+      };
+      if (renderer.getGLTexture) {
+        return renderer.getGLTexture(this.lut as Texture);
+      }
+      // 退化:直接读 glTexture(可能尚未上传)
+      return (this.lut as Texture).glTexture;
+    }
+    return this.lut as WebGLTexture;
+  }
+
   apply(input: WebGLTexture, ctx: PassContext): WebGLTexture {
     const gl = ctx.gl;
     const res = ctx.resources;
@@ -64,7 +95,8 @@ export class LUTPass extends RenderPass {
     gl.viewport(0, 0, res.width, res.height);
     gl.clear(gl.COLOR_BUFFER_BIT);
 
-    if (this.lut === null) {
+    const lutTex = this._resolveLut(ctx);
+    if (lutTex === null) {
       // 无 LUT 时直通输入,避免阻塞管线
       return input;
     }
@@ -76,7 +108,7 @@ export class LUTPass extends RenderPass {
       gl.bindTexture(gl.TEXTURE_2D, input);
       prog.setUniformSampler('u_colorMap', 0);
       gl.activeTexture(gl.TEXTURE1);
-      gl.bindTexture(gl.TEXTURE_3D, this.lut);
+      gl.bindTexture(gl.TEXTURE_3D, lutTex);
       prog.setUniformSampler('u_lut3D', 1);
       prog.setUniform1f('u_lutSize', this.lutSize);
       prog.setUniform1f('u_intensity', this.intensity);
@@ -89,7 +121,7 @@ export class LUTPass extends RenderPass {
       gl.bindTexture(gl.TEXTURE_2D, input);
       prog.setUniformSampler('u_colorMap', 0);
       gl.activeTexture(gl.TEXTURE1);
-      gl.bindTexture(gl.TEXTURE_2D, this.lut);
+      gl.bindTexture(gl.TEXTURE_2D, lutTex);
       prog.setUniformSampler('u_lut2D', 1);
       prog.setUniform1f('u_lutSize', this.lutSize);
       prog.setUniform1f('u_intensity', this.intensity);

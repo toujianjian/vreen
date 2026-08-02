@@ -92,5 +92,6 @@ export {
   parseCube,
   cube3DToStrip,
   stripToCube3D,
+  toData3DTexture,
   type LUTCubeResult,
 } from './LUTCubeLoader';

@@ -61,6 +61,11 @@ export interface PassContext {
   readonly resources: PostProcessingFBOs;
   /** 编译/复用 shader program(pipeline 委托给 renderer 的 cache)。 */
   getProgram(key: string, vert: string, frag: string, defines?: string[]): ShaderProgram;
+  /**
+   * 宿主渲染器(可选)。某些 Pass(如 LUTPass)需要通过渲染器上传
+   * VREEN Texture 到 GPU 并获取 WebGLTexture 句柄。
+   */
+  readonly renderer?: unknown;
 }
 
 /** Pipeline 管理的 FBO 池:main(bloom 提取用) + bloom 双 blur + final(ping-pong)。

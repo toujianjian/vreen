@@ -29,6 +29,7 @@
 //   - DaVinci Resolve .cube export format
 
 import { Texture, TextureImage } from '../Core/Texture';
+import { Data3DTexture } from '../Core/Data3DTexture';
 import {
   AssetSource,
   Loader,
@@ -317,4 +318,45 @@ export function stripToCube3D(strip: Float32Array, size: number): Float32Array {
     }
   }
   return out;
+}
+
+/**
+ * 把 parseCube() 的 RGB Float32Array 结果转为 Data3DTexture (WebGL2 TEXTURE_3D)。
+ *
+ * 数据布局: R-slow → G-mid → B-fast (行优先),与 texImage3D 的 depth/height/width
+ * 顺序一致。采样时 texture(sampler3D, vec3(r,g,b)) 直接返回 LUT 映射颜色。
+ *
+ * 仅适用于 3D LUT(type === '3D')。1D LUT 请使用 result.texture(2D strip)。
+ *
+ * @param parsed parseCube() 的返回值
+ * @returns Data3DTexture,format='rgb',type='float',wrap=clamp,filter=linear
+ */
+export function toData3DTexture(
+  parsed: Omit<LUTCubeResult, 'texture'>,
+): Data3DTexture {
+  if (parsed.type !== '3D') {
+    throw new Error('toData3DTexture: only 3D LUTs can be converted to Data3DTexture');
+  }
+  const N = parsed.size;
+  // Data3DTexture 期望 RGB float 数据: N×N×N×3
+  // parseCube 已经按 R-slow → G-mid → B-fast 排列,直接使用
+  const tex = new Data3DTexture(
+    parsed.data,
+    N, N, N,
+    {
+      format: 'rgb',
+      type: 'float',
+      wrapR: 'clamp',
+      wrapS: 'clamp',
+      wrapT: 'clamp',
+      minFilter: 'linear',
+      magFilter: 'linear',
+      generateMipmaps: false,
+      colorSpace: 'linear',
+      flipY: false,
+      unpackAlignment: 1,
+    },
+  );
+  tex.name = parsed.title || `lut-3d-${N}`;
+  return tex;
 }

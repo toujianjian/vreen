@@ -20,6 +20,7 @@ import {
   parseCube,
   cube3DToStrip,
   stripToCube3D,
+  toData3DTexture,
   LUTCubeLoader,
 } from './LUTCubeLoader';
 
@@ -398,5 +399,57 @@ describe('parseCube: simulated DaVinci Resolve export', () => {
     expect(r.data[hl]).toBeCloseTo(1);
     expect(r.data[hl + 1]).toBeCloseTo(1);
     expect(r.data[hl + 2]).toBeLessThan(1);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+
+describe('toData3DTexture: LUT → Data3DTexture conversion', () => {
+  it('converts 3D LUT to Data3DTexture with correct dimensions', () => {
+    const size = 4;
+    const parsed = parseCube(identityCube3D(size));
+    const tex = toData3DTexture(parsed);
+    expect(tex.width).toBe(size);
+    expect(tex.height).toBe(size);
+    expect(tex.depth).toBe(size);
+    expect(tex.format).toBe('rgb');
+    expect(tex.type).toBe('float');
+    expect(tex.wrapR).toBe('clamp');
+    expect(tex.wrapS).toBe('clamp');
+    expect(tex.wrapT).toBe('clamp');
+    expect(tex.minFilter).toBe('linear');
+    expect(tex.magFilter).toBe('linear');
+    expect(tex.generateMipmaps).toBe(false);
+    expect(tex.colorSpace).toBe('linear');
+    expect(tex.flipY).toBe(false);
+    expect(tex.isData3DTexture).toBe(true);
+  });
+
+  it('shares the same data buffer (zero-copy)', () => {
+    const size = 3;
+    const parsed = parseCube(identityCube3D(size));
+    const tex = toData3DTexture(parsed);
+    expect(tex.data).toBe(parsed.data); // same reference
+  });
+
+  it('sets name from LUT title', () => {
+    const text = `TITLE "My Cool LUT"\nLUT_3D_SIZE 2\n${Array(8).fill('0 0 0').join('\n')}\n`;
+    const parsed = parseCube(text);
+    const tex = toData3DTexture(parsed);
+    expect(tex.name).toBe('My Cool LUT');
+  });
+
+  it('sets default name when no title', () => {
+    const text = `LUT_3D_SIZE 2\n${Array(8).fill('0 0 0').join('\n')}\n`;
+    const parsed = parseCube(text);
+    expect(parsed.title).toBe('');
+    const tex = toData3DTexture(parsed);
+    expect(tex.name).toBe('lut-3d-2');
+  });
+
+  it('throws on 1D LUT', () => {
+    const text = `LUT_1D_SIZE 4\n0 0 0\n0.33 0.33 0.33\n0.66 0.66 0.66\n1 1 1\n`;
+    const parsed = parseCube(text);
+    expect(() => toData3DTexture(parsed)).toThrow(/only 3D LUTs/);
   });
 });

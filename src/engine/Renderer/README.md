@@ -798,7 +798,7 @@ same `PostProcessingPipeline`.
 | Pass | Role |
 |------|------|
 | `ColorGradingPass` | ASC-CDL style color grading — 8 parameters (slope / offset / power per RGB channel + saturation). |
-| `LUTPass` | Color lookup table — 3D LUT or 2D strip LUT. |
+| `LUTPass` | Color lookup table — 3D LUT (`sampler3D`) or 2D strip LUT. Accepts both raw `WebGLTexture` and VREEN `Texture`/`Data3DTexture` (auto-uploaded via `renderer.getGLTexture()`). Pairs with `LUTCubeLoader.toData3DTexture()` for end-to-end `.cube` file → `Data3DTexture` → `LUTPass` pipeline. |
 | `ChromaticAberrationPass` | Enhanced — `Vector2` direction offset + radial modulation by distance from screen center. |
 | `VignettePass` | Enhanced — `offset` / `darkness` + color tint. |
 | `FilmGrainPass` | Film grain — strength / size / animation frame count. |
