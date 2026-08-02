@@ -110,6 +110,66 @@ Unlike three.js, VREEN keeps an explicit `direction` field that the
 renderer reads directly for the `u_lightDir` uniform and shadow-camera
 placement, rather than deriving it from `position → target`.
 
+#### Shadow types (`ShadowMapManager`)
+
+`ShadowMapManager` (in `src/engine/Renderer/ShadowMapManager.ts`)
+manages the shadow-map FBO / texture lifecycle and supports three
+shadow sampling modes via `ShadowType`:
+
+| Type | Taps | Filter | Description |
+|------|------|--------|-------------|
+| `'basic'` | 1 | NEAREST | Hard shadow — single depth test. Fastest; aliased edges. |
+| `'pcf'` | 9 | LINEAR | 3×3 PCF at fixed 1.5-texel radius. Smooth edges; uniform blur width. **Default.** |
+| `'pcss'` | 32 | LINEAR | **PCSS** (Percentage-Closer Soft Shadows). 3-stage physical soft shadows: blocker search (16-tap Poisson) → penumbra estimation → variable-radius PCF (16-tap Poisson). Contact points render sharp; distant occluders render soft — matching real-world light behavior. Requires `lightSize` property (world units, controls penumbra width). |
+
+The sampling functions live in
+`src/engine/Materials/ShaderChunks/shadow.glsl.ts`:
+
+| Function | Shader taps | When to use |
+|----------|-------------|-------------|
+| `sampleShadowHard` | 1 | Performance-critical scenes (mobile, VR). |
+| `sampleShadowPCF` | 9 | Default — smooth edges at fixed radius. |
+| `sampleShadowPCSS` | 32 | AAA quality — physical soft shadows with variable penumbra. Requires `u_lightSize` uniform. |
+
+**PCSS algorithm** (3-stage, UE5 / o3de Atom grade):
+
+| Stage | Description |
+|-------|-------------|
+| ① Blocker Search | 16-tap Poisson-disk samples within `searchRadius = u_lightSize × texel × 10`. Average the depth of samples closer than the receiver (blockers). Early-out if no blockers → fully lit. |
+| ② Penumbra Estimation | `penumbra = (receiverDepth − avgBlockerDepth) × u_lightSize / avgBlockerDepth`. Near blocker → small penumbra → sharp shadow; far blocker → large penumbra → soft shadow. Clamped to `maxRadius = 50 texels`. |
+| ③ PCF Filter | 16-tap Poisson-disk PCF at the estimated penumbra radius. Returns average visibility [0, 1]. |
+
+```ts
+import { ShadowMapManager } from '@vreen/engine';
+
+const sm = new ShadowMapManager(gl, {
+  type: 'pcss',         // physical soft shadows
+  enabled: true,
+  lightSize: 0.5,       // larger = softer shadows (world units)
+  defaultMapSize: 2048,
+});
+// Consumer shader calls sampleShadowPCSS(worldPos) — see ShaderChunks/shadow.glsl.ts
+```
+
+#### Screen-space contact shadows (`ScreenSpaceShadowPass`)
+
+In addition to shadow-map shadows, VREEN provides
+`ScreenSpaceShadowPass` (in `PostProcess/`) — a post-process pass
+that ray-marches the **depth buffer** along the light direction in
+screen space to find small-scale occlusion that shadow maps miss
+(pixel-precision vs shadow-map-precision).
+
+| Shadow system | Data source | Precision | Range | Directional |
+|---------------|-------------|-----------|-------|-------------|
+| `ShadowMapManager` (PCSS) | Shadow map | Map-resolution-limited | Full scene | ✓ |
+| `ScreenSpaceShadowPass` | Depth buffer | Pixel-level | Small (contact) | ✓ |
+| `ContactShadowsPass` | Brightness proxy | Pixel-level | Small (contact) | ✗ |
+
+The three systems are **complementary**: PCSS handles large-scale
+scene shadows; `ScreenSpaceShadowPass` adds fine contact shadows at
+pixel precision; `ContactShadowsPass` provides a cheaper
+non-directional fallback when depth is unavailable.
+
 ### Point / Spot lights
 
 | Export | Role |
@@ -503,6 +563,9 @@ matters for a modern PBR pipeline:
 | Ambient fill | Single `vec3` color | `AmbientLight` (fast path) **+** `AmbientLightProbe` (SH path) |
 | Hemisphere gradient | Not available | `HemisphereLight` **+** `HemisphereLightProbe` (SH-encoded, blendable) |
 | Directional sun + shadow | Sun only, no shadow | `DirectionalLight` + `DirectionalLightShadow` (ortho camera, `mapSize`, `bias`) |
+| **Shadow types** | **None** | `'basic'` (hard) / `'pcf'` (9-tap) / **`'pcss'`** (32-tap physical soft shadows) |
+| **Screen-space contact shadows** | **None** | `ScreenSpaceShadowPass` (depth-buffer ray-march along light direction) |
+| **Contact shadows (brightness)** | **None** | `ContactShadowsPass` (brightness-proxy, non-directional) |
 | Point light | Partial, no decay model | `PointLight` with `distance`/`decay` (inverse-square default) + `power` (lm) accessor |
 | Spot light | Not available | `SpotLight` with `angle`/`penumbra`/`decay` + `target` + `power` accessor |
 | Rectangular area light | Not available | `RectAreaLight` (`width × height`, PBR-only, `power` accessor) |
@@ -531,10 +594,15 @@ matters for a modern PBR pipeline:
   photometric data) and ported between engines without re-tuning.
   soup3D exposes only a unitless "intensity".
 - **Shadow pipeline.** soup3D has no shadow path at all. VREEN's
-  `DirectionalLightShadow` provides a tunable ortho camera (`mapSize`,
-  `cameraHalfSize`, `near`/`far`, `bias`) consumed by the
-  `ShadowMapManager`, with cube-shadow for point/spot lights as a
-  planned extension.
+  `ShadowMapManager` supports three shadow modes: `'basic'` (hard),
+  `'pcf'` (9-tap fixed-radius), and **`'pcss'`** (32-tap physical soft
+  shadows with blocker search + penumbra estimation + variable-radius
+  PCF — the same algorithm used by UE5 and o3de Atom). Additionally,
+  `ScreenSpaceShadowPass` ray-marches the depth buffer along the light
+  direction for pixel-precision contact shadows that complement
+  shadow-map shadows. Three complementary systems: PCSS for large-scale
+  scene shadows, ScreenSpaceShadow for fine contact shadows, and
+  ContactShadowsPass for a cheaper non-directional fallback.
 - **API surface.** Every VREEN light is a scene-graph `Object3D`, so a
   `SpotLight` can be parented to a camera (flashlight) or a
   `PointLight` to a projectile without a separate `lightList` to keep
@@ -555,7 +623,15 @@ common case for production rendering.
 - `src/engine/Renderer/WebGL2Renderer.ts` — light uniform upload and the
   shadow pass that consumes `DirectionalLight.shadow`.
 - `src/engine/Renderer/ShadowMapManager.ts` — shadow-map FBO / texture
-  lifecycle keyed on `light.uuid`.
+  lifecycle keyed on `light.uuid`. Supports `'basic'` / `'pcf'` / `'pcss'`
+  shadow types with `lightSize` for PCSS penumbra control.
+- `src/engine/Materials/ShaderChunks/shadow.glsl.ts` — GLSL shadow
+  sampling functions: `sampleShadowHard`, `sampleShadowPCF`,
+  `sampleShadowPCSS` (3-stage PCSS with 16-tap Poisson blocker search +
+  variable-radius PCF).
+- `src/engine/Renderer/PostProcess/ScreenSpaceShadowPass.ts` —
+  screen-space directional contact shadows (depth-buffer ray-march
+  along light direction).
 - `src/engine/Materials/StandardMaterial.ts` — PBR shader that consumes
   directional / point / spot / rect-area light uniforms and the SH
   uniform array uploaded from `LightProbe.sh`.

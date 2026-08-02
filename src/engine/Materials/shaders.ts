@@ -3084,3 +3084,94 @@ void main() {
 }
 `;
 
+// ── 色调映射 (HDR → LDR) ──────────────────────────────────────────
+// 支持 5 种算子:Linear(直通)、ACES Filmic(Narkowicz 近似)、Reinhard、
+// AGX(Blender 简化)、Uncharted 2 (Hable)。
+//
+// 管线位置:Bloom → ColorGrading → **Tonemapping** → 输出
+// 必须在所有 HDR 效果(Bloom/SSR/SSGI)之后、最终显示之前应用。
+//
+// 参考:
+//   - Narkowicz 2015 "ACES Filmic Tone Mapping Curve"
+//   - Reinhard et al. 2002 "Photographic Tone Reproduction"
+//   - Blender AGX (Troy Sobotka)
+//   - Hable 2010 "Uncharted 2: HDR Lighting"
+export const TONEMAP_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;
+uniform float u_exposure;   // 曝光倍数(默认 1.0)
+uniform int   u_mode;       // 0=Linear, 1=ACES, 2=Reinhard, 3=AGX, 4=Uncharted2
+
+// ── ACES Filmic (Narkowicz 近似) ─────────────────────────────────
+vec3 acesFilmic(vec3 x) {
+  const float a = 2.51;
+  const float b = 0.03;
+  const float c = 2.43;
+  const float d = 0.59;
+  const float e = 0.14;
+  return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+}
+
+// ── Reinhard ─────────────────────────────────────────────────────
+vec3 reinhardTonemap(vec3 x) {
+  return x / (x + vec3(1.0));
+}
+
+// ── AGX (Blender, 简化版) ────────────────────────────────────────
+// 完整 AGX 需要 OSACES/ACEScg 色彩空间变换;此简化版保留核心 sigmoid
+// 特性:中间调平滑、高光不裁剪、暗部不挤压。
+vec3 agxSimplified(vec3 x) {
+  // 前置压缩(类似 log 编码)
+  vec3 x_log = log2(vec3(1.0) + x * 2.0) / log2(vec3(3.0));
+  // Sigmoid 映射(AGX 核心曲线)
+  vec3 mapped = x_log / (x_log + vec3(0.6));
+  // 后置伽马校正
+  return pow(clamp(mapped, 0.0, 1.0), vec3(1.8));
+}
+
+// ── Uncharted 2 (Hable) ──────────────────────────────────────────
+vec3 uncharted2Partial(vec3 x) {
+  const float A = 0.15;
+  const float B = 0.50;
+  const float C = 0.10;
+  const float D = 0.20;
+  const float E = 0.02;
+  const float F = 0.30;
+  return ((x * (A * x + C * B) + D * E) / (x * (A * x + B) + D * F)) - E / F;
+}
+
+vec3 uncharted2Tonemap(vec3 x, float exposureBias) {
+  vec3 curr = uncharted2Partial(x * exposureBias);
+  vec3 whiteScale = vec3(1.0) / uncharted2Partial(vec3(11.2));
+  return clamp(curr * whiteScale, 0.0, 1.0);
+}
+
+void main() {
+  vec3 hdr = texture(u_colorMap, v_uv).rgb;
+
+  // 应用曝光
+  hdr *= u_exposure;
+
+  vec3 ldr;
+  if (u_mode == 0) {
+    // Linear: 仅裁剪,无色调映射
+    ldr = clamp(hdr, 0.0, 1.0);
+  } else if (u_mode == 1) {
+    ldr = acesFilmic(hdr);
+  } else if (u_mode == 2) {
+    ldr = reinhardTonemap(hdr);
+  } else if (u_mode == 3) {
+    ldr = agxSimplified(hdr);
+  } else {
+    // Uncharted 2 (默认 exposure bias = 2.0)
+    ldr = uncharted2Tonemap(hdr, 2.0);
+  }
+
+  outColor = vec4(ldr, 1.0);
+}
+`;
+

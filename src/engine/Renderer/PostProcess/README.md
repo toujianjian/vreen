@@ -2,7 +2,7 @@
 
 > Path: `src/engine/Renderer/PostProcess/`
 >
-> The enhanced post-processing pass family of the VREEN engine. Provides **20**
+> The enhanced post-processing pass family of the VREEN engine. Provides **21**
 > passes covering color grading, anti-aliasing, screen-space effects, depth-of-field,
 > motion blur, exposure adaptation, and stylized effects. Each pass is a
 > self-contained class that manages its own GPU resources (FBOs, textures,
@@ -14,9 +14,10 @@
 
 ```
 PostProcess/
-  ├── RenderPass-compatible (7 passes)        ← drop-in pipeline passes
+  ├── RenderPass-compatible (8 passes)        ← drop-in pipeline passes
   │     ├── ColorGradingPass
   │     ├── LUTPass
+  │     ├── TonemappingPass
   │     ├── ChromaticAberrationPass (enhanced)
   │     ├── VignettePass (enhanced)
   │     ├── FilmGrainPass
