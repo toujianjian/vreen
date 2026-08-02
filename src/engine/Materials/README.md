@@ -33,7 +33,8 @@ Material (abstract)
    ├── StandardMaterial               PBR (base color / metallic / roughness / emissive)
    │     └── MeshPhysicalMaterial     extended PBR (clearcoat / sheen / IOR / transmission)
    ├── AdvancedPBRMaterial            anisotropic / iridescence / clearcoat / sheen / emissive
-   ├── SubsurfaceScatteringMaterial   skin / wax / jade / milk
+   ├── SubsurfaceScatteringMaterial   skin / wax / jade / milk (translucent-shadow approx)
+   ├── PreIntegratedSkinMaterial      skin (d'Eon 2007 BSSRDF LUT, AAA-grade)
    ├── MatcapMaterial                 matcap (view-space normal → texture)
    ├── MeshPhongMaterial              legacy Blinn-Phong
    ├── MeshNormalMaterial             normal debug
@@ -628,6 +629,104 @@ const mesh = new Mesh(waterGeometry, material);
 - Integration with Refractor math: textureMatrix, refractionTexture,
   runtime eta updates (air→water vs air→glass).
 
+#### `SubsurfaceScatteringMaterial` (`SubsurfaceScatteringMaterial.ts`)
+
+Translucent-shadow approximation of subsurface scattering (Penner / GDC
+2011 style). Extends `BasicMaterial` with per-channel scattering radii,
+a half-translucent back-light term, and a simplified Cook-Torrance
+specular. Best for **thin-wall transmission** effects (ear rim, nose
+wing, leaf edges) where light wraps around from behind.
+
+| Property | Type | Default | Notes |
+|----------|------|---------|-------|
+| `baseColor` | `RGB` | `{0.9, 0.7, 0.6}` | Linear albedo. |
+| `subsurfaceColor` | `RGB` | `{1.0, 0.3, 0.2}` | Transmitted light tint (red-orange for skin). |
+| `subsurfaceRadius` | `RGB` | `{1.0, 0.4, 0.2}` | Per-channel scattering radius (R > G > B for skin). |
+| `subsurfaceMix` | `number` | `0.5` | 0 = no SSS, 1 = full SSS. |
+| `subsurfacePower` | `number` | `4` | Transmission falloff sharpness. |
+| `subsurfaceDistortion` | `number` | `0.3` | Normal backward offset for L_distorted. |
+| `thickness` | `number` | `0.5` | 0 = thin (more transmission), 1 = thick. |
+| `translucency` | `number` | `0.5` | Transmission intensity. |
+| `roughness` / `metallic` | `number` | `0.5` / `0` | Simplified GGX specular. |
+| `sssEnabled` | `boolean` | `true` | Master toggle. |
+| `sssSteps` | `number` | `4` | Per-pixel march steps (1..8). |
+
+Shader: `SSS_VERT` (standard MVP + world attrs) / `SSS_FRAG`
+(Lambert + GGX + translucent shadow). `computeSSS()` provides a CPU
+reference implementation matching the GLSL fragment.
+
+#### `PreIntegratedSkinMaterial` (`PreIntegratedSkinMaterial.ts`)
+
+AAA-grade skin shading based on **d'Eon & Luebke 2007** (GPU Gems 3,
+Ch. 14). Pre-computes the BSSRDF convolution into two lookup tables so
+the runtime shader pays only **2 texture samples** for skin-grade
+diffuse + transmission — no per-pixel BSSRDF integration. Complements
+`SubsurfaceScatteringMaterial`: use `PreIntegratedSkin` for large
+areas (cheek / forehead) where the soft shadow terminator matters, and
+`SubsurfaceScatteringMaterial` for thin rims (ear / nose wing).
+
+| Property | Type | Default | Notes |
+|----------|------|---------|-------|
+| `baseColor` | `RGB` | `{0.9, 0.7, 0.6}` | Linear albedo. |
+| `diffuseIntensity` | `number` | `1` | Diffuse LUT multiplier. |
+| `specularIntensity` | `number` | `1` | GGX specular multiplier. |
+| `roughness` | `number` | `0.4` | Skin typical 0.3..0.5. |
+| `metallic` | `number` | `0` | Skin ≈ 0. |
+| `curvature` | `number` | `0` | Fallback curvature when no `a_curvature` attribute (1/radius, mm⁻¹). |
+| `curvatureScale` | `number` | `1` | Multiplies `a_curvature` attribute. |
+| `translucency` | `number` | `0.5` | Transmission intensity. |
+| `translucencyDistortion` | `number` | `0.1` | Normal backward offset. |
+| `translucencyPower` | `number` | `4` | Transmission falloff sharpness. |
+| `falloffConstant` | `number` | `1` | Maps curvature → LUT v coordinate (matches `DiffuseLUT.sample`). |
+| `diffuseLUT` | `DiffuseLUT` | (generated) | 256×256×3 pre-integrated diffuse BRDF. |
+| `transmittanceLUT` | `TransmittanceLUT` | (generated) | 256×3 pre-integrated transmittance. |
+| `profile` | `DiffuseProfile` | `SKIN_PROFILE` | Read-only scattering profile (from LUTs). |
+
+**Vertex shader** (`PRE_INTEGRATED_SKIN_VERT`): standard MVP + passes
+`worldPos`, `worldNormal`, `uv`, and `curvature` (from `a_curvature`
+attribute; renderer injects constant 0 if absent).
+
+**Fragment shader** (`PRE_INTEGRATED_SKIN_FRAG`):
+1. Diffuse: sample `u_diffuseLUT` at `(lutU, lutV)` where `lutU = (N·L+1)/2`
+   and `lutV = 1/(1+curvature*falloffConstant)`.
+2. Specular: simplified GGX + Schlick Fresnel.
+3. Transmission: distort L by N, compute `backLight = pow(max(V·-Ld, 0), power)`,
+   sample `u_transmittanceLUT` at `backLight`, multiply by `translucency`.
+4. Composite: `ambient + diffuse + specular + transmissive`.
+
+**CPU reference**: `computeSSS(position, normal, lightDir, viewDir, curvature, thickness)`
+returns `{ diffuse, specular, transmissive, total }` matching the GLSL math.
+
+**LUT sharing**: multiple materials can share the same `DiffuseLUT` /
+`TransmittanceLUT` via `shareLUTs()` to avoid regenerating identical
+tables. `setProfile()` regenerates both LUTs from a new `DiffuseProfile`.
+
+**Test coverage** (`PreIntegratedSkinMaterial.test.ts`, 60 tests):
+- `SKIN_PROFILE` constants (R > G > B scattering radius, F0 ≈ 0.028).
+- `DiffuseLUT`: dimensions, data non-zero/non-negative, flat (curvature=0)
+  at N·L=1 → ≈1 and N·L=0 → ≈0, high curvature softens terminator,
+  bilinear continuity, out-of-range clamping, `toJSON`.
+- `TransmittanceLUT`: dimensions, distance=0 → high, R > G > B
+  (skin-red physics), monotonic decrease, far → ≈0, linear continuity,
+  out-of-range clamping, `toJSON`.
+- Material construction, defaults, `fromHex`, LUT ownership, profile
+  consistency.
+- Options override (all fields + `clamp01` + `>= 0` + `>= 1` invariants).
+- Setters (chainable, value correctness, clamping, `setProfile`,
+  `shareLUTs`).
+- `computeSSS` CPU reference (4-component return, strong front-lighting,
+  dark back-lighting, non-negative finite transmission, R ≥ G ≥ B
+  transmission, `translucency=0` → zero transmission, curvature-dependent
+  results).
+- Shader source: `#version 300 es`, `a_curvature` attribute, LUT
+  samplers, GGX/Fresnel functions, `outColor`.
+- `getUniforms` completeness (all scalar + LUT references).
+- `customProgramCacheKey` stability.
+- `toJSON` / `fromJSON` round-trip (all fields + custom profile +
+  missing-field tolerance).
+- `clone` / `copy` independence (LUT reference shared for memory).
+- `dispose` idempotent.
+
 #### `WireframeMaterial` (`WireframeMaterial.ts`)
 
 Stylised wireframe material — renders the mesh's triangle edges as
@@ -747,6 +846,117 @@ scene.add(shell.generate());
 shell.update(dt);
 ```
 
+### Pre-Integrated Skin (AAA-grade skin shading)
+
+```ts
+import {
+  PreIntegratedSkinMaterial,
+  SubsurfaceScatteringMaterial,
+  SKIN_PROFILE,
+} from '@vreen/engine';
+
+// Large skin surfaces (cheek / forehead) — Pre-Integrated Skin
+const skin = new PreIntegratedSkinMaterial({
+  baseColor: { r: 0.9, g: 0.7, b: 0.6 },
+  roughness: 0.4,
+  translucency: 0.6,
+});
+// Mesh should carry an `a_curvature` vertex attribute (1/radius, mm⁻¹)
+// baked at authoring time. If absent, the material falls back to `curvature`.
+faceMesh.material = skin;
+
+// Thin rims (ear / nose wing) — translucent-shadow approximation
+const earTip = new SubsurfaceScatteringMaterial({
+  baseColor: { r: 0.9, g: 0.7, b: 0.6 },
+  subsurfaceColor: { r: 1.0, g: 0.3, b: 0.2 },
+  thickness: 0.2,      // thin → more transmission
+  translucency: 0.9,
+});
+earMesh.material = earTip;
+
+// CPU reference (for tests / offline baking):
+const result = skin.computeSSS(
+  position, normal, lightDir, viewDir,
+  /*curvature=*/ 1.5, /*thickness=*/ 0.5,
+);
+// result = { diffuse, specular, transmissive, total }
+
+// Custom scattering profile (e.g. wax / jade):
+import type { DiffuseProfile } from '@vreen/engine';
+const WAX_PROFILE: DiffuseProfile = {
+  scatteringRadius: { r: 0.8, g: 0.8, b: 0.8 },  // isotropic
+  singleScatterAlbedo: { r: 0.95, g: 0.95, b: 0.95 },
+  f0: 0.02,
+};
+const wax = new PreIntegratedSkinMaterial({ profile: WAX_PROFILE });
+
+// Share LUTs across multiple skin materials (memory-efficient):
+const skin2 = new PreIntegratedSkinMaterial();
+skin2.shareLUTs(skin.diffuseLUT, skin.transmittanceLUT);
+```
+
+---
+
+## Comparison with soup3D
+
+`soup3D` (https://github.com/OrenLiu/soup3D) has **no subsurface
+scattering** at all — every material uses flat Lambert or basic PBR
+without any BSSRDF approximation. For organic subjects (human skin,
+wax, jade, milk, leaves) this produces a hard, plasticky look where
+shadow terminators are sharp and back-lit areas stay dark.
+
+VREEN ships **two complementary SSS approaches**, both absent from
+soup3D:
+
+| Capability | soup3D | VREEN |
+|------------|--------|-------|
+| Translucent-shadow SSS | **None** | `SubsurfaceScatteringMaterial` (Penner/GDC2011 style) |
+| Pre-Integrated BSSRDF LUT | **None** | `PreIntegratedSkinMaterial` (d'Eon 2007, GPU Gems 3 Ch. 14) |
+| Per-channel scattering radius | **None** | RGB `scatteringRadius` / `DiffuseProfile.scatteringRadius` |
+| Pre-baked diffuse LUT | **None** | `DiffuseLUT` 256×256×3 (curvature-aware terminator softening) |
+| Pre-baked transmittance LUT | **None** | `TransmittanceLUT` 256×3 (R>G>B red-tail physics) |
+| CPU reference implementation | **None** | `computeSSS()` matches GLSL fragment for testing |
+| Custom scattering profiles | **None** | `DiffuseProfile` + `setProfile()` (skin / wax / jade) |
+| LUT sharing across materials | **None** | `shareLUTs()` avoids duplicate LUT generation |
+| Curvature vertex attribute | **None** | `a_curvature` per-vertex (1/radius, mm⁻¹) |
+
+**Where VREEN pulls ahead.**
+
+- **Skin realism.** soup3D cannot render convincing human skin — the
+  hard shadow terminator and absence of red back-lighting make faces
+  look like plastic. VREEN's `PreIntegratedSkinMaterial` pre-bakes the
+  BSSRDF convolution into a 256×256 diffuse LUT indexed by
+  `(N·L, curvature)`, softening the terminator on curved surfaces
+  (cheeks, forehead) and producing the characteristic warm wraparound.
+  The 256×3 transmittance LUT captures the R > G > B scattering
+  asymmetry (red light travels ~3× farther through skin than blue),
+  so back-lit ears and nose wings glow red — the signature skin look.
+- **Two-tier fidelity.** VREEN offers both the cheap translucent-shadow
+  approximation (for thin rims, `SubsurfaceScatteringMaterial`) and the
+  AAA-grade pre-integrated BSSRDF (for large surfaces,
+  `PreIntegratedSkinMaterial`). soup3D offers neither. The two can be
+  mixed in the same scene: PreIntegratedSkin for the face,
+  SubsurfaceScatteringMaterial for ear tips.
+- **Physically-measured profile.** The default `SKIN_PROFILE` uses
+  d'Eon 2007's published skin measurements (R=0.65mm, G=0.38mm,
+  B=0.22mm scattering radii, F0=0.028 for IOR 1.4). soup3D has no
+  concept of a scattering profile.
+- **Headless-testable.** The LUT generator is pure CPU math (no WebGL
+  / DOM dependency), so it runs in Node tests and build-time bake
+  steps. The CPU `computeSSS()` reference matches the GLSL fragment
+  for regression testing. soup3D's materials have no such reference
+  path.
+- **Curvature-driven.** The `a_curvature` vertex attribute lets artists
+  bake per-vertex curvature at authoring time, so the shader knows
+  exactly how soft the terminator should be at each point. soup3D has
+  no curvature input.
+
+**Where soup3D still matches.** For non-organic materials (metal, wood,
+plastic, fabric) both engines produce equivalent results — SSS only
+matters for translucent organic surfaces. VREEN's advantage is
+concentrated on skin, wax, jade, milk, and leaves, which are exactly
+the cases where soup3D falls back to hard plastic.
+
 ---
 
 ## Design Notes
@@ -778,3 +988,38 @@ materials can register their own chunks and reuse built-ins.
 base class in this module and as a concrete class with the same name in
 some Three.js examples. The engine barrel exports `MeshBasicMaterial`
 as the user-facing concrete class; `BasicMaterial` is the internal base.
+
+**Why two SSS materials?** `SubsurfaceScatteringMaterial` and
+`PreIntegratedSkinMaterial` solve different problems. The translucent-
+shadow approximation (`SSSMaterial`) is a per-pixel analytical model —
+cheap, but it only captures back-lighting through thin walls. The
+pre-integrated BSSRDF LUT (`PreIntegratedSkinMaterial`) pre-bakes the
+full diffuse convolution indexed by `(N·L, curvature)`, capturing the
+soft shadow terminator on curved surfaces that the translucent-shadow
+model misses. For a hero character, use both: `PreIntegratedSkin` on
+the face/limbs (large curved areas) and `SSSMaterial` on ear tips /
+nose wings (thin transmission). This mirrors the AAA production
+pattern — Unreal and o3de both layer multiple SSS techniques rather
+than relying on a single one.
+
+**Why `Float32Array` for LUT data.** Both `DiffuseLUT` and
+`TransmittanceLUT` store their data as flat `Float32Array` rather than
+nested arrays or `Uint8Array`. This matches the `LightProbe.sh` design
+pattern: one allocation, one `gl.texImage2D` call, cache-friendly
+linear access. `Uint8Array` would halve memory but require
+quantisation (lossy); `Float32Array` preserves the full precision of
+the BSSRDF integration. The LUTs are immutable after generation, so
+the same buffer can be shared across multiple materials via
+`shareLUTs()` without copy-on-write concerns.
+
+**Why the diffuse LUT uses a gaussian kernel, not the full dipole.**
+The d'Eon 2007 paper uses the Jensen dipole BSSRDF for the diffuse
+convolution, which requires evaluating exponential integrals with
+multiple terms per sample. For a 256×256 LUT with 32 samples per
+cell, that's 2M dipole evaluations — slow enough to notice at load
+time. VREEN uses a single-gaussian approximation
+`exp(-distance²/σ²)` with per-channel σ from the scattering profile.
+This captures the dominant visual effect (red scatters farther than
+blue) at a fraction of the cost, and the LUT is generated once and
+cached. The trade-off is some loss of physical accuracy in the
+multi-scatter tail, which is acceptable for real-time rendering.

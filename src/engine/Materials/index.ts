@@ -65,6 +65,22 @@ export {
   SSS_VERT,
   SSS_FRAG,
 } from './SubsurfaceScatteringMaterial';
+// Pre-Integrated Skin 材质(d'Eon 2007,GPU Gems 3 Ch. 14)。
+// 把 BSSRDF 卷积预算成 DiffuseLUT + TransmittanceLUT,运行时 O(1) 采样,
+// 适合大面积皮肤的柔和阴影终止线 + 红色透射。与 SSSMaterial 互补:
+// PreIntegratedSkin 适合脸颊/前额,SSSMaterial 适合耳廓/鼻翼薄壁透射。
+export {
+  PreIntegratedSkinMaterial,
+  type PreIntegratedSkinMaterialOptions,
+  PRE_INTEGRATED_SKIN_VERT,
+  PRE_INTEGRATED_SKIN_FRAG,
+} from './PreIntegratedSkinMaterial';
+export {
+  DiffuseLUT,
+  TransmittanceLUT,
+  SKIN_PROFILE,
+  type DiffuseProfile,
+} from './PreIntegratedSkinLUT';
 // 平面镜面反射材质(与 Renderer/Reflector.ts CPU 数学库配套)。
 // 适配 three.js Reflector.js shader 部分,扩展色调/菲涅尔/基础色。
 // Reflector.computeTextureMatrix() → textureMatrix;Reflector 渲染输出 → reflectionTexture。
