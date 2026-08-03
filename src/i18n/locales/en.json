@@ -874,6 +874,11 @@
         "desc": "Ray-marched volumetric fog with god rays and scattering.",
         "advantage": "soup3D has no volfog"
       },
+      "volcloud": {
+        "title": "Volumetric Clouds",
+        "desc": "GPU ray-marched volumetric clouds with 3D Perlin+Worley noise, Beer-Powder transmittance, dual-lobed HG phase (silver-lining), and multi-scattering.",
+        "advantage": "soup3D has no volumetric clouds"
+      },
       "heightFog": {
         "title": "Height Fog",
         "desc": "UE5-style exponential height fog with closed-form Beer-Lambert density and sun inscattering.",

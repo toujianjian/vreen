@@ -874,6 +874,11 @@
         "desc": "レイマーチボリュームフォグ、ゴッドレイ + 散乱。",
         "advantage": "soup3D にボリュームフォグなし"
       },
+      "volcloud": {
+        "title": "ボリュームクラウド",
+        "desc": "GPU レイマーチボリュームクラウド、3D Perlin+Worley ノイズ + Beer-Powder 透過 + デュアルローブ HG 位相(銀縁)+ 多重散乱。",
+        "advantage": "soup3D にボリュームクラウドなし"
+      },
       "heightFog": {
         "title": "ハイトフォグ",
         "desc": "UE5 風指数ハイトフォグ、閉形式 Beer-Lambert 密度 + 太陽内散乱。",

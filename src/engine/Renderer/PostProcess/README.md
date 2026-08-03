@@ -2,7 +2,7 @@
 
 > Path: `src/engine/Renderer/PostProcess/`
 >
-> The enhanced post-processing pass family of the VREEN engine. Provides **24**
+> The enhanced post-processing pass family of the VREEN engine. Provides **25**
 > passes covering color grading, anti-aliasing, screen-space effects, depth-of-field,
 > motion blur, exposure adaptation, atmospheric effects, sharpening, upscaling, and stylized effects.
 > Each pass is a self-contained class that manages its own GPU resources (FBOs,
@@ -25,13 +25,14 @@ PostProcess/
   │     ├── AfterimagePass
   │     └── PixelationPass
   │
-  ├── GBuffer-dependent (16 passes)           ← independent FBO/program
+  ├── GBuffer-dependent (17 passes)           ← independent FBO/program
   │     ├── SSRPass          ← needs position + normal
   │     ├── SSSRPass         ← needs position + normal + roughness (GGX importance-sampled)
   │     ├── SSGIPass         ← needs position + normal + color
   │     ├── ScreenSpaceShadowPass ← needs depth + light direction
   │     ├── VolumetricFogPass ← needs depth
   │     ├── HeightFogPass    ← needs depth (UE5 exponential height fog)
+  │     ├── VolumetricCloudsPass ← needs depth + 3D noise texture (GPU ray-marched)
   │     ├── VelocityPass     ← needs depth + matrices
   │     ├── TAAPass          ← needs color + velocity
   │     ├── MotionBlurPass   ← needs color + velocity
@@ -1249,6 +1250,319 @@ A future refactor could delegate to `Matrix4.makeInverse()` if added.
 
 ---
 
+### VolumetricCloudsPass
+
+GPU ray-marched volumetric clouds — UE5/Horizon Zero Dawn "Nubis" class
+atmospheric clouds rendered as a fullscreen pass. Reconstructs the camera
+ray per pixel, ray-marches through the cloud layer `[cloudHeight,
+cloudHeight + cloudThickness]`, samples a 3D Perlin+Worley noise texture
+for density, and accumulates Beer-Lambert transmittance with **Beer-Powder**
+(Bouthors 2008), **dual-lobed Henyey-Greenstein** phase function (forward +
+backward scatter for silver-lining), and **multi-scattering approximation**
+(Wenzel 2019) for energy redistribution inside the cloud body. Optional
+**cone-sampled shadow rays** produce soft penumbrae. **Surpasses soup3D**
+(which ships no volumetric clouds — its sky is a flat gradient or static
+skybox with no 3D cloud volume).
+
+**Class**: `VolumetricCloudsPass` (independent, does **not** extend `RenderPass`)
+**Shader**: `VOLUMETRIC_CLOUDS_FRAG` (single-pass fullscreen ray-march)
+**Vertex**: shared `POST_VERT` (fullscreen triangle)
+**Draw calls**: 1 per `apply()`
+**Companion**: consumes `VolumetricClouds` data layer (`src/engine/Environment/VolumetricClouds.ts`)
+
+#### Architecture
+
+```
+┌──────────────┐    ┌──────────────────────────────────────────┐
+│ colorTexture │───▶│ VolumetricCloudsPass.apply()             │
+│ HDR scene    │    │  1. degrade to input if no noise / off   │
+└──────────────┘    │  2. (re)allocate FBO/texture on resize   │
+                    │  3. bind _fbo, clear COLOR_BUFFER_BIT    │
+┌──────────────┐    │  4. bind color   → TEXTURE0 (u_colorMap) │
+│ depthTexture │───▶│  5. bind depth   → TEXTURE1 (u_depthMap) │
+│ GBuffer depth│    │  6. bind 3D noise→ TEXTURE2 (u_noiseMap) │
+└──────────────┘    │  7. set inverse VP + camera pos          │
+                    │  8. pull uniforms from VolumetricClouds  │
+┌──────────────┐    │  9. drawArrays(fullscreen triangle)      │
+│ 3D noise     │───▶│ 10. return _outputTexture                │
+│ R16F TEXTURE_3D   │                                          │
+└──────────────┘    └────────────────────┬─────────────────────┘
+                                         ▼
+┌──────────────┐                ┌──────────────────┐
+│ Volumetric   │───▶ uniforms   │ _outputTexture   │
+│ Clouds data  │                │ RGBA16F HDR      │
+│ layer        │                │ cloud composited │
+└──────────────┘                └──────────────────┘
+```
+
+The pass is **single-pass** but **ray-marched** — every pixel traces a
+primary ray (up to `u_steps` samples) plus a shadow ray per primary
+sample (up to `u_shadowSteps` samples). The 3D noise texture is sampled
+via `sampler3D` with trilinear interpolation and `REPEAT` wrap (seamless
+tiling across the sky dome). The cloud layer is an axis-aligned slab in
+world space; ray-slab intersection gives `tEnter`/`tExit` cheaply
+(single-axis test on Y).
+
+#### Algorithm (7-stage pipeline)
+
+| Stage | Description |
+|-------|-------------|
+| ① Sky / opaque early-out | Sample depth; if `depth ≥ 1.0` (sky), construct a ray through the far plane. If opaque geometry is closer than the cloud layer entry (`sceneDist < tEnter`), pass through scene color unchanged. |
+| ② Ray-slab intersection | Solve `(yBottom − camPos.y) / rayDir.y` and `(yTop − camPos.y) / rayDir.y` for `tEnter`/`tExit`. Clamp `tEnter ≥ 0`; if `tExit ≤ tEnter`, no cloud on this ray. |
+| ③ Density sampling | Per primary step: `uvw = (worldPos + windOffset) / worldScale` (XZ repeat, Y in `[0,1]`). `noise = texture(u_noiseMap, uvw).r`. Apply coverage modulation `1 − (1 − coverage)²` and height-density attenuation (bottom: smoothstep `[0, 0.2]`; top: smoothstep `[0.6, 1.0]`). Skip if density ≤ `densityCutoff`. |
+| ④ Shadow march | Per primary step: march `u_shadowSteps` samples along `sunDirection`, accumulating optical depth `τ = Σ density · densityMul · stepLen · 0.01`. Optional cone sampling (golden-angle distribution) softens shadows. |
+| ⑤ Beer-Lambert + Beer-Powder | `beer = exp(−τ)`, `powder = 1 − exp(−2τ)`, `beerPowder = beer·(1 − 0.5·powder) + 0.5·powder·beer`. Beer is the standard transmittance; powder (Bouthors 2008) darkens thick cloud interiors while preserving thin edges — this is what gives cumulus their characteristic dark base + bright top. |
+| ⑥ Multi-scattering (Wenzel 2019) | `msEnergy = (1 − exp(−τ·msFactor)) · Σ exp(−τ·msFactor/msN) / msN`. Approximates the energy from light bouncing multiple times inside the cloud body. Without this, clouds render too dark (only single-scatter is computed); with it, ambient brightness inside clouds matches reality. |
+| ⑦ Dual-lobed HG phase + composite | `phase = mix(HG(g_fwd, cosθ), HG(g_back, cosθ), 1 − forwardWeight)` where `cosθ = dot(viewDir, sunDir)`. Forward lobe (g_fwd > 0) produces silver-lining when looking toward the sun; backward lobe (g_back < 0) darkens the backlit side. Accumulate `color += (1 − stepT) · T · cloudColor · (ambient·ambientFactor + sunColor · (beerPowder + msEnergy) · phase)`, `T *= stepT`. Early termination at `T < 0.01`. Composite `mix(sceneColor, accumColor + sceneColor · T, 1 − T)`. |
+
+#### Options
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `worldScale` | `number` | `1024` | World→UVW scale. Matches `VolumetricClouds._sampleDensity`. Larger = denser noise pattern (clouds look bigger). |
+| `shadowStepLen` | `number` | `8` | Shadow ray step length (world units). Smaller = sharper penumbra but more samples needed. |
+| `densityCutoff` | `number` | `0.01` | Density skip threshold. Voxels with density ≤ this are skipped (empty-space skipping optimization). |
+
+Cloud visual parameters (coverage, density, height, thickness, wind, sun,
+multi-scattering, HG lobes, cone radius, etc.) are pulled from the
+`VolumetricClouds` data layer via `getShaderUniforms()` — see
+`src/engine/Environment/VolumetricClouds.ts` for the full parameter set.
+
+#### API
+
+```ts
+uploadNoise(
+  gl: WebGL2RenderingContext,
+  data: Float32Array,              // VolumetricClouds.noiseData (nx*ny*nz floats)
+  res: { x, y, z },                // VolumetricClouds.noiseResolution
+): void                            // allocates/uploads R16F TEXTURE_3D
+
+apply(
+  gl: WebGL2RenderingContext,
+  inputTexture: WebGLTexture,      // current frame color
+  depthTexture: WebGLTexture,      // GBuffer depth (window-space [0,1])
+  camera: Camera,                  // reads projectionMatrix + matrixWorldInverse + position
+  clouds: VolumetricClouds,        // data layer (uniform source)
+): WebGLTexture                    // cloud-composited color (RGBA16F HDR)
+
+get hasNoise: boolean              // true if uploadNoise() has been called
+dispose(gl: WebGL2RenderingContext): void  // release GPU resources (safe to call multiple times)
+```
+
+#### Texture unit bindings
+
+| Unit | Sampler | Stage | Source |
+|------|---------|-------|--------|
+| 0 | `u_colorMap` (sampler2D) | all | `inputTexture` (input scene color) |
+| 1 | `u_depthMap` (sampler2D) | all | `depthTexture` (GBuffer depth) |
+| 2 | `u_noiseMap` (sampler3D) | density | `_noiseTexture` (R16F 3D noise texture, REPEAT wrap) |
+
+#### Resource layout
+
+| Resource | Count | Allocated when | Format |
+|----------|-------|----------------|--------|
+| Output FBO + texture | 1 + 1 | first `apply()` (or after resize) | RGBA16F, `CLAMP_TO_EDGE` + `LINEAR` (HDR) |
+| 3D noise texture | 1 | `uploadNoise()` | R16F, `REPEAT` + `LINEAR` (3D density field) |
+| Fullscreen quad VAO + buffer | 1 + 1 | first `apply()` | 6-vertex double triangle (covers `[-1,1]²`) |
+| Shader program | 1 | first `apply()` | `POST_VERT` + `VOLUMETRIC_CLOUDS_FRAG` |
+
+Resources are lazily allocated on the first `apply()` and rebuilt when the
+canvas size changes. The 3D noise texture is allocated once on
+`uploadNoise()` and re-allocated only if the noise resolution changes
+(same resolution = in-place `texImage3D` data update, no reallocation).
+`dispose()` releases all GPU resources including the noise texture — a
+subsequent `apply()` will degrade to passthrough until `uploadNoise()` is
+called again.
+
+#### Usage
+
+**Basic — attach to VolumetricClouds and render:**
+
+```ts
+import { VolumetricClouds } from '@vreen/engine/Environment/VolumetricClouds';
+import { VolumetricCloudsPass } from '@vreen/engine/Renderer/PostProcess/VolumetricCloudsPass';
+
+const clouds = new VolumetricClouds();
+clouds.generateNoise(42);                  // CPU 3D Perlin+Worley, 64³ voxels
+clouds.setCloudType('cumulonimbus');       // preset: thick towering storm clouds
+clouds.setCoverage(0.6);
+clouds.setSunDirection(new Vector3(0.3, 0.8, 0.1));
+
+const pass = new VolumetricCloudsPass();
+pass.uploadNoise(gl, clouds.noiseData!, clouds.noiseResolution);
+
+// Each frame:
+clouds.update(dt);                         // advance wind offset
+const cloudTex = pass.apply(gl, colorTex, depthTex, camera, clouds);
+```
+
+**Time-of-day weather tween (dawn → storm → clear):**
+
+```ts
+const clouds = new VolumetricClouds();
+clouds.generateNoise(7);
+const pass = new VolumetricCloudsPass();
+pass.uploadNoise(gl, clouds.noiseData!, clouds.noiseResolution);
+
+function updateWeather(storminess: number) {
+  // storminess: 0 = clear, 1 = full storm
+  clouds.setCoverage(0.3 + 0.5 * storminess);
+  clouds.setDensity(0.4 + 0.6 * storminess);
+  clouds.setCloudType(storminess > 0.7 ? 'cumulonimbus' : 'cumulus');
+  clouds.setMultiScattering(0.5 + 0.3 * storminess);  // darker interiors in storms
+}
+```
+
+**Performance tuning — drop to half-resolution ray-march on mobile:**
+
+```ts
+const clouds = new VolumetricClouds();
+clouds.setSteps(32);          // halve primary steps (default 64)
+clouds.setShadowSteps(8);     // halve shadow steps (default 16)
+clouds.setMultiScattering(0.3); // reduce multi-scatter iterations
+const pass = new VolumetricCloudsPass({ densityCutoff: 0.02 }); // aggressive skip
+```
+
+#### Comparison with soup3D
+
+`soup3D` (as of v0.x) ships **no volumetric clouds** of any kind. Its sky
+is either a flat gradient, a static equirectangular skybox, or a
+procedural atmospheric shader — all of which are **2D backdrops** with no
+3D cloud volume, no parallax, no light interaction, no time-of-day
+evolution. Clouds in soup3D, if present at all, are baked into the skybox
+texture and cannot move, evolve, or respond to lighting changes.
+
+| Capability | soup3D | VREEN |
+|------------|--------|-------|
+| Volumetric clouds | **None** (static skybox only) | `VolumetricCloudsPass` (GPU ray-marched) |
+| 3D noise density field | **None** | Perlin FBM + Worley 3D texture (`sampler3D`) |
+| Ray-marched lighting | **None** | Primary + shadow ray march per pixel |
+| Beer-Lambert + Beer-Powder | **None** | Bouthors 2008 combined transmittance |
+| Dual-lobed HG phase | **None** | Forward + backward scatter (silver-lining) |
+| Multi-scattering | **None** | Wenzel 2019 energy redistribution |
+| Cone-sampled shadows | **None** | Golden-angle cone sampling for soft penumbrae |
+| Height density modulation | **None** | Bottom + top smoothstep attenuation |
+| Cloud-type presets | **None** | Cumulus / Stratus / Cirrus / Cumulonimbus |
+| Wind animation | **None** | Per-frame `windOffset` accumulation |
+| Time-of-day evolution | **None** | Runtime `setCoverage`/`setDensity`/`setCloudType` |
+| Opaque occlusion | **None** | Depth-tested early-out (geometry in front of clouds) |
+| HDR output | **None** | RGBA16F (clouds can be brighter than 1.0) |
+| Graceful degradation | **None** | Passthrough when noise not uploaded or disabled |
+
+**Where VREEN pulls ahead.** Volumetric clouds are the **single most
+visible** atmospheric feature in any outdoor scene — they define the
+sky, the time of day, the weather, and the mood. A static skybox is the
+#1 tell that a scene is "fake" or "low-budget". soup3D has no path to
+dynamic 3D clouds. VREEN's `VolumetricCloudsPass` delivers UE5-class
+volumetric clouds with the full physically-based lighting stack
+(Beer-Powder + dual HG + multi-scatter) in a single fullscreen pass,
+consuming a 3D Perlin+Worley noise texture generated on the CPU by the
+companion `VolumetricClouds` data layer.
+
+The two-layer split (data layer + render pass) mirrors the architecture
+of UE5's Volumetric Clouds plugin and o3de Atom's SkyAtmosphere + Clouds
+passes — the data layer owns the parameters and noise field, the render
+pass owns the GPU resources and shader. This separation allows the same
+`VolumetricClouds` instance to drive both the GPU pass (for rendering)
+and CPU-side queries (e.g. occlusion tests for aircraft, weather
+simulation hooks), without coupling the two.
+
+#### Design Notes
+
+**Why single-pass ray-march instead of multi-pass volumetric?** Clouds
+are sparse and benefit from early-ray-termination (`transmittance < 0.01`
+cuts off when the cloud is opaque). A multi-pass froxel approach (like
+`VolumetricFogPass`) would require a 3D froxel volume + 3D texture
+rendering, which is expensive in WebGL2 (no compute shaders). The
+fullscreen ray-march is the standard approach for clouds (UE5, Horizon
+Zero Dawn, Unity HDRP) and produces correct results in a single pass.
+
+**Why R16F noise texture (not RGBA8)?** The density field is a single
+scalar (0..1) but needs float precision for smooth gradients — R8 suffers
+banding in the smoothstep attenuations. R16F gives 16-bit float precision
+with half the bandwidth of RGBA16F. Future extensions (e.g. 3-channel
+Perlin + 3-channel Worley) can upgrade to RGB16F without API changes.
+
+**Why REPEAT wrap on noise?** Clouds tile infinitely across the sky dome
+— without REPEAT, the noise texture would create visible seams at the
+edges. The 3D Perlin+Worley noise in `VolumetricClouds.generateNoise()`
+is generated to be tileable (the `wrap` sampling in `sampleNoise()`
+ensures periodicity), so REPEAT wrapping produces seamless tiling.
+
+**Why `worldScale = 1024`?** This controls the world-space size of the
+noise pattern. At `1024`, one noise tile covers 1024 world units, so a
+typical cloud layer (4000 units thick × 8000 units wide) samples ~4×8
+noise tiles — enough variation for natural-looking clouds. Smaller values
+produce smaller, more fractured clouds; larger values produce sweeping
+stratus-like sheets.
+
+**Why separate `VolumetricClouds` data layer?** The data layer owns the
+noise generation (CPU-heavy, ~50ms for 64³), the cloud-type presets, the
+wind animation, and the uniform packaging. The render pass owns the GPU
+resources (FBO, shader, 3D texture). This split allows:
+1. **Testability** — `VolumetricClouds` has full unit tests for noise
+   generation, density sampling, and lighting math without any GL.
+2. **Reuse** — the same `VolumetricClouds` instance can drive multiple
+   consumers (the GPU pass for rendering, the CPU ray-marcher for
+   reference/validation, weather simulation for game logic).
+3. **Decoupling** — the data layer can be developed and tested in
+   Node.js without a WebGL2 context.
+
+**Why HDR RGBA16F output?** Clouds lit by direct sunlight can have
+luminance > 1.0 (specular highlights on cloud edges, sun-direction
+forward scatter). LDR RGBA8 would clip these highlights, producing flat
+clouds. RGBA16F preserves the full dynamic range for downstream
+tone-mapping. If the pipeline applies `HeightFogPass` after clouds, the
+fog will correctly blend with HDR cloud pixels.
+
+#### Test coverage (`VolumetricCloudsPass.test.ts`, 27 tests)
+
+- **Construction (2)**: defaults match option table; all options
+  accepted and stored.
+- **uploadNoise (3)**: uploads 3D noise without throw; re-allocates on
+  resolution change; in-place update on same resolution (1 texture, 2
+  texImage3D calls).
+- **apply() behavior (5)**: degrades to input when no noise uploaded;
+  degrades to input when `clouds.enabled = false`; no-throw + returns
+  texture when noise uploaded; first apply allocates exactly 1 color
+  texture + 1 FBO + 1 VAO + 1 buffer + 1 program; subsequent apply
+  with same size does not re-allocate; returns the same texture
+  instance across frames.
+- **dispose (2)**: safe + idempotent (3× calls no throw); after
+  dispose, apply() degrades to input (noise texture released).
+- **Shader source validation (15)**: `#version 300 es`; declares
+  `u_colorMap` + `u_depthMap` + `u_noiseMap` + `sampler3D`;
+  reconstructs world pos via `u_inverseViewProjection` + `worldPosH`;
+  computes cloud layer intersection (`u_cloudHeight`, `u_cloudThickness`,
+  `tEnter`, `tExit`); implements Beer-Lambert + Beer-Powder
+  (`exp(-opticalDepth)`, `exp(-2.0 * opticalDepth)`, `beerPowder`);
+  implements dual-lobed HG (`u_hgForwardG`, `u_hgBackwardG`,
+  `u_hgForwardWeight`, `dualLobedHG`, `Henyey-Greenstein`); implements
+  multi-scattering (`u_multiScatteringFactor`, `u_multiScatteringSteps`,
+  `msEnergy`); supports height density modulation (`u_heightDensityBottom`,
+  `u_heightDensityTop`, `bottomAtten`, `topAtten`); supports cone-shadow
+  (`u_coneRadius`, `cone`); implements early termination
+  (`transmittance < 0.01`); handles disabled state (`u_enabled == 0`);
+  handles sky pixels (`depth >= 1.0`); composites via `mix(sceneColor)`
+  + `cloudAlpha`; uses 3D noise sampler (`texture(u_noiseMap`).
+
+#### References
+
+- Schneider & Vosin, "The Real-time Volumetric Cloudscapes of Horizon
+  Zero Dawn" — SIGGRAPH 2015
+- Wenzel, "Real-time Global Illumination with Photon Mapping" — 2019
+  (multi-scattering approximation)
+- Bouthors et al., "Real-Time Realistic Atmospheric Scattering" — 2008
+  (Beer-Powder)
+- Henyey & Greenstein (1941), "Diffuse radiation in the galaxy" —
+  phase function
+- Epic Games, "Volumetric Clouds" — UE5 plugin documentation
+- o3de Atom, `SkyAtmosphere` + `Clouds` passes
+- Karis, "Real Shading in Unreal Engine 4" — SIGGRAPH 2013 (split-sum
+  IBL, used for ambient term)
+
+---
+
 ### VelocityPass
 
 Per-pixel motion vectors for TAA and motion blur. Outputs a velocity texture
@@ -2100,6 +2414,7 @@ pass.dispose(ctx);
 | SSRPass | 2 (output + blur) | 2 | 2 |
 | VolumetricFogPass | 1 | 1 | 1 |
 | HeightFogPass | 1 | 1 | 1 |
+| VolumetricCloudsPass | 1 | 2 (1 HDR output + 1 R16F 3D noise) | 1 |
 | VelocityPass | 1 | 1 | 1 |
 | TAAPass | 1 (history) | 1 (history) | 1 |
 | MotionBlurPass | 1 | 1 | 1 |
@@ -2145,3 +2460,7 @@ npx vitest run src/engine/Renderer/PostProcess/
 | SSR | Sousa et al., "CRYENGINE Manual" (2013) |
 | LUT | Adobe, "Cube LUT Specification 1.0" |
 | Volumetric Fog | Wronski, "GDC 2015: Volumetric Fog" |
+| Volumetric Clouds | Schneider & Vosin, "Horizon Zero Dawn Cloudscapes" — SIGGRAPH 2015 |
+| Beer-Powder | Bouthors et al., "Real-Time Realistic Atmospheric Scattering" — 2008 |
+| Dual-lobed HG | Henyey & Greenstein (1941); UE5 Volumetric Clouds plugin |
+| Multi-scattering | Wenzel, "Real-time GI with Photon Mapping" — 2019 |

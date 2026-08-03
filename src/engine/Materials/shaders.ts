@@ -3614,5 +3614,279 @@ void main() {
 }
 `;
 
+// ── Volumetric Clouds ─────────────────────────────────────────────
+// GPU ray-marched 体积云 fragment shader — 与 VolumetricClouds 数据层
+// (src/engine/Environment/VolumetricClouds.ts) 配套。
+//
+// 算法(对标 UE5 Volumetric Clouds / Horizon Zero Dawn "Nubis" 2015):
+//   1. 从像素世界方向重建相机射线(逆 viewProjection)
+//   2. 与云层 AABB [cloudHeight, cloudHeight+cloudThickness] 求交,
+//      得到 tEnter / tExit
+//   3. 沿射线等距采样 steps 次:
+//      a. 世界位置 → UVW(归一化 + 风偏移) → 采样 3D 噪声纹理
+//      b. 高度密度调制(底部浓密、顶部羽化)
+//      c. 覆盖度调制(coverage 越高密度越大)
+//      d. 若密度 <= 阈值跳过(空跳优化)
+//   4. 沿太阳方向 shadow march shadowSteps 次累积光学深度 τ:
+//      a. Beer-Lambert:           beer    = exp(-τ)
+//      b. Beer-Powder (Bouthors): powder  = 1 - exp(-2τ)
+//         combined = beer * (1 - 0.5*powder) + 0.5 * powder * beer
+//      c. 多散射近似 (Wenzel 2019):
+//         L_ms = (1 - exp(-τ·msFactor)) * Σ exp(-τ·msFactor/msSteps)
+//   5. 双叶 Henyey-Greenstein 相位函数:
+//      phase = lerp(HG(g1, cosθ), HG(g2, cosθ), 1 - forwardWeight)
+//      cosθ = dot(viewDir, sunDir)
+//   6. 前向合成:scatter = (1 - stepTransmittance) * transmittance
+//      color += scatter * (ambient * ambientFactor + sunColor * (beerPowder + msEnergy) * phase)
+//      transmittance *= stepTransmittance
+//      早期终止:transmittance < 0.01
+//   7. 合成到 sceneColor:
+//      finalColor = mix(sceneColor, cloudColor, 1 - transmittance)
+//
+// 输入纹理:
+//   - u_colorMap  : 当前帧场景颜色 (RGBA8/RGBA16F)
+//   - u_depthMap  : NDC 深度 (0..1,用于早期云前不透明物剔除)
+//   - u_noiseMap  : 3D 噪声密度场 (R8/R16F, sampler3D)
+//
+// 参考:
+//   - Schneider & Vosin "Volumetric Clouds" (Horizon Zero Dawn, SIGGRAPH 2015)
+//   - Wenzel 2019 "Real-time Global Illumination with Photon Mapping"
+//   - Bouthors 2008 "Real-Time Realistic Atmospheric Scattering"
+//   - UE5 Volumetric Clouds plugin
+//   - o3de Atom SkyAtmosphere + Clouds pass
+export const VOLUMETRIC_CLOUDS_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;          // 场景颜色
+uniform sampler2D u_depthMap;          // NDC 深度
+uniform sampler3D u_noiseMap;          // 3D 噪声密度场 (sampler3D)
+
+uniform mat4  u_inverseViewProjection; // NDC → 世界
+uniform vec3  u_cameraPos;             // 相机世界位置
+uniform vec2  u_screenSize;
+
+uniform vec3  u_cloudColor;            // 云基础颜色
+uniform float u_cloudCoverage;         // 覆盖度 [0,1]
+uniform float u_cloudDensity;          // 密度倍率
+uniform float u_cloudHeight;           // 云层底部高度
+uniform float u_cloudThickness;        // 云层厚度
+uniform vec3  u_windOffset;            // 风偏移(世界空间累积)
+uniform float u_worldScale;            // 世界→UVW 缩放(默认 1024)
+
+uniform vec3  u_ambientColor;          // 环境光(云中阴影色)
+uniform vec3  u_sunColor;              // 太阳颜色
+uniform vec3  u_sunDirection;          // 太阳方向(归一化,指向太阳)
+
+uniform int   u_steps;                 // 主光线步进数(默认 64)
+uniform int   u_shadowSteps;           // 阴影步进数(默认 16)
+uniform float u_shadowStepLen;         // 阴影步长(世界单位,默认 8)
+
+uniform float u_multiScatteringFactor; // 多散射强度(0..1)
+uniform int   u_multiScatteringSteps;  // 多散射近似步数
+uniform float u_hgForwardG;            // 前向 HG g (0..0.99)
+uniform float u_hgBackwardG;           // 后向 HG g (-0.99..0)
+uniform float u_hgForwardWeight;       // 前向权重(0..1)
+uniform float u_heightDensityBottom;   // 底部密度衰减(0..1)
+uniform float u_heightDensityTop;      // 顶部密度衰减(0..1)
+uniform float u_coneRadius;            // 锥形阴影半径(0=点采样)
+uniform float u_densityCutoff;         // 密度跳过阈值(默认 0.01)
+
+uniform int   u_enabled;               // 0=禁用,1=启用
+
+#define PI 3.14159265359
+
+float clamp01(float x) { return clamp(x, 0.0, 1.0); }
+
+float smoothstep01(float e0, float e1, float x) {
+  float t = clamp01((x - e0) / (e1 - e0));
+  return t * t * (3.0 - 2.0 * t);
+}
+
+// Henyey-Greenstein 相位函数
+float hg(float g, float cosTheta) {
+  float g2 = g * g;
+  float denom = 1.0 + g2 - 2.0 * g * cosTheta;
+  return (1.0 - g2) / (4.0 * PI * pow(max(denom, 1e-6), 1.5));
+}
+
+// 双叶 HG:lerp(HG(g1, cosθ), HG(g2, cosθ), 1 - forwardWeight)
+float dualLobedHG(float cosTheta) {
+  float forward = hg(u_hgForwardG, cosTheta);
+  float backward = hg(u_hgBackwardG, cosTheta);
+  return mix(forward, backward, 1.0 - u_hgForwardWeight);
+}
+
+// 采样云密度(世界坐标 → UVW + 风偏移 + 高度密度调制)
+float sampleCloudDensity(vec3 worldPos) {
+  float yBottom = u_cloudHeight;
+  float yTop = u_cloudHeight + u_cloudThickness;
+  if (worldPos.y < yBottom || worldPos.y > yTop) return 0.0;
+
+  // 归一化 UVW (X/Z 环绕,Y 在 [0,1])
+  vec3 uvw;
+  uvw.x = (worldPos.x + u_windOffset.x) / u_worldScale;
+  uvw.y = (worldPos.y - yBottom) / u_cloudThickness;
+  uvw.z = (worldPos.z + u_windOffset.z) / u_worldScale;
+
+  float noise = texture(u_noiseMap, uvw).r;
+
+  // 覆盖度调制
+  float coverageFactor = 1.0 - (1.0 - u_cloudCoverage) * (1.0 - u_cloudCoverage);
+
+  // 高度密度调制
+  float heightT = clamp01((worldPos.y - yBottom) / u_cloudThickness);
+  float bottomAtten = 1.0 - u_heightDensityBottom * (1.0 - smoothstep01(0.0, 0.2, heightT));
+  float topAtten    = 1.0 - u_heightDensityTop    * smoothstep01(0.6, 1.0, heightT);
+
+  return clamp01(noise * coverageFactor * bottomAtten * topAtten);
+}
+
+// 沿太阳方向累积光学深度 (可选锥形扩散)
+float marchShadowOpticalDepth(vec3 pos) {
+  float opticalDepth = 0.0;
+  for (int i = 0; i < 32; i++) {
+    if (i >= u_shadowSteps) break;
+    float t = float(i + 1) * u_shadowStepLen;
+    vec3 sp = pos + u_sunDirection * t;
+    if (u_coneRadius > 0.0) {
+      // 锥形扩散(黄金角分布,时序去条带)
+      float angle = float(i) * 2.39996323;
+      float radius = u_coneRadius * t * 0.1;
+      sp += vec3(cos(angle) * radius, sin(angle) * radius, 0.0);
+    }
+    opticalDepth += sampleCloudDensity(sp) * u_cloudDensity * u_shadowStepLen * 0.01;
+  }
+  return opticalDepth;
+}
+
+void main() {
+  vec3 sceneColor = texture(u_colorMap, v_uv).rgb;
+
+  if (u_enabled == 0) {
+    outColor = vec4(sceneColor, 1.0);
+    return;
+  }
+
+  // 从深度重建世界位置(用于早期云前不透明物 → 不画云)
+  float depth = texture(u_depthMap, v_uv).r;
+  vec4 worldPosH = u_inverseViewProjection * vec4(v_uv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
+  vec3 hitWorldPos = worldPosH.xyz / worldPosH.w;
+  float sceneDist = length(hitWorldPos - u_cameraPos);
+
+  // 构建相机射线方向
+  // 远裁面用 depth=1.0 → 视为天空方向
+  vec3 rayDir;
+  if (depth >= 1.0) {
+    // 天空:用远裁面中心方向构造射线
+    vec4 skyH = u_inverseViewProjection * vec4(v_uv * 2.0 - 1.0, 1.0, 1.0);
+    rayDir = normalize(skyH.xyz / skyH.w - u_cameraPos);
+  } else {
+    rayDir = normalize(hitWorldPos - u_cameraPos);
+  }
+
+  // 与云层 [yBottom, yTop] 求交
+  float yBottom = u_cloudHeight;
+  float yTop = u_cloudHeight + u_cloudThickness;
+  float tEnter, tExit;
+  if (abs(rayDir.y) < 1e-6) {
+    // 水平射线:若已在云层中则贯穿,否则无云
+    if (u_cameraPos.y < yBottom || u_cameraPos.y > yTop) {
+      outColor = vec4(sceneColor, 1.0);
+      return;
+    }
+    tEnter = 0.0;
+    tExit = 10000.0;
+  } else {
+    float tToBottom = (yBottom - u_cameraPos.y) / rayDir.y;
+    float tToTop = (yTop - u_cameraPos.y) / rayDir.y;
+    tEnter = min(tToBottom, tToTop);
+    tExit  = max(tToBottom, tToTop);
+    if (tExit <= 0.0) {
+      outColor = vec4(sceneColor, 1.0);
+      return;
+    }
+    tEnter = max(tEnter, 0.0);
+    if (tExit <= tEnter) {
+      outColor = vec4(sceneColor, 1.0);
+      return;
+    }
+  }
+
+  // 不透明物在云层前 → 不画云
+  if (sceneDist < tEnter && depth < 1.0) {
+    outColor = vec4(sceneColor, 1.0);
+    return;
+  }
+  // 不透明物在云层中 → 截断 tExit
+  if (depth < 1.0 && sceneDist < tExit) {
+    tExit = sceneDist;
+  }
+
+  // 光线步进
+  int n = max(1, u_steps);
+  float stepLen = (tExit - tEnter) / float(n);
+  vec3 viewDir = -rayDir;
+  float cosTheta = clamp01(dot(viewDir, u_sunDirection));
+  float phase = dualLobedHG(cosTheta);
+
+  float transmittance = 1.0;
+  vec3 accumColor = vec3(0.0);
+
+  for (int i = 0; i < 512; i++) {
+    if (i >= n) break;
+    float t = tEnter + stepLen * (float(i) + 0.5);
+    vec3 p = u_cameraPos + rayDir * t;
+
+    float density = sampleCloudDensity(p);
+    if (density <= u_densityCutoff) continue;
+
+    float extinction = density * u_cloudDensity * stepLen * 0.01;
+    float stepTransmittance = exp(-extinction);
+
+    // 阴影 march
+    float opticalDepth = marchShadowOpticalDepth(p);
+    float beer = exp(-opticalDepth);
+    float powder = 1.0 - exp(-2.0 * opticalDepth);
+    float beerPowder = beer * (1.0 - 0.5 * powder) + 0.5 * powder * beer;
+
+    // 多散射近似 (Wenzel 2019)
+    float msEnergy = 0.0;
+    if (u_multiScatteringFactor > 0.0) {
+      float msTau = opticalDepth * u_multiScatteringFactor;
+      int msN = max(1, u_multiScatteringSteps);
+      float term = 1.0;
+      float sum = 0.0;
+      for (int j = 0; j < 16; j++) {
+        if (j >= msN) break;
+        sum += term;
+        term *= exp(-msTau / float(msN));
+      }
+      msEnergy = (1.0 - exp(-msTau)) * sum / float(msN);
+    }
+
+    // 合成光照
+    float ambientFactor = clamp01(1.0 - density * 0.5);
+    vec3 ambient = u_ambientColor * ambientFactor;
+    vec3 sunLight = u_sunColor * (beerPowder + msEnergy) * phase;
+    vec3 lighting = u_cloudColor * (ambient + sunLight);
+
+    float scatter = (1.0 - stepTransmittance) * transmittance;
+    accumColor += scatter * lighting;
+    transmittance *= stepTransmittance;
+
+    if (transmittance < 0.01) break;
+  }
+
+  // 与场景颜色合成 (云覆盖在场景之上)
+  float cloudAlpha = clamp01(1.0 - transmittance);
+  vec3 finalColor = mix(sceneColor, accumColor + sceneColor * transmittance, cloudAlpha);
+
+  outColor = vec4(finalColor, 1.0);
+}
+`;
+
 
 

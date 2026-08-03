@@ -874,6 +874,11 @@
         "desc": "Niebla volumétrica ray-march con rayos de luz y dispersión.",
         "advantage": "soup3D sin niebla vol"
       },
+      "volcloud": {
+        "title": "Nubes Volumétricas",
+        "desc": "Nubes volumétricas GPU ray-march con ruido 3D Perlin+Worley, transmitancia Beer-Powder, fase HG de doble lóbulo (plateado) y multi-dispersión.",
+        "advantage": "soup3D sin nubes volumétricas"
+      },
       "heightFog": {
         "title": "Niebla de altura",
         "desc": "Niebla de altura exponencial estilo UE5 con densidad Beer-Lambert de forma cerrada e inscattering solar.",
