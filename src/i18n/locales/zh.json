@@ -864,6 +864,11 @@
         "desc": "屏幕空间反射,粗糙度调制模糊。",
         "advantage": "soup3D 无 SSR"
       },
+      "sssr": {
+        "title": "随机 SSR",
+        "desc": "GGX 重要性采样屏幕空间反射,时序累积实现物理正确的粗糙反射。",
+        "advantage": "soup3D 无 SSR"
+      },
       "volfog": {
         "title": "体积雾",
         "desc": "光线步进体积雾,丁达尔光 + 散射。",
@@ -877,6 +882,11 @@
       "ssgi": {
         "title": "SSGI",
         "desc": "屏幕空间全局光照,8 射线余弦半球采样。",
+        "advantage": "soup3D 无 GI"
+      },
+      "ddgi": {
+        "title": "DDGI",
+        "desc": "动态漫反射全局光照,3D 辐照度探针网格 + SH2 方向存储 + 实时重新照明。",
         "advantage": "soup3D 无 GI"
       },
       "pcss": {

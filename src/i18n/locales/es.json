@@ -864,6 +864,11 @@
         "desc": "Reflexiones en espacio de pantalla con desenfoque modulado por rugosidad.",
         "advantage": "soup3D sin SSR"
       },
+      "sssr": {
+        "title": "SSR Estocástico",
+        "desc": "Reflexiones en espacio de pantalla con muestreo de importancia GGX y acumulación temporal para reflexiones rugosas físicamente correctas.",
+        "advantage": "soup3D sin SSR"
+      },
       "volfog": {
         "title": "Niebla Volumétrica",
         "desc": "Niebla volumétrica ray-march con rayos de luz y dispersión.",
@@ -877,6 +882,11 @@
       "ssgi": {
         "title": "SSGI",
         "desc": "Iluminación global en espacio de pantalla con muestreo hemisférico coseno de 8 rayos.",
+        "advantage": "soup3D sin GI"
+      },
+      "ddgi": {
+        "title": "DDGI",
+        "desc": "Iluminación global difusa dinámica con cuadrícula de sondas de irradiancia 3D, almacenamiento direccional SH2 y reiluminación en tiempo real.",
         "advantage": "soup3D sin GI"
       },
       "pcss": {

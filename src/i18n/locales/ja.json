@@ -864,6 +864,11 @@
         "desc": "スクリーン空間反射、粗さ変調ブラー。",
         "advantage": "soup3D に SSR なし"
       },
+      "sssr": {
+        "title": "確率的 SSR",
+        "desc": "GGX 重要度サンプリングによるスクリーン空間反射、時間累積で物理的に正確なラフ反射。",
+        "advantage": "soup3D に SSR なし"
+      },
       "volfog": {
         "title": "ボリュームフォグ",
         "desc": "レイマーチボリュームフォグ、ゴッドレイ + 散乱。",
@@ -877,6 +882,11 @@
       "ssgi": {
         "title": "SSGI",
         "desc": "スクリーン空間グローバルイルミネーション、8 レイ余弦半球サンプリング。",
+        "advantage": "soup3D に GI なし"
+      },
+      "ddgi": {
+        "title": "DDGI",
+        "desc": "動的拡散大域照明、3D 照射度プローブグリッド + SH2 方向ストレージ + リアルタイム再照明。",
         "advantage": "soup3D に GI なし"
       },
       "pcss": {

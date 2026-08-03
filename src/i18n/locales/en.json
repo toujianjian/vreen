@@ -864,6 +864,11 @@
         "desc": "Screen-space reflections with roughness-modulated blur.",
         "advantage": "soup3D has no SSR"
       },
+      "sssr": {
+        "title": "Stochastic SSR",
+        "desc": "GGX importance-sampled screen-space reflections with temporal accumulation for physically correct rough reflections.",
+        "advantage": "soup3D has no SSR"
+      },
       "volfog": {
         "title": "Volumetric Fog",
         "desc": "Ray-marched volumetric fog with god rays and scattering.",
@@ -877,6 +882,11 @@
       "ssgi": {
         "title": "SSGI",
         "desc": "Screen-space global illumination with 8-ray cosine hemisphere sampling.",
+        "advantage": "soup3D has no GI"
+      },
+      "ddgi": {
+        "title": "DDGI",
+        "desc": "Dynamic diffuse global illumination with 3D irradiance probe grid, SH2 directional storage, and real-time relighting.",
         "advantage": "soup3D has no GI"
       },
       "pcss": {

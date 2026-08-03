@@ -864,6 +864,11 @@
         "desc": "스크린 공간 반사, 거칠기 변조 블러.",
         "advantage": "soup3D에 SSR 없음"
       },
+      "sssr": {
+        "title": "확률적 SSR",
+        "desc": "GGX 중요도 샘플링 화면 공간 반사, 시간 누적으로 물리적으로 정확한 거친 반사.",
+        "advantage": "soup3D에 SSR 없음"
+      },
       "volfog": {
         "title": "볼륨 포그",
         "desc": "레이마치 볼륨 포그, 갓레이 + 산란.",
@@ -877,6 +882,11 @@
       "ssgi": {
         "title": "SSGI",
         "desc": "스크린 공간 글로벌 일루미네이션, 8레이 코사인 반구 샘플링.",
+        "advantage": "soup3D에 GI 없음"
+      },
+      "ddgi": {
+        "title": "DDGI",
+        "desc": "동적 확산 전역 조명, 3D 조사도 프로브 그리드 + SH2 방향 저장 + 실시간 재조명.",
         "advantage": "soup3D에 GI 없음"
       },
       "pcss": {
