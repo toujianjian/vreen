@@ -65,3 +65,4 @@ export {
 export { SSGIPass, type SSGIPassOptions } from './SSGIPass';
 export { ScreenSpaceShadowPass, type ScreenSpaceShadowPassOptions } from './ScreenSpaceShadowPass';
 export { TonemappingPass, type TonemappingPassOptions, type TonemappingMode } from './TonemappingPass';
+export { HeightFogPass, type HeightFogOptions } from './HeightFogPass';

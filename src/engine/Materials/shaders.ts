@@ -3175,3 +3175,71 @@ void main() {
 }
 `;
 
+// ── 指数高度雾 ─────────────────────────────────────────────────────
+// 从深度纹理重建世界位置,根据世界高度 Y 计算指数衰减雾密度。
+// 参考: UE5 Exponential Height Fog。
+
+export const HEIGHT_FOG_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;
+uniform sampler2D u_depthMap;
+uniform mat4 u_inverseViewProjection;
+uniform vec3 u_cameraPos;
+
+uniform float u_fogDensity;
+uniform float u_fogHeightFalloff;
+uniform float u_fogHeight;
+uniform vec3 u_fogColor;
+uniform float u_maxDistance;
+
+uniform int u_inscatteringEnabled;
+uniform vec3 u_sunDirection;
+uniform vec3 u_sunColor;
+uniform float u_inscatteringStrength;
+
+void main() {
+  vec3 sceneColor = texture(u_colorMap, v_uv).rgb;
+
+  // 从深度纹理重建世界位置
+  float depth = texture(u_depthMap, v_uv).r;
+  // 深度 1.0 = 远裁面(天空)→ 完全雾化
+  if (depth >= 1.0) {
+    outColor = vec4(u_fogColor, 1.0);
+    return;
+  }
+
+  // NDC → 世界空间
+  vec4 worldPos = u_inverseViewProjection * vec4(v_uv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
+  worldPos.xyz /= worldPos.w;
+
+  // 像素到相机的距离
+  float viewDist = length(worldPos.xyz - u_cameraPos);
+  viewDist = min(viewDist, u_maxDistance);
+
+  // 指数高度雾密度:随高度上升指数衰减
+  float heightFactor = exp(-u_fogHeightFalloff * (worldPos.y - u_fogHeight));
+  float density = u_fogDensity * heightFactor;
+
+  // 雾因子
+  float fogFactor = 1.0 - exp(-density * viewDist);
+  fogFactor = clamp(fogFactor, 0.0, 1.0);
+
+  vec3 finalFogColor = u_fogColor;
+
+  // 入射散射:太阳方向与视线方向同向时雾色偏暖
+  if (u_inscatteringEnabled > 0) {
+    vec3 viewDir = normalize(worldPos.xyz - u_cameraPos);
+    float sunDot = dot(viewDir, -u_sunDirection);
+    // 指数散射:太阳方向附近增强
+    float inscatter = pow(max(sunDot, 0.0), 8.0) * u_inscatteringStrength;
+    finalFogColor = mix(u_fogColor, u_sunColor, inscatter * 0.5);
+  }
+
+  outColor = vec4(mix(sceneColor, finalFogColor, fogFactor), 1.0);
+}
+`;
+
