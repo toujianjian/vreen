@@ -3243,3 +3243,60 @@ void main() {
 }
 `;
 
+// CAS — Contrast Adaptive Sharpening (AMD FidelityFX, fragment-shader port).
+// 4-neighbor Laplacian edge enhancement with contrast-adaptive weight +
+// min/max clamp to prevent haloing. Runs after TAA to restore detail.
+// 参考: AMD FidelityFX-CAS, o3de Atom SharpenPass.
+export const CAS_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;
+uniform vec2 u_screenSize;
+uniform float u_sharpness; // 0..1, 0 = passthrough
+
+void main() {
+  vec3 b = texture(u_colorMap, v_uv).rgb;
+
+  if (u_sharpness <= 0.0) {
+    outColor = vec4(b, 1.0);
+    return;
+  }
+
+  vec2 t = 1.0 / u_screenSize;
+
+  // 4-neighbor cross
+  vec3 n = texture(u_colorMap, v_uv + vec2(0.0, -t.y)).rgb;
+  vec3 s = texture(u_colorMap, v_uv + vec2(0.0,  t.y)).rgb;
+  vec3 w = texture(u_colorMap, v_uv + vec2(-t.x, 0.0)).rgb;
+  vec3 e = texture(u_colorMap, v_uv + vec2( t.x, 0.0)).rgb;
+
+  // Laplacian (edge detector): sum of neighbors - 4 * center
+  vec3 lap = n + s + w + e - 4.0 * b;
+
+  // Local contrast range (5-tap min/max including center)
+  vec3 mn = min(min(n, s), min(w, e));
+  mn = min(mn, b);
+  vec3 mx = max(max(n, s), max(w, e));
+  mx = max(mx, b);
+  vec3 rng = mx - mn;
+
+  // Adaptive weight: strong sharpening where contrast is LOW (detail areas),
+  // weak where contrast is HIGH (edges — prevents haloing).
+  // peak ∈ [5, 8] for sharpness ∈ [1, 0].
+  float peak = 8.0 - 3.0 * u_sharpness;
+  vec3 wgt = peak / (rng * 4.0 + 1.0);
+
+  // Sharpened = center + weight * laplacian * sharpness
+  vec3 sharp = b + lap * wgt * u_sharpness * 0.25;
+
+  // Clamp to neighborhood range — the key CAS anti-overshoot step.
+  sharp = clamp(sharp, mn, mx);
+
+  outColor = vec4(sharp, 1.0);
+}
+`;
+
+

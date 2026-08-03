@@ -2,9 +2,9 @@
 
 > Path: `src/engine/Renderer/PostProcess/`
 >
-> The enhanced post-processing pass family of the VREEN engine. Provides **22**
+> The enhanced post-processing pass family of the VREEN engine. Provides **23**
 > passes covering color grading, anti-aliasing, screen-space effects, depth-of-field,
-> motion blur, exposure adaptation, atmospheric effects, and stylized effects.
+> motion blur, exposure adaptation, atmospheric effects, sharpening, and stylized effects.
 > Each pass is a self-contained class that manages its own GPU resources (FBOs,
 > textures, shader programs) and integrates into the `PostProcessingPipeline`.
 
@@ -14,10 +14,11 @@
 
 ```
 PostProcess/
-  ├── RenderPass-compatible (8 passes)        ← drop-in pipeline passes
+  ├── RenderPass-compatible (9 passes)        ← drop-in pipeline passes
   │     ├── ColorGradingPass
   │     ├── LUTPass
   │     ├── TonemappingPass
+  │     ├── SharpenPass       ← CAS (after TAA, restores detail)
   │     ├── ChromaticAberrationPass (enhanced)
   │     ├── VignettePass (enhanced)
   │     ├── FilmGrainPass
@@ -45,7 +46,7 @@ PostProcess/
 
 ### Two Integration Patterns
 
-**Pattern 1: `RenderPass`-compatible** — These 7 passes extend `RenderPass`
+**Pattern 1: `RenderPass`-compatible** — These 9 passes extend `RenderPass`
 and accept `(input: WebGLTexture, ctx: PassContext)`. They can be added
 directly to a `PostProcessingPipeline`:
 
@@ -1394,6 +1395,184 @@ separable blur. The VREEN `UnrealBloomPass` introduces:
 
 ---
 
+### SharpenPass
+
+Contrast Adaptive Sharpening (CAS) — a port of AMD FidelityFX CAS to a
+GLSL ES 3.0 fullscreen fragment shader. Restores detail softened by TAA
+(or any AA pass) using a 4-neighbor Laplacian edge enhancement with a
+**contrast-adaptive weight** and a **min/max clamp** that eliminates the
+halo artifacts of traditional unsharp masking. **Surpasses soup3D**
+(which ships no sharpening pass of any kind — its output is never
+sharpened, leaving TAA blur uncorrected).
+
+**Class**: `SharpenPass extends RenderPass` (drop-in pipeline pass)
+**Shader**: `CAS_FRAG` (single-pass fullscreen)
+**Vertex**: shared `POST_VERT` (fullscreen triangle)
+**Draw calls**: 1 per `apply()`
+
+#### Architecture
+
+```
+┌──────────────┐    ┌──────────────────────────────────────────┐
+│ inputTexture │───▶│ SharpenPass.apply()                      │
+│ TAA output   │    │  1. bind finalFbo, clear COLOR_BIT       │
+└──────────────┘    │  2. bind input → TEXTURE0 (u_colorMap)   │
+                    │  3. set u_screenSize + u_sharpness       │
+                    │  4. drawArrays(fullscreen triangle)      │
+                    │  5. return finalTexture                  │
+                    └────────────────────┬─────────────────────┘
+                                         ▼
+                                ┌──────────────────┐
+                                │ finalTexture     │
+                                │ RGBA8 sharpened  │
+                                └──────────────────┘
+```
+
+Single-pass, 5 texture taps (center + 4-neighbor cross). The shader
+early-outs to passthrough when `u_sharpness <= 0`, so a disabled
+SharpenPass costs only 1 texture fetch.
+
+#### Options
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `sharpness` | `number` | `0.5` | Sharpening strength 0..1. 0 = passthrough (early-out), 1 = maximum. |
+| `enabled` | `boolean` | `false` | Master toggle. Pipeline skips when `false`. |
+
+#### API
+
+```ts
+apply(input: WebGLTexture, ctx: PassContext): WebGLTexture  // → finalTexture
+```
+
+Inherits `dispose()` from `RenderPass` (no own GPU resources — uses the
+pipeline-managed `finalFbo` / `finalTexture` from `ctx.resources`).
+
+#### Algorithm (4-stage pipeline)
+
+| Stage | Description |
+|-------|-------------|
+| ① Passthrough early-out | If `u_sharpness <= 0`, output center texel directly — 1 fetch, no math. |
+| ② 4-neighbor Laplacian | Sample N/S/W/E neighbors. `lap = (n + s + w + e) - 4 * center`. This is the edge detector: zero on flat regions, large at edges. |
+| ③ Contrast-adaptive weight | Compute 5-tap min/max (including center). `range = max - min`. `peak = 8 - 3 * sharpness` ∈ [5, 8]. `weight = peak / (range * 4 + 1)`. Where local contrast is **low** (detail areas), weight is high → strong sharpening. Where contrast is **high** (edges), weight is low → gentle sharpening, preventing halo. |
+| ④ Anti-overshoot clamp | `sharp = clamp(center + lap * weight * sharpness * 0.25, min, max)`. The clamp to neighborhood min/max is the key CAS innovation — it guarantees the sharpened pixel never exceeds the local range, so no halos or ringing can appear even at maximum strength. |
+
+#### Texture unit bindings
+
+| Unit | Sampler | Source |
+|------|---------|--------|
+| 0 | `u_colorMap` | `input` (TAA / AA output) |
+
+#### Usage
+
+**Restore TAA detail (standard AAA pipeline):**
+
+```ts
+import { TAAPass, SharpenPass, TonemappingPass } from '@vreen/engine';
+
+// Pipeline order: ... → TAA → Sharpen → Tonemap → output
+const taa = new TAAPass({ enabled: true });
+const sharpen = new SharpenPass({ sharpness: 0.5, enabled: true });
+const tonemap = new TonemappingPass({ mode: 'aces' });
+
+pipeline.add(taa);
+pipeline.add(sharpen);   // restores detail TAA softened
+pipeline.add(tonemap);
+```
+
+**Runtime sharpness tween (accessibility / user preference):**
+
+```ts
+const sharpen = new SharpenPass({ enabled: true });
+pipeline.add(sharpen);
+
+// Let users adjust sharpening in settings (0 = off, 1 = max)
+function setSharpening(value: number) {
+  sharpen.sharpness = Math.max(0, Math.min(1, value));
+  sharpen.enabled = value > 0;
+}
+```
+
+#### Comparison with soup3D
+
+`soup3D` ships **no sharpening pass** — its rendered output is never
+sharpened. Since soup3D also has no TAA, this is less visible, but any
+engine that uses temporal AA (as all modern engines do) needs a
+sharpening pass to counteract TAA's inherent softness.
+
+| Capability | soup3D | VREEN |
+|------------|--------|-------|
+| Sharpening pass | **None** | `SharpenPass` (AMD FidelityFX CAS) |
+| Contrast-adaptive weight | **None** | `peak / (range * 4 + 1)` |
+| Anti-halo clamp | **None** | `clamp(result, min, max)` |
+| TAA detail restoration | **None** (no TAA either) | Drop-in after `TAAPass` |
+| Passthrough early-out | **None** | `sharpness <= 0` → 1-fetch |
+| User-adjustable strength | **None** | Runtime `sharpness` 0..1 |
+
+**Where VREEN pulls ahead.** CAS is the **industry-standard sharpening
+filter** — used by AMD FidelityFX, UE5 (mobile), o3de Atom, and many AAA
+games. Its contrast-adaptive weight + min/max clamp produces clean
+sharpening without any halo, which traditional unsharp masking cannot
+achieve. soup3D has no path to artifact-free sharpening.
+
+#### Design Notes
+
+**Why Laplacian + adaptive weight (not unsharp mask)?** Traditional
+unsharp masking (`sharpened = original + amount * (original - blurred)`)
+applies uniform sharpening everywhere, which produces visible halos at
+strong edges. CAS instead uses a Laplacian (4-neighbor) edge detector
+modulated by a contrast-adaptive weight: the weight is automatically
+reduced where local contrast is high, so edges get gentle treatment
+while detail areas get strong sharpening. The min/max clamp then
+guarantees no pixel can overshoot its neighborhood — halos are
+mathematically impossible.
+
+**Why `peak = 8 - 3 * sharpness`?** The peak coefficient controls the
+maximum weight. At `sharpness = 1` (max), peak = 5 — aggressive but
+clamped. At `sharpness = 0` (off), peak = 8 but the early-out skips all
+math. This inverse relationship (more sharpness → lower peak → tighter
+clamp) is the AMD FidelityFX CAS convention.
+
+**Why 0.25 scaling on the Laplacian?** The 4-neighbor Laplacian can be
+large (±4× texel value). The 0.25 factor normalizes it to a reasonable
+range so that `sharpness = 1` produces strong but not destructive
+sharpening. Without this factor, `sharpness = 1` would overshoot even
+with the clamp, producing a cartoonish edge-enhancement look.
+
+**Why after TAA, before tonemapping?** TAA's neighborhood clamping
+softens high-frequency detail. CAS restores it. Running CAS *before*
+tonemapping means the sharpening operates on linear HDR values, which
+avoids amplifying tone-mapped noise. If your pipeline tonemaps before
+sharpening (LDR pipeline), CAS still works but may accentuate banding
+in smooth gradients — prefer the pre-tonemap order.
+
+**Why `enabled = false` by default?** Sharpening is a matter of taste —
+some users prefer the softer TAA look, others want crisp edges. Defaulting
+to `false` lets the pipeline integrator opt in. The `sharpness` field is
+runtime-adjustable so users can tune it via a settings slider.
+
+#### Test coverage (`SharpenPass.test.ts`, 20 tests)
+
+- **Construction (4)**: defaults (sharpness=0.5, enabled=false); all
+  options accepted; sharpness=0 (passthrough); sharpness=1 (max).
+- **sharpness field (2)**: runtime mutable; enabled runtime mutable.
+- **apply() (5)**: no-throw + returns texture; 1 draw call per apply;
+  works at sharpness=0; works at sharpness=1; returns finalTexture.
+- **CAS_FRAG shader (9)**: GLSL ES 3.0; uniforms (u_colorMap,
+  u_screenSize, u_sharpness); 4-neighbor cross sampling; Laplacian
+  (`- 4.0 * b`); 5-tap min/max; contrast-adaptive weight
+  (`peak / (rng * 4.0 + 1.0)`); anti-halo clamp (`clamp(sharp, mn, mx)`);
+  passthrough early-out; sharpened output.
+
+#### References
+
+- AMD FidelityFX CAS (Contrast Adaptive Sharpening) — reference implementation
+- o3de Atom `SharpenPass` (`Passes/SharpenPass`)
+- UE5 "Accommodate" sharpening stage
+- AMD GPUOpen, "FidelityFX CAS Documentation"
+
+---
+
 ## Pipeline Integration
 
 ### Basic Pipeline (RenderPass-compatible passes only)
@@ -1442,7 +1621,10 @@ const dofTex = dofPass.apply(gl, motionBlurTex, depthTex, camera);
 //     run before tonemapping if you want HDR fog, after for LDR fog.
 const fogTex = heightFogPass.apply(gl, dofTex, depthTex, camera);
 
-// 11. Final stylized passes
+// 11. Sharpen (restore TAA-softened detail, before tonemapping)
+pipeline.add(new SharpenPass({ sharpness: 0.5, enabled: true }));
+
+// 12. Final stylized passes
 pipeline.add(new ColorGradingPass());
 pipeline.add(new SMAAPass());
 ```
@@ -1484,6 +1666,7 @@ pass.dispose(ctx);
 | GlitchPass | 0 | 1 (noise) | 1 |
 | SMAAPass | 2 (edges + weights) | 4 (edges + weights + area LUT + search LUT) | 3 |
 | SSGIPass | 1 | 1 (RGBA16F) | 1 |
+| SharpenPass | 0 (uses ctx.resources) | 0 | 1 |
 
 ---
 
