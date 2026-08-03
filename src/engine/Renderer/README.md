@@ -36,6 +36,7 @@ Renderer (interface)        ← pluggable backend contract
           ├── SubsurfaceScattering ← Pre-Integrated Skin (Penner 2011) + curvature + transmission
           ├── DeferredRenderer ← alternative deferred backend
           ├── ReflectionProbe / ReflectionProbeManager ← IBL probes
+          ├── DDGIVolume  ← dynamic diffuse GI (irradiance probe grid)
           └── PathTracer    ← CPU reference path tracer
 ```
 
@@ -1141,6 +1142,221 @@ matches o3de Atom's per-probe quality settings.
 - Epic Games, "Reflection Environment" — UE5 probe volume workflow
 - McGuire & Mara, "Efficient GPU Screen-Space Ray Tracing" (2014) —
   complementary SSR for screen-space reflections (VREEN `SSRPass`)
+
+---
+
+### `DDGIVolume` (`DDGIVolume.ts`)
+
+Dynamic Diffuse Global Illumination — a 3D grid of irradiance probes
+that update in real-time, providing **dynamic diffuse interreflection**
+(re-lighting without re-baking). Each probe stores SH2 (9 coefficients
+× RGB = 27 floats) directional irradiance + an average hit distance
+for occlusion testing.
+
+**Surpasses soup3D** (which has no GI of any kind — no DDGI, no light
+probes, no SSGI, no VXGI).
+
+**Class**: `DDGIVolume` (independent; not a `RenderPass`)
+**Adapted from**: UE5 Lumen `IrradianceField` + Zinke et al. 2020 +
+o3de Atom `DiffuseGlobalIllumination`
+
+#### GI vs DDGI
+
+| Feature | `GlobalIllumination` (LightProbes) | `DDGIVolume` |
+|---------|-------------------------------------|--------------|
+| Probe placement | Arbitrary (artist-placed) | Regular 3D grid |
+| Update | Static (bake once) | Dynamic (every N frames) |
+| Real-time relighting | No | Yes |
+| Storage | SH2 (27 floats/probe) | SH2 (27 floats/probe) + depth |
+| Occlusion handling | No | Back-projection depth test |
+| Best for | Static scenes | Dynamic scenes (moving lights/objects) |
+
+#### Algorithm
+
+```
+┌──────────────────────┐
+│ DDGIVolume           │
+│  origin ────────▶    │  3D grid of probes
+│  probeCount (X×Y×Z)  │  each stores:
+│  cellSize             │    • SH2 coefficients (27 floats RGB)
+│                       │    • average hit distance (occlusion)
+└──────────┬───────────┘
+           │
+   ┌───────▼───────────────────────────────┐
+   │ updateProbe(idx, rayResults)          │  per-frame (or N frames)
+   │   1. trace R rays from probe position │
+   │   2. accumulate ray directions+colors │
+   │      → SH2 via computeSH(dir, color)  │
+   │   3. EMA blend: sh = hw*old + (1-hw)*new│
+   │   4. store avg hit distance           │
+   └───────┬───────────────────────────────┘
+           │
+   ┌───────▼───────────────────────────────┐
+   │ sampleIrradiance(worldPos, normal)    │  per-pixel at runtime
+   │   1. find cell (8 corner probes)      │
+   │   2. compute trilinear weights        │
+   │   3. occlusion test (back-projection) │
+   │   4. blend 8 probe SH2 → 1 SH2        │
+   │   5. evaluateSH(blendedSH, normal)    │
+   │      → RGB irradiance                 │
+   └───────────────────────────────────────┘
+```
+
+#### Options (`DDGIVolumeOptions`)
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `origin` | `Vector3` | `(0,0,0)` | Volume AABB min corner (world space) |
+| `probeCount` | `IVec3` | `{4,4,4}` | Probes per axis (total = X×Y×Z) |
+| `cellSize` | `Vector3` | `(4,4,4)` | Distance between probes (world units) |
+| `raysPerProbe` | `number` | `32` | Rays traced per probe update (more = higher quality) |
+| `historyWeight` | `number` | `0.9` | Temporal EMA weight (0 = no accumulation, 0.95 = strong) |
+| `occlusionBias` | `number` | `0.2` | Depth bias for occlusion test (avoids self-occlusion) |
+
+#### API
+
+```ts
+class DDGIVolume {
+  constructor(opts?: DDGIVolumeOptions): DDGIVolume;
+  readonly probes: Float32Array;        // totalProbes × 27 (SH2 RGB)
+  readonly probeDepths: Float32Array;   // totalProbes (avg hit distance)
+  readonly probeValidity: Uint8Array;   // totalProbes (0=uninitialized)
+  readonly totalProbes: number;
+
+  getProbePosition(linearIdx: number): Vector3;
+  updateProbe(probeIdx: number, rayResults: Array<{
+    dir: Vector3;
+    color: { r: number; g: number; b: number };
+    distance: number;
+  }>): void;
+  sampleIrradiance(worldPos: Vector3, normal: Vector3): { r, g, b };
+  reset(): void;
+  get validProbeCount(): number;
+  get maxCorner(): Vector3;
+}
+```
+
+#### CPU-testable helpers (exported)
+
+| Export | Signature | Description |
+|--------|-----------|-------------|
+| `packProbeIndex` | `(idx: IVec3, dims: IVec3) => number` | 3D → 1D probe index (row-major: x inner, z outer) |
+| `unpackProbeIndex` | `(linear: number, dims: IVec3) => IVec3` | 1D → 3D probe index |
+| `computeTrilinearWeights` | `(localPos: IVec3) => number[]` | 8 corner weights (sum = 1), position clamped to [0,1]³ |
+| `blendProbeSH` | `(probeSH: Float32Array[], weights: number[]) => Float32Array` | Weighted blend of 8 probe SH2 → 1 SH2 (27 floats) |
+| `probeOcclusionWeight` | `(probeDistance, probeDepth, bias?) => number` | Occlusion weight [0,1] via back-projection depth test |
+
+#### Usage
+
+**Basic dynamic GI:**
+
+```ts
+import { DDGIVolume } from './Renderer/DDGIVolume';
+
+const ddgi = new DDGIVolume({
+  origin: new Vector3(-20, 0, -20),
+  probeCount: { x: 8, y: 4, z: 8 },   // 256 probes
+  cellSize: new Vector3(5, 3, 5),
+  raysPerProbe: 32,
+  historyWeight: 0.9,
+});
+
+// Per-frame update (simplified: external ray tracer feeds results)
+for (let i = 0; i < ddgi.totalProbes; i++) {
+  const probePos = ddgi.getProbePosition(i);
+  const rayResults = traceRaysFromProbe(probePos, scene, ddgi.raysPerProbe);
+  ddgi.updateProbe(i, rayResults);
+}
+
+// Per-pixel sampling (in GBuffer / deferred shader)
+const irradiance = ddgi.sampleIrradiance(worldPos, normal);
+// finalColor += albedo * irradiance;  // add indirect diffuse
+```
+
+**Time-sliced update (avoid frame hitches):**
+
+```ts
+// Update a subset of probes per frame (e.g. 1/4 of total)
+const probesPerFrame = Math.ceil(ddgi.totalProbes / 4);
+let offset = 0;
+function updateDDGI() {
+  for (let i = 0; i < probesPerFrame; i++) {
+    const idx = (offset + i) % ddgi.totalProbes;
+    ddgi.updateProbe(idx, traceRaysFromProbe(ddgi.getProbePosition(idx), scene, 32));
+  }
+  offset = (offset + probesPerFrame) % ddgi.totalProbes;
+}
+```
+
+#### soup3D Feature Parity
+
+| Capability | soup3D | VREEN |
+|------------|--------|-------|
+| Dynamic diffuse GI | **None** | `DDGIVolume` (real-time probe grid) |
+| 3D irradiance probe grid | **None** | configurable X×Y×Z |
+| SH2 directional irradiance | **None** | 9 coefficients × RGB per probe |
+| Temporal accumulation (EMA) | **None** | `historyWeight` exponential moving average |
+| Probe occlusion (back-projection) | **None** | `probeOcclusionWeight` depth test |
+| Trilinear probe interpolation | **None** | 8-probe weighted blend |
+| CPU-testable interpolation math | **None** | 5 exported pure functions |
+| Static light probes (baked) | **None** | `GlobalIllumination` (SH2, separate) |
+| Screen-space GI | **None** | `SSGIPass` (separate) |
+
+#### Design Notes
+
+- **Why SH2 (not RGB)?** Each probe stores 9 SH2 coefficients × 3 RGB
+  channels = 27 floats. This captures directional variation (light
+  comes from above, not below) — a single RGB would be omnidirectional
+  and produce flat, directionless GI. SH2 is the minimum for
+  directional diffuse lighting (Ramamoorthi & Hanrahan 2001).
+
+- **Why temporal EMA?** Tracing 32 rays per probe per frame produces
+  noisy irradiance. The exponential moving average (`historyWeight`)
+  blends new samples with history, converging to a stable result over
+  ~20 frames. Higher `historyWeight` = smoother but slower to respond
+  to lighting changes.
+
+- **Why occlusion testing?** Without it, a probe inside a wall would
+  "leak" light through the wall to the other side. The back-projection
+  test compares the distance from the sample point to the probe with
+  the probe's average hit distance — if the sample is farther than
+  what the probe can "see", the probe is occluded and its weight is
+  reduced to 0.
+
+- **Integration with existing GI:** VREEN now has three complementary
+  GI systems:
+  1. `GlobalIllumination` (static SH2 light probes) — baked, fast
+  2. `DDGIVolume` (dynamic probe grid) — real-time, medium cost
+  3. `SSGIPass` (screen-space GI) — per-frame, limited to screen
+
+  Artists can choose per-scene: static scenes use LightProbes, dynamic
+  scenes use DDGIVolume, and SSGI adds contact indirect light on top.
+
+#### Test coverage (`DDGIVolume.test.ts`, 33 tests)
+
+- **Index packing (4)**: 3D→1D, 1D→3D, round-trip both directions
+- **Trilinear weights (6)**: sum=1, corner cases (0,0,0)/(1,1,1),
+  center=1/8, clamping, non-negativity
+- **SH blending (3)**: weighted average, zero-weight skip, all-zero
+- **Occlusion weight (5)**: no-depth=1, in-range=1, occluded<1,
+  far=0, monotonic
+- **Construction (3)**: defaults, options, maxCorner
+- **getProbePosition (1)**: correct world positions
+- **updateProbe (4)**: first-write, EMA blend, out-of-range ignore,
+  multi-ray average
+- **sampleIrradiance (4)**: uninitialized=black, post-update≠0,
+  identical-probe consistency, outside-volume behavior
+- **reset/validProbeCount (2)**: clear + count tracking
+
+#### References
+
+- Zinke et al. 2020, "Dynamic Diffuse Global Illumination with Ray-Traced Irradiance Fields"
+- UE5 Lumen "IrradianceField" — real-time probe-based GI
+- o3de Atom `DiffuseGlobalIllumination` — probe volume design
+- Ramamoorthi & Hanrahan 2001, "Irradiance Volume" — SH2 irradiance representation
+- three.js `IrradianceVolume` — WebGL implementation reference
+
+---
 
 ### `PathTracer` (`PathTracer.ts`)
 
