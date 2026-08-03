@@ -884,6 +884,11 @@
         "desc": "スクリーンスペース水中コースティクス、深度再構成 + 3波プロシージャルパターン + RGB 色分散 + Beer-Lambert 深度減衰。",
         "advantage": "soup3D に水面描画なし"
       },
+      "waterSurface": {
+        "title": "水面描画",
+        "desc": "スクリーンスペース平面水面、4方向 Gerstner 波 + Schlick Fresnel 反射/屈折ブレンド + Beer-Lambert 深度吸収 + Blinn-Phong 太陽スペキュラ。",
+        "advantage": "soup3D に水面描画なし"
+      },
       "heightFog": {
         "title": "ハイトフォグ",
         "desc": "UE5 風指数ハイトフォグ、閉形式 Beer-Lambert 密度 + 太陽内散乱。",

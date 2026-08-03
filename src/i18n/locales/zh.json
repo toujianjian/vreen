@@ -884,6 +884,11 @@
         "desc": "屏幕空间水下焦散,深度重建 + 三波程序化图案 + RGB 色散 + Beer-Lambert 深度衰减。",
         "advantage": "soup3D 无水面渲染"
       },
+      "waterSurface": {
+        "title": "水面渲染",
+        "desc": "屏幕空间平面水面,4 方向 Gerstner 波 + Schlick Fresnel 反射/折射混合 + Beer-Lambert 水深吸收 + Blinn-Phong 太阳高光。",
+        "advantage": "soup3D 无水面渲染"
+      },
       "heightFog": {
         "title": "高度雾",
         "desc": "UE5 风格指数高度雾,闭式 Beer-Lambert 密度 + 太阳入射散射。",

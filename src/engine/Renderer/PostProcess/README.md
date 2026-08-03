@@ -2,9 +2,9 @@
 
 > Path: `src/engine/Renderer/PostProcess/`
 >
-> The enhanced post-processing pass family of the VREEN engine. Provides **25**
+> The enhanced post-processing pass family of the VREEN engine. Provides **26**
 > passes covering color grading, anti-aliasing, screen-space effects, depth-of-field,
-> motion blur, exposure adaptation, atmospheric effects, sharpening, upscaling, and stylized effects.
+> motion blur, exposure adaptation, atmospheric effects, water rendering, sharpening, upscaling, and stylized effects.
 > Each pass is a self-contained class that manages its own GPU resources (FBOs,
 > textures, shader programs) and integrates into the `PostProcessingPipeline`.
 
@@ -25,7 +25,7 @@ PostProcess/
   │     ├── AfterimagePass
   │     └── PixelationPass
   │
-  ├── GBuffer-dependent (17 passes)           ← independent FBO/program
+  ├── GBuffer-dependent (18 passes)           ← independent FBO/program
   │     ├── SSRPass          ← needs position + normal
   │     ├── SSSRPass         ← needs position + normal + roughness (GGX importance-sampled)
   │     ├── SSGIPass         ← needs position + normal + color
@@ -33,6 +33,8 @@ PostProcess/
   │     ├── VolumetricFogPass ← needs depth
   │     ├── HeightFogPass    ← needs depth (UE5 exponential height fog)
   │     ├── VolumetricCloudsPass ← needs depth + 3D noise texture (GPU ray-marched)
+  │     ├── CausticsPass     ← needs depth (underwater procedural caustics)
+  │     ├── WaterSurfacePass ← needs depth (screen-space planar water, Gerstner + Fresnel)
   │     ├── VelocityPass     ← needs depth + matrices
   │     ├── TAAPass          ← needs color + velocity
   │     ├── MotionBlurPass   ← needs color + velocity
@@ -58,7 +60,7 @@ pipeline.add(new ColorGradingPass({ saturation: 1.2 }));
 pipeline.add(new LUTPass({ lut: myLUTTexture, lutSize: 32, is3D: true }));
 ```
 
-**Pattern 2: GBuffer-dependent** — These 11 passes have custom `apply()`
+**Pattern 2: GBuffer-dependent** — These 18 passes have custom `apply()`
 signatures that require additional GBuffer textures (depth, normal, velocity,
 position). They manage their own FBOs and shader programs independently:
 
@@ -1378,6 +1380,201 @@ const out = caustics.apply(gl, sceneColorTex, depthTex, camera);
 - o3de Atom, Water highlights / caustics pass
 - ShaderToy "Caustic" by Dave_Hoskins
 - Beer-Lambert law — depth attenuation
+
+---
+
+### WaterSurfacePass
+
+Screen-space planar water rendering — draws an animated ocean/lake/pond
+surface **without any water geometry** by ray-tracing the camera ray
+against the infinite plane `y = waterLevel`. At each hit point, **4
+directional Gerstner waves** are summed to displace the surface and a
+**central-difference normal** is computed. The final pixel blends
+**refraction** (scene color sampled with a normal-offset UV, tinted by
+Beer-Lambert water-depth absorption) and **reflection** (a sky
+gradient sampled along the reflected ray) via the **Schlick Fresnel**
+approximation, then adds a **Blinn-Phong sun specular** highlight.
+Geometry in front of the water plane is preserved via a depth-based
+occlusion test. **Surpasses soup3D** (which has no water rendering at
+all) and pairs with `CausticsPass` for a complete above-/below-water
+solution.
+
+**Class**: `WaterSurfacePass` (independent, does **not** extend `RenderPass`)
+**Shader**: `WATER_SURFACE_FRAG` (single-pass fullscreen)
+**Vertex**: shared `POST_VERT` (fullscreen triangle)
+**Draw calls**: 1 per `apply()` (0 when disabled — early return)
+**Output**: RGBA16F HDR (sun specular + sky reflection may push pixels > 1.0)
+
+#### Architecture
+
+```
+┌──────────────┐    ┌──────────────────────────────────────────────┐
+│ colorTexture │───▶│ WaterSurfacePass.apply()                     │
+│ HDR scene    │    │  0. if !enabled → return inputTexture (zero) │
+│ (refraction  │    │  1. (re)allocate FBO/texture on resize/dirty │
+│  source)     │    │  2. bind _fbo, clear COLOR_BUFFER_BIT         │
+└──────────────┘    │  3. bind color → TEXTURE0 (u_colorMap)       │
+                    │  4. bind depth → TEXTURE1 (u_depthMap)       │
+┌──────────────┐    │  5. set inverse VP + camera pos + screen     │
+│ depthTexture │───▶│  6. set water params (level/color/sky/...)   │
+│ GBuffer depth│    │  7. set sun params (dir/color/spec/shin)     │
+└──────────────┘    │  8. set wave params (time/amp/freq/speed)    │
+                    │  9. set Fresnel / refraction / absorption     │
+┌──────────────┐    │ 10. drawArrays(fullscreen triangle)          │
+│   camera     │───▶│ 11. return _outputTexture                    │
+└──────────────┘    └────────────────────┬─────────────────────────┘
+                                          ▼
+                    ┌──────────────────────────────────────────────┐
+                    │ _outputTexture (RGBA16F)                     │
+                    │   mix(refraction, reflection, fresnel)       │
+                    │       + sunColor * spec * sunSpecular        │
+                    └──────────────────────────────────────────────┘
+```
+
+#### Algorithm (7 stages, per pixel)
+
+| # | Stage | Formula / Logic |
+|---|-------|-----------------|
+| 1 | Scene reconstruct | `depth → NDC → invVP → worldPos; sceneDist = |worldPos - camPos|` |
+| 2 | Ray rebuild | `rayDir = normalize(farWorld - camPos)` (handles sky pixels) |
+| 3 | Ray-plane intersect | `tHit = (waterLevel - camPos.y) / rayDir.y`; skip if `tHit < 0` |
+| 4 | Occlusion test | `if (depth < 1.0 && sceneDist < tHit) return sceneColor;` (geometry in front) |
+| 5 | Wave displacement | `h = Σ sin(phase_i) * amp/(1+i)` over 4 dirs; `waterPos.y += h` |
+| 6 | Normal + Fresnel | central-diff normal; `fresnel = bias + (1-bias)·(1-cosθ)^power` |
+| 7 | Composite | `mix(refraction, reflection, fresnel) + sunColor·spec·sunSpecular` |
+
+#### Refraction & absorption
+
+The refraction term samples the scene color at a **normal-offset UV**
+(`v_uv + normal.xz * refractionOffset`), then blends toward `waterColor`
+by Beer-Lambert absorption based on how far the underlying geometry sits
+below `waterLevel`:
+
+```glsl
+float depthBelow = max(0.0, u_waterLevel - sceneWorldPos.y);
+float absorb = 1.0 - exp(-depthBelow * u_absorption);
+vec3 refraction = mix(refractionColor, u_waterColor, absorb);
+```
+
+Deeper geometry → stronger water tint → realistic "deep blue" troughs.
+
+#### Reflection (sky gradient)
+
+The reflected ray (`reflect(-rayDir, normal)`) is mapped to a two-color
+sky gradient (horizon → zenith) keyed by the ray's Y component:
+
+```glsl
+float skyT = clamp(reflectDir.y * 0.5 + 0.5, 0.0, 1.0);
+vec3 reflection = mix(u_horizonColor, u_skyColor, skyT);
+```
+
+This cheap gradient avoids sampling a real cubemap while still producing
+plausible sky reflections that brighten at grazing angles (driven by
+Fresnel).
+
+#### Options
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `waterLevel` | `number` | `0` | World Y of the water plane |
+| `waterColor` | `[r,g,b]` | `[0.02, 0.1, 0.2]` | Deep-water absorption tint (dark blue) |
+| `skyColor` | `[r,g,b]` | `[0.4, 0.6, 0.9]` | Zenith reflection color |
+| `horizonColor` | `[r,g,b]` | `[0.7, 0.75, 0.8]` | Horizon reflection color |
+| `sunDirection` | `[x,y,z]` | `[0.5, 0.5, -0.3]` | Sun direction (normalized, toward sun) |
+| `sunColor` | `[r,g,b]` | `[1.0, 0.95, 0.8]` | Sun color (warm white) |
+| `sunSpecular` | `number` | `1.0` | Sun specular intensity |
+| `sunShininess` | `number` | `200.0` | Blinn-Phong shininess (higher = tighter highlight) |
+| `waveAmplitude` | `number` | `0.3` | Gerstner wave vertical amplitude |
+| `waveFrequency` | `number` | `0.1` | Spatial wave frequency (higher = denser ripples) |
+| `waveSpeed` | `number` | `1.0` | Wave animation speed |
+| `fresnelPower` | `number` | `5.0` | Fresnel exponent (higher = stronger grazing reflection) |
+| `fresnelBias` | `number` | `0.02` | Minimum reflectance at normal incidence |
+| `refractionOffset` | `number` | `0.01` | UV offset strength for refraction sampling |
+| `absorption` | `number` | `0.05` | Water-depth absorption rate (Beer-Lambert) |
+| `enabled` | `boolean` | `true` | Enable toggle |
+| `time` | `number` | `0` | Animation time (caller updates per frame) |
+
+#### API
+
+```ts
+apply(
+  gl: WebGL2RenderingContext,
+  colorTexture: WebGLTexture,
+  depthTexture: WebGLTexture,
+  camera: Camera,
+): WebGLTexture
+```
+
+#### Usage — ocean surface at sea level
+
+```ts
+import { WaterSurfacePass } from '@/engine/Renderer/PostProcess/WaterSurfacePass';
+
+const water = new WaterSurfacePass({
+  waterLevel: 0,                 // sea level at Y=0
+  waterColor: [0.02, 0.1, 0.2],  // deep blue
+  skyColor: [0.4, 0.6, 0.9],
+  horizonColor: [0.7, 0.75, 0.8],
+  sunDirection: [0.5, 0.5, -0.3],
+  sunColor: [1.0, 0.95, 0.8],
+  sunSpecular: 1.2,
+  sunShininess: 256.0,
+  waveAmplitude: 0.4,
+  waveFrequency: 0.12,
+  waveSpeed: 1.0,
+});
+
+// Per frame:
+water.time = performance.now() * 0.001;
+const out = water.apply(gl, sceneColorTex, depthTex, camera);
+```
+
+#### Usage — paired with CausticsPass for full water system
+
+```ts
+// Above-water camera sees the surface; underwater geometry gets caustics.
+const water = new WaterSurfacePass({ waterLevel: 0, enabled: true });
+const caustics = new CausticsPass({ waterLevel: 0, enabled: true });
+
+// Per frame:
+water.time = caustics.time = t;
+let color = water.apply(gl, sceneColorTex, depthTex, camera);
+color = caustics.apply(gl, color, depthTex, camera);
+```
+
+#### Usage — toggle off when camera is fully submerged
+
+```ts
+// When camera.y < waterLevel, the planar surface is behind the camera;
+// disable to save the draw call and let CausticsPass handle the view.
+if (camera.position.y < water.waterLevel) {
+  water.enabled = false;
+} else {
+  water.enabled = true;
+}
+```
+
+#### Comparison with soup3D
+
+| Capability | VREEN | soup3D |
+|-----------|-------|--------|
+| Screen-space planar water | ✓ (ray-plane, no geometry) | ✗ |
+| Gerstner waves | ✓ (4 directional, summed) | ✗ |
+| Schlick Fresnel | ✓ (bias + power) | ✗ |
+| Refraction (normal-offset UV) | ✓ | ✗ |
+| Beer-Lambert depth absorption | ✓ | ✗ |
+| Sky-gradient reflection | ✓ (zenith + horizon) | ✗ |
+| Blinn-Phong sun specular | ✓ | ✗ |
+| Geometric occlusion test | ✓ (depth-based) | ✗ |
+| HDR composite | ✓ (RGBA16F) | ✗ |
+| Pairs with underwater caustics | ✓ (CausticsPass) | ✗ |
+
+#### References
+
+- GPU Gems 1, Ch. 9 "Effective Water Simulation from Physical Models" (Finch)
+- o3de Atom, Water surface pass
+- Schlick (1994) — Fresnel approximation for dielectrics
+- Beer-Lambert law — depth absorption
 
 ---
 

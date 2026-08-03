@@ -3720,6 +3720,180 @@ void main() {
 }
 `;
 
+// ── Water Surface ─────────────────────────────────────────────────
+// 屏幕空间平面水面 fragment shader — 射线-平面求交 + Gerstner 波 + Fresnel。
+//
+// 算法(参考 GPU Gems 1 Ch.9 "Effective Water Simulation" + o3de Atom Water):
+//   1. 从 depth 重建场景世界位置 + 相机射线方向;
+//   2. 射线与水面平面 y=waterLevel 求交得 tHit;
+//      - tHit < 0:平面在相机后方 → 不画水;
+//      - tHit >= sceneDist:几何在水面之前 → 不画水(几何遮挡水面);
+//   3. 在交点 XZ 计算 Gerstner 波叠加(4 组方向)得位移 height + 法线(有限差分);
+//   4. Schlick Fresnel:由视角-法线夹角决定反射/折射混合比;
+//   5. 反射:沿反射方向采样天空渐变(skyColor → horizonColor);
+//      折射:偏移 UV 采样场景色,叠加水深吸收(waterColor * absorption);
+//   6. 太阳 Blinn-Phong 镜面高光;
+//   7. 合成:color = mix(refraction, reflection, fresnel) + sunSpecular。
+//
+// 输入纹理:
+//   - u_colorMap : 当前帧场景颜色(折射源 + 反射 fallback)
+//   - u_depthMap : NDC 深度
+//
+// 参考:
+//   - GPU Gems 1, Ch. 9 "Effective Water Simulation from Physical Models"
+//   - o3de Atom Water surface pass
+//   - Schlick (1994) Fresnel approximation
+export const WATER_SURFACE_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+// 屏幕空间平面水面 — 射线-平面求交 + Gerstner 波 + Schlick Fresnel
+// 参考: GPU Gems 1 Ch.9 / o3de Atom Water
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;          // 场景颜色(折射源 + 反射 fallback)
+uniform sampler2D u_depthMap;          // NDC 深度
+
+uniform mat4  u_inverseViewProjection; // NDC → 世界
+uniform vec3  u_cameraPos;
+uniform vec2  u_screenSize;
+
+uniform float u_waterLevel;            // 水面高度(世界 Y)
+uniform vec3  u_waterColor;            // 深水颜色(吸收色)
+uniform vec3  u_skyColor;              // 天顶颜色(反射)
+uniform vec3  u_horizonColor;          // 地平线颜色(反射渐变)
+uniform vec3  u_sunDirection;          // 太阳方向(归一化,指向太阳)
+uniform vec3  u_sunColor;              // 太阳颜色
+uniform float u_sunSpecular;           // 太阳镜面强度
+uniform float u_sunShininess;          // Blinn-Phong shininess
+
+uniform float u_waveTime;              // 时间(秒)
+uniform float u_waveAmplitude;         // 波幅(默认 0.3)
+uniform float u_waveFrequency;         // 波频率(默认 0.1)
+uniform float u_waveSpeed;             // 波速(默认 1.0)
+uniform float u_fresnelPower;          // Fresnel 幂(默认 5.0)
+uniform float u_fresnelBias;           // Fresnel 偏移(默认 0.02)
+uniform float u_refractionOffset;      // 折射 UV 偏移强度(默认 0.01)
+uniform float u_absorption;            // 水深吸收率(默认 0.05)
+uniform int   u_enabled;               // 0=禁用,1=启用
+
+#define PI 3.14159265359
+
+// 4 组波方向(归一化),覆盖均匀
+const vec2 WAVE_DIRS[4] = vec2[4](
+  vec2( 1.0, 0.0),
+  vec2( 0.7, 0.7),
+  vec2( 0.0, 1.0),
+  vec2(-0.7, 0.7)
+);
+
+// Gerstner 波高度(垂直位移)叠加 — 4 组方向
+// pos: 世界 XZ;返回累积波高(已乘振幅)
+float waveHeight(vec2 pos) {
+  float t = u_waveTime * u_waveSpeed;
+  float h = 0.0;
+  for (int i = 0; i < 4; i++) {
+    vec2 d = normalize(WAVE_DIRS[i]);
+    float phase = dot(d, pos) * u_waveFrequency + t * (1.0 + float(i) * 0.27);
+    h += sin(phase) * u_waveAmplitude / (1.0 + float(i));
+  }
+  return h;
+}
+
+// 有限差分法线(中心差分)
+vec3 waveNormal(vec2 pos) {
+  float eps = 1.0 / u_waveFrequency * 0.25;
+  float hL = waveHeight(pos - vec2(eps, 0.0));
+  float hR = waveHeight(pos + vec2(eps, 0.0));
+  float hD = waveHeight(pos - vec2(0.0, eps));
+  float hU = waveHeight(pos + vec2(0.0, eps));
+  vec3 n = normalize(vec3(hL - hR, 2.0 * eps, hD - hU));
+  return n;
+}
+
+// Schlick Fresnel 近似
+float fresnelSchlick(float cosTheta, float bias, float power) {
+  return bias + (1.0 - bias) * pow(1.0 - max(cosTheta, 0.0), power);
+}
+
+void main() {
+  vec3 sceneColor = texture(u_colorMap, v_uv).rgb;
+
+  if (u_enabled == 0) {
+    outColor = vec4(sceneColor, 1.0);
+    return;
+  }
+
+  // 重建场景世界位置 + 距离
+  float depth = texture(u_depthMap, v_uv).r;
+  vec4 sceneNDC = vec4(v_uv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
+  vec4 sceneWorldH = u_inverseViewProjection * sceneNDC;
+  vec3 sceneWorldPos = sceneWorldH.xyz / sceneWorldH.w;
+  float sceneDist = length(sceneWorldPos - u_cameraPos);
+
+  // 相机射线方向(用远裁面 NDC 重建以处理天空像素)
+  vec4 farNDC = vec4(v_uv * 2.0 - 1.0, 1.0, 1.0);
+  vec4 farWorldH = u_inverseViewProjection * farNDC;
+  vec3 rayDir = normalize(farWorldH.xyz / farWorldH.w - u_cameraPos);
+
+  // 射线-平面求交:y = waterLevel
+  if (abs(rayDir.y) < 1e-6) {
+    outColor = vec4(sceneColor, 1.0);
+    return;
+  }
+  float tHit = (u_waterLevel - u_cameraPos.y) / rayDir.y;
+  if (tHit < 0.0) {
+    // 水面在相机后方
+    outColor = vec4(sceneColor, 1.0);
+    return;
+  }
+
+  // 几何遮挡:若几何在水面之前(sceneDist < tHit),不画水
+  // (天空像素 depth>=1.0 → sceneDist 极大 → 不遮挡)
+  if (depth < 1.0 && sceneDist < tHit) {
+    outColor = vec4(sceneColor, 1.0);
+    return;
+  }
+
+  // 水面交点(加波高微扰)
+  vec3 waterPos = u_cameraPos + rayDir * tHit;
+  float h = waveHeight(waterPos.xz);
+  waterPos.y += h;
+  vec3 normal = waveNormal(waterPos.xz);
+
+  // 视线方向(从水面指向相机)
+  vec3 viewDir = normalize(u_cameraPos - waterPos);
+
+  // ── Fresnel ──────────────────────────────────────────────────
+  float cosTheta = clamp(dot(viewDir, normal), 0.0, 1.0);
+  float fresnel = fresnelSchlick(cosTheta, u_fresnelBias, u_fresnelPower);
+
+  // ── 反射:沿反射方向采样天空渐变 ────────────────────────────
+  vec3 reflectDir = reflect(-rayDir, normal);
+  float skyT = clamp(reflectDir.y * 0.5 + 0.5, 0.0, 1.0);
+  vec3 reflection = mix(u_horizonColor, u_skyColor, skyT);
+
+  // ── 折射:偏移 UV 采样场景色 + 水深吸收 ─────────────────────
+  // 水下几何(sceneWorldPos.y < waterLevel)的深度 → 吸收着色
+  vec2 refractUV = v_uv + normal.xz * u_refractionOffset;
+  vec3 refractionColor = texture(u_colorMap, refractUV).rgb;
+
+  float depthBelow = max(0.0, u_waterLevel - sceneWorldPos.y);
+  float absorb = 1.0 - exp(-depthBelow * u_absorption);
+  vec3 refraction = mix(refractionColor, u_waterColor, absorb);
+
+  // ── 太阳 Blinn-Phong 镜面 ───────────────────────────────────
+  vec3 halfDir = normalize(u_sunDirection + viewDir);
+  float spec = pow(max(dot(normal, halfDir), 0.0), u_sunShininess);
+  vec3 specular = u_sunColor * spec * u_sunSpecular;
+
+  // ── 合成 ────────────────────────────────────────────────────
+  vec3 waterColor = mix(refraction, reflection, fresnel) + specular;
+  outColor = vec4(waterColor, 1.0);
+}
+`;
+
 // ── Volumetric Clouds ─────────────────────────────────────────────
 // GPU ray-marched 体积云 fragment shader — 与 VolumetricClouds 数据层
 // (src/engine/Environment/VolumetricClouds.ts) 配套。

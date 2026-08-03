@@ -884,6 +884,11 @@
         "desc": "스크린 공간 수중 코스틱스, 깊이 재구성 + 3파 프로시저럴 패턴 + RGB 색산란 + Beer-Lambert 깊이 감쇠.",
         "advantage": "soup3D에 수면 렌더링 없음"
       },
+      "waterSurface": {
+        "title": "수면 렌더링",
+        "desc": "스크린 공간 평면 수면, 4방향 Gerstner 파 + Schlick Fresnel 반사/굴절 혼합 + Beer-Lambert 깊이 흡수 + Blinn-Phong 태양 스페큘러.",
+        "advantage": "soup3D에 수면 렌더링 없음"
+      },
       "heightFog": {
         "title": "높이 안개",
         "desc": "UE5 스타일 지수 높이 안개, 폐쇄형 Beer-Lambert 밀도 + 태양 내산란.",

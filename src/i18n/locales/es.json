@@ -884,6 +884,11 @@
         "desc": "Causticas submarinas en espacio de pantalla con reconstrucción de profundidad, patrón procedural de tres ondas, dispersión cromática RGB y atenuación Beer-Lambert.",
         "advantage": "soup3D sin renderizado de agua"
       },
+      "waterSurface": {
+        "title": "Superficie del Agua",
+        "desc": "Agua plana en espacio de pantalla con ondas Gerstner de 4 direcciones, mezcla reflexión/refracción Schlick Fresnel, absorción de profundidad Beer-Lambert y especular solar Blinn-Phong.",
+        "advantage": "soup3D sin renderizado de agua"
+      },
       "heightFog": {
         "title": "Niebla de altura",
         "desc": "Niebla de altura exponencial estilo UE5 con densidad Beer-Lambert de forma cerrada e inscattering solar.",

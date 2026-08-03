@@ -884,6 +884,11 @@
         "desc": "Screen-space underwater caustics with depth reconstruction, three-wave procedural pattern, RGB chromatic dispersion, and Beer-Lambert depth attenuation.",
         "advantage": "soup3D has no water rendering"
       },
+      "waterSurface": {
+        "title": "Water Surface",
+        "desc": "Screen-space planar water with 4-directional Gerstner waves, Schlick Fresnel reflection/refraction blend, Beer-Lambert depth absorption, and Blinn-Phong sun specular.",
+        "advantage": "soup3D has no water rendering"
+      },
       "heightFog": {
         "title": "Height Fog",
         "desc": "UE5-style exponential height fog with closed-form Beer-Lambert density and sun inscattering.",
