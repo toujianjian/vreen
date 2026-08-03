@@ -48,6 +48,14 @@ export interface VolumetricCloudsPassOptions {
   shadowStepLen?: number;
   /** 密度跳过阈值(默认 0.01,密度低于此值的体素跳过)。 */
   densityCutoff?: number;
+  /**
+   * 时序累积 EMA 系数 [0, 0.95)。
+   * - 0 = 禁用(默认,单帧渲染,向后兼容)
+   * - 0.85..0.9 = 强累积(blue-noise 抖动 + 重投影 EMA,等效 10x 步进数)
+   * 启用后 Pass 额外分配一张 RGBA16F history 纹理,每帧 blit 当前结果到 history
+   * 供下一帧重投影采样。
+   */
+  temporalBlend?: number;
 }
 
 /**
@@ -77,6 +85,11 @@ export class VolumetricCloudsPass {
   shadowStepLen: number = 8;
   /** 密度跳过阈值。 */
   densityCutoff: number = 0.01;
+  /**
+   * 时序累积 EMA 系数 [0, 0.95)。0 = 禁用(默认)。
+   * 设为 0.85..0.9 启用 blue-noise 抖动 + 重投影 EMA,显著降低步进数需求。
+   */
+  temporalBlend: number = 0;
 
   /** 当前输出纹理。 */
   private _outputTexture: WebGLTexture | null = null;
@@ -89,6 +102,17 @@ export class VolumetricCloudsPass {
   /** 噪声纹理分辨率(用于检测是否需要重新上传)。 */
   private _noiseResolution: { x: number; y: number; z: number } = { x: 0, y: 0, z: 0 };
 
+  /** v3 时序:上一帧合成结果纹理(供下一帧重投影采样)。 */
+  private _historyTexture: WebGLTexture | null = null;
+  /** v3 时序:history FBO(blit 目标)。 */
+  private _historyFbo: WebGLFramebuffer | null = null;
+  /** v3 时序:上一帧 VP(world → NDC,重投影用)。null = 首帧。 */
+  private _prevVP: Float32Array | null = null;
+  /** v3 时序:帧序号(IGN 动画)。 */
+  private _frameIndex: number = 0;
+  /** v3 时序:history 是否有效(首帧/resize 后为 false)。 */
+  private _hasHistory: boolean = false;
+
   private _width: number = 0;
   private _height: number = 0;
   private _initialized: boolean = false;
@@ -97,6 +121,7 @@ export class VolumetricCloudsPass {
     if (opts.worldScale !== undefined) this.worldScale = opts.worldScale;
     if (opts.shadowStepLen !== undefined) this.shadowStepLen = opts.shadowStepLen;
     if (opts.densityCutoff !== undefined) this.densityCutoff = opts.densityCutoff;
+    if (opts.temporalBlend !== undefined) this.temporalBlend = opts.temporalBlend;
   }
 
   /**
@@ -195,6 +220,20 @@ export class VolumetricCloudsPass {
     gl.bindTexture(gl.TEXTURE_3D, this._noiseTexture as WebGLTexture);
     prog.setUniformSampler('u_noiseMap', 2);
 
+    // v3 时序:history 纹理 → unit 3(仅 temporalBlend > 0 时有效)
+    const temporalActive = this.temporalBlend > 0 && this._historyTexture !== null;
+    if (temporalActive) {
+      gl.activeTexture(gl.TEXTURE3);
+      gl.bindTexture(gl.TEXTURE_2D, this._historyTexture as WebGLTexture);
+      prog.setUniformSampler('u_historyMap', 3);
+    }
+    // 重投影用上一帧 VP;首帧/resize 后用当前 VP(无害,u_hasHistory=0 跳过混合)
+    const prevVP = this._prevVP ?? this._computeVP(camera);
+    prog.setUniformMatrix4fv('u_prevViewProjection', prevVP);
+    prog.setUniform1f('u_temporalBlend', temporalActive ? this.temporalBlend : 0);
+    prog.setUniform1i('u_frameIndex', this._frameIndex);
+    prog.setUniform1i('u_hasHistory', this._hasHistory ? 1 : 0);
+
     // 相机变换
     prog.setUniformMatrix4fv('u_inverseViewProjection', this._computeInverseVP(camera));
     prog.setUniform3f('u_cameraPos', camera.position.x, camera.position.y, camera.position.z);
@@ -233,6 +272,20 @@ export class VolumetricCloudsPass {
     gl.bindVertexArray(this._fullscreenQuadVao as WebGLVertexArrayObject);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
 
+    // v3 时序:把当前结果 blit 到 history 纹理,供下一帧重投影
+    if (temporalActive) {
+      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, this._fbo as WebGLFramebuffer);
+      gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, this._historyFbo as WebGLFramebuffer);
+      gl.blitFramebuffer(
+        0, 0, this._width, this._height,
+        0, 0, this._width, this._height,
+        gl.COLOR_BUFFER_BIT, gl.LINEAR,
+      );
+      this._prevVP = this._computeVP(camera);
+      this._hasHistory = true;
+      this._frameIndex = (this._frameIndex + 1) & 0x7fffffff;
+    }
+
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
 
@@ -261,6 +314,14 @@ export class VolumetricCloudsPass {
       gl.deleteTexture(this._noiseTexture);
       this._noiseTexture = null;
     }
+    if (this._historyTexture) {
+      gl.deleteTexture(this._historyTexture);
+      this._historyTexture = null;
+    }
+    if (this._historyFbo) {
+      gl.deleteFramebuffer(this._historyFbo);
+      this._historyFbo = null;
+    }
     if (this._program) {
       this._program.dispose();
       this._program = null;
@@ -269,6 +330,10 @@ export class VolumetricCloudsPass {
     this._width = 0;
     this._height = 0;
     this._noiseResolution = { x: 0, y: 0, z: 0 };
+    // v3 时序状态重置
+    this._prevVP = null;
+    this._frameIndex = 0;
+    this._hasHistory = false;
     log.debug('disposed');
   }
 
@@ -287,6 +352,8 @@ export class VolumetricCloudsPass {
       if (this._fbo) gl.deleteFramebuffer(this._fbo);
       if (this._fullscreenQuadVao) gl.deleteVertexArray(this._fullscreenQuadVao);
       if (this._fullscreenQuadBuf) gl.deleteBuffer(this._fullscreenQuadBuf);
+      if (this._historyTexture) gl.deleteTexture(this._historyTexture);
+      if (this._historyFbo) gl.deleteFramebuffer(this._historyFbo);
     }
 
     // HDR 颜色纹理(RGBA16F,体积云亮度可能 > 1)
@@ -330,6 +397,39 @@ export class VolumetricCloudsPass {
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
+    // v3 时序:history 纹理 + FBO(仅 temporalBlend > 0 时分配)
+    if (this.temporalBlend > 0) {
+      const htex = gl.createTexture();
+      if (!htex) throw new Error('VolumetricCloudsPass: history createTexture() returned null');
+      gl.bindTexture(gl.TEXTURE_2D, htex);
+      gl.texImage2D(
+        gl.TEXTURE_2D, 0, gl.RGBA16F,
+        width, height, 0,
+        gl.RGBA, gl.HALF_FLOAT, null,
+      );
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+      const hfbo = gl.createFramebuffer();
+      if (!hfbo) throw new Error('VolumetricCloudsPass: history createFramebuffer() returned null');
+      gl.bindFramebuffer(gl.FRAMEBUFFER, hfbo);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, htex, 0);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+      this._historyTexture = htex;
+      this._historyFbo = hfbo;
+    } else {
+      this._historyTexture = null;
+      this._historyFbo = null;
+    }
+
+    // resize → history 失效,重置时序状态
+    this._prevVP = null;
+    this._frameIndex = 0;
+    this._hasHistory = false;
+
     this._outputTexture = tex;
     this._fbo = fbo;
     this._fullscreenQuadVao = vao;
@@ -338,7 +438,7 @@ export class VolumetricCloudsPass {
     this._height = height;
     this._initialized = true;
 
-    log.info(`VolumetricClouds FBO created: ${width}x${height}`);
+    log.info(`VolumetricClouds FBO created: ${width}x${height}${this.temporalBlend > 0 ? ' (+history)' : ''}`);
   }
 
   /**
@@ -348,9 +448,16 @@ export class VolumetricCloudsPass {
    * 然后 4×4 通用求逆(列主序)。
    */
   private _computeInverseVP(camera: Camera): Float32Array {
+    return invertMat4(this._computeVP(camera));
+  }
+
+  /**
+   * 计算 viewProjection — world → NDC(v3 时序重投影用)。
+   * VP = projection × matrixWorldInverse(列主序)。
+   */
+  private _computeVP(camera: Camera): Float32Array {
     const proj = camera.projectionMatrix.elements;
     const view = camera.matrixWorldInverse.elements;
-    // VP = proj × view (column-major 矩阵乘法)
     const vp = new Float32Array(16);
     for (let c = 0; c < 4; c++) {
       for (let r = 0; r < 4; r++) {
@@ -361,7 +468,7 @@ export class VolumetricCloudsPass {
         vp[c * 4 + r] = sum;
       }
     }
-    return invertMat4(vp);
+    return vp;
   }
 }
 

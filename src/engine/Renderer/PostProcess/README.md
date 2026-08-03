@@ -1423,6 +1423,73 @@ clouds.setMultiScattering(0.3); // reduce multi-scatter iterations
 const pass = new VolumetricCloudsPass({ densityCutoff: 0.02 }); // aggressive skip
 ```
 
+#### v3 Temporal Accumulation (blue-noise + EMA reprojection)
+
+Opt-in quality upgrade (default off, backward compatible). Enables
+**Interleaved Gradient Noise** (Jimenez 2014) ray-start dithering plus
+**exponential moving average** temporal accumulation with camera-motion
+reprojection. The per-frame blue-noise jitter turns banding into
+high-frequency noise; the EMA blend (history × `temporalBlend` + current ×
+`(1 - temporalBlend)`) then converges that noise into a smooth result over a
+few frames — **equivalent to ~10× the primary step count** at the same cost.
+
+```
+ frame N-1          frame N (current)
+ ┌──────────┐       ┌──────────────────────────────────────────┐
+ │ history  │──────▶│ VOLUMETRIC_CLOUDS_FRAG                   │
+ │ RGBA16F  │ unit3 │  1. jitter ray start by IGN(frame, px)   │
+ └──────────┘       │  2. ray-march (fewer steps OK: 16..32)    │
+      ▲             │  3. reproject hitWorldPos via u_prevVP    │
+      │             │     → prevUV (NDC→[0,1])                  │
+      │             │  4. if prevUV in [0,1]²:                  │
+      │             │       out = mix(current, history, blend)  │
+      │             │     else (disocclusion): out = current    │
+      │             │  5. write composited color → _outputTex   │
+      │             └────────────────┬─────────────────────────┘
+      │                              │ blitFramebuffer (LINEAR)
+      │                              ▼
+      │                          ┌──────────┐
+      └──────────────────────────│ history  │ (next frame's source)
+                                 └──────────┘
+```
+
+**Resource cost**: +1 RGBA16F history texture + 1 FBO + 1 `blitFramebuffer`
+call per frame (cheap relative to the ray-march). Disabled (`temporalBlend
+= 0`) → zero overhead, no history allocated.
+
+**Disocclusion handling**: when the reprojected `prevUV` falls outside
+`[0,1]²` (camera moved to reveal previously-occluded pixels), history is
+rejected and the current frame's raw result is used — preventing ghosting.
+
+| `temporalBlend` | Effect                                 | Steps equiv. |
+|-----------------|----------------------------------------|--------------|
+| 0 (default)     | single-frame, no history               | 1×           |
+| 0.7             | mild smoothing, fast convergence       | ~3×          |
+| 0.85            | balanced (recommended)                 | ~6×          |
+| 0.9             | strong accumulation, slow convergence  | ~10×         |
+
+**Usage — enable temporal accumulation:**
+
+```ts
+// Halve step count and let temporal EMA recover the quality
+const clouds = new VolumetricClouds();
+clouds.setSteps(32);           // was 64 — temporal recovers detail
+clouds.generateNoise(42);
+
+const pass = new VolumetricCloudsPass({ temporalBlend: 0.85 });
+pass.uploadNoise(gl, clouds.noiseData!, clouds.noiseResolution);
+
+// Each frame: pass tracks history + prev VP internally
+const cloudTex = pass.apply(gl, colorTex, depthTex, camera, clouds);
+// → first frame: no history (pure current). Subsequent: EMA-blended.
+```
+
+**Caveats**: (1) clouds drifting with wind are not reprojected along wind
+motion (only camera motion) — slow wind is fine, fast wind may show slight
+trailing; (2) on resize the history is invalidated for one frame
+(`_hasHistory = false`), causing a single-frame quality dip; (3) no
+neighborhood clamping yet (planned v4) — disocclusion edges can shimmer.
+
 #### Comparison with soup3D
 
 `soup3D` (as of v0.x) ships **no volumetric clouds** of any kind. Its sky

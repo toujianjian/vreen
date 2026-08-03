@@ -3696,6 +3696,13 @@ uniform float u_densityCutoff;         // 密度跳过阈值(默认 0.01)
 
 uniform int   u_enabled;               // 0=禁用,1=启用
 
+// ── v3 时序累积(blue-noise 抖动 + EMA 重投影)──────────────────────
+uniform sampler2D u_historyMap;        // 上一帧合成结果(时序累积源)
+uniform mat4  u_prevViewProjection;    // 上一帧 VP(world → NDC,重投影用)
+uniform float u_temporalBlend;         // 时序 EMA 系数 [0,0.95):0=禁用
+uniform int   u_frameIndex;            // 帧序号(IGN 动画 + 时序)
+uniform int   u_hasHistory;            // 0=首帧/resize 后无历史,1=有历史
+
 #define PI 3.14159265359
 
 float clamp01(float x) { return clamp(x, 0.0, 1.0); }
@@ -3703,6 +3710,13 @@ float clamp01(float x) { return clamp(x, 0.0, 1.0); }
 float smoothstep01(float e0, float e1, float x) {
   float t = clamp01((x - e0) / (e1 - e0));
   return t * t * (3.0 - 2.0 * t);
+}
+
+// Interleaved Gradient Noise (Jimenez 2014) — 蓝噪声近似,无纹理依赖
+// 抖动光线起始位置 → 打散步进 banding,配合时序 EMA 收敛
+float ign(vec2 px, int frame) {
+  px += vec2(float(frame) * 47.0, float(frame) * 17.0) * 0.695;
+  return fract(52.9829189 * fract(0.06711056 * px.x + 0.005837 * px.y));
 }
 
 // Henyey-Greenstein 相位函数
@@ -3832,12 +3846,16 @@ void main() {
   float cosTheta = clamp01(dot(viewDir, u_sunDirection));
   float phase = dualLobedHG(cosTheta);
 
+  // Blue-noise 抖动:每像素每帧偏移采样位置,打散步进 banding
+  // (单帧为高频噪点,时序 EMA 累积后收敛为平滑结果)
+  float jitter = ign(gl_FragCoord.xy, u_frameIndex) - 0.5;  // [-0.5, 0.5]
+
   float transmittance = 1.0;
   vec3 accumColor = vec3(0.0);
 
   for (int i = 0; i < 512; i++) {
     if (i >= n) break;
-    float t = tEnter + stepLen * (float(i) + 0.5);
+    float t = tEnter + stepLen * (float(i) + 0.5 + jitter);
     vec3 p = u_cameraPos + rayDir * t;
 
     float density = sampleCloudDensity(p);
@@ -3884,7 +3902,21 @@ void main() {
   float cloudAlpha = clamp01(1.0 - transmittance);
   vec3 finalColor = mix(sceneColor, accumColor + sceneColor * transmittance, cloudAlpha);
 
-  outColor = vec4(finalColor, 1.0);
+  // ── v3 时序累积:重投影 + EMA ──────────────────────────────────
+  // 把当前像素世界位置重投影到上一帧 NDC,采样历史帧并指数加权平均
+  // (blue-noise 抖动产生的高频噪点经 EMA 收敛为平滑结果,等效 10x 步进数)
+  vec3 outRgb = finalColor;
+  if (u_temporalBlend > 0.0 && u_hasHistory == 1) {
+    vec4 prevNDC = u_prevViewProjection * vec4(hitWorldPos, 1.0);
+    vec2 prevUV = (prevNDC.xy / prevNDC.w) * 0.5 + 0.5;
+    // 重投影 UV 越界 → 视为遮挡断裂,丢弃历史
+    if (all(greaterThanEqual(prevUV, vec2(0.0))) && all(lessThanEqual(prevUV, vec2(1.0)))) {
+      vec3 histColor = texture(u_historyMap, prevUV).rgb;
+      outRgb = mix(finalColor, histColor, u_temporalBlend);
+    }
+  }
+
+  outColor = vec4(outRgb, 1.0);
 }
 `;
 

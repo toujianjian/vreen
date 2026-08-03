@@ -27,6 +27,9 @@ class MockGL2 {
   static readonly TEXTURE0 = 0x84C0;
   static readonly TEXTURE1 = 0x84C1;
   static readonly TEXTURE2 = 0x84C2;
+  static readonly TEXTURE3 = 0x84C3;
+  static readonly READ_FRAMEBUFFER = 0x8CA8;
+  static readonly DRAW_FRAMEBUFFER = 0x8CA9;
   static readonly TRIANGLES = 0x0004;
   static readonly COLOR_ATTACHMENT0 = 0x8CE0;
   static readonly RGBA = 0x1908;
@@ -61,6 +64,9 @@ class MockGL2 {
   readonly TEXTURE0 = MockGL2.TEXTURE0;
   readonly TEXTURE1 = MockGL2.TEXTURE1;
   readonly TEXTURE2 = MockGL2.TEXTURE2;
+  readonly TEXTURE3 = MockGL2.TEXTURE3;
+  readonly READ_FRAMEBUFFER = MockGL2.READ_FRAMEBUFFER;
+  readonly DRAW_FRAMEBUFFER = MockGL2.DRAW_FRAMEBUFFER;
   readonly TRIANGLES = MockGL2.TRIANGLES;
   readonly COLOR_ATTACHMENT0 = MockGL2.COLOR_ATTACHMENT0;
   readonly RGBA = MockGL2.RGBA;
@@ -99,6 +105,7 @@ class MockGL2 {
   drawCalls = 0;
   texImage3DCalls = 0;
   texImage2DCalls = 0;
+  blitCalls = 0;
 
   private _c = 0;
   private _id(): unknown { this._c++; return { id: this._c } as unknown; }
@@ -160,6 +167,7 @@ class MockGL2 {
   enableVertexAttribArray(_i: number): void {}
   vertexAttribPointer(_i: number, _s: number, _t: number, _n: boolean, _st: number, _o: number): void {}
   drawArrays(_m: number, _f: number, _c: number): void { this.drawCalls++; }
+  blitFramebuffer(..._a: unknown[]): void { this.blitCalls++; }
 }
 
 function makeTexture(id: string): WebGLTexture { return { id } as unknown as WebGLTexture; }
@@ -187,6 +195,16 @@ describe('VolumetricCloudsPass construction', () => {
     expect(p.worldScale).toBe(2048);
     expect(p.shadowStepLen).toBe(16);
     expect(p.densityCutoff).toBe(0.02);
+  });
+
+  it('defaults temporalBlend to 0 (disabled, backward compatible)', () => {
+    const p = new VolumetricCloudsPass();
+    expect(p.temporalBlend).toBe(0);
+  });
+
+  it('accepts temporalBlend option', () => {
+    const p = new VolumetricCloudsPass({ temporalBlend: 0.9 });
+    expect(p.temporalBlend).toBe(0.9);
   });
 });
 
@@ -404,5 +422,118 @@ describe('VOLUMETRIC_CLOUDS_FRAG shader source', () => {
 
   it('uses 3D noise sampler correctly', () => {
     expect(VOLUMETRIC_CLOUDS_FRAG).toContain('texture(u_noiseMap');
+  });
+
+  // ── v3 时序累积 shader 校验 ────────────────────────────────────
+
+  it('declares v3 temporal uniforms', () => {
+    expect(VOLUMETRIC_CLOUDS_FRAG).toContain('u_historyMap');
+    expect(VOLUMETRIC_CLOUDS_FRAG).toContain('u_prevViewProjection');
+    expect(VOLUMETRIC_CLOUDS_FRAG).toContain('u_temporalBlend');
+    expect(VOLUMETRIC_CLOUDS_FRAG).toContain('u_frameIndex');
+    expect(VOLUMETRIC_CLOUDS_FRAG).toContain('u_hasHistory');
+  });
+
+  it('implements Interleaved Gradient Noise (blue-noise dither)', () => {
+    expect(VOLUMETRIC_CLOUDS_FRAG).toContain('ign');
+    expect(VOLUMETRIC_CLOUDS_FRAG).toContain('Jimenez 2014');
+    expect(VOLUMETRIC_CLOUDS_FRAG).toContain('jitter');
+  });
+
+  it('implements temporal EMA reprojection', () => {
+    expect(VOLUMETRIC_CLOUDS_FRAG).toContain('u_prevViewProjection * vec4(hitWorldPos');
+    expect(VOLUMETRIC_CLOUDS_FRAG).toContain('prevUV');
+    expect(VOLUMETRIC_CLOUDS_FRAG).toContain('mix(finalColor, histColor');
+  });
+
+  it('rejects history on out-of-bounds reprojection (disocclusion)', () => {
+    expect(VOLUMETRIC_CLOUDS_FRAG).toContain('greaterThanEqual(prevUV');
+    expect(VOLUMETRIC_CLOUDS_FRAG).toContain('lessThanEqual(prevUV');
+  });
+});
+
+// ── v3 时序累积(blue-noise + EMA)──────────────────────────────────
+
+describe('VolumetricCloudsPass v3 temporal accumulation', () => {
+  it('temporalBlend=0 (default) allocates NO history texture/FBO', () => {
+    const gl = new MockGL2();
+    const p = new VolumetricCloudsPass(); // temporalBlend=0
+    const clouds = makeClouds();
+    p.uploadNoise(gl as unknown as WebGL2RenderingContext, new Float32Array(8 * 8 * 8), { x: 8, y: 8, z: 8 });
+    const texBefore = gl.createdTextures.length;
+    p.apply(gl as unknown as WebGL2RenderingContext, makeTexture('c'), makeTexture('d'), makeCamera(), clouds);
+    // 仅 +1 颜色纹理(无 history)
+    expect(gl.createdTextures.length).toBe(texBefore + 1);
+    expect(gl.createdFramebuffers.length).toBe(1); // 仅 output FBO
+    expect(gl.blitCalls).toBe(0);
+  });
+
+  it('temporalBlend=0.9 allocates extra history texture + FBO', () => {
+    const gl = new MockGL2();
+    const p = new VolumetricCloudsPass({ temporalBlend: 0.9 });
+    const clouds = makeClouds();
+    p.uploadNoise(gl as unknown as WebGL2RenderingContext, new Float32Array(8 * 8 * 8), { x: 8, y: 8, z: 8 });
+    const texBefore = gl.createdTextures.length;
+    p.apply(gl as unknown as WebGL2RenderingContext, makeTexture('c'), makeTexture('d'), makeCamera(), clouds);
+    // +2 纹理(output + history),+2 FBO(output + history)
+    expect(gl.createdTextures.length).toBe(texBefore + 2);
+    expect(gl.createdFramebuffers.length).toBe(2);
+  });
+
+  it('blits output to history each frame when temporal enabled', () => {
+    const gl = new MockGL2();
+    const p = new VolumetricCloudsPass({ temporalBlend: 0.9 });
+    const clouds = makeClouds();
+    p.uploadNoise(gl as unknown as WebGL2RenderingContext, new Float32Array(8 * 8 * 8), { x: 8, y: 8, z: 8 });
+    p.apply(gl as unknown as WebGL2RenderingContext, makeTexture('c1'), makeTexture('d'), makeCamera(), clouds);
+    expect(gl.blitCalls).toBe(1);
+    p.apply(gl as unknown as WebGL2RenderingContext, makeTexture('c2'), makeTexture('d'), makeCamera(), clouds);
+    expect(gl.blitCalls).toBe(2);
+  });
+
+  it('does NOT blit when temporalBlend=0', () => {
+    const gl = new MockGL2();
+    const p = new VolumetricCloudsPass(); // temporalBlend=0
+    const clouds = makeClouds();
+    p.uploadNoise(gl as unknown as WebGL2RenderingContext, new Float32Array(8 * 8 * 8), { x: 8, y: 8, z: 8 });
+    p.apply(gl as unknown as WebGL2RenderingContext, makeTexture('c'), makeTexture('d'), makeCamera(), clouds);
+    p.apply(gl as unknown as WebGL2RenderingContext, makeTexture('c2'), makeTexture('d'), makeCamera(), clouds);
+    expect(gl.blitCalls).toBe(0);
+  });
+
+  it('returns stable output texture handle even with temporal on', () => {
+    const gl = new MockGL2();
+    const p = new VolumetricCloudsPass({ temporalBlend: 0.9 });
+    const clouds = makeClouds();
+    p.uploadNoise(gl as unknown as WebGL2RenderingContext, new Float32Array(8 * 8 * 8), { x: 8, y: 8, z: 8 });
+    const t1 = p.apply(gl as unknown as WebGL2RenderingContext, makeTexture('a'), makeTexture('d'), makeCamera(), clouds);
+    const t2 = p.apply(gl as unknown as WebGL2RenderingContext, makeTexture('b'), makeTexture('d'), makeCamera(), clouds);
+    expect(t1).toBe(t2);
+  });
+
+  it('dispose releases history texture + FBO', () => {
+    const gl = new MockGL2();
+    const p = new VolumetricCloudsPass({ temporalBlend: 0.9 });
+    const clouds = makeClouds();
+    p.uploadNoise(gl as unknown as WebGL2RenderingContext, new Float32Array(8 * 8 * 8), { x: 8, y: 8, z: 8 });
+    p.apply(gl as unknown as WebGL2RenderingContext, makeTexture('c'), makeTexture('d'), makeCamera(), clouds);
+    expect(() => p.dispose(gl as unknown as WebGL2RenderingContext)).not.toThrow();
+    // dispose 后 apply 降级返回输入(noise 已释放)
+    const inputTex = makeTexture('input2');
+    const out = p.apply(gl as unknown as WebGL2RenderingContext, inputTex, makeTexture('d'), makeCamera(), clouds);
+    expect(out).toBe(inputTex);
+  });
+
+  it('does not throw across many temporal frames', () => {
+    const gl = new MockGL2();
+    const p = new VolumetricCloudsPass({ temporalBlend: 0.85 });
+    const clouds = makeClouds();
+    p.uploadNoise(gl as unknown as WebGL2RenderingContext, new Float32Array(8 * 8 * 8), { x: 8, y: 8, z: 8 });
+    expect(() => {
+      for (let i = 0; i < 10; i++) {
+        p.apply(gl as unknown as WebGL2RenderingContext, makeTexture(`c${i}`), makeTexture('d'), makeCamera(), clouds);
+      }
+    }).not.toThrow();
+    expect(gl.blitCalls).toBe(10);
   });
 });
