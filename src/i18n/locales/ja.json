@@ -894,6 +894,11 @@
         "desc": "スクリーンスペース体積光束(crepuscular rays)、ラジアルサンプリング + 輝度しきい値抽出 + 指数減衰 + 深度オクルージョン — VolumetricFog の約10分の1のコスト。",
         "advantage": "soup3D に大気散乱なし"
       },
+      "lensFlare": {
+        "title": "レンズフレア",
+        "desc": "スクリーンスペースレンズフレア、ゴーストチェーン + RGB 色収差 + ガウスハローリング + スターバースト光線 — 深度オクルージョン + 画面外フェード、GodRays の約5分の1のコスト。",
+        "advantage": "soup3D にレンズフレアなし"
+      },
       "heightFog": {
         "title": "ハイトフォグ",
         "desc": "UE5 風指数ハイトフォグ、閉形式 Beer-Lambert 密度 + 太陽内散乱。",

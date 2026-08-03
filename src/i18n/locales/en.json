@@ -894,6 +894,11 @@
         "desc": "Screen-space volumetric light shafts (crepuscular rays) with radial sampling, luminance-threshold extraction, exponential decay, and depth-aware occlusion — ~10x cheaper than VolumetricFog.",
         "advantage": "soup3D has no atmospheric scattering"
       },
+      "lensFlare": {
+        "title": "Lens Flare",
+        "desc": "Screen-space lens flare with ghost chain, RGB chromatic aberration, gaussian halo ring, and starburst rays — depth-occluded, off-screen faded, ~5x cheaper than GodRays.",
+        "advantage": "soup3D has no lens flare"
+      },
       "heightFog": {
         "title": "Height Fog",
         "desc": "UE5-style exponential height fog with closed-form Beer-Lambert density and sun inscattering.",

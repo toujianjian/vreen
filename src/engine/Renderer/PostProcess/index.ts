@@ -1,7 +1,7 @@
 // PostProcess barrel — 增强后处理 Pass 集合。
 //
 // 与 RenderPass.ts 中的基础后处理 Bloom/CA/Vignette/FinalCompose 平行。
-// 本模块提供 25 个增强 Pass:
+// 本模块提供 29 个增强 Pass:
 //   - ColorGradingPass  : 色彩分级(8 个 ASC-CDL 参数)
 //   - LUTPass           : LUT 色彩查找表(3D 或 2D strip)
 //   - ChromaticAberrationPass : 增强色差(Vector2 偏移 + 径向调制)
@@ -19,18 +19,24 @@
 //   - GTAOPass         : Ground Truth 环境光遮蔽(半球地平线积分)
 //   - SSSSPass         : 屏幕空间次表面散射(可分离高斯 + 深度感知)
 //   - DOFEnhancedPass  : 增强景深(CoC + 圆/六/八边形散景)
+//   - GlitchPass       : 数字故障(扫描线 + 像素抖动 + RGB 分裂)
 //   - SMAAPass         : 子像素形态学抗锯齿(3 pass + procedural LUT)
 //   - UnrealBloomPass  : Unreal 风格多层 mip 高斯 Bloom + lens dirt
 //   - SSGIPass         : 屏幕空间全局光照(8 射线余弦半球采样 + 时序抖动)
 //   - ScreenSpaceShadowPass : 屏幕空间方向性接触阴影(深度缓冲 + 光向射线步进)
 //   - TonemappingPass   : HDR→LDR 色调映射(ACES/Reinhard/AGX/Uncharted2/Linear)
+//   - HeightFogPass    : UE5 风格指数高度雾(单 pass Beer-Lambert 闭式积分)
 //   - SharpenPass       : 对比度自适应锐化(AMD FidelityFX CAS,TAA 后细节恢复)
 //   - FSRUpscalePass    : FSR1 EASU 空间上采样(低→高分辨率,边缘自适应)
+//   - WaterSurfacePass  : 屏幕空间水面(Gerstner 波 + Schlick Fresnel 反射/折射)
+//   - GodRaysPass       : 屏幕空间体积光束(crepuscular rays,径向采样 + 深度遮挡)
+//   - ScreenSpaceLensFlarePass : 屏幕空间镜头光晕(ghosts + halo + starburst + 色散)
 //
 // 注意:
 //   - 前 7 个 Pass 都实现 RenderPass 接口,可直接加入 PostProcessingPipeline。
 //   - SSRPass / VolumetricFogPass / VelocityPass / TAAPass / MotionBlurPass /
-//     AutoExposurePass / GTAOPass / SSSSPass / DOFEnhancedPass / SSGIPass 签名包含
+//     AutoExposurePass / GTAOPass / SSSSPass / DOFEnhancedPass / SSGIPass /
+//     WaterSurfacePass / GodRaysPass / ScreenSpaceLensFlarePass 等签名包含
 //     额外的 GBuffer 纹理参数,不适配 RenderPass.apply(input, ctx) 抽象,
 //     因此独立管理 FBO / program。
 //
@@ -74,3 +80,7 @@ export { SharpenPass, type SharpenPassOptions } from './SharpenPass';
 export { FSRUpscalePass, type FSRUpscaleOptions } from './FSRUpscalePass';
 export { WaterSurfacePass, type WaterSurfaceOptions } from './WaterSurfacePass';
 export { GodRaysPass, type GodRaysOptions } from './GodRaysPass';
+export {
+  ScreenSpaceLensFlarePass,
+  type ScreenSpaceLensFlareOptions,
+} from './ScreenSpaceLensFlarePass';

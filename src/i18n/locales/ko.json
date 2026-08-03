@@ -894,6 +894,11 @@
         "desc": "스크린 공간 체적 광선(crepuscular rays), 방사형 샘플링 + 휘도 임계값 추출 + 지수 감쇠 + 깊이 오클루전 — VolumetricFog의 약 10분의 1 비용.",
         "advantage": "soup3D에 대기 산란 없음"
       },
+      "lensFlare": {
+        "title": "렌즈 플레어",
+        "desc": "스크린 공간 렌즈 플레어, 고스트 체인 + RGB 색수차 + 가우시안 헤일로 링 + 스타버스트 광선 — 깊이 오클루전 + 화면 외 페이드, GodRays의 약 5분의 1 비용.",
+        "advantage": "soup3D에 렌즈 플레어 없음"
+      },
       "heightFog": {
         "title": "높이 안개",
         "desc": "UE5 스타일 지수 높이 안개, 폐쇄형 Beer-Lambert 밀도 + 태양 내산란.",

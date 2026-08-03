@@ -4325,5 +4325,150 @@ void main() {
 }
 `;
 
+export const LENS_FLARE_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+// 屏幕空间镜头光晕(Screen-Space Lens Flare)
+// 参考: Jorge Jimenez 2014 "Next Generation Post Processing in CoD:AW"
+//       Madsen 2011 "Real-Time Lens Flare" / Unity HDRP / o3de Atom
+//
+// 特性:
+//   - 多重 ghost 重影(沿光源→屏幕中心轴,带 RGB 色散)
+//   - 环形 halo 光晕(围绕光源的环形高斯)
+//   - 星芒 starburst(围绕光源的多射线叠加)
+//   - 全局衰减(距光源越远越暗)
+//   - 屏幕外淡出(光源移出屏幕时光晕渐隐)
+//   - 深度遮挡(前景几何挡住光晕)
+//
+// 与 GodRaysPass 的区别:
+//   * GodRaysPass 模拟大气散射光束(crepuscular rays),需径向步进采样;
+//   * LensFlarePass 模拟镜头玻璃内部反射产生的重影/光环/星芒,
+//     单次采样合成,~5x 便宜,适合电影级镜头表现。
+//   * 二者可共存:GodRays 给光束,LensFlare 给镜头质感。
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;          // 场景颜色(HDR)
+uniform sampler2D u_depthMap;          // NDC 深度(0..1)
+
+uniform mat4  u_viewProjection;        // 世界 → NDC(投影光源)
+uniform vec3  u_lightPosition;         // 光源世界位置
+uniform vec3  u_lightColor;            // 光晕颜色
+uniform float u_lightIntensity;        // 光晕整体强度
+
+uniform int   u_ghostCount;            // ghost 重影数(默认 8,上限 16)
+uniform float u_ghostSpacing;          // ghost 轴向间距(默认 0.2)
+uniform float u_ghostRadius;           // ghost 半径(默认 0.08)
+uniform float u_ghostIntensity;        // ghost 强度(默认 1.0)
+
+uniform float u_haloRadius;            // halo 环半径(默认 0.4)
+uniform float u_haloThickness;         // halo 环厚度(默认 0.1)
+uniform float u_haloIntensity;         // halo 强度(默认 0.5)
+
+uniform float u_starburstIntensity;    // 星芒强度(默认 0.3)
+uniform int   u_starburstRays;         // 星芒射线数(默认 6,上限 16)
+
+uniform float u_maxDepth;              // 前景遮挡深度阈值(默认 0.99)
+uniform float u_chromaticAberration;   // ghost 色散强度(默认 0.005)
+uniform float u_globalFalloff;         // 全局距离衰减率(默认 1.5)
+uniform int   u_enabled;               // 0=禁用,1=启用
+
+#define PI 3.14159265359
+
+// 高斯径向掩码:以 center 为中心,半径 radius 处衰减到 1/e
+float radialGauss(vec2 uv, vec2 center, float radius) {
+  float d = distance(uv, center);
+  return exp(-d * d / (radius * radius));
+}
+
+void main() {
+  vec3 sceneColor = texture(u_colorMap, v_uv).rgb;
+
+  if (u_enabled == 0) {
+    outColor = vec4(sceneColor, 1.0);
+    return;
+  }
+
+  // ── 投影光源到屏幕 NDC ─────────────────────────────────────────
+  vec4 lightClip = u_viewProjection * vec4(u_lightPosition, 1.0);
+  // 光源在相机后方(clip w <= 0)→ 光晕不可见
+  if (lightClip.w <= 0.0) {
+    outColor = vec4(sceneColor, 1.0);
+    return;
+  }
+  vec3 lightNDC = lightClip.xyz / lightClip.w;
+  vec2 lightUV = lightNDC.xy * 0.5 + 0.5;
+
+  // ── 屏幕外淡出:光源移出屏幕时光晕渐隐 ─────────────────────────
+  vec2 offVec = max(abs(lightUV - vec2(0.5)) - vec2(0.5), vec2(0.0));
+  float offDist = length(offVec);
+  float visibilityFade = 1.0 - smoothstep(0.0, 1.5, offDist);
+  if (visibilityFade <= 0.001) {
+    outColor = vec4(sceneColor, 1.0);
+    return;
+  }
+
+  // ── 深度遮挡:前景几何(depth < maxDepth)挡住光晕 ──────────────
+  float pixelDepth = texture(u_depthMap, v_uv).r;
+  float occlusion = step(u_maxDepth, pixelDepth);
+
+  vec2 toCenter = vec2(0.5) - lightUV;
+  vec3 flare = vec3(0.0);
+
+  // ── 1) Ghost 重影(沿光源→中心轴,带 RGB 色散) ────────────────
+  // 每个 ghost 在 lightUV + toCenter * (spacing * i) 处,距光源越远越暗
+  const int MAX_GHOSTS = 16;
+  for (int i = 0; i < MAX_GHOSTS; i++) {
+    if (i >= u_ghostCount) break;
+    float fi = float(i + 1);
+    float displacement = u_ghostSpacing * fi;
+    vec2 ghostUV = lightUV + toCenter * displacement;
+    // RGB 色散:R 通道正向偏移,B 通道反向偏移,G 通道不偏移
+    float ca = u_chromaticAberration * fi;
+    vec3 ghostColor;
+    ghostColor.r = texture(u_colorMap, ghostUV + vec2(ca, 0.0)).r;
+    ghostColor.g = texture(u_colorMap, ghostUV).g;
+    ghostColor.b = texture(u_colorMap, ghostUV - vec2(ca, 0.0)).b;
+    // 径向高斯衰减 + 距光源越远越暗(1/i falloff)
+    float mask = radialGauss(v_uv, ghostUV, u_ghostRadius);
+    float falloff = 1.0 / fi;
+    flare += ghostColor * mask * falloff * u_ghostIntensity;
+  }
+
+  // ── 2) Halo 光环(围绕光源的环形高斯) ─────────────────────────
+  // 在 dist == haloRadius 处最亮,两侧高斯衰减
+  float distToLight = distance(v_uv, lightUV);
+  float haloRing = exp(-pow((distToLight - u_haloRadius) / u_haloThickness, 2.0));
+  flare += sceneColor * haloRing * u_haloIntensity;
+
+  // ── 3) Starburst 星芒(围绕光源的多射线叠加) ──────────────────
+  if (u_starburstIntensity > 0.0) {
+    vec2 toLight = v_uv - lightUV;
+    float angle = atan(toLight.y, toLight.x);
+    float dist = length(toLight);
+    // 多射线叠加:每条射线由 sin(angle * rays + phase) 调制
+    float rays = 0.0;
+    const int MAX_RAYS = 16;
+    for (int i = 0; i < MAX_RAYS; i++) {
+      if (i >= u_starburstRays) break;
+      float a = angle * float(u_starburstRays) + float(i) * PI;
+      rays += abs(sin(a));
+    }
+    rays = pow(max(0.0, rays - float(u_starburstRays) * 0.5), 2.0);
+    float starMask = exp(-dist * 8.0);
+    flare += u_lightColor * rays * starMask * u_starburstIntensity;
+  }
+
+  // ── 4) 全局衰减 + 加性合成 ───────────────────────────────────
+  // 注:distToLight 已在 halo 阶段计算,这里复用作为全局距离衰减
+  float globalFalloff = exp(-distToLight * u_globalFalloff);
+  vec3 finalFlare = flare * u_lightColor * u_lightIntensity
+                    * globalFalloff * occlusion * visibilityFade;
+
+  outColor = vec4(sceneColor + finalFlare, 1.0);
+}
+`;
+
 
 

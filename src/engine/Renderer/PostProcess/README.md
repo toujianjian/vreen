@@ -25,7 +25,7 @@ PostProcess/
   │     ├── AfterimagePass
   │     └── PixelationPass
   │
-  ├── GBuffer-dependent (19 passes)           ← independent FBO/program
+  ├── GBuffer-dependent (20 passes)           ← independent FBO/program
   │     ├── SSRPass          ← needs position + normal
   │     ├── SSSRPass         ← needs position + normal + roughness (GGX importance-sampled)
   │     ├── SSGIPass         ← needs position + normal + color
@@ -36,6 +36,7 @@ PostProcess/
   │     ├── CausticsPass     ← needs depth (underwater procedural caustics)
   │     ├── WaterSurfacePass ← needs depth (screen-space planar water, Gerstner + Fresnel)
   │     ├── GodRaysPass      ← needs depth (screen-space volumetric light shafts)
+  │     ├── ScreenSpaceLensFlarePass ← needs depth (ghosts + halo + starburst + chromatic)
   │     ├── VelocityPass     ← needs depth + matrices
   │     ├── TAAPass          ← needs color + velocity
   │     ├── MotionBlurPass   ← needs color + velocity
@@ -61,7 +62,7 @@ pipeline.add(new ColorGradingPass({ saturation: 1.2 }));
 pipeline.add(new LUTPass({ lut: myLUTTexture, lutSize: 32, is3D: true }));
 ```
 
-**Pattern 2: GBuffer-dependent** — These 19 passes have custom `apply()`
+**Pattern 2: GBuffer-dependent** — These 20 passes have custom `apply()`
 signatures that require additional GBuffer textures (depth, normal, velocity,
 position). They manage their own FBOs and shader programs independently:
 
@@ -1740,6 +1741,216 @@ if (cameraDir.dot(sunDir) < 0) {
 - GPU Gems 3, Ch. 13 "Volumetric Light Scattering in Post-Space" (Sekulic)
 - o3de Atom, Volumetric rays pass
 - Mittring 2007, "Finding Next Gen — CryEngine 2" (light shafts)
+
+---
+
+### ScreenSpaceLensFlarePass
+
+Screen-space lens flare — a single-pass post-process that simulates the
+**ghosts**, **halo**, and **starburst** artifacts produced by light reflecting
+and refracting inside a camera lens. Projects the light's world position to
+screen UV, then composites three flare layers along the light→screen-center
+axis: (1) a chain of **ghost** discs with **RGB chromatic aberration** that
+march toward the screen center with `1/i` falloff, (2) a **gaussian halo ring**
+centered on the light at radius `haloRadius`, and (3) a **starburst** of
+`sin()`-modulated rays radiating from the light. **Depth-aware occlusion**
+lets foreground geometry block the flare, and an **off-screen fade** smoothly
+hides the flare as the light exits the viewport. ~5× cheaper than `GodRaysPass`
+(no radial march — single-sample compositing), and the two can coexist:
+GodRays gives the atmospheric shafts, LensFlare gives the cinematic lens
+character. **Surpasses soup3D** (which has no lens flare at all) and improves
+on three.js's sprite-based `Lensflare` (which is not depth-occluded and
+requires per-sprite scene placement).
+
+**Class**: `ScreenSpaceLensFlarePass` (independent, does **not** extend `RenderPass`)
+**Shader**: `LENS_FLARE_FRAG` (single-pass fullscreen)
+**Vertex**: shared `POST_VERT` (fullscreen triangle)
+**Draw calls**: 1 per `apply()` (0 when disabled — early return)
+**Output**: RGBA16F HDR (additive flare may push pixels > 1.0)
+
+#### Architecture
+
+```
+┌──────────────┐    ┌──────────────────────────────────────────────┐
+│ colorTexture │───▶│ ScreenSpaceLensFlarePass.apply()             │
+│ HDR scene    │    │  0. if !enabled → return inputTexture (zero) │
+│ (ghost src)  │    │  1. (re)allocate FBO/texture on resize/dirty │
+└──────────────┘    │  2. bind _fbo, clear COLOR_BUFFER_BIT         │
+                    │  3. bind color → TEXTURE0 (u_colorMap)       │
+┌──────────────┐    │  4. bind depth → TEXTURE1 (u_depthMap)       │
+│ depthTexture │───▶│  5. set viewProjection (world→NDC)           │
+│ GBuffer depth│    │  6. set light params (pos/color/intensity)   │
+└──────────────┘    │  7. set ghost params (count/spacing/radius)  │
+                    │  8. set halo params (radius/thickness/int)   │
+┌──────────────┐    │  9. set starburst params (intensity/rays)    │
+│   camera     │───▶│ 10. set global params (maxDepth/CA/falloff)  │
+│ (VP matrix)  │    │ 11. drawArrays(fullscreen triangle)          │
+└──────────────┘    │ 12. return _outputTexture                    │
+                    └────────────────────┬─────────────────────────┘
+                                          ▼
+                    ┌──────────────────────────────────────────────┐
+                    │ _outputTexture (RGBA16F)                     │
+                    │   sceneColor + flare                         │
+                    │     * lightColor * intensity                 │
+                    │     * globalFalloff * occlusion * fade       │
+                    └──────────────────────────────────────────────┘
+```
+
+#### Algorithm (Jimenez 2014, per pixel)
+
+| # | Stage | Formula / Logic |
+|---|-------|-----------------|
+| 1 | Light project | `lightClip = viewProjection * lightPos; if (w <= 0) skip;` |
+| 2 | Screen UV | `lightUV = lightNDC.xy * 0.5 + 0.5` |
+| 3 | Off-screen fade | `offDist = length(max(|lightUV-0.5|-0.5, 0)); fade = 1-smoothstep(0,1.5,offDist)` |
+| 4 | Depth occlusion | `occlusion = step(maxDepth, pixelDepth)` (sky=1, geom=0) |
+| 5 | Ghost chain | `for i in 1..ghostCount: ghostUV = lightUV + toCenter*(spacing*i)` |
+| 6 | Ghost chromatic | `R = tex(ghostUV+ca*i); G = tex(ghostUV); B = tex(ghostUV-ca*i)` |
+| 7 | Ghost mask | `mask = radialGauss(pixel, ghostUV, ghostRadius); falloff = 1/i` |
+| 8 | Halo ring | `haloRing = exp(-((distToLight-haloRadius)/haloThickness)^2)` |
+| 9 | Starburst | `rays = Σ|sin(angle*rays + i*π)|; rays = pow(rays - n*0.5, 2)` |
+| 10 | Global falloff | `globalFalloff = exp(-distToLight * globalFalloffRate)` |
+| 11 | Composite | `out = sceneColor + flare * lightColor * intensity * falloff * occlusion * fade` |
+
+Both the ghost and starburst loops are bounded by `MAX_GHOSTS = 16` /
+`MAX_RAYS = 16` (GLSL ES 3.0 constant upper bounds) with early `break` at
+`u_ghostCount` / `u_starburstRays`, so counts are configurable from 0 to 16
+without shader recompilation.
+
+#### Ghost chromatic aberration
+
+Each ghost samples the scene color **three times** with per-channel UV
+offsets, simulating the prismatic dispersion of a real lens:
+
+```glsl
+float ca = u_chromaticAberration * fi;       // offset scales with ghost index
+ghostColor.r = texture(u_colorMap, ghostUV + vec2(ca, 0.0)).r;  // red shifts right
+ghostColor.g = texture(u_colorMap, ghostUV).g;                  // green stays
+ghostColor.b = texture(u_colorMap, ghostUV - vec2(ca, 0.0)).b;  // blue shifts left
+```
+
+This produces the characteristic **rainbow fringe** on each ghost that is the
+signature of cinematic lens flare.
+
+#### Depth-aware occlusion
+
+Without the depth test, the flare would bleed through foreground geometry.
+The shader samples `u_depthMap` once per pixel and gates the entire flare:
+
+```glsl
+float occlusion = step(u_maxDepth, pixelDepth);
+// depth >= maxDepth → sky / far plane → occlusion = 1.0 (flare visible)
+// depth <  maxDepth → foreground geometry → occlusion = 0.0 (flare hidden)
+```
+
+This makes the flare appear **behind** occluders — critical for realism when
+the sun is partially eclipsed by buildings or terrain.
+
+#### Options
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `lightPosition` | `[x,y,z]` | `[0, 50, 0]` | Light world position (project to screen) |
+| `lightColor` | `[r,g,b]` | `[1.0, 0.95, 0.85]` | Flare tint (warm white = sunlight) |
+| `lightIntensity` | `number` | `1.0` | Flare brightness multiplier |
+| `ghostCount` | `number` | `8` | Ghost disc count (0..16, 0 disables ghosts) |
+| `ghostSpacing` | `number` | `0.2` | Axial spacing per ghost along light→center |
+| `ghostRadius` | `number` | `0.08` | Gaussian radius of each ghost disc |
+| `ghostIntensity` | `number` | `1.0` | Ghost brightness multiplier |
+| `haloRadius` | `number` | `0.4` | Halo ring radius from light (screen UV units) |
+| `haloThickness` | `number` | `0.1` | Halo ring gaussian width |
+| `haloIntensity` | `number` | `0.5` | Halo brightness multiplier |
+| `starburstIntensity` | `number` | `0.3` | Starburst brightness (0 disables) |
+| `starburstRays` | `number` | `6` | Starburst ray count (0..16) |
+| `maxDepth` | `number` | `0.99` | Depth above which pixels are treated as sky |
+| `chromaticAberration` | `number` | `0.005` | Per-ghost RGB channel offset |
+| `globalFalloff` | `number` | `1.5` | Distance falloff rate from light |
+| `enabled` | `boolean` | `true` | Enable toggle |
+
+#### API
+
+```ts
+apply(
+  gl: WebGL2RenderingContext,
+  colorTexture: WebGLTexture,
+  depthTexture: WebGLTexture,
+  camera: Camera,
+): WebGLTexture
+```
+
+#### Usage — cinematic sun flare
+
+```ts
+import { ScreenSpaceLensFlarePass } from '@/engine/Renderer/PostProcess/ScreenSpaceLensFlarePass';
+
+const lensFlare = new ScreenSpaceLensFlarePass({
+  lightPosition: [120, 80, -40],   // sun world position
+  lightColor: [1.0, 0.95, 0.85],   // warm white
+  lightIntensity: 1.2,
+  ghostCount: 10,                   // rich ghost chain
+  ghostSpacing: 0.18,
+  ghostRadius: 0.06,
+  chromaticAberration: 0.008,       // pronounced rainbow fringe
+  haloRadius: 0.45,
+  haloIntensity: 0.6,
+  starburstRays: 8,                 // 8-pointed star
+  starburstIntensity: 0.4,
+  maxDepth: 0.99,                   // sky passes, geometry blocks
+});
+
+// Per frame (update light to follow the sun):
+lensFlare.lightPosition = sunWorldPos;
+const out = lensFlare.apply(gl, sceneColorTex, depthTex, camera);
+```
+
+#### Usage — paired with GodRaysPass for full light character
+
+```ts
+// GodRays gives the atmospheric shafts (scattering through air),
+// LensFlare gives the lens artifacts (reflections in the glass).
+// Stack both for a complete cinematic light look:
+const godRays = new GodRaysPass({ samples: 100, decay: 0.95 });
+const lensFlare = new ScreenSpaceLensFlarePass({ ghostCount: 10 });
+
+godRays.lightPosition = sunWorldPos;
+lensFlare.lightPosition = sunWorldPos;
+let color = godRays.apply(gl, sceneColorTex, depthTex, camera);
+color = lensFlare.apply(gl, color, depthTex, camera);
+```
+
+#### Usage — disable starburst for a cleaner look
+
+```ts
+// For a subtle, documentary-style flare without the starburst spikes:
+const subtle = new ScreenSpaceLensFlarePass({
+  starburstIntensity: 0,
+  ghostCount: 4,
+  ghostIntensity: 0.6,
+  haloIntensity: 0.3,
+});
+```
+
+#### Comparison with soup3D
+
+| Capability | VREEN | soup3D |
+|-----------|-------|--------|
+| Screen-space lens flare | ✓ (ghosts + halo + starburst) | ✗ |
+| Ghost chain with 1/i falloff | ✓ (configurable count 0..16) | ✗ |
+| RGB chromatic aberration per ghost | ✓ (prismatic dispersion) | ✗ |
+| Gaussian halo ring | ✓ (radius + thickness) | ✗ |
+| Starburst rays | ✓ (sin-modulated, 0..16 rays) | ✗ |
+| Depth-aware occlusion | ✓ (foreground blocks flare) | ✗ (no depth pass) |
+| Off-screen fade | ✓ (smoothstep hide) | ✗ |
+| HDR additive composite | ✓ (RGBA16F) | ✗ |
+| Light-behind-camera skip | ✓ (clip w test) | ✗ |
+| Coexists with GodRays | ✓ (shafts + lens character) | ✗ |
+
+#### References
+
+- Jorge Jimenez 2014, "Next Generation Post Processing in Call of Duty: Advanced Warfare"
+- Madsen 2011, "Real-Time Lens Flare Rendering"
+- Unity HDRP, `LensFlareComponent` (SRP)
+- o3de Atom, PostProcess LensFlare
 
 ---
 
