@@ -869,6 +869,11 @@
         "desc": "光线步进体积雾,丁达尔光 + 散射。",
         "advantage": "soup3D 无体积雾"
       },
+      "heightFog": {
+        "title": "高度雾",
+        "desc": "UE5 风格指数高度雾,闭式 Beer-Lambert 密度 + 太阳入射散射。",
+        "advantage": "soup3D 无雾效"
+      },
       "ssgi": {
         "title": "SSGI",
         "desc": "屏幕空间全局光照,8 射线余弦半球采样。",

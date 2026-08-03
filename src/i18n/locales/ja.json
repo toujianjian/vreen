@@ -869,6 +869,11 @@
         "desc": "レイマーチボリュームフォグ、ゴッドレイ + 散乱。",
         "advantage": "soup3D にボリュームフォグなし"
       },
+      "heightFog": {
+        "title": "ハイトフォグ",
+        "desc": "UE5 風指数ハイトフォグ、閉形式 Beer-Lambert 密度 + 太陽内散乱。",
+        "advantage": "soup3D にフォグなし"
+      },
       "ssgi": {
         "title": "SSGI",
         "desc": "スクリーン空間グローバルイルミネーション、8 レイ余弦半球サンプリング。",

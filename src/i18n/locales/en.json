@@ -869,6 +869,11 @@
         "desc": "Ray-marched volumetric fog with god rays and scattering.",
         "advantage": "soup3D has no volfog"
       },
+      "heightFog": {
+        "title": "Height Fog",
+        "desc": "UE5-style exponential height fog with closed-form Beer-Lambert density and sun inscattering.",
+        "advantage": "soup3D has no fog"
+      },
       "ssgi": {
         "title": "SSGI",
         "desc": "Screen-space global illumination with 8-ray cosine hemisphere sampling.",

@@ -869,6 +869,11 @@
         "desc": "Niebla volumétrica ray-march con rayos de luz y dispersión.",
         "advantage": "soup3D sin niebla vol"
       },
+      "heightFog": {
+        "title": "Niebla de altura",
+        "desc": "Niebla de altura exponencial estilo UE5 con densidad Beer-Lambert de forma cerrada e inscattering solar.",
+        "advantage": "soup3D sin niebla"
+      },
       "ssgi": {
         "title": "SSGI",
         "desc": "Iluminación global en espacio de pantalla con muestreo hemisférico coseno de 8 rayos.",

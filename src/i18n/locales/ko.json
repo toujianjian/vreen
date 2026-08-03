@@ -869,6 +869,11 @@
         "desc": "레이마치 볼륨 포그, 갓레이 + 산란.",
         "advantage": "soup3D에 볼륨 포그 없음"
       },
+      "heightFog": {
+        "title": "높이 안개",
+        "desc": "UE5 스타일 지수 높이 안개, 폐쇄형 Beer-Lambert 밀도 + 태양 내산란.",
+        "advantage": "soup3D는 안개 없음"
+      },
       "ssgi": {
         "title": "SSGI",
         "desc": "스크린 공간 글로벌 일루미네이션, 8레이 코사인 반구 샘플링.",
