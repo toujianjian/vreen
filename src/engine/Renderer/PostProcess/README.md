@@ -25,8 +25,9 @@ PostProcess/
   │     ├── AfterimagePass
   │     └── PixelationPass
   │
-  ├── GBuffer-dependent (15 passes)           ← independent FBO/program
+  ├── GBuffer-dependent (16 passes)           ← independent FBO/program
   │     ├── SSRPass          ← needs position + normal
+  │     ├── SSSRPass         ← needs position + normal + roughness (GGX importance-sampled)
   │     ├── SSGIPass         ← needs position + normal + color
   │     ├── ScreenSpaceShadowPass ← needs depth + light direction
   │     ├── VolumetricFogPass ← needs depth
@@ -562,6 +563,246 @@ total is 3 textures + 3 FBOs + 2 programs + 3 draw calls per frame.
 - Jorge Jimenez, "Interleaved Gradient Noise" (2014) — temporal jitter
 - o3de Atom RPI SSRBlurShader — separable rough-reflection blur
 - UE5 `ScreenSpaceReflections.usf` — SpatialFilterPass reference
+
+---
+
+### SSSRPass
+
+Stochastic Screen-Space Reflections — uses **GGX importance sampling** to
+generate physically correct rough reflections. Each pixel samples a
+half-vector from the GGX NDF (normal distribution function), reflects the
+view direction about it, and ray-marches in screen space. Over multiple
+frames, temporal accumulation converges to the correct blurry reflection
+for rough surfaces.
+
+**Surpasses soup3D** (which has no SSR of any kind — no stochastic SSR,
+no GGX importance sampling, no temporal accumulation).
+
+**Class**: `SSSRPass` (independent, does **not** extend `RenderPass`)
+**Shader**: `SSSR_FRAG` (GGX importance-sampled ray generation + screen-space ray march + temporal reprojection)
+
+#### SSR vs SSSR
+
+| Feature | `SSRPass` | `SSSRPass` |
+|---------|-----------|------------|
+| Ray direction | Mirror `reflect(-V, N)` | GGX importance-sampled `reflect(-V, H)` |
+| Rough reflections | H+V Gaussian blur (approximation) | Stochastic sampling + temporal accumulation (physical) |
+| Temporal accumulation | No | Yes (velocity reprojection + history blend) |
+| Fresnel | No | Yes (Schlick) |
+| Confidence alpha | No | Yes (edge/distance/roughness fade) |
+| Physical correctness | Fixed blur kernel, not physical | GGX NDF driven, physically correct |
+| Performance | Fast (1 ray + blur) | Slower (1 ray + temporal) |
+| Best for | Mirror / low roughness | Full roughness range, especially mid-roughness |
+
+#### Algorithm (7-stage pipeline)
+
+```
+┌─────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│ GBuffer     │───▶│ 1. Read position │───▶│ 2. Early-out    │
+│ (pos/norm/  │    │ normal roughness │    │ sky / too rough │
+│  rough/color)│   │ color            │    │ / backface     │
+└─────────────┘    └──────────────────┘    └────────┬────────┘
+                                                     │
+                           ┌─────────────────────────▼──────────┐
+                           │ 3. GGX importance sampling         │
+                           │   α = roughness²                   │
+                           │   φ = 2π·ξ₁                        │
+                           │   cosθ = √((1-ξ₂)/(1+(α²-1)·ξ₂))  │
+                           │   H = TBN·(sinθcosφ, sinθsinφ,cosθ)│
+                           │   rayDir = reflect(-viewDir, H)    │
+                           └─────────────────┬──────────────────┘
+                                             │
+                  ┌──────────────────────────▼──────────────────┐
+                  │ 4. Screen-space ray march (adaptive step)   │
+                  │    + binary search refinement (8 steps)     │
+                  └─────────────────┬──────────────────────────┘
+                                    │
+                  ┌─────────────────▼──────────────────────────┐
+                  │ 5. Attenuation                              │
+                  │    edgeFade × distFade × Fresnel × roughFade│
+                  └─────────────────┬──────────────────────────┘
+                                    │
+                  ┌─────────────────▼──────────────────────────┐
+                  │ 6. Temporal accumulation                    │
+                  │    velocity reprojection + history blend    │
+                  │    (confidence-weighted mix)                │
+                  └─────────────────┬──────────────────────────┘
+                                    │
+                  ┌─────────────────▼──────────────────────────┐
+                  │ 7. Output RGBA16F                           │
+                  │    RGB = reflection × strength × Fresnel    │
+                  │    A   = confidence [0,1]                   │
+                  └────────────────────────────────────────────┘
+```
+
+#### Options
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `maxSteps` | `number` | `64` | Max ray-march steps (shader cap 64) |
+| `thickness` | `number` | `0.5` | Thickness tolerance (world units) |
+| `resolution` | `number` | `0.5` | Resolution scale (1 = full, 0.5 = half res) |
+| `reflectionStrength` | `number` | `0.5` | Reflection intensity (0..1+, >1 needs tonemap) |
+| `roughnessCutoff` | `number` | `0.8` | Skip SSR for roughness > cutoff (wider than SSR's 0.6) |
+| `roughnessBias` | `number` | `0.0` | Reduce effective roughness (Intel suggests 0.0~0.1) |
+| `temporalWeight` | `number` | `0.88` | Temporal blend weight (0 = off, 0.9 = strong) |
+
+#### API
+
+```ts
+class SSSRPass {
+  constructor(opts?: SSSRPassOptions): SSSRPass;
+  apply(
+    gl: WebGL2RenderingContext,
+    inputTexture: WebGLTexture,       // scene color (reflection source)
+    positionTexture: WebGLTexture,     // GBuffer world position (RGBA16F)
+    normalTexture: WebGLTexture,       // GBuffer world normal (RGBA16F)
+    camera: Camera,
+    roughnessTexture?: WebGLTexture,   // GBuffer roughness (R channel); null = mirror
+    velocityTexture?: WebGLTexture,    // pixel velocity (UV offset); null = no temporal
+  ): WebGLTexture;                     // RGBA16F: RGB=reflection, A=confidence
+  getHistoryTexture(): WebGLTexture | null;
+  setDirty(): void;
+  dispose(gl?: WebGL2RenderingContext): void;
+}
+```
+
+#### CPU-testable helpers (exported)
+
+| Export | Signature | Description |
+|--------|-----------|-------------|
+| `importanceSampleGGX` | `(xi: [number, number], N: Vec3, roughness: number) => Vec3` | GGX NDF inverse-CDF half-vector generation (mirrors GLSL `importanceSampleGGX`) |
+| `schlickFresnel` | `(cosTheta: number, F0?: number) => number` | Schlick Fresnel approximation (clamps cosTheta to 0) |
+| `reflectVec` | `(V: Vec3, H: Vec3) => Vec3` | Reflect direction `reflect(-V, H) = -V + 2·dot(V,H)·H` |
+| `Vec3` | `{ x, y, z }` | Pure-data 3D vector (no Vector3 dependency for testability) |
+
+#### Texture unit bindings
+
+| Unit | Uniform | Texture |
+|------|---------|---------|
+| 0 | `u_colorMap` | Scene color (reflection source) |
+| 1 | `u_positionMap` | GBuffer world position (RGBA16F) |
+| 2 | `u_normalMap` | GBuffer world normal (RGBA16F) |
+| 3 | `u_roughnessMap` | GBuffer roughness (R channel, optional) |
+| 4 | `u_historyMap` | Previous frame accumulated reflection (RGBA16F, temporal) |
+| 5 | `u_velocityMap` | Pixel velocity (UV offset, optional) |
+
+#### Resource layout
+
+| Resource | Count | Allocated on | Lifetime |
+|----------|-------|-------------|----------|
+| RGBA16F output texture | 1 | first `apply()` (or after resize) | until `dispose()` |
+| RGBA16F history texture | 1 | first `apply()` | until `dispose()` (ping-pong via blit) |
+| FBO (output) | 1 | first `apply()` | until `dispose()` |
+| FBO (history) | 1 | first `apply()` | until `dispose()` |
+| ShaderProgram | 1 | first `apply()` (lazy) | until `dispose()` |
+| Fullscreen quad VAO+VBO | 1 | first `apply()` | until `dispose()` |
+
+#### Usage
+
+**Production SSSR with temporal accumulation (recommended):**
+
+```ts
+import { SSSRPass } from './PostProcess';
+
+const sssr = new SSSRPass({
+  resolution: 0.5,        // half-res for performance
+  temporalWeight: 0.88,   // strong temporal accumulation
+  maxSteps: 64,
+  roughnessCutoff: 0.8,   // wider than SSR (0.6) for mid-roughness
+});
+
+// each frame (after GBuffer pass):
+const reflTex = sssr.apply(
+  gl,
+  colorTexture,
+  gBuffer.positionTexture,
+  gBuffer.normalTexture,
+  camera,
+  gBuffer.materialTexture,  // roughness in R channel
+  velocityTexture,           // from VelocityPass
+);
+// blend reflTex into scene by alpha (confidence):
+// finalColor = mix(sceneColor, reflTex.rgb, reflTex.a);
+```
+
+**Single-frame SSSR (no temporal, noisier but no lag):**
+
+```ts
+const sssr = new SSSRPass({
+  temporalWeight: 0.0,  // disable temporal
+  resolution: 1.0,      // full-res to reduce noise
+});
+```
+
+#### soup3D Feature Parity
+
+| Capability | soup3D | VREEN |
+|------------|--------|-------|
+| Stochastic SSR (GGX importance sampling) | **None** | `SSSRPass` — Intel SSSR / UE5 approach |
+| Rough reflections (physical) | **None** | GGX NDF inverse-CDF ray generation |
+| Temporal accumulation | **None** | velocity reprojection + history blend |
+| Fresnel-weighted reflections | **None** | Schlick approximation |
+| Confidence alpha for compositing | **None** | edge/distance/roughness attenuation |
+| CPU-testable GGX math | **None** | `importanceSampleGGX` exported pure function |
+
+#### Design Notes
+
+- **Why GGX importance sampling instead of blur?** `SSRPass` generates a
+  single mirror ray and blurs the result. The blur kernel is fixed-size
+  and has no physical basis — a rough surface doesn't reflect a "blurred
+  mirror image", it reflects light scattered over the specular lobe.
+  `SSSRPass` generates rays that actually follow the GGX distribution,
+  so the reflected image naturally converges to the correct blur as
+  roughness increases. Over multiple frames, temporal accumulation
+  averages enough samples to produce a clean, physically-correct result.
+
+- **Why `roughnessBias`?** At very high roughness, the GGX lobe is
+  extremely wide, and a single sample per frame produces visible noise.
+  Reducing the effective roughness (`roughness - roughnessBias`)
+  narrows the lobe slightly, reducing variance at the cost of
+  under-blurring. Intel's SSSR recommends 0.0–0.1.
+
+- **Why `confidence` alpha?** Screen-space hits near the screen edge,
+  at extreme distances, or on rough surfaces are unreliable. The
+  `confidence` value (alpha channel) lets the compositor blend
+  reflections out gracefully — e.g., falling back to the
+  `ReflectionProbe` / PMREM environment reflection where `confidence`
+  is low.
+
+- **Why `RGBA16F`?** HDR reflections can exceed [0,1] (bright light
+  sources reflected on glossy surfaces). RGBA8 would clip these,
+  producing dim reflections after tonemapping. RGBA16F preserves the
+  full dynamic range.
+
+- **Temporal disocclusion:** When the camera moves, previously
+  occluded surfaces become visible. The history texture has no data
+  for these pixels, so the temporal blend falls back to the current
+  frame's (noisy) single sample. The `confidence`-weighted mix handles
+  this automatically — low-confidence pixels trust the current frame.
+
+#### Test coverage (`SSSRPass.test.ts`, 28 tests)
+
+- **GGX math (8)**: roughness=0 → H=N; H normalized; H in normal
+  hemisphere; higher roughness → wider spread; roughness=1 →
+  cosine-weighted (E[cosθ]≈2/3); boundary cases (ξ=0, ξ→1); arbitrary
+  normal direction
+- **Schlick Fresnel (5)**: normal incidence → F0; grazing → 1;
+  monotonic; F0-independent at cosθ=1; negative cosTheta clamped
+- **reflectVec (3)**: mirror case (V∥H → R=V); 45° angle;
+  magnitude preserved
+- **Construction (2)**: defaults; all options
+- **apply (7)**: no-throw + returns texture; output+history allocation;
+  frame counter; draw call; blit on temporalWeight>0; no blit on =0;
+  resource reuse
+- **dispose (3)**: frees textures+FBOs; null-safe; lazy rebuild
+
+#### References
+
+- Tomás Stachowiak, "Deferred Stochastic Screen-Space Reflections" (Intel, GDC 2018)
+- Brian Karis, "Stochastic SSR" (UE4 Siggraph 2014 presentation)
+- o3de Atom `ScreenSpaceReflections` pass
+- three.js `SSRPass` (this implementation adds GGX importance sampling + temporal accumulation on top)
 
 ---
 

@@ -2809,6 +2809,241 @@ void main() {
 }
 `;
 
+// ── SSSR (Stochastic Screen-Space Reflections) ───────────────────
+// 随机屏幕空间反射 —— 用 GGX 重要性采样生成射线方向,产生物理正确的粗糙反射。
+//
+// 与 SSR_FRAG 的区别:
+//   - SSR_FRAG:镜面反射方向 + box/blur 近似粗糙(不物理,模糊核固定)
+//   - SSSR_FRAG:每像素按 GGX NDF 重要性采样半向量 H,reflect(-V, H) 得到
+//     射线方向。粗糙度越大,采样方向越分散,多帧时序累积收敛到正确模糊。
+//     这是 Intel SSSR / UE5 的做法,物理正确且支持动态模糊反射。
+//
+// 算法:
+//   1. 读 GBuffer:世界位置、世界法线、粗糙度、场景颜色
+//   2. 跳过天空 / 过粗糙 / 背面
+//   3. GGX 重要性采样:
+//      a. φ = 2π·ξ₁,  cosθ = √((1-ξ₂)/(1+(α²-1)·ξ₂)),  α=roughness²
+//      b. H = TBN·(sinθcosφ, sinθsinφ, cosθ)
+//      c. rayDir = reflect(-viewDir, H)
+//   4. 屏幕空间自适应步长射线步进 + 二分查找细化
+//   5. 边缘衰减 + 距离衰减 + Fresnel(Schlick) + 粗糙度衰减
+//   6. 时序累积:用速度纹理重投影历史帧反射,按 confidence 混合
+//   7. 输出 RGB=反射色×强度×Fresnel,A=confidence(调用方按 α 混合)
+//
+// 参考:
+//   - Intel "Deferred Stochastic Screen-Space Reflections" (Stachowiak 2018)
+//   - UE5 "Stochastic SSR" (Karis 2014)
+//   - o3de Atom "ScreenSpaceReflections" pass
+//   - three.js SSRPass(本实现在其基础上增加 GGX 重要性采样)
+export const SSSR_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;        // 场景颜色(反射源)
+uniform sampler2D u_positionMap;     // GBuffer 世界位置 (RGBA16F)
+uniform sampler2D u_normalMap;       // GBuffer 世界法线 (RGBA16F)
+uniform sampler2D u_roughnessMap;    // R = roughness [0,1];u_hasRoughness=0 时不读
+uniform sampler2D u_historyMap;      // 上一帧累积反射(时序复用);u_hasHistory=0 时不读
+uniform sampler2D u_velocityMap;     // 像素速度(屏幕 UV 偏移);u_hasVelocity=0 时不读
+uniform mat4 u_projection;
+uniform mat4 u_view;
+uniform vec3 u_cameraPos;
+uniform vec2 u_screenSize;
+uniform int   u_maxSteps;            // 射线最大步进次数(默认 64)
+uniform float u_thickness;           // 厚度容差(世界单位,默认 0.5)
+uniform float u_reflectionStrength;  // 反射强度(默认 0.5)
+uniform float u_roughnessCutoff;     // roughness > cutoff → 跳过(默认 0.8,比 SSR 更宽)
+uniform float u_roughnessBias;       // 粗糙度偏移(降低有效粗糙度,默认 0.0)
+uniform float u_temporalWeight;      // 时序混合权重(0=不累积,0.9=强累积,默认 0.88)
+uniform float u_frame;               // 帧计数(时序抖动)
+uniform int   u_hasRoughness;        // 1=有粗糙度纹理,0=无
+uniform int   u_hasHistory;          // 1=有历史纹理可复用,0=首帧
+uniform int   u_hasVelocity;         // 1=有速度纹理
+
+#define PI 3.14159265359
+
+// Interleaved Gradient Noise (Jorge Jimenez 2014) — 时序抖动去条带。
+float ign(vec2 p) {
+  return fract(52.9829189 * fract(0.06711056 * p.x + 0.00583715 * p.y));
+}
+
+// GGX 重要性采样:生成半向量 H(在法线半球内,服从 GGX NDF)。
+// 输入:xi(两个均匀随机数 [0,1)),N(法线,世界空间),roughness
+// 输出:半向量 H(世界空间,归一化)
+//
+// 数学:
+//   α = roughness²
+//   φ = 2π·ξ₁
+//   cos²θ = (1-ξ₂) / (1+(α²-1)·ξ₂)     ← GGX NDF 的逆 CDF
+//   sinθ  = √(1-cos²θ)
+//   H_tangent = (sinθ·cosφ, sinθ·sinφ, cosθ)
+//   H_world   = TBN · H_tangent
+vec3 importanceSampleGGX(vec2 xi, vec3 N, float roughness) {
+  float a = roughness * roughness;
+  float phi = 2.0 * PI * xi.x;
+  float cosTheta = sqrt((1.0 - xi.y) / (1.0 + (a * a - 1.0) * xi.y));
+  float sinTheta = sqrt(1.0 - cosTheta * cosTheta);
+
+  vec3 H;
+  H.x = sinTheta * cos(phi);
+  H.y = sinTheta * sin(phi);
+  H.z = cosTheta;
+
+  // tangent → world(法线为 z 轴的切线空间基)
+  vec3 up = abs(N.z) < 0.999 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);
+  vec3 T = normalize(cross(up, N));
+  vec3 B = cross(N, T);
+  return normalize(T * H.x + B * H.y + N * H.z);
+}
+
+// 世界位置 → 屏幕 UV(0..1)。
+vec2 projectToUV(vec3 worldPos) {
+  vec4 clip = u_projection * u_view * vec4(worldPos, 1.0);
+  return (clip.xy / clip.w) * 0.5 + 0.5;
+}
+
+// 视空间深度(沿相机轴的距离,正值=前方)。
+float viewDepth(vec3 worldPos) {
+  return -(u_view * vec4(worldPos, 1.0)).z;
+}
+
+// 厚度检测(视空间):UV 越界返回 false;射线在几何后方且在厚度内 → 击中。
+bool hitTestVS(vec3 rayPos, vec2 uv, out float depthDiff) {
+  depthDiff = 1e9;
+  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return false;
+  vec3 sampledPos = texture(u_positionMap, uv).xyz;
+  float rayDepth = viewDepth(rayPos);
+  float sampledDepth = viewDepth(sampledPos);
+  depthDiff = rayDepth - sampledDepth;
+  return depthDiff > 0.0 && depthDiff < u_thickness;
+}
+
+void main() {
+  vec3 sceneColor  = texture(u_colorMap,    v_uv).rgb;
+  vec3 worldPos    = texture(u_positionMap, v_uv).xyz;
+  vec3 worldNormal = texture(u_normalMap,   v_uv).xyz;
+
+  float roughness = 0.0;
+  if (u_hasRoughness > 0) {
+    roughness = texture(u_roughnessMap, v_uv).r;
+  }
+  // 有效粗糙度(偏移降低噪声,Intel SSSR 建议 0.0~0.1)
+  float effRoughness = clamp(roughness - u_roughnessBias, 0.0, 1.0);
+
+  // 早退:天空(无法线)/ 过粗糙 / 背面
+  if (length(worldNormal) < 0.01 || roughness > u_roughnessCutoff) {
+    outColor = vec4(sceneColor, 0.0); // alpha=0 = 无反射
+    return;
+  }
+  worldNormal = normalize(worldNormal);
+
+  vec3 viewDir = normalize(u_cameraPos - worldPos);
+  if (dot(viewDir, worldNormal) <= 0.0) {
+    outColor = vec4(sceneColor, 0.0);
+    return;
+  }
+
+  // GGX 重要性采样:生成半向量,反射得到射线方向
+  vec2 xi = vec2(
+    ign(v_uv * u_screenSize + vec2(u_frame * 0.61803398875, 0.0)),
+    ign(v_uv * u_screenSize + vec2(0.0, u_frame * 0.61803398875))
+  );
+  vec3 H = importanceSampleGGX(xi, worldNormal, effRoughness);
+  vec3 rayDir = reflect(-viewDir, H);
+
+  // 背面剔除:射线打入表面(粗糙采样的半向量可能偏到法线下方)
+  if (dot(rayDir, worldNormal) <= 0.0) {
+    outColor = vec4(sceneColor, 0.0);
+    return;
+  }
+
+  // 屏幕空间射线步进(自适应步长 + 时序抖动)
+  float baseStep = u_thickness * 0.5;
+  float jitter = ign(v_uv * u_screenSize + vec2(u_frame * 1.61803398875, 0.0));
+  vec3 rayPos = worldPos + rayDir * baseStep * (0.5 + jitter * 0.5);
+  vec2 uv = projectToUV(rayPos);
+  vec2 hitUV = uv;
+  vec3 hitPos = rayPos;
+  bool hit = false;
+
+  for (int i = 0; i < 64; i++) {
+    if (i >= u_maxSteps) break;
+    float dd;
+    if (hitTestVS(rayPos, uv, dd)) {
+      hit = true;
+      hitPos = rayPos;
+      hitUV = uv;
+      break;
+    }
+    float stepSize = baseStep * (1.0 + float(i) * 0.5);
+    rayPos += rayDir * stepSize;
+    uv = projectToUV(rayPos);
+  }
+
+  // 二分查找细化(8 步,误差压到 thickness/256)
+  if (hit) {
+    vec3 lo = worldPos;
+    vec3 hi = hitPos;
+    for (int i = 0; i < 8; i++) {
+      vec3 mid = (lo + hi) * 0.5;
+      vec2 midUV = projectToUV(mid);
+      float dd;
+      if (hitTestVS(mid, midUV, dd)) {
+        hi = mid;
+        hitUV = midUV;
+      } else {
+        lo = mid;
+      }
+    }
+  }
+
+  // 边缘衰减:接近屏幕边缘的命中不可靠
+  float edgeFade = 1.0;
+  edgeFade *= smoothstep(0.0, 0.1, hitUV.x) * smoothstep(0.0, 0.1, 1.0 - hitUV.x);
+  edgeFade *= smoothstep(0.0, 0.1, hitUV.y) * smoothstep(0.0, 0.1, 1.0 - hitUV.y);
+
+  // 距离衰减:远距离命中衰减
+  float hitDist = length(hitPos - worldPos);
+  float distFade = exp(-hitDist * 0.01);
+
+  // Fresnel (Schlick 近似)
+  float NdotV = max(dot(worldNormal, viewDir), 0.0);
+  float fresnel = pow(1.0 - NdotV, 5.0);
+  float F0 = 0.04;
+  float fresnelTerm = F0 + (1.0 - F0) * fresnel;
+
+  // 粗糙度衰减:粗糙表面的反射更弱
+  float roughFade = 1.0 - smoothstep(0.3, u_roughnessCutoff, roughness);
+
+  vec3 reflectionColor = vec3(0.0);
+  float confidence = 0.0;
+  if (hit) {
+    reflectionColor = texture(u_colorMap, hitUV).rgb;
+    confidence = edgeFade * distFade * roughFade;
+  }
+
+  // 时序累积:重投影历史帧反射,按 confidence 混合
+  vec3 finalReflection = reflectionColor;
+  if (u_hasHistory > 0 && u_hasVelocity > 0 && u_temporalWeight > 0.0) {
+    vec2 velocity = texture(u_velocityMap, v_uv).xy;
+    vec2 historyUV = v_uv - velocity;
+    if (historyUV.x >= 0.0 && historyUV.x <= 1.0 &&
+        historyUV.y >= 0.0 && historyUV.y <= 1.0) {
+      vec4 history = texture(u_historyMap, historyUV);
+      // confidence 低时更信任历史(时序累积),confidence 高时更信任当前帧
+      float w = u_temporalWeight * (1.0 - confidence);
+      finalReflection = mix(reflectionColor, history.rgb, w);
+      confidence = max(confidence, mix(1.0, history.a, u_temporalWeight));
+    }
+  }
+
+  // 输出:反射颜色 × 强度 × Fresnel,alpha = confidence
+  outColor = vec4(finalReflection * u_reflectionStrength * fresnelTerm, confidence);
+}
+`;
+
 // ── SSGI (Screen-Space Global Illumination) ──────────────────────
 // 屏幕空间全局光照 —— 在屏幕空间做漫反射间接光采样,产生彩色反弹光。
 // 与 SSR 的区别:

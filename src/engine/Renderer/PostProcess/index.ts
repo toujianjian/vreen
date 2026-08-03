@@ -1,7 +1,7 @@
 // PostProcess barrel — 增强后处理 Pass 集合。
 //
 // 与 RenderPass.ts 中的基础后处理 Bloom/CA/Vignette/FinalCompose 平行。
-// 本模块提供 24 个增强 Pass:
+// 本模块提供 25 个增强 Pass:
 //   - ColorGradingPass  : 色彩分级(8 个 ASC-CDL 参数)
 //   - LUTPass           : LUT 色彩查找表(3D 或 2D strip)
 //   - ChromaticAberrationPass : 增强色差(Vector2 偏移 + 径向调制)
@@ -10,6 +10,7 @@
 //   - AfterimagePass    : 残影(跨帧累积)
 //   - PixelationPass    : 像素化(马赛克)
 //   - SSRPass           : 屏幕空间反射(独立类,不继承 RenderPass)
+//   - SSSRPass          : 随机屏幕空间反射(GGX 重要性采样 + 时序累积)
 //   - VolumetricFogPass : 体积雾 + 体积光(独立类,不继承 RenderPass)
 //   - VelocityPass     : 速度缓冲生成(供 TAA / MotionBlur 消费)
 //   - TAAPass          : 时间抗锯齿(Halton jitter + 邻域裁剪 + 历史混合)
@@ -50,6 +51,7 @@ export { FilmGrainPass, type FilmGrainOptions } from './FilmGrainPass';
 export { AfterimagePass, type AfterimageOptions } from './AfterimagePass';
 export { PixelationPass, type PixelationOptions } from './PixelationPass';
 export { SSRPass, type SSRPassOptions } from './SSRPass';
+export { SSSRPass, type SSSRPassOptions, importanceSampleGGX, schlickFresnel, reflectVec, type Vec3 } from './SSSRPass';
 export { VolumetricFogPass, type VolumetricFogPassOptions } from './VolumetricFogPass';
 export { VelocityPass, type VelocityPassOptions } from './VelocityPass';
 export { TAAPass, type TAAPassOptions } from './TAAPass';
