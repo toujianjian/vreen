@@ -898,6 +898,21 @@
         "title": "스킨 SSS",
         "desc": "사전 통합 스킨 BSSRDF, d'Eon 2007 디퓨즈/트랜스미턴스 LUT.",
         "advantage": "soup3D에 스킨 셰이더 없음"
+      },
+      "sharpen": {
+        "title": "CAS 샤프닝",
+        "desc": "AMD FidelityFX 대비 적응 샤프닝. TAA로 흐려진 디테일 복원.",
+        "advantage": "soup3D 샤프닝 없음"
+      },
+      "fsr": {
+        "title": "FSR 업스케일",
+        "desc": "FidelityFX FSR1 에지 적응 공간 업스케일링. 50-70% 해상도 렌더링.",
+        "advantage": "soup3D 업스케일링 없음"
+      },
+      "specularAA": {
+        "title": "스페큘러 AA",
+        "desc": "Toksvig/LEAN 필터링. 거리에 따른 법선 스페큘러 시머 제거.",
+        "advantage": "soup3D PBR 없음"
       }
     }
   }

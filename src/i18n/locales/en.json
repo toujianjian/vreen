@@ -898,6 +898,21 @@
         "title": "Skin SSS",
         "desc": "Pre-integrated skin BSSRDF with d'Eon 2007 diffuse/transmittance LUTs.",
         "advantage": "soup3D has no skin shader"
+      },
+      "sharpen": {
+        "title": "CAS Sharpen",
+        "desc": "AMD FidelityFX contrast-adaptive sharpening. Restores TAA-softened detail.",
+        "advantage": "soup3D has no sharpening"
+      },
+      "fsr": {
+        "title": "FSR Upscale",
+        "desc": "FidelityFX FSR1 edge-adaptive spatial upscaling. Render at 50-70% resolution.",
+        "advantage": "soup3D has no upscaling"
+      },
+      "specularAA": {
+        "title": "Specular AA",
+        "desc": "Toksvig/LEAN filtering. Eliminates specular shimmer on bumpy normals at distance.",
+        "advantage": "soup3D has no PBR"
       }
     }
   }

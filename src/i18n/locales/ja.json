@@ -898,6 +898,21 @@
         "title": "スキン SSS",
         "desc": "事前積分スキン BSSRDF、d'Eon 2007 拡散/透過 LUT。",
         "advantage": "soup3D にスキンシェーダーなし"
+      },
+      "sharpen": {
+        "title": "CAS シャープン",
+        "desc": "AMD FidelityFX コントラスト適応シャープニング。TAA でぼやけた細部を復元。",
+        "advantage": "soup3D にシャープニングなし"
+      },
+      "fsr": {
+        "title": "FSR アップスケール",
+        "desc": "FidelityFX FSR1 エッジ適応空間アップスケーリング。50-70% 解像度でレンダリング。",
+        "advantage": "soup3D にアップスケーリングなし"
+      },
+      "specularAA": {
+        "title": "スペキュラーAA",
+        "desc": "Toksvig/LEAN フィルタリング。距離によるバンプ法線のスペキュラーシマーを消除。",
+        "advantage": "soup3D に PBR なし"
       }
     }
   }

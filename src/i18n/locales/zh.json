@@ -898,6 +898,21 @@
         "title": "皮肤 SSS",
         "desc": "预积分皮肤 BSSRDF,d'Eon 2007 漫反射/透射 LUT。",
         "advantage": "soup3D 无皮肤着色"
+      },
+      "sharpen": {
+        "title": "CAS 锐化",
+        "desc": "AMD FidelityFX 对比度自适应锐化,恢复 TAA 模糊的细节。",
+        "advantage": "soup3D 无锐化"
+      },
+      "fsr": {
+        "title": "FSR 上采样",
+        "desc": "FidelityFX FSR1 边缘自适应空间上采样,支持 50-70% 分辨率渲染。",
+        "advantage": "soup3D 无上采样"
+      },
+      "specularAA": {
+        "title": "镜面抗锯齿",
+        "desc": "Toksvig/LEAN 过滤,消除远距离法线区域的镜面闪烁。",
+        "advantage": "soup3D 无 PBR"
       }
     }
   }
