@@ -1250,6 +1250,137 @@ A future refactor could delegate to `Matrix4.makeInverse()` if added.
 
 ---
 
+### CausticsPass
+
+Screen-space underwater caustics — reconstructs the world position per pixel
+from the GBuffer depth, and additively overlays a procedural caustic light
+pattern on all geometry below `waterLevel`. The caustic pattern is built
+from **three directional sine waves** (30°/120°/−60°) whose positive lobes
+are raised to a configurable power (`u_power`), sharpening the bright
+focusing lines characteristic of refracted sunlight through a water surface.
+Supports **RGB chromatic dispersion** (per-channel UV offset simulating
+wavelength-dependent refraction) and **Beer-Lambert depth attenuation**
+(caustics fade with distance below the surface). **Surpasses soup3D**
+(which ships no water rendering at all — no water surface, no caustics, no
+underwater fog).
+
+**Class**: `CausticsPass` (independent, does **not** extend `RenderPass`)
+**Shader**: `CAUSTICS_FRAG` (single-pass fullscreen)
+**Vertex**: shared `POST_VERT` (fullscreen triangle)
+**Draw calls**: 1 per `apply()` (0 when disabled — early return)
+**Output**: RGBA16F HDR (additive caustics may push pixels > 1.0)
+
+#### Architecture
+
+```
+┌──────────────┐    ┌──────────────────────────────────────────────┐
+│ colorTexture │───▶│ CausticsPass.apply()                         │
+│ HDR scene    │    │  0. if !enabled → return inputTexture (zero) │
+└──────────────┘    │  1. (re)allocate FBO/texture on resize/dirty │
+                    │  2. bind _fbo, clear COLOR_BUFFER_BIT         │
+┌──────────────┐    │  3. bind color → TEXTURE0 (u_colorMap)       │
+│ depthTexture │───▶│  4. bind depth → TEXTURE1 (u_depthMap)       │
+│ GBuffer depth│    │  5. set inverse VP + camera pos + screen     │
+└──────────────┘    │  6. set caustic params (color/intensity/...)  │
+                    │  7. set time (caller-updated animation)       │
+                    │  8. drawArrays(fullscreen triangle)           │
+                    │  9. return _outputTexture                     │
+                    └────────────────────┬─────────────────────────┘
+                                         ▼
+                    ┌──────────────────────────────────────────────┐
+                    │ _outputTexture (RGBA16F)                     │
+                    │   sceneColor + causticColor * caustic        │
+                    │                  * intensity * depthAtten    │
+                    └──────────────────────────────────────────────┘
+```
+
+#### Algorithm (5 stages, per pixel)
+
+| # | Stage | Formula / Logic |
+|---|-------|-----------------|
+| 1 | Depth reject | `if (depth >= 1.0) return sceneColor;` (sky) |
+| 2 | World reconstruct | `worldPos = invVP * NDC; perspective divide` |
+| 3 | Above-water reject | `if (worldPos.y > waterLevel) return sceneColor;` |
+| 4 | Depth attenuation | `depthAtten = 1 / (1 + (waterLevel - worldPos.y) * absorption)` |
+| 5 | Caustic pattern | 3 sine waves (30°/120°/−60°), `pow(max(0, mean), power)`, RGB-dispersed |
+| 6 | Composite | `out = sceneColor + causticColor * caustic * intensity * depthAtten` |
+
+#### Options
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `causticColor` | `[r,g,b]` | `[0.2, 0.7, 0.9]` | Caustic tint (cyan-blue) |
+| `causticIntensity` | `number` | `0.6` | Brightness multiplier |
+| `waterLevel` | `number` | `0` | World Y of water surface |
+| `worldScale` | `number` | `8` | World→UV scale (higher = denser pattern) |
+| `waveSpeed` | `number` | `0.8` | Animation speed |
+| `waveFrequency` | `number` | `8` | Spatial frequency of ripples |
+| `wavePhase` | `number` | `0` | Phase offset |
+| `absorption` | `number` | `0.02` | Depth fade rate (Beer-Lambert) |
+| `dispersion` | `number` | `0.3` | RGB chromatic split (0 = none) |
+| `power` | `number` | `3.0` | Focus power (higher = sharper bright lines) |
+| `enabled` | `boolean` | `true` | Enable toggle |
+| `time` | `number` | `0` | Animation time (caller updates per frame) |
+
+#### API
+
+```ts
+apply(
+  gl: WebGL2RenderingContext,
+  colorTexture: WebGLTexture,
+  depthTexture: WebGLTexture,
+  camera: Camera,
+): WebGLTexture
+```
+
+#### Usage — basic underwater scene
+
+```ts
+import { CausticsPass } from '@/engine/Renderer/PostProcess/CausticsPass';
+
+const caustics = new CausticsPass({
+  waterLevel: 0,            // sea level at Y=0
+  causticColor: [0.2, 0.7, 0.9],
+  causticIntensity: 0.8,
+  worldScale: 6,
+  waveSpeed: 1.0,
+  dispersion: 0.4,          // subtle RGB split
+  power: 4.0,               // sharp focus lines
+});
+
+// Per frame:
+caustics.time = performance.now() * 0.001;
+const out = caustics.apply(gl, sceneColorTex, depthTex, camera);
+```
+
+#### Usage — toggle off for above-water camera
+
+```ts
+// When camera rises above waterLevel, disable to save the draw call:
+caustics.enabled = false;
+const out = caustics.apply(gl, sceneColorTex, depthTex, camera);
+// out === sceneColorTex (zero overhead, no FBO touched)
+```
+
+#### Comparison with soup3D
+
+| Capability | VREEN | soup3D |
+|-----------|-------|--------|
+| Underwater caustics | ✓ (procedural + dispersion) | ✗ |
+| Water surface rendering | ✓ (via this pass + shader) | ✗ |
+| Depth-based effect | ✓ (GBuffer depth reconstruct) | ✗ (no depth pass) |
+| Chromatic dispersion | ✓ | ✗ |
+| HDR additive composite | ✓ (RGBA16F) | ✗ |
+
+#### References
+
+- GPU Gems 2, Ch. 18 "Effective Water Simulation from Physical Models" (Finch)
+- o3de Atom, Water highlights / caustics pass
+- ShaderToy "Caustic" by Dave_Hoskins
+- Beer-Lambert law — depth attenuation
+
+---
+
 ### VolumetricCloudsPass
 
 GPU ray-marched volumetric clouds — UE5/Horizon Zero Dawn "Nubis" class

@@ -3614,6 +3614,112 @@ void main() {
 }
 `;
 
+// ── Caustics ──────────────────────────────────────────────────────
+// 水下焦散 fragment shader — 屏幕空间深度重建 + 程序化波纹焦散。
+//
+// 算法(参考 GPU Gems 2 "Effective Water Simulation" + o3de Atom Water):
+//   1. 从 u_depthMap 重建世界位置(逆 viewProjection);
+//   2. 若 worldPos.y > waterLevel(水面以上)或深度=1.0(天空)→ 跳过;
+//   3. 深度衰减 depthAtten = 1/(1 + depthBelow * absorption)(Beer-Lambert);
+//   4. 程序化焦散图案:三组方向各异的正弦波叠加,三次方增强亮带
+//      (模拟水面折射光能聚焦),支持 RGB 色散偏移(波长差异);
+//   5. 合成:outColor = sceneColor + causticColor * intensity * depthAtten。
+//
+// 输入纹理:
+//   - u_colorMap : 当前帧场景颜色
+//   - u_depthMap : NDC 深度
+//
+// 参考:
+//   - GPU Gems 2, Ch. 18 "Effective Water Simulation from Physical Models"
+//   - o3de Atom Water highlights / caustics pass
+//   - ShaderToy "Caustic" by Dave_Hoskins
+export const CAUSTICS_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+// 水下焦散 — 屏幕空间深度重建 + 程序化波纹焦散
+// 参考: GPU Gems 2 Ch.18 "Effective Water Simulation" / o3de Atom Water
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;          // 场景颜色
+uniform sampler2D u_depthMap;          // NDC 深度
+
+uniform mat4  u_inverseViewProjection; // NDC → 世界
+uniform vec3  u_cameraPos;
+uniform vec2  u_screenSize;
+
+uniform vec3  u_causticColor;          // 焦散颜色(默认青蓝)
+uniform float u_causticIntensity;      // 强度(默认 0.6)
+uniform float u_waterLevel;            // 水面高度(世界 Y)
+uniform float u_worldScale;            // 世界→UV 缩放(默认 8)
+uniform float u_waveSpeed;             // 波纹速度(默认 0.8)
+uniform float u_waveFrequency;         // 波纹频率(默认 8)
+uniform float u_wavePhase;             // 相位偏移(默认 0)
+uniform float u_absorption;            // 深度吸收率(默认 0.02)
+uniform float u_dispersion;            // RGB 色散偏移(默认 0.3)
+uniform float u_power;                 // 聚焦幂(默认 3.0,越大亮带越锐利)
+uniform float u_time;                  // 时间(秒)
+uniform int   u_enabled;               // 0=禁用,1=启用
+
+// 三组方向各异的正弦波,模拟水面折射后的光能聚焦
+// p: 世界 XZ 平面 UV(已缩放); power: 聚焦幂,>1 增强亮带(模拟焦散)
+float causticPattern(vec2 p, float power) {
+  float t = u_time * u_waveSpeed;
+  float f = u_waveFrequency;
+  // 三组方向(30° / 120° / -60°),覆盖均匀
+  float w1 = sin(dot(p, vec2( 0.8660,  0.5000)) * f + t * 1.3);
+  float w2 = sin(dot(p, vec2(-0.5000,  0.8660)) * f + t * 1.7);
+  float w3 = sin(dot(p, vec2( 0.5000, -0.8660)) * f + t * 0.9);
+  float s = (w1 + w2 + w3) / 3.0;            // [-1, 1]
+  // 仅保留正瓣并幂增强(光线聚焦处更亮)
+  return pow(max(0.0, s), power);
+}
+
+void main() {
+  vec3 sceneColor = texture(u_colorMap, v_uv).rgb;
+
+  if (u_enabled == 0) {
+    outColor = vec4(sceneColor, 1.0);
+    return;
+  }
+
+  // 天空(远裁面)无焦散
+  float depth = texture(u_depthMap, v_uv).r;
+  if (depth >= 1.0) {
+    outColor = vec4(sceneColor, 1.0);
+    return;
+  }
+
+  // 重建世界位置
+  vec4 worldPosH = u_inverseViewProjection * vec4(v_uv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
+  vec3 worldPos = worldPosH.xyz / worldPosH.w;
+
+  // 仅水面以下应用焦散
+  if (worldPos.y > u_waterLevel) {
+    outColor = vec4(sceneColor, 1.0);
+    return;
+  }
+
+  // 深度衰减:越深焦散越弱(Beer-Lambert 近似)
+  float depthBelow = u_waterLevel - worldPos.y;
+  float depthAtten = 1.0 / (1.0 + depthBelow * u_absorption);
+
+  // 焦散图案(世界 XZ 投影 + 相位偏移)
+  vec2 causticUV = worldPos.xz / u_worldScale + vec2(u_wavePhase);
+
+  // RGB 色散:每通道用略有偏移的 UV,模拟波长差异折射
+  float causticR = causticPattern(causticUV + vec2( u_dispersion * 0.5, 0.0), u_power);
+  float causticG = causticPattern(causticUV, u_power);
+  float causticB = causticPattern(causticUV + vec2(-u_dispersion * 0.5, 0.0), u_power);
+  vec3 caustic = vec3(causticR, causticG, causticB);
+
+  // 加性合成
+  vec3 causticColor = u_causticColor * caustic * u_causticIntensity * depthAtten;
+  outColor = vec4(sceneColor + causticColor, 1.0);
+}
+`;
+
 // ── Volumetric Clouds ─────────────────────────────────────────────
 // GPU ray-marched 体积云 fragment shader — 与 VolumetricClouds 数据层
 // (src/engine/Environment/VolumetricClouds.ts) 配套。

@@ -879,6 +879,11 @@
         "desc": "GPU 光线步进体积云,3D Perlin+Worley 噪声 + Beer-Powder 透射 + 双叶 HG 相位(银边)+ 多散射近似。",
         "advantage": "soup3D 无体积云"
       },
+      "caustics": {
+        "title": "水下焦散",
+        "desc": "屏幕空间水下焦散,深度重建 + 三波程序化图案 + RGB 色散 + Beer-Lambert 深度衰减。",
+        "advantage": "soup3D 无水面渲染"
+      },
       "heightFog": {
         "title": "高度雾",
         "desc": "UE5 风格指数高度雾,闭式 Beer-Lambert 密度 + 太阳入射散射。",

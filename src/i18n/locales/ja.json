@@ -879,6 +879,11 @@
         "desc": "GPU レイマーチボリュームクラウド、3D Perlin+Worley ノイズ + Beer-Powder 透過 + デュアルローブ HG 位相(銀縁)+ 多重散乱。",
         "advantage": "soup3D にボリュームクラウドなし"
       },
+      "caustics": {
+        "title": "水中コースティクス",
+        "desc": "スクリーンスペース水中コースティクス、深度再構成 + 3波プロシージャルパターン + RGB 色分散 + Beer-Lambert 深度減衰。",
+        "advantage": "soup3D に水面描画なし"
+      },
       "heightFog": {
         "title": "ハイトフォグ",
         "desc": "UE5 風指数ハイトフォグ、閉形式 Beer-Lambert 密度 + 太陽内散乱。",
