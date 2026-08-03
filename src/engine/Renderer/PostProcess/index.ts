@@ -1,7 +1,7 @@
 // PostProcess barrel — 增强后处理 Pass 集合。
 //
 // 与 RenderPass.ts 中的基础后处理 Bloom/CA/Vignette/FinalCompose 平行。
-// 本模块提供 23 个增强 Pass:
+// 本模块提供 24 个增强 Pass:
 //   - ColorGradingPass  : 色彩分级(8 个 ASC-CDL 参数)
 //   - LUTPass           : LUT 色彩查找表(3D 或 2D strip)
 //   - ChromaticAberrationPass : 增强色差(Vector2 偏移 + 径向调制)
@@ -24,6 +24,7 @@
 //   - ScreenSpaceShadowPass : 屏幕空间方向性接触阴影(深度缓冲 + 光向射线步进)
 //   - TonemappingPass   : HDR→LDR 色调映射(ACES/Reinhard/AGX/Uncharted2/Linear)
 //   - SharpenPass       : 对比度自适应锐化(AMD FidelityFX CAS,TAA 后细节恢复)
+//   - FSRUpscalePass    : FSR1 EASU 空间上采样(低→高分辨率,边缘自适应)
 //
 // 注意:
 //   - 前 7 个 Pass 都实现 RenderPass 接口,可直接加入 PostProcessingPipeline。
@@ -68,3 +69,4 @@ export { ScreenSpaceShadowPass, type ScreenSpaceShadowPassOptions } from './Scre
 export { TonemappingPass, type TonemappingPassOptions, type TonemappingMode } from './TonemappingPass';
 export { HeightFogPass, type HeightFogOptions } from './HeightFogPass';
 export { SharpenPass, type SharpenPassOptions } from './SharpenPass';
+export { FSRUpscalePass, type FSRUpscaleOptions } from './FSRUpscalePass';

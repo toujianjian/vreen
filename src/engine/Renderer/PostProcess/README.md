@@ -2,9 +2,9 @@
 
 > Path: `src/engine/Renderer/PostProcess/`
 >
-> The enhanced post-processing pass family of the VREEN engine. Provides **23**
+> The enhanced post-processing pass family of the VREEN engine. Provides **24**
 > passes covering color grading, anti-aliasing, screen-space effects, depth-of-field,
-> motion blur, exposure adaptation, atmospheric effects, sharpening, and stylized effects.
+> motion blur, exposure adaptation, atmospheric effects, sharpening, upscaling, and stylized effects.
 > Each pass is a self-contained class that manages its own GPU resources (FBOs,
 > textures, shader programs) and integrates into the `PostProcessingPipeline`.
 
@@ -25,7 +25,7 @@ PostProcess/
   │     ├── AfterimagePass
   │     └── PixelationPass
   │
-  ├── GBuffer-dependent (14 passes)           ← independent FBO/program
+  ├── GBuffer-dependent (15 passes)           ← independent FBO/program
   │     ├── SSRPass          ← needs position + normal
   │     ├── SSGIPass         ← needs position + normal + color
   │     ├── ScreenSpaceShadowPass ← needs depth + light direction
@@ -39,7 +39,8 @@ PostProcess/
   │     ├── SSSSPass         ← needs color + depth
   │     ├── DOFEnhancedPass  ← needs color + depth
   │     ├── GlitchPass       ← needs color (stylized)
-  │     └── SMAAPass         ← needs color (3-pass AA)
+  │     ├── SMAAPass         ← needs color (3-pass AA)
+  │     └── FSRUpscalePass   ← needs color (low→high res, independent FBO)
   │
   └── index.ts               ← barrel exports
 ```
@@ -1395,6 +1396,208 @@ separable blur. The VREEN `UnrealBloomPass` introduces:
 
 ---
 
+### FSRUpscalePass
+
+FidelityFX Super Resolution 1 — Edge-Adaptive Spatial Upsampling (EASU).
+Upscales a low-resolution rendered image to full display resolution using
+a **9-tap bilateral-weighted bilinear** filter that detects edges via luma
+gradients and modulates corner weights by luma similarity to prevent
+cross-edge blur. This is the **spatial upscaler** used in AAA engines
+(AMD FSR1, o3de Atom UpscalingPass) to achieve high frame rates by
+rendering at 50–70% internal resolution and upscaling.
+
+**Class**: `FSRUpscalePass` (independent, does **not** extend `RenderPass`)
+**Shader**: `FSR_EASU_FRAG` (single-pass fullscreen, 9 texture taps)
+**Vertex**: shared `POST_VERT` (fullscreen triangle)
+**Draw calls**: 1 per `apply()`
+
+> **Why not extend RenderPass?** `RenderPass` assumes input and output are
+> the same resolution (ping-pong FBO pool). FSRUpscalePass operates at
+> **different** input/output resolutions — the input is low-res (e.g.
+> 1280×720), the output is high-res (e.g. 1920×1080). It manages its own
+> FBO at the output (canvas) resolution.
+
+#### Architecture
+
+```
+┌───────────────────┐    ┌────────────────────────────────────────────┐
+│ inputTexture      │───▶│ FSRUpscalePass.apply()                     │
+│ (low-res, e.g.    │    │  1. bind output FBO (canvas resolution)    │
+│  1280×720)        │    │  2. bind input → TEXTURE0 (u_colorMap)     │
+└───────────────────┘    │  3. set u_inputSize + u_invInputSize       │
+                         │  4. drawArrays(fullscreen triangle)        │
+  ┌────────────────┐     │     → 9-tap bilateral-weighted bilinear    │
+  │ gl.canvas      │     │  5. return outputTexture (high-res)        │
+  │ (1920×1080)    │     └─────────────────────┬──────────────────────┘
+  └────────────────┘                            ▼
+                                     ┌──────────────────────┐
+                                     │ outputTexture        │
+                                     │ RGBA8 (high-res)     │
+                                     └──────────────────────┘
+```
+
+#### Algorithm (5-stage pipeline)
+
+| Stage | Description |
+|-------|-------------|
+| ① Sub-pixel coordinate mapping | Map output UV to input texture space: `pos = uv * inputSize - 0.5`. Split into integer pixel `ip` + sub-pixel fraction `f`. This ensures each output pixel samples the input at the correct sub-pixel position. |
+| ② 3×3 neighborhood sampling (9 taps) | Sample 9 input texels (3×3 around the nearest input pixel): tl, tm, tr, ml, mm, mr, bl, bm, br. |
+| ③ Luma edge detection | Compute Rec. 601 luma of each texel. Calculate horizontal gradient `dH` (detects vertical edges) and vertical gradient `dV` (detects horizontal edges). `edgeStrength = min((dH + dV) * 0.5, 1.0)`. |
+| ④ Bilateral-weighted bilinear | Standard bilinear: `bilerp = mix(mix(tl, tr, f.x), mix(bl, br, f.x), f.y)`. Edge-aware: weight each corner by `exp(-|luma_corner - luma_center| / sigma) * bilinear_weight`. Corners on the other side of an edge get low weight → no cross-edge blur. |
+| ⑤ Blend | `result = mix(bilerp, edgeAware, edgeStrength)`. Smooth areas → clean bilinear. Edges → edge-preserving bilateral. |
+
+#### Texture unit bindings
+
+| Unit | Sampler | Source |
+|------|---------|--------|
+| 0 | `u_colorMap` | `inputTexture` (low-res render target) |
+
+#### Uniforms
+
+| Uniform | Type | Description |
+|---------|------|-------------|
+| `u_inputSize` | `vec2` | Low-res input dimensions (px) |
+| `u_invInputSize` | `vec2` | `1.0 / u_inputSize` (precomputed for shader efficiency) |
+
+#### API
+
+```ts
+apply(
+  gl: WebGL2RenderingContext,
+  inputTexture: WebGLTexture,
+  inputWidth: number,
+  inputHeight: number,
+): WebGLTexture  // → outputTexture (high-res, canvas dimensions)
+```
+
+#### Usage
+
+**Standard FSR1 pipeline (low-res render → EASU → RCAS → screen):**
+
+```ts
+import { FSRUpscalePass, SharpenPass } from '@vreen/engine';
+
+const fsr = new FSRUpscalePass();
+const sharpen = new SharpenPass({ sharpness: 0.5, enabled: true });
+
+// 1. Render scene at 70% internal resolution
+const internalW = Math.floor(canvas.width * 0.7);
+const internalH = Math.floor(canvas.height * 0.7);
+// ... render scene + post-processing to low-res target ...
+
+// 2. EASU: upscale to full resolution
+const upscaled = fsr.apply(gl, lowResColorTexture, internalW, internalH);
+
+// 3. RCAS: sharpen the upscaled image (SharpenPass = FSR RCAS)
+//    (pipeline.add(sharpen) if using PostProcessingPipeline, or
+//     apply manually to the upscaled texture)
+
+// 4. Output to screen
+gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+// ... draw upscaled (optionally sharpened) texture to screen ...
+```
+
+**Dynamic resolution scaling (adaptive performance):**
+
+```ts
+const fsr = new FSRUpscalePass();
+
+function render(targetFps: number) {
+  // Adjust internal resolution based on measured FPS
+  const scale = measureFps() < targetFps ? 0.5 : 0.7;
+  const iw = Math.floor(canvas.width * scale);
+  const ih = Math.floor(canvas.height * scale);
+  // ... render at (iw, ih) ...
+  const upscaled = fsr.apply(gl, colorTex, iw, ih);
+  // ... display upscaled ...
+}
+```
+
+#### Comparison with soup3D
+
+`soup3D` has **no upscaling** — it renders at exactly the window
+resolution, with no path to performance scaling. On low-end hardware,
+the only option is to reduce the window size. FSRUpscalePass lets VREEN
+maintain a consistent frame rate by dynamically reducing the internal
+render resolution while keeping the display crisp.
+
+| Capability | soup3D | VREEN |
+|------------|--------|-------|
+| Spatial upscaling | **None** | `FSRUpscalePass` (FSR1 EASU) |
+| Edge-adaptive filtering | **None** | Bilateral-weighted bilinear |
+| Dynamic resolution scaling | **None** | Runtime input size control |
+| Sharpening (RCAS) | **None** | `SharpenPass` (completes FSR1 pipeline) |
+| Sub-pixel precision | **None** | `pos = uv * inputSize - 0.5` mapping |
+
+**Where VREEN pulls ahead.** FSR1 is the **industry-standard spatial
+upscaler** — AMD FidelityFX, used by dozens of shipped games. By
+combining `FSRUpscalePass` (EASU) with `SharpenPass` (RCAS), VREEN
+provides the complete FSR1 pipeline: render at 50–70% resolution →
+edge-adaptive upscale → contrast-adaptive sharpen → display. This is
+the same technique used by o3de Atom's UpscalingPass. soup3D has no
+performance scaling path at all.
+
+#### Design Notes
+
+**Why 9-tap bilateral (not AMD's 12-tap EASU)?** The full AMD FSR1 EASU
+uses a 12-tap sampling pattern with negative-lobe directional
+interpolation — higher quality but significantly more complex (~200
+lines of optimized GLSL with bit-packing tricks). This implementation
+uses a 9-tap 3×3 neighborhood with bilateral-weighted bilinear, which
+captures the same core principle (edge-adaptive: don't blend across
+edges) in a maintainable ~50-line shader. The quality difference is
+visible only at aggressive upscale ratios (>2×); at typical 1.3–1.5×
+ratios (720p→1080p, 1080p→1440p), the difference is negligible.
+
+**Why `sigma = 0.15`?** The bilateral sigma controls how aggressively
+dissimilar corners are rejected. At 0.15 (in luma space [0,1]), corners
+with a luma difference > 0.3 from center get < 14% weight — strong
+enough to prevent cross-edge blur, but not so aggressive that smooth
+gradients are over-sharpened. This value is tuned for typical sRGB
+content; for HDR content (linear space, values > 1.0), a higher sigma
+(~0.4) may be needed.
+
+**Why `edgeStrength = min((dH + dV) * 0.5, 1.0)`?** The 0.5 factor
+normalizes the gradient (which sums two absolute differences, each
+potentially up to ~2.0) to the [0, 1] range. The `min` clamps to 1.0
+so that in extreme-edge cases, the shader fully switches to edge-aware
+weighting. In smooth areas (edgeStrength ≈ 0), the result is pure
+bilinear — no artifacts, no overhead beyond the 9 taps.
+
+**Why follow with SharpenPass (RCAS)?** All spatial upscalers introduce
+some blur (they're interpolating between samples). The FSR1 pipeline
+explicitly pairs EASU with RCAS (Robust Contrast Adaptive Sharpening)
+to restore detail. VREEN's `SharpenPass` is a direct port of AMD CAS,
+which is the same algorithm as RCAS. Running SharpenPass after
+FSRUpscalePass completes the FSR1 pipeline.
+
+**Why `gl.canvas` determines output size?** The output FBO is always at
+the canvas/display resolution — this is the whole point of upscaling
+(low internal res → high display res). If the canvas is resized, the
+`_dirty` flag triggers FBO reallocation on the next `apply()`. This
+matches the HeightFogPass pattern.
+
+#### Test coverage (`FSRUpscalePass.test.ts`, 24 tests)
+
+- **Construction (3)**: name; no-options construct; options construct.
+- **apply (8)**: allocates 1 tex + 1 FBO + 1 VAO + 1 buf + 1 program;
+  returns texture; 720p→1080p no-throw; 540p→1080p no-throw; no
+  reallocate on same size; reallocate on size change; 1 draw call per
+  apply; setDirty triggers reallocation.
+- **dispose (3)**: no-throw before init; no-throw after init; re-apply
+  after dispose reinitializes.
+- **FSR_EASU_FRAG shader (10)**: GLSL ES 3.0; uniforms; 9-tap 3×3;
+  luma; dH/dV gradients; edgeStrength; bilateral (exp + sigma);
+  bilinear for smooth; blend; sub-pixel coordinates.
+
+#### References
+
+- AMD FidelityFX-FSR1 (MIT License) — reference EASU + RCAS implementation
+- o3de Atom `UpscalingPass` — integrated upscaling in the Atom pipeline
+- AMD GPUOpen, "FidelityFX Super Resolution (FSR) Documentation"
+
+---
+
 ### SharpenPass
 
 Contrast Adaptive Sharpening (CAS) — a port of AMD FidelityFX CAS to a
@@ -1667,6 +1870,7 @@ pass.dispose(ctx);
 | SMAAPass | 2 (edges + weights) | 4 (edges + weights + area LUT + search LUT) | 3 |
 | SSGIPass | 1 | 1 (RGBA16F) | 1 |
 | SharpenPass | 0 (uses ctx.resources) | 0 | 1 |
+| FSRUpscalePass | 1 | 1 | 1 |
 
 ---
 

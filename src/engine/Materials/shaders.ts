@@ -3310,4 +3310,74 @@ void main() {
 }
 `;
 
+// FSR EASU — Edge-Adaptive Spatial Upsampling (AMD FidelityFX FSR1 适配)。
+// 9-tap 双边加权双线性上采样:用 luma 梯度检测边缘,在边缘处按 luma 相似度
+// 调制 4 角权重,避免跨边缘混合导致的模糊。平滑区域使用标准双线性。
+//
+// 管线:EASU(本 Pass,低→高分辨率) → RCAS(SharpenPass,高分辨率锐化)。
+// 输入:低分辨率颜色纹理。输出:高分辨率上采样纹理。
+// 参考:AMD FidelityFX-FSR1 (MIT),o3de Atom UpscalingPass。
+export const FSR_EASU_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;
+uniform vec2 u_inputSize;      // 低分辨率输入尺寸
+uniform vec2 u_invInputSize;   // 1.0 / u_inputSize
+
+void main() {
+  // 将输出 UV 映射到输入纹理空间(带亚像素偏移)
+  vec2 pos = v_uv * u_inputSize - 0.5;
+  vec2 ip = floor(pos);
+  vec2 f = pos - ip;  // 亚像素分数 [0,1)
+  vec2 tc = (ip + 0.5) * u_invInputSize;
+  vec2 off = u_invInputSize;
+
+  // 3x3 邻域(9 taps)
+  vec3 tl = texture(u_colorMap, tc + vec2(-off.x, -off.y)).rgb;
+  vec3 tm = texture(u_colorMap, tc + vec2(  0.0,  -off.y)).rgb;
+  vec3 tr = texture(u_colorMap, tc + vec2( off.x, -off.y)).rgb;
+  vec3 ml = texture(u_colorMap, tc + vec2(-off.x,   0.0 )).rgb;
+  vec3 mm = texture(u_colorMap, tc).rgb;
+  vec3 mr = texture(u_colorMap, tc + vec2( off.x,   0.0 )).rgb;
+  vec3 bl = texture(u_colorMap, tc + vec2(-off.x,  off.y)).rgb;
+  vec3 bm = texture(u_colorMap, tc + vec2(  0.0,   off.y)).rgb;
+  vec3 br = texture(u_colorMap, tc + vec2( off.x,  off.y)).rgb;
+
+  // Rec. 601 luma(边缘检测)
+  vec3 LUMA = vec3(0.299, 0.587, 0.114);
+  float ltl = dot(tl, LUMA), ltr = dot(tr, LUMA);
+  float lbl = dot(bl, LUMA), lbr = dot(br, LUMA);
+  float lml = dot(ml, LUMA), lmr = dot(mr, LUMA);
+  float ltm = dot(tm, LUMA), lbm = dot(bm, LUMA);
+  float lmm = dot(mm, LUMA);
+
+  // 标准双线性(平滑区域)
+  vec3 bilerp = mix(mix(tl, tr, f.x), mix(bl, br, f.x), f.y);
+
+  // 边缘检测:水平 & 垂直 luma 梯度
+  float dH = abs(ltl + lbl - ltr - lbr) + 2.0 * abs(lmr - lml);
+  float dV = abs(ltl + ltr - lbl - lbr) + 2.0 * abs(ltm - lbm);
+  float edgeStrength = min((dH + dV) * 0.5, 1.0);
+
+  // 边缘感知加权双线性:用 luma 相似度调制 4 角权重。
+  // 边缘另一侧的角点获得低权重,防止跨边缘模糊(双边滤波思想)。
+  float sigma = 0.15;
+  float wTL = exp(-abs(ltl - lmm) / sigma) * (1.0 - f.x) * (1.0 - f.y);
+  float wTR = exp(-abs(ltr - lmm) / sigma) *  f.x        * (1.0 - f.y);
+  float wBL = exp(-abs(lbl - lmm) / sigma) * (1.0 - f.x) *  f.y;
+  float wBR = exp(-abs(lbr - lmm) / sigma) *  f.x        *  f.y;
+  float wSum = wTL + wTR + wBL + wBR + 1e-6;
+  vec3 edgeAware = (tl * wTL + tr * wTR + bl * wBL + br * wBR) / wSum;
+
+  // 混合:平滑区域 → 双线性,边缘 → 边缘感知
+  vec3 result = mix(bilerp, edgeAware, edgeStrength);
+
+  outColor = vec4(result, 1.0);
+}
+`;
+
+
 
