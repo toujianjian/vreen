@@ -195,6 +195,41 @@ describe('RenderPipelineManager — 质量等级', () => {
     expect(QUALITY_PRESETS.medium.ssaoSamples).toBeLessThan(QUALITY_PRESETS.high.ssaoSamples);
     expect(QUALITY_PRESETS.high.ssaoSamples).toBeLessThan(QUALITY_PRESETS.ultra.ssaoSamples);
   });
+
+  it('QUALITY_PRESETS 包含新增 Pass 开关 (ssgi/ssShadow/tonemapping/csm)', () => {
+    for (const lvl of ['low', 'medium', 'high', 'ultra'] as const) {
+      const s = QUALITY_PRESETS[lvl];
+      expect(s).toHaveProperty('ssgiEnabled');
+      expect(s).toHaveProperty('ssShadowEnabled');
+      expect(s).toHaveProperty('tonemappingEnabled');
+      expect(s).toHaveProperty('csmEnabled');
+      expect(typeof s.ssgiEnabled).toBe('boolean');
+      expect(typeof s.ssShadowEnabled).toBe('boolean');
+      expect(typeof s.tonemappingEnabled).toBe('boolean');
+      expect(typeof s.csmEnabled).toBe('boolean');
+    }
+  });
+
+  it('tonemapping 默认全开 (HDR 管线必需)', () => {
+    expect(QUALITY_PRESETS.low.tonemappingEnabled).toBe(true);
+    expect(QUALITY_PRESETS.medium.tonemappingEnabled).toBe(true);
+    expect(QUALITY_PRESETS.high.tonemappingEnabled).toBe(true);
+    expect(QUALITY_PRESETS.ultra.tonemappingEnabled).toBe(true);
+  });
+
+  it('CSM medium+ 开启 (大场景需要)', () => {
+    expect(QUALITY_PRESETS.low.csmEnabled).toBe(false);
+    expect(QUALITY_PRESETS.medium.csmEnabled).toBe(true);
+    expect(QUALITY_PRESETS.high.csmEnabled).toBe(true);
+    expect(QUALITY_PRESETS.ultra.csmEnabled).toBe(true);
+  });
+
+  it('SSGI high+ 开启 (开销大,低配关闭)', () => {
+    expect(QUALITY_PRESETS.low.ssgiEnabled).toBe(false);
+    expect(QUALITY_PRESETS.medium.ssgiEnabled).toBe(false);
+    expect(QUALITY_PRESETS.high.ssgiEnabled).toBe(true);
+    expect(QUALITY_PRESETS.ultra.ssgiEnabled).toBe(true);
+  });
 });
 
 // ── Pass 管理 ─────────────────────────────────────────────────────

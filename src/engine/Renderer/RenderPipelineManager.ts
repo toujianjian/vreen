@@ -142,6 +142,14 @@ export interface QualitySettings {
   ssrEnabled: boolean;
   /** 是否启用 GTAO。 */
   gtaoEnabled: boolean;
+  /** 是否启用 SSGI(屏幕空间全局光照)。 */
+  ssgiEnabled: boolean;
+  /** 是否启用屏幕空间方向性接触阴影。 */
+  ssShadowEnabled: boolean;
+  /** 是否启用色调映射(HDR→LDR)。 */
+  tonemappingEnabled: boolean;
+  /** 是否启用 CSM 级联阴影贴图。 */
+  csmEnabled: boolean;
 }
 
 /** 各管线默认 Pass 框架(均为 no-op stub,用户可替换)。 */
@@ -162,6 +170,10 @@ export const QUALITY_PRESETS: Record<QualityLevel, QualitySettings> = {
     taaEnabled: false,
     ssrEnabled: false,
     gtaoEnabled: false,
+    ssgiEnabled: false,
+    ssShadowEnabled: false,
+    tonemappingEnabled: true,
+    csmEnabled: false,
   },
   medium: {
     ssaoSamples: 16,
@@ -172,6 +184,10 @@ export const QUALITY_PRESETS: Record<QualityLevel, QualitySettings> = {
     taaEnabled: true,
     ssrEnabled: false,
     gtaoEnabled: false,
+    ssgiEnabled: false,
+    ssShadowEnabled: true,
+    tonemappingEnabled: true,
+    csmEnabled: true,
   },
   high: {
     ssaoSamples: 32,
@@ -182,6 +198,10 @@ export const QUALITY_PRESETS: Record<QualityLevel, QualitySettings> = {
     taaEnabled: true,
     ssrEnabled: true,
     gtaoEnabled: true,
+    ssgiEnabled: true,
+    ssShadowEnabled: true,
+    tonemappingEnabled: true,
+    csmEnabled: true,
   },
   ultra: {
     ssaoSamples: 64,
@@ -192,6 +212,10 @@ export const QUALITY_PRESETS: Record<QualityLevel, QualitySettings> = {
     taaEnabled: true,
     ssrEnabled: true,
     gtaoEnabled: true,
+    ssgiEnabled: true,
+    ssShadowEnabled: true,
+    tonemappingEnabled: true,
+    csmEnabled: true,
   },
 };
 
