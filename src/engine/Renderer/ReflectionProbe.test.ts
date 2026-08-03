@@ -40,6 +40,7 @@ class MockGL2 {
   static readonly RGBA16F = 0x881A;
   static readonly HALF_FLOAT = 0x8D61;
   static readonly UNSIGNED_BYTE = 0x1401;
+  static readonly FLOAT = 0x1406;
   static readonly TEXTURE_MIN_FILTER = 0x2801;
   static readonly TEXTURE_MAG_FILTER = 0x2800;
   static readonly TEXTURE_WRAP_S = 0x2802;
@@ -73,6 +74,7 @@ class MockGL2 {
   readonly RGBA16F = MockGL2.RGBA16F;
   readonly HALF_FLOAT = MockGL2.HALF_FLOAT;
   readonly UNSIGNED_BYTE = MockGL2.UNSIGNED_BYTE;
+  readonly FLOAT = MockGL2.FLOAT;
   readonly TEXTURE_MIN_FILTER = MockGL2.TEXTURE_MIN_FILTER;
   readonly TEXTURE_MAG_FILTER = MockGL2.TEXTURE_MAG_FILTER;
   readonly TEXTURE_WRAP_S = MockGL2.TEXTURE_WRAP_S;
@@ -102,6 +104,8 @@ class MockGL2 {
   generateMipmapCalls = 0;
   bindTextureCalls = 0;
   texImage2DCalls = 0;
+  /** 记录每次 texImage2D 的参数,供 PMREM 路径校验格式 / mip 级。 */
+  texImage2DArgs: unknown[][] = [];
 
   private _counter = 0;
   private _nextId(): unknown {
@@ -154,7 +158,7 @@ class MockGL2 {
   clearColor(_r: number, _g: number, _b: number, _a: number): void {}
   activeTexture(_unit: number): void {}
   bindTexture(_t: number, _tex: WebGLTexture | null): void { this.bindTextureCalls++; }
-  texImage2D(..._args: unknown[]): void { this.texImage2DCalls++; }
+  texImage2D(..._args: unknown[]): void { this.texImage2DCalls++; this.texImage2DArgs.push(_args); }
   texParameteri(_t: number, _p: number, _v: number): void {}
   framebufferTexture2D(..._args: unknown[]): void {}
   bindVertexArray(_vao: WebGLVertexArrayObject | null): void {}
@@ -364,5 +368,183 @@ describe('ReflectionProbe.dispose', () => {
     p.dispose(gl as unknown as WebGL2RenderingContext);
     p.dispose(gl as unknown as WebGL2RenderingContext);
     expect(gl.deletedTextures.length).toBe(0);
+  });
+});
+
+// ── PMREM 预滤波路径 ──────────────────────────────────────────────
+
+describe('ReflectionProbe PMREM prefilter construction', () => {
+  it('defaults: prefilter=false, pmremSamples=32', () => {
+    const p = new ReflectionProbe();
+    expect(p.prefilter).toBe(false);
+    expect(p.pmremSamples).toBe(32);
+  });
+
+  it('accepts prefilter + pmremSamples options', () => {
+    const p = new ReflectionProbe({ prefilter: true, pmremSamples: 64 });
+    expect(p.prefilter).toBe(true);
+    expect(p.pmremSamples).toBe(64);
+  });
+});
+
+describe('ReflectionProbe.capture with prefilter=true', () => {
+  it('does not throw and allocates 1 cube texture', () => {
+    const gl = new MockGL2();
+    const renderer = new MockRenderer();
+    const scene = new Scene();
+    const p = new ReflectionProbe({ resolution: 16, prefilter: true });
+    expect(() => p.capture(gl as unknown as WebGL2RenderingContext, renderer, scene)).not.toThrow();
+    expect(gl.createdTextures.length).toBe(1);
+    expect(p.getTexture()).not.toBeNull();
+  });
+
+  it('renders + readPixels all 6 faces', () => {
+    const gl = new MockGL2();
+    const renderer = new MockRenderer();
+    const scene = new Scene();
+    const p = new ReflectionProbe({ resolution: 16, prefilter: true });
+    p.capture(gl as unknown as WebGL2RenderingContext, renderer, scene);
+    expect(renderer.renderCalls).toBe(6);
+    expect(gl.readPixelsCalls).toBe(6);
+  });
+
+  it('does NOT call generateMipmap (PMREM mip chain is pre-filtered)', () => {
+    const gl = new MockGL2();
+    const renderer = new MockRenderer();
+    const scene = new Scene();
+    const p = new ReflectionProbe({ resolution: 16, prefilter: true });
+    p.capture(gl as unknown as WebGL2RenderingContext, renderer, scene);
+    expect(gl.generateMipmapCalls).toBe(0);
+  });
+
+  it('uploads level 0 as RGBA16F + FLOAT (HDR pre-allocation)', () => {
+    const gl = new MockGL2();
+    const renderer = new MockRenderer();
+    const scene = new Scene();
+    const p = new ReflectionProbe({ resolution: 16, prefilter: true });
+    p.capture(gl as unknown as WebGL2RenderingContext, renderer, scene);
+    // 至少一次 texImage2D 用 RGBA16F 内部格式 + FLOAT 类型
+    const hdrUploads = gl.texImage2DArgs.filter(
+      (a) => a[2] === gl.RGBA16F && a[7] === gl.FLOAT,
+    );
+    expect(hdrUploads.length).toBeGreaterThan(0);
+  });
+
+  it('uploads a full mip chain per face (6 faces × mipCount mips)', () => {
+    // res=16 → PMREM mipCount = floor(log2(16)) - floor(log2(4)) + 1 = 4 - 2 + 1 = 3
+    const gl = new MockGL2();
+    const renderer = new MockRenderer();
+    const scene = new Scene();
+    const p = new ReflectionProbe({ resolution: 16, prefilter: true, pmremSamples: 4 });
+    p.capture(gl as unknown as WebGL2RenderingContext, renderer, scene);
+    // PMREM 路径的 texImage2D 调用全是 RGBA16F+FLOAT:
+    //   - 6 次 _ensureCubeTexture 预分配(level 0)
+    //   - 6 面 × 3 mip = 18 次 _capturePrefiltered 上传
+    //   合计 24
+    const hdrUploads = gl.texImage2DArgs.filter(
+      (a) => a[2] === gl.RGBA16F && a[7] === gl.FLOAT,
+    );
+    expect(hdrUploads.length).toBe(24);
+  });
+
+  it('mip sizes halve per level (16 → 8 → 4)', () => {
+    const gl = new MockGL2();
+    const renderer = new MockRenderer();
+    const scene = new Scene();
+    const p = new ReflectionProbe({ resolution: 16, prefilter: true, pmremSamples: 4 });
+    p.capture(gl as unknown as WebGL2RenderingContext, renderer, scene);
+    // 取 +X 面(target = TEXTURE_CUBE_MAP_POSITIVE_X)的 mip 上传
+    const pxUploads = gl.texImage2DArgs.filter(
+      (a) => a[0] === gl.TEXTURE_CUBE_MAP_POSITIVE_X && a[2] === gl.RGBA16F,
+    );
+    // 1 次 level-0 预分配 + 3 次 PMREM mip 上传 = 4
+    expect(pxUploads.length).toBe(4);
+    // PMREM 上传的 mip 尺寸(res 16):level 0 = 16, level 1 = 8, level 2 = 4
+    // 预分配那次也是 16(level 0),所以 16 出现两次
+    const widths = pxUploads.map((a) => a[3]).sort((x, y) => (x as number) - (y as number));
+    expect(widths).toEqual([4, 8, 16, 16]);
+  });
+
+  it('pmremSamples controls PMREMGenerator sample count', () => {
+    // 用极小样本数确保不抛错;样本数仅影响质量,不影响调用形态
+    const gl = new MockGL2();
+    const renderer = new MockRenderer();
+    const scene = new Scene();
+    const p = new ReflectionProbe({ resolution: 16, prefilter: true, pmremSamples: 1 });
+    expect(() => p.capture(gl as unknown as WebGL2RenderingContext, renderer, scene)).not.toThrow();
+  });
+
+  it('second capture reuses the HDR texture (no realloc)', () => {
+    const gl = new MockGL2();
+    const renderer = new MockRenderer();
+    const scene = new Scene();
+    const p = new ReflectionProbe({ resolution: 16, prefilter: true });
+    p.capture(gl as unknown as WebGL2RenderingContext, renderer, scene);
+    const texAfterFirst = gl.createdTextures.length;
+    p.capture(gl as unknown as WebGL2RenderingContext, renderer, scene);
+    expect(gl.createdTextures.length).toBe(texAfterFirst);
+  });
+
+  it('second capture skips level-0 pre-allocation (only PMREM mip uploads)', () => {
+    const gl = new MockGL2();
+    const renderer = new MockRenderer();
+    const scene = new Scene();
+    const p = new ReflectionProbe({ resolution: 16, prefilter: true, pmremSamples: 4 });
+    p.capture(gl as unknown as WebGL2RenderingContext, renderer, scene);
+    const callsAfterFirst = gl.texImage2DCalls;
+    p.capture(gl as unknown as WebGL2RenderingContext, renderer, scene);
+    // 第二次:_ensureCubeTexture 早退(格式匹配),只做 6 面 × 3 mip = 18 次上传
+    expect(gl.texImage2DCalls - callsAfterFirst).toBe(18);
+  });
+});
+
+describe('ReflectionProbe prefilter toggle reallocates texture', () => {
+  it('switching prefilter off→on deletes old RGBA8 and creates RGBA16F', () => {
+    const gl = new MockGL2();
+    const renderer = new MockRenderer();
+    const scene = new Scene();
+    const p = new ReflectionProbe({ resolution: 16, prefilter: false });
+    p.capture(gl as unknown as WebGL2RenderingContext, renderer, scene);
+    expect(gl.deletedTextures.length).toBe(0);
+    expect(gl.createdTextures.length).toBe(1);
+
+    // 切换到 PMREM 路径 → 下次 capture 重建纹理
+    p.prefilter = true;
+    p.capture(gl as unknown as WebGL2RenderingContext, renderer, scene);
+    expect(gl.deletedTextures.length).toBe(1); // 旧 RGBA8 被释放
+    expect(gl.createdTextures.length).toBe(2); // 新 RGBA16F 创建
+  });
+
+  it('switching prefilter on→off deletes HDR and creates LDR', () => {
+    const gl = new MockGL2();
+    const renderer = new MockRenderer();
+    const scene = new Scene();
+    const p = new ReflectionProbe({ resolution: 16, prefilter: true });
+    p.capture(gl as unknown as WebGL2RenderingContext, renderer, scene);
+
+    p.prefilter = false;
+    p.capture(gl as unknown as WebGL2RenderingContext, renderer, scene);
+    expect(gl.deletedTextures.length).toBe(1);
+    // 切回 LDR 后应有 RGBA8 上传
+    const ldrUploads = gl.texImage2DArgs.filter(
+      (a) => a[2] === gl.RGBA8 && a[7] === gl.UNSIGNED_BYTE,
+    );
+    expect(ldrUploads.length).toBeGreaterThan(0);
+  });
+});
+
+describe('ReflectionProbe.dispose with prefilter', () => {
+  it('frees HDR cube texture and clears PMREM state', () => {
+    const gl = new MockGL2();
+    const renderer = new MockRenderer();
+    const scene = new Scene();
+    const p = new ReflectionProbe({ resolution: 16, prefilter: true });
+    p.capture(gl as unknown as WebGL2RenderingContext, renderer, scene);
+    const tex = p.getTexture();
+    expect(tex).not.toBeNull();
+    p.dispose(gl as unknown as WebGL2RenderingContext);
+    expect(gl.deletedTextures).toContain(tex);
+    expect(p.cubeTexture).toBeNull();
+    expect(p.getTexture()).toBeNull();
   });
 });

@@ -812,10 +812,335 @@ Trade-offs vs forward rendering:
 
 ### `ReflectionProbe` / `ReflectionProbeManager`
 
-IBL reflection probes — capture cube-map snapshots of the scene for
-local reflection mapping. `ReflectionProbeManager` registers probes,
-tracks the camera-position-weighted active probe, and blends between
-probes for smooth transitions.
+IBL reflection probes — capture 6-face cube-map snapshots of the scene
+at arbitrary world positions for **local** reflection mapping. A probe
+renders the scene from its `position` with a 90° FOV camera in 6
+directions (±X, ±Y, ±Z), reads back the pixels, and uploads them to a
+GL cube texture that PBR materials sample as `u_envMap`. Multiple
+probes coexist via `ReflectionProbeManager`, which selects the
+highest-priority probe whose AABB (`boxSize`) contains the current
+shading point, falling back to the nearest probe by normalized distance.
+
+**Class**: `ReflectionProbe` (independent `Object3D`-like; not a `RenderPass`)
+**Class**: `ReflectionProbeManager` (probe registry + selector)
+**Adapted from**: three.js `CubeCamera` + o3de Atom `ReflectionProbe`
+
+#### Two capture paths
+
+| Path | Option | GL format | mip chain | IBL correctness | When to use |
+|------|--------|-----------|-----------|-----------------|-------------|
+| **LDR** (default) | `prefilter: false` | `RGBA8` | `generateMipmap` (box-filter) | ❌ Roughness IBL wrong (mip ≠ GGX pre-convolution) | Quick previews, low-end devices, non-PBR scenes |
+| **PMREM** | `prefilter: true` | `RGBA16F` | explicit GGX importance-sampled mip chain | ✅ Physically correct (matches UE5 / o3de Atom) | Production PBR, metallic surfaces, art-directed IBL |
+
+The PMREM path closes the quality gap with three.js
+`PMREMGenerator.fromScene()` and o3de Atom's `ImageBasedLightProcessor`:
+the captured RGBA8 pixels are converted to `Float32` RGB
+(`EnvironmentCubeData`), fed through `PMREMGenerator.prefilter()` (Karis
+2013 split-sum GGX importance sampling), and uploaded as a `RGBA16F` mip
+chain — each mip encodes a different surface roughness α (mip 0 = α=0
+mirror, last mip = α=1 fully rough). The PBR shader's
+`textureLod(u_envMap, R, roughness * mipCount)` then fetches the
+correctly-blurred reflection for each surface roughness.
+
+The LDR path calls `gl.generateMipmap` on the captured cube — these mips
+are *box-filtered* (uniform average), not GGX-pre-filtered, so
+`textureLod` at a roughness mip returns a too-sharp, non-physical
+reflection. The PMREM path **does not** call `generateMipmap` (the PMREM
+mip chain is already the pre-filtered result — box-filtering it again
+would destroy the GGX convolution).
+
+#### Options (`ReflectionProbeOptions`)
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `position` | `Vector3` | `(0,0,0)` | Probe world position (cube-map capture eye). |
+| `resolution` | `number` | `256` | Cube face edge length in pixels. Must be ≥ 2; powers of 2 recommended for mip chain. PMREM requires ≥ 16 (`PMREMGenerator` minimum). |
+| `boxSize` | `Vector3` | `(10,10,10)` | Influence AABB half-extents. A point inside `position ± boxSize` gets influence weight 1.0. |
+| `priority` | `number` | `0` | Higher wins when multiple probes contain the same point. |
+| `near` | `number` | `0.1` | Capture camera near plane. |
+| `far` | `number` | `1000` | Capture camera far plane. |
+| `prefilter` | `boolean` | `false` | PMREM pre-filter path toggle. `true` → `RGBA16F` + GGX mip chain (physically correct IBL). `false` → `RGBA8` + box-filter mipmap (fast, wrong roughness). |
+| `pmremSamples` | `number` | `32` | Max GGX importance samples per output texel (PMREM path only). Higher = smoother but slower. mip 0 always 1 sample (direct copy). |
+
+#### API
+
+```ts
+class ReflectionProbe {
+  position: Vector3; resolution: number; boxSize: Vector3;
+  priority: number; near: number; far: number;
+  prefilter: boolean; pmremSamples: number;
+  cubeTexture: CubeTexture | null;   // null before first capture / after dispose
+
+  capture(gl: WebGL2RenderingContext, renderer: Renderer, scene: Scene): void
+  getTexture(): WebGLTexture | null   // GL cube handle (null if not captured)
+  contains(point: Vector3): boolean   // AABB test (position ± boxSize)
+  dispose(gl: WebGL2RenderingContext): void
+}
+
+class ReflectionProbeManager {
+  probes: ReflectionProbe[]; maxProbes: number;   // default 8
+  addProbe(probe: ReflectionProbe): boolean        // throws if > maxProbes
+  removeProbe(probe: ReflectionProbe): boolean
+  update(gl, renderer, scene): void                // capture all probes sequentially
+  getProbeAt(point: Vector3): ReflectionProbe | null   // priority + nearest
+  getInfluence(point: Vector3): number             // 0..1 weight for blending
+  dispose(gl): void
+}
+```
+
+#### Architecture (PMREM path)
+
+```
+┌────────────────┐    ┌──────────────────────────────────────────────┐
+│ scene + camera │───▶│ ReflectionProbe.capture(prefilter=true)      │
+└────────────────┘    │                                              │
+                      │  ┌─── per face f ∈ {±X,±Y,±Z} ────────────┐  │
+                      │  │ 1. resize canvas → res×res              │  │
+                      │  │ 2. faceCamera.lookAt(pos, pos+dir, up)  │  │
+                      │  │ 3. renderer.render(scene, faceCamera)   │  │
+                      │  │ 4. gl.readPixels → _pixelBuffer (RGBA8) │  │
+                      │  │ 5. RGBA8 → Float32 RGB (_faceRGB)       │  │
+                      │  └─────────────────────────────────────────┘  │
+                      │  6. build EnvironmentCubeData (6 faces)       │
+                      │  7. PMREMGenerator.prefilter(cube) → PMREMData│
+                      │     (Karis 2013 split-sum GGX, Hammersley     │
+                      │      importance sampling, per-mip α)          │
+                      │  8. (re)allocate GL cube texture as RGBA16F   │
+                      │  9. per face f, per mip m:                    │
+                      │       RGB → RGBA (α=1) → texImage2D(          │
+                      │         faceTarget, m, RGBA16F, w, h, 0,      │
+                      │         RGBA, FLOAT, rgbaFloat32)             │
+                      │ 10. NO generateMipmap (mip chain is PMREM)    │
+                      └──────────────────────┬───────────────────────┘
+                                             ▼
+                              ┌──────────────────────────────┐
+                              │ cubeTexture.glTexture        │
+                              │ RGBA16F cube, mip-chain =     │
+                              │ GGX pre-filtered radiance     │
+                              └──────────────────────────────┘
+                                             │
+                                             ▼
+                  PBR shader: textureLod(u_envMap, R, roughness * mipCount)
+```
+
+#### Texture unit / format bindings
+
+| Binding | PMREM path | LDR path |
+|---------|-----------|----------|
+| GL texture target | `TEXTURE_CUBE_MAP` | `TEXTURE_CUBE_MAP` |
+| Internal format | `RGBA16F` (HDR) | `RGBA8` (LDR) |
+| Upload type | `FLOAT` (Float32Array) | `UNSIGNED_BYTE` (Uint8Array) |
+| `MIN_FILTER` | `LINEAR_MIPMAP_LINEAR` | `LINEAR_MIPMAP_LINEAR` |
+| `MAG_FILTER` | `LINEAR` | `LINEAR` |
+| `WRAP_S/T/R` | `CLAMP_TO_EDGE` | `CLAMP_TO_EDGE` |
+| mip chain source | explicit `texImage2D` per mip (PMREM data) | `generateMipmap` (box-filter) |
+
+#### Resource lifecycle
+
+| Resource | Count | Allocated when | Reused across captures |
+|----------|-------|----------------|------------------------|
+| GL cube texture | 1 | first `capture()` (or after prefilter toggle) | ✅ until `dispose()` or format switch |
+| `_pixelBuffer` (RGBA8) | 1 | first `capture()` | ✅ (resized on resolution change) |
+| `_faceRGB` (Float32 RGB) | 1 | first PMREM `capture()` | ✅ |
+| `_uploadRGBA` (Float32 RGBA) | 1 | first PMREM `capture()` | ✅ (grown if smaller mip needs it) |
+| `PMREMGenerator` instance | 1 | first PMREM `capture()` | ✅ (lazy, cached on probe) |
+
+Switching `prefilter` at runtime triggers a texture rebuild on the next
+`capture()` (old texture deleted, new one allocated in the other format)
+— the `_isHDR` flag tracks the current GL format and detects the
+mismatch.
+
+#### Usage
+
+**Production PBR with PMREM pre-filtering (recommended):**
+
+```ts
+import { ReflectionProbe, ReflectionProbeManager } from '@vreen/engine';
+
+const manager = new ReflectionProbeManager({ maxProbes: 4 });
+
+// Indoor room probe — capture once on scene load
+const roomProbe = new ReflectionProbe({
+  position: new Vector3(0, 1.5, 0),
+  boxSize: new Vector3(8, 3, 8),
+  resolution: 128,
+  prefilter: true,       // ← GGX pre-filtered RGBA16F mip chain
+  pmremSamples: 32,      // smooth quality, ~fast
+});
+manager.addProbe(roomProbe);
+roomProbe.capture(gl, renderer, scene);   // one-shot bake
+
+// Outdoor courtyard probe
+const yardProbe = new ReflectionProbe({
+  position: new Vector3(30, 2, 15),
+  boxSize: new Vector3(25, 10, 25),
+  resolution: 256,
+  prefilter: true,
+});
+manager.addProbe(yardProbe);
+yardProbe.capture(gl, renderer, scene);
+
+// Per-frame: pick the active probe for the camera position
+const active = manager.getProbeAt(camera.position);
+if (active) {
+  material.uniforms.u_envMap.value = active.getTexture();
+  material.uniforms.u_envMipCount.value = Math.floor(Math.log2(active.resolution)) - 1;
+}
+
+// Re-capture when scene geometry changes (e.g. after a door opens)
+function onSceneChanged() {
+  roomProbe.setDirty?.() ?? roomProbe.capture(gl, renderer, scene);
+}
+```
+
+**Quick preview without PMREM (fast, lower quality):**
+
+```ts
+const previewProbe = new ReflectionProbe({
+  position: new Vector3(0, 2, 0),
+  resolution: 64,
+  prefilter: false,   // RGBA8 + generateMipmap (box-filter)
+});
+previewProbe.capture(gl, renderer, scene);
+```
+
+**Time-sliced refresh (avoid frame hitches on multi-probe scenes):**
+
+```ts
+// Refresh one probe per frame instead of all at once
+let probeIdx = 0;
+function refreshProbes() {
+  if (manager.probes.length === 0) return;
+  manager.probes[probeIdx].capture(gl, renderer, scene);
+  probeIdx = (probeIdx + 1) % manager.probes.length;
+}
+```
+
+#### Comparison with soup3D
+
+`soup3D` (as of v0.x) ships **no reflection probe system** of any kind —
+no `CubeCamera`, no `ReflectionProbe`, no `PMREMGenerator`. The only
+environment lighting path is a single global `scene.environment` (if
+present), with no local probes, no box-volume influence, no priority
+blending, and no GGX pre-filtering of captured cubes.
+
+| Capability | soup3D | VREEN |
+|------------|--------|-------|
+| Local reflection probes | **None** | `ReflectionProbe` (AABB influence + priority) |
+| Probe manager / blending | **None** | `ReflectionProbeManager` (getProbeAt + getInfluence) |
+| Cube-map capture (6-face) | **None** | `capture()` (render + readPixels + texImage2D) |
+| **PMREM pre-filtering** | **None** | `prefilter: true` → Karis 2013 split-sum GGX |
+| GGX importance-sampled mip chain | **None** | `RGBA16F` cube, per-mip α |
+| Roughness-correct IBL | **None** | `textureLod(envMap, R, roughness × mipCount)` |
+| HDR capture target | **None** | `RGBA16F` (FLOAT upload) |
+| Probe priority + nearest fallback | **None** | priority sort + normalized-distance tiebreak |
+| Influence weight blending | **None** | `getInfluence()` 0..1 (AABB + linear falloff) |
+| Runtime prefilter toggle | **None** | texture rebuild on format switch |
+
+**Where VREEN pulls ahead.** Local reflection probes are the feature
+that separates an "IBL-capable" engine from a "production PBR" engine.
+A single global environment map cannot represent a scene where a
+metallic object moves from an indoor room (warm bounce light) through a
+doorway into an outdoor courtyard (cool sky light) — the reflection
+snaps abruptly at the threshold. VREEN's `ReflectionProbe` +
+`ReflectionProbeManager` let artists place volume probes throughout the
+scene and blend between them by influence weight, matching the UE5 /
+o3de Atom workflow. The PMREM pre-filter path ensures each probe's
+captured cube produces physically-correct roughness-modulated
+reflections (rough surfaces get blurrier reflections, matching the
+GGX BRDF lobe), which is the whole point of PBR IBL — soup3D has no
+path to this.
+
+The integration of `ReflectionProbe` with the existing `PMREMGenerator`
+(Karis 2013 split-sum) means VREEN now has **end-to-end local IBL**:
+capture → pre-filter → sample, the same pipeline three.js exposes via
+`PMREMGenerator.fromScene()` + `CubeCamera` and o3de Atom exposes via
+`ImageBasedLightProcessor` + `ReflectionProbe`.
+
+#### Design Notes
+
+**Why RGBA16F + FLOAT upload (not HALF_FLOAT)?** WebGL2 allows uploading
+`RGBA16F` textures with `type = FLOAT` and a `Float32Array` source — the
+GPU stores half-float, but the upload path accepts full float and
+down-converts. This avoids needing a CPU-side float→half encoder
+(~50 lines of bit-manipulation). The PMREM `prefilter()` output is
+already `Float32Array`, so this is zero-copy apart from the RGB→RGBA
+interleave. (`HALF_FLOAT` + `Uint16Array` would be slightly less upload
+bandwidth, but the encode cost dominates at typical probe resolutions.)
+
+**Why no `generateMipmap` in the PMREM path?** `gl.generateMipmap`
+generates a box-filtered mip chain (each level is a 2×2 average of the
+level above). The PMREM mip chain is *not* a box filter — each level is
+a GGX importance-sampled convolution with a specific roughness α.
+Calling `generateMipmap` would overwrite the PMREM mips with box-filter
+mips, destroying the physical correctness. The PMREM path uploads every
+mip level explicitly via `texImage2D(target, level, …)`.
+
+**Why LDR (RGBA8) capture readback?** The probe captures via
+`gl.readPixels` from the default canvas framebuffer, which is RGBA8
+(`UNSIGNED_BYTE`). True HDR capture would require rendering to a
+float-renderable FBO (`EXT_color_buffer_float` + `RGBA16F` render
+target), which is a larger renderer API change. The LDR-capture →
+PMREM-prefilter combination is still a massive quality improvement
+over the LDR path: the GGX convolution produces correct roughness
+blur even from LDR input (the blur shape is what matters, not the
+dynamic range). Bright-source HDR capture is a future enhancement.
+
+**Why `_isHDR` flag + format-switch rebuild?** Toggling `prefilter`
+changes the GL internal format (`RGBA8` ↔ `RGBA16F`), which cannot be
+done in-place on the same texture object (WebGL forbids re-uploading a
+texture with a different internal format). The `_isHDR` field tracks
+the current GL format; when `capture()` detects a mismatch
+(`_isHDR !== prefilter`), it deletes the old texture and allocates a
+new one in the target format. This makes the option safely runtime-
+toggleable.
+
+**Why sequential `update()` (no frame-slicing)?** The v1
+`ReflectionProbeManager.update()` captures all probes in one call —
+simple but can cause frame hitches with many probes. The recommended
+production pattern is to *not* call `update()` every frame; instead
+call `probe.capture()` directly on a time-sliced schedule (one probe
+per frame, or only when scene geometry changes). The manager's `update`
+is a convenience for quick integration.
+
+**Why `pmremSamples` per-probe (not global)?** Different probes may
+need different quality — a hero probe in a reflective showroom can use
+`pmremSamples: 64` for clean specular, while a background probe in a
+dark corner can use `pmremSamples: 8` for speed. Per-probe configuration
+matches o3de Atom's per-probe quality settings.
+
+#### Test coverage (`ReflectionProbe.test.ts`, 27 tests)
+
+- **Construction (4)**: defaults (incl. `prefilter=false`,
+  `pmremSamples=32`); all options accepted; position/resolution/boxSize.
+- **`contains()` (4)**: inside / boundary / outside / position offset.
+- **`getTexture()` (1)**: null before capture.
+- **LDR `capture()` (4)**: no-throw + 1 texture allocated; 6 renders +
+  6 readPixels; `generateMipmap` called once; canvas size restored;
+  second capture reuses texture.
+- **PMREM `capture()` (8)**: no-throw + 1 texture; 6 renders + 6
+  readPixels; **no `generateMipmap`**; level-0 uploaded as
+  `RGBA16F`+`FLOAT`; full mip chain uploaded (6 faces × 3 mips = 18
+  PMREM uploads + 6 pre-alloc = 24 HDR `texImage2D` calls for res=16);
+  mip sizes halve 16→8→4; `pmremSamples` honored; second capture
+  reuses HDR texture (no realloc); second capture skips pre-alloc
+  (only 18 PMREM mip uploads).
+- **Prefilter toggle (2)**: off→on deletes RGBA8 + creates RGBA16F;
+  on→off deletes HDR + creates LDR.
+- **`dispose()` (3)**: frees GL texture; idempotent; PMREM state
+  cleared.
+
+#### References
+
+- Karis 2013, "Real Shading in Unreal Engine 4" — split-sum IBL
+  approximation (the GGX importance-sampling convolution PMREM uses)
+- three.js `CubeCamera` + `PMREMGenerator.fromScene()` — capture +
+  pre-filter pipeline this integrates
+- o3de Atom `ReflectionProbe` + `ImageBasedLightProcessor` — volume
+  probe + IBL processor design
+- Epic Games, "Reflection Environment" — UE5 probe volume workflow
+- McGuire & Mara, "Efficient GPU Screen-Space Ray Tracing" (2014) —
+  complementary SSR for screen-space reflections (VREEN `SSRPass`)
 
 ### `PathTracer` (`PathTracer.ts`)
 
