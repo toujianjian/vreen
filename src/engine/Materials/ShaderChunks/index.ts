@@ -1,8 +1,8 @@
 // ShaderChunks barrel — 着色器片段库统一导出。
 //
 // 12 个文件:
-//   - 10 个 GLSL 片段字符串常量(common/lighting/fog/normal_packing/
-//     shadow/envmap/tonemapping/noise/uv_transform/color_space)
+//   - 11 个 GLSL 片段字符串常量(common/lighting/fog/normal_packing/
+//     shadow/envmap/tonemapping/noise/uv_transform/color_space/specular_aa)
 //   - 1 个注册表 ShaderChunkRegistry(类 + 单例)
 //   - 本 barrel index
 //
@@ -24,6 +24,7 @@ import { TONEMAP_ACES_CHUNK, TONEMAP_REINHARD_CHUNK } from './tonemapping.glsl';
 import { NOISE_CHUNK } from './noise.glsl';
 import { UV_TRANSFORM_CHUNK } from './uv_transform.glsl';
 import { COLOR_SPACE_CHUNK } from './color_space.glsl';
+import { SPECULAR_AA_CHUNK, SPECULAR_AA_INLINE } from './specularAA.glsl';
 import { ShaderChunkRegistry, shaderChunkRegistry } from './ShaderChunkRegistry';
 
 export {
@@ -39,6 +40,8 @@ export {
   NOISE_CHUNK,
   UV_TRANSFORM_CHUNK,
   COLOR_SPACE_CHUNK,
+  SPECULAR_AA_CHUNK,
+  SPECULAR_AA_INLINE,
   ShaderChunkRegistry,
   shaderChunkRegistry,
 };
@@ -57,6 +60,7 @@ export const BUILTIN_SHADER_CHUNKS: Record<string, string> = {
   NOISE: NOISE_CHUNK,
   UV_TRANSFORM: UV_TRANSFORM_CHUNK,
   COLOR_SPACE: COLOR_SPACE_CHUNK,
+  SPECULAR_AA: SPECULAR_AA_CHUNK,
 };
 
 /** 将全部内置片段注册到指定 registry(默认为进程级单例)。幂等。 */

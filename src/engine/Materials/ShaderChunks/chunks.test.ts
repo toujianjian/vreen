@@ -14,6 +14,7 @@ import { TONEMAP_ACES_CHUNK, TONEMAP_REINHARD_CHUNK } from './tonemapping.glsl';
 import { NOISE_CHUNK } from './noise.glsl';
 import { UV_TRANSFORM_CHUNK } from './uv_transform.glsl';
 import { COLOR_SPACE_CHUNK } from './color_space.glsl';
+import { SPECULAR_AA_CHUNK, SPECULAR_AA_INLINE } from './specularAA.glsl';
 import {
   BUILTIN_SHADER_CHUNKS,
   registerBuiltinChunks,
@@ -338,10 +339,52 @@ describe('ShaderChunks — 内容完整性', () => {
       expect(COLOR_SPACE_CHUNK).toContain('luminance601');
     });
   });
+
+  describe('specularAA.glsl', () => {
+    it('SPECULAR_AA_CHUNK is non-empty string', () => {
+      expectNonEmptyString(SPECULAR_AA_CHUNK, 'SPECULAR_AA_CHUNK');
+    });
+
+    it('SPECULAR_AA_INLINE is non-empty string', () => {
+      expectNonEmptyString(SPECULAR_AA_INLINE, 'SPECULAR_AA_INLINE');
+    });
+
+    it('provides applySpecularAA function', () => {
+      expect(SPECULAR_AA_CHUNK).toContain('applySpecularAA');
+    });
+
+    it('uses screen-space derivatives (dFdx/dFdy)', () => {
+      expect(SPECULAR_AA_CHUNK).toContain('dFdx');
+      expect(SPECULAR_AA_CHUNK).toContain('dFdy');
+    });
+
+    it('computes normal variance', () => {
+      expect(SPECULAR_AA_CHUNK).toContain('variance');
+      expect(SPECULAR_AA_CHUNK).toContain('dot(dNdx');
+    });
+
+    it('modifies roughness based on variance (Toksvig)', () => {
+      expect(SPECULAR_AA_CHUNK).toContain('sqrt(roughness * roughness');
+      expect(SPECULAR_AA_CHUNK).toContain('+ variance');
+    });
+
+    it('clamps result to valid roughness range [0.045, 1.0]', () => {
+      expect(SPECULAR_AA_CHUNK).toContain('clamp(');
+      expect(SPECULAR_AA_CHUNK).toContain('0.045');
+      expect(SPECULAR_AA_CHUNK).toContain('1.0');
+    });
+
+    it('SPECULAR_AA_INLINE has same core logic as the function', () => {
+      expect(SPECULAR_AA_INLINE).toContain('dFdx(N)');
+      expect(SPECULAR_AA_INLINE).toContain('dFdy(N)');
+      expect(SPECULAR_AA_INLINE).toContain('variance_aa');
+      expect(SPECULAR_AA_INLINE).toContain('sqrt(roughness * roughness');
+    });
+  });
 });
 
 describe('ShaderChunks — barrel 导出', () => {
-  it('BUILTIN_SHADER_CHUNKS contains all 12 chunks', () => {
+  it('BUILTIN_SHADER_CHUNKS contains all 13 chunks', () => {
     const expectedKeys = [
       'COMMON',
       'LIGHTING',
@@ -355,6 +398,7 @@ describe('ShaderChunks — barrel 导出', () => {
       'NOISE',
       'UV_TRANSFORM',
       'COLOR_SPACE',
+      'SPECULAR_AA',
     ];
     expect(Object.keys(BUILTIN_SHADER_CHUNKS).sort()).toEqual(expectedKeys.sort());
   });
@@ -381,9 +425,10 @@ describe('ShaderChunks — registerBuiltinChunks 集成', () => {
     // 使用一个临时 registry 避免污染全局单例
     const local = new (shaderChunkRegistry.constructor as new () => typeof shaderChunkRegistry)();
     registerBuiltinChunks(local);
-    expect(local.size()).toBe(12);
+    expect(local.size()).toBe(13);
     expect(local.has('COMMON')).toBe(true);
     expect(local.has('SHADOW')).toBe(true);
+    expect(local.has('SPECULAR_AA')).toBe(true);
   });
 
   it('registerBuiltinChunks is idempotent (does not overwrite if already present)', () => {

@@ -251,6 +251,17 @@ void main() {
     metallic *= mr.b;
     roughness *= mr.g;
   }
+#ifdef USE_SPECULAR_AA
+  // SpecularAA (Toksvig / LEAN): screen-space normal variance → roughness boost.
+  // 消除远距离高频法线区域的镜面高光闪烁/爬行。
+  // 参考 UE5 "Anti-Aliasing Specular Highlights" + o3de Atom SpecularAA。
+  {
+    vec3 dNdx_aa = dFdx(N);
+    vec3 dNdy_aa = dFdy(N);
+    float variance_aa = dot(dNdx_aa, dNdx_aa) + dot(dNdy_aa, dNdy_aa);
+    roughness = clamp(sqrt(roughness * roughness + variance_aa * 0.25), 0.045, 1.0);
+  }
+#endif
   a = max(roughness * roughness, 0.0025);
   vec3 f0 = mix(vec3(0.04), baseColor, metallic);
 

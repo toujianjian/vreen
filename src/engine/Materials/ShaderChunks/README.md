@@ -125,6 +125,121 @@ uniform int       u_shadowEnabled;
 uniform float     u_lightSize;   // 光源尺寸(世界单位,控制半影宽度)
 ```
 
+#### SpecularAA (`specularAA.glsl.ts`)
+
+Specular anti-aliasing via **Toksvig / LEAN filtering**. Eliminates the
+specular highlight shimmering/crawling that plagues PBR engines at
+distance — when a bumpy normal-mapped surface is viewed from far away,
+each pixel covers many texels of normal variation, but the shader only
+samples one normal, producing a single sharp highlight that flickers
+frame-to-frame as the camera moves. SpecularAA detects this by
+estimating normal variance from screen-space derivatives and
+**increasing the effective roughness** where variance is high, smoothing
+the highlight into a stable broad sheen.
+
+| Export | Description |
+|--------|-------------|
+| `SPECULAR_AA_CHUNK` | `applySpecularAA(N, roughness)` function — for custom shaders via `#include <specular_aa>` |
+| `SPECULAR_AA_INLINE` | Inline block — for direct `#ifdef` embedding in PBR_FRAG |
+
+**Algorithm** (UE5 "Anti-Aliasing Specular Highlights" + o3de Atom SpecularAA):
+
+```glsl
+float applySpecularAA(vec3 N, float roughness) {
+  vec3 dNdx = dFdx(N);           // screen-space normal derivative
+  vec3 dNdy = dFdy(N);
+  float variance = dot(dNdx, dNdx) + dot(dNdy, dNdy);
+  // Variance ↑ (bumpy surface at distance) → roughness ↑ → highlight smooths
+  return clamp(sqrt(roughness * roughness + variance * 0.25), 0.045, 1.0);
+}
+```
+
+| Component | Role |
+|-----------|------|
+| `dFdx(N)` / `dFdy(N)` | Screen-space normal derivatives — capture both geometric curvature and normal-map detail in a single metric |
+| `variance` | Sum of squared derivatives — high when normals vary rapidly across the pixel footprint |
+| `sqrt(r² + variance × 0.25)` | Toksvig roughness boost — widens the GGX lobe to account for sub-pixel normal variation. The `0.25` constant is the UE5 strength factor |
+| `clamp(..., 0.045, 1.0)` | Prevents roughness from going below 0.045 (would produce infinitesimally thin highlights — worse than the original shimmer) or above 1.0 (diffuse-only) |
+
+**PBR_FRAG integration** — opt-in via `#define USE_SPECULAR_AA`:
+
+The standard `PBR_FRAG` shader includes the SpecularAA block behind an
+`#ifdef USE_SPECULAR_AA` guard, inserted after the normal-map TBN
+section and the metallicRoughnessMap sampling, but before the GGX
+`a = roughness²` computation. This ensures the modified roughness
+flows into all downstream BRDF math (D_GGX, V_SmithGGXCorrelated,
+F_Schlick, IBL mip selection).
+
+```glsl
+// In PBR_FRAG, after roughness is finalized:
+#ifdef USE_SPECULAR_AA
+  {
+    vec3 dNdx_aa = dFdx(N);
+    vec3 dNdy_aa = dFdy(N);
+    float variance_aa = dot(dNdx_aa, dNdx_aa) + dot(dNdy_aa, dNdy_aa);
+    roughness = clamp(sqrt(roughness * roughness + variance_aa * 0.25), 0.045, 1.0);
+  }
+#endif
+a = max(roughness * roughness, 0.0025);
+```
+
+When `USE_SPECULAR_AA` is **not** defined, the block is compiled out —
+zero cost, identical to previous behavior. This makes it safe to enable
+per-material or globally via a renderer quality setting.
+
+**Usage in custom shaders:**
+
+```ts
+import { SPECULAR_AA_CHUNK } from '@vreen/engine/Materials/ShaderChunks';
+
+const fragShader = `
+  ${SPECULAR_AA_CHUNK}
+  void main() {
+    // ... sample normal map, compute N and roughness ...
+    roughness = applySpecularAA(N, roughness);
+    // ... proceed with GGX BRDF ...
+  }
+`;
+```
+
+**Comparison with soup3D.** soup3D has no PBR pipeline and therefore no
+specular aliasing problem — but also no path to physically-based
+materials. VREEN's SpecularAA solves a problem that only arises at AAA
+rendering quality, and its opt-in `#ifdef` design means the cost is paid
+only when the integrator needs it.
+
+**Design Notes:**
+
+- **Why screen-space derivatives (not precomputed)?** Precomputed
+  variance (Toksvig's original mipmapping approach, or LEAN mapping's
+  precomputed texture) requires offline asset processing and extra
+  texture channels. Screen-space `dFdx/dFdy` captures the same
+  information at runtime with zero asset-pipeline cost — the trade-off
+  is a small per-fragment compute cost (2 derivative evaluations +
+  dot products). This is the approach UE5 and o3de Atom use.
+- **Why `0.25` strength factor?** This controls how aggressively
+  variance increases roughness. UE5 uses `0.25` as the default; lower
+  values (e.g. `0.1`) produce subtler anti-aliasing (some shimmer
+  remains), higher values (e.g. `0.5`) over-blur highlights. The
+  constant is baked into the shader for performance — to tune it,
+  replace the literal in the chunk or PBR_FRAG.
+- **Why `0.045` minimum?** Below ~0.045, the GGX lobe becomes so narrow
+  that a single specular highlight pixel can be brighter than the
+  surrounding area by 100×+, which is the root cause of "fireflies"
+  (specular speckle) in PBR rendering. Clamping to 0.045 keeps the
+  lobe wide enough to anti-alias naturally under TAA.
+- **Composes with TAA.** SpecularAA reduces the *spatial* frequency of
+  specular highlights (widening the lobe), while TAA handles the
+  *temporal* stability (accumulating sub-pixel samples). Together they
+  eliminate both spatial shimmer and temporal flicker. Run SpecularAA
+  in the material shader (GBuffer pass), then TAA in post-processing.
+
+**References:**
+- Toksvig (2005), "Mipmapping Normal Maps"
+- Olano & Baker (2010), "LEAN Mapping"
+- UE5, "Anti-Aliasing Specular Highlights"
+- o3de Atom, `SpecularAA` pass
+
 ---
 
 ## GLSL Composer (`index.ts`)
