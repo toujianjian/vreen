@@ -889,6 +889,11 @@
         "desc": "屏幕空间平面水面,4 方向 Gerstner 波 + Schlick Fresnel 反射/折射混合 + Beer-Lambert 水深吸收 + Blinn-Phong 太阳高光。",
         "advantage": "soup3D 无水面渲染"
       },
+      "godRays": {
+        "title": "体积光束",
+        "desc": "屏幕空间体积光束(crepuscular rays),径向采样 + 亮度阈值提取 + 指数衰减 + 深度遮挡 — 比 VolumetricFog 便宜约 10 倍。",
+        "advantage": "soup3D 无大气散射"
+      },
       "heightFog": {
         "title": "高度雾",
         "desc": "UE5 风格指数高度雾,闭式 Beer-Lambert 密度 + 太阳入射散射。",

@@ -889,6 +889,11 @@
         "desc": "スクリーンスペース平面水面、4方向 Gerstner 波 + Schlick Fresnel 反射/屈折ブレンド + Beer-Lambert 深度吸収 + Blinn-Phong 太陽スペキュラ。",
         "advantage": "soup3D に水面描画なし"
       },
+      "godRays": {
+        "title": "ゴッドレイ",
+        "desc": "スクリーンスペース体積光束(crepuscular rays)、ラジアルサンプリング + 輝度しきい値抽出 + 指数減衰 + 深度オクルージョン — VolumetricFog の約10分の1のコスト。",
+        "advantage": "soup3D に大気散乱なし"
+      },
       "heightFog": {
         "title": "ハイトフォグ",
         "desc": "UE5 風指数ハイトフォグ、閉形式 Beer-Lambert 密度 + 太陽内散乱。",

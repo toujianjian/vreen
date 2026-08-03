@@ -73,3 +73,4 @@ export { HeightFogPass, type HeightFogOptions } from './HeightFogPass';
 export { SharpenPass, type SharpenPassOptions } from './SharpenPass';
 export { FSRUpscalePass, type FSRUpscaleOptions } from './FSRUpscalePass';
 export { WaterSurfacePass, type WaterSurfaceOptions } from './WaterSurfacePass';
+export { GodRaysPass, type GodRaysOptions } from './GodRaysPass';

@@ -4200,5 +4200,130 @@ void main() {
 }
 `;
 
+// ── God Rays (Volumetric Light Shafts) ─────────────────────────────
+// 屏幕空间体积光束(crepuscular rays)— 单 pass 径向采样后处理。
+//
+// 算法(Sekulic 2004 / GPU Gems 3 Ch.13 "Volumetric Light Scattering in
+// Post-Space" / o3de Atom volumetric rays):
+//   1. 把光源世界位置投影到 NDC → lightScreenUV;
+//   2. 若光源在相机后方(clip w <= 0)→ 直接输出场景色,跳过;
+//   3. 对每个像素,沿 像素UV → lightScreenUV 方向径向步进 samples 次;
+//   4. 每步:
+//      a. 采样场景色 → 提取亮度(threshold)作为光束贡献源;
+//      b. 采样深度 → 几何遮挡(深度 < 1.0 的前景几何阻挡光束);
+//      c. contribution = lightMask * illuminationDecay * occlusion;
+//      d. accumulated += contribution;
+//      e. illuminationDecay *= decay(指数衰减,越远越弱);
+//   5. rays = accumulated * exposure * lightColor * intensity;
+//   6. outColor = sceneColor + rays(加性合成)。
+//
+// 输入纹理:
+//   - u_colorMap : 当前帧场景颜色(HDR)
+//   - u_depthMap : NDC 深度(0..1,用于遮挡判定)
+//
+// 与 VolumetricFogPass 的区别:
+//   * VolumetricFogPass 是完整 ray-march 体积雾(含参与介质散射),开销大;
+//   * GodRaysPass 是屏幕空间径向模糊,仅模拟光束散射外观,~10x 便宜;
+//   * 二者可共存:GodRaysPass 作廉价 fallback 或与体积雾叠加增强光束。
+//
+// 参考:
+//   - GPU Gems 3, Ch.13 "Volumetric Light Scattering in Post-Space" (Sekulic)
+//   - o3de Atom, Volumetric rays pass
+//   - Mittring 2007 "Finding Next Gen — CryEngine 2" (light shafts)
+export const GOD_RAYS_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+// 屏幕空间体积光束(crepuscular rays)— 径向采样 + 深度遮挡
+// 参考: GPU Gems 3 Ch.13 / o3de Atom
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;          // 场景颜色(HDR)
+uniform sampler2D u_depthMap;          // NDC 深度(0..1)
+
+uniform mat4  u_viewProjection;        // 世界 → NDC(投影光源)
+uniform vec3  u_lightPosition;         // 光源世界位置
+uniform vec3  u_lightColor;            // 光束颜色
+uniform float u_lightIntensity;        // 光束强度
+
+uniform int   u_samples;               // 径向采样数(默认 80)
+uniform float u_decay;                 // 指数衰减率(默认 0.96)
+uniform float u_exposure;              // 曝光(默认 0.5)
+uniform float u_density;               // 步进密度(默认 1.0)
+uniform float u_threshold;             // 亮度阈值,提取光束源(默认 0.8)
+uniform float u_maxDepth;              // 前景遮挡深度阈值(默认 0.99,>=此值视为天空)
+uniform int   u_enabled;               // 0=禁用,1=启用
+
+#define PI 3.14159265359
+
+// 提取亮度(luminance),高于 threshold 的部分作为光束贡献
+float luminance(vec3 c) {
+  return dot(c, vec3(0.2126, 0.7152, 0.0722));
+}
+
+void main() {
+  vec3 sceneColor = texture(u_colorMap, v_uv).rgb;
+
+  if (u_enabled == 0) {
+    outColor = vec4(sceneColor, 1.0);
+    return;
+  }
+
+  // ── 投影光源到 NDC ─────────────────────────────────────────────
+  vec4 lightClip = u_viewProjection * vec4(u_lightPosition, 1.0);
+  // 光源在相机后方(裁剪空间 w <= 0)→ 光束不可见,直接输出场景
+  if (lightClip.w <= 0.0) {
+    outColor = vec4(sceneColor, 1.0);
+    return;
+  }
+  vec3 lightNDC = lightClip.xyz / lightClip.w;
+  vec2 lightScreenUV = lightNDC.xy * 0.5 + 0.5;
+
+  // ── 径向采样参数 ───────────────────────────────────────────────
+  // delta = (lightScreenUV - pixelUV) * density / samples
+  // 从像素向光源方向步进
+  vec2 deltaTexCoord = (lightScreenUV - v_uv) * u_density;
+  deltaTexCoord *= 1.0 / float(u_samples);
+
+  // 边界 clamp:防止采样 UV 跑出 [0,1] 产生接缝(用 texel fetch 行为)
+  // 这里不做硬 clamp,让衰减自然处理边界(超出区域纹理边框采样)
+
+  vec2 sampleUV = v_uv;
+  float illuminationDecay = 1.0;
+  vec3 accumulated = vec3(0.0);
+
+  // ── 径向累积(手动循环展开上限 256,实际由 u_samples 控制) ────
+  // GLSL ES 3.0 要求循环上界为常量,用 MAX_SAMPLES 作上界,内部 break
+  const int MAX_SAMPLES = 256;
+  for (int i = 0; i < MAX_SAMPLES; i++) {
+    if (i >= u_samples) break;
+
+    sampleUV += deltaTexCoord;
+
+    // 采样场景色 + 深度
+    vec3 sampleColor = texture(u_colorMap, sampleUV).rgb;
+    float sampleDepth = texture(u_depthMap, sampleUV).r;
+
+    // 亮度阈值提取:仅亮度 > threshold 的部分作为光束源(太阳盘 + 亮天空)
+    float lum = luminance(sampleColor);
+    float lightMask = max(0.0, lum - u_threshold);
+
+    // 深度遮挡:前景几何(depth < maxDepth)阻挡光束,天空放行
+    // depth >= maxDepth 视为天空/无穷远 → occlusion = 1(光通过)
+    // depth <  maxDepth 视为前景几何    → occlusion = 0(光被挡)
+    float occlusion = step(u_maxDepth, sampleDepth);
+
+    // 累积(指数衰减 + 遮挡)
+    accumulated += sampleColor * lightMask * illuminationDecay * occlusion;
+    illuminationDecay *= u_decay;
+  }
+
+  // ── 合成 ───────────────────────────────────────────────────────
+  vec3 rays = accumulated * u_exposure * u_lightColor * u_lightIntensity;
+  outColor = vec4(sceneColor + rays, 1.0);
+}
+`;
+
 
 

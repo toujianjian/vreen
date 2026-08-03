@@ -2,9 +2,9 @@
 
 > Path: `src/engine/Renderer/PostProcess/`
 >
-> The enhanced post-processing pass family of the VREEN engine. Provides **26**
+> The enhanced post-processing pass family of the VREEN engine. Provides **27**
 > passes covering color grading, anti-aliasing, screen-space effects, depth-of-field,
-> motion blur, exposure adaptation, atmospheric effects, water rendering, sharpening, upscaling, and stylized effects.
+> motion blur, exposure adaptation, atmospheric effects, water rendering, light shafts, sharpening, upscaling, and stylized effects.
 > Each pass is a self-contained class that manages its own GPU resources (FBOs,
 > textures, shader programs) and integrates into the `PostProcessingPipeline`.
 
@@ -25,7 +25,7 @@ PostProcess/
   │     ├── AfterimagePass
   │     └── PixelationPass
   │
-  ├── GBuffer-dependent (18 passes)           ← independent FBO/program
+  ├── GBuffer-dependent (19 passes)           ← independent FBO/program
   │     ├── SSRPass          ← needs position + normal
   │     ├── SSSRPass         ← needs position + normal + roughness (GGX importance-sampled)
   │     ├── SSGIPass         ← needs position + normal + color
@@ -35,6 +35,7 @@ PostProcess/
   │     ├── VolumetricCloudsPass ← needs depth + 3D noise texture (GPU ray-marched)
   │     ├── CausticsPass     ← needs depth (underwater procedural caustics)
   │     ├── WaterSurfacePass ← needs depth (screen-space planar water, Gerstner + Fresnel)
+  │     ├── GodRaysPass      ← needs depth (screen-space volumetric light shafts)
   │     ├── VelocityPass     ← needs depth + matrices
   │     ├── TAAPass          ← needs color + velocity
   │     ├── MotionBlurPass   ← needs color + velocity
@@ -60,7 +61,7 @@ pipeline.add(new ColorGradingPass({ saturation: 1.2 }));
 pipeline.add(new LUTPass({ lut: myLUTTexture, lutSize: 32, is3D: true }));
 ```
 
-**Pattern 2: GBuffer-dependent** — These 18 passes have custom `apply()`
+**Pattern 2: GBuffer-dependent** — These 19 passes have custom `apply()`
 signatures that require additional GBuffer textures (depth, normal, velocity,
 position). They manage their own FBOs and shader programs independently:
 
@@ -1575,6 +1576,170 @@ if (camera.position.y < water.waterLevel) {
 - o3de Atom, Water surface pass
 - Schlick (1994) — Fresnel approximation for dielectrics
 - Beer-Lambert law — depth absorption
+
+---
+
+### GodRaysPass
+
+Screen-space volumetric light shafts (crepuscular rays) — a single-pass
+post-process that simulates sunlight scattering through scene occluders.
+Projects the light's world position to screen UV, then **radially samples**
+from each pixel toward the light, accumulating bright areas (luminance above
+`threshold`) with **exponential decay** (`illuminationDecay *= decay`).
+**Depth-aware occlusion** lets foreground geometry block the rays while sky
+pixels pass light through, producing the characteristic "god rays" emanating
+from behind trees, buildings, and canyon walls. ~10× cheaper than the full
+`VolumetricFogPass` ray-march, and can coexist with it for enhanced shafts.
+**Surpasses soup3D** (which has no atmospheric scattering at all).
+
+**Class**: `GodRaysPass` (independent, does **not** extend `RenderPass`)
+**Shader**: `GOD_RAYS_FRAG` (single-pass fullscreen)
+**Vertex**: shared `POST_VERT` (fullscreen triangle)
+**Draw calls**: 1 per `apply()` (0 when disabled — early return)
+**Output**: RGBA16F HDR (additive rays may push pixels > 1.0)
+
+#### Architecture
+
+```
+┌──────────────┐    ┌──────────────────────────────────────────────┐
+│ colorTexture │───▶│ GodRaysPass.apply()                          │
+│ HDR scene    │    │  0. if !enabled → return inputTexture (zero) │
+│ (ray source) │    │  1. (re)allocate FBO/texture on resize/dirty │
+└──────────────┘    │  2. bind _fbo, clear COLOR_BUFFER_BIT         │
+                    │  3. bind color → TEXTURE0 (u_colorMap)       │
+┌──────────────┐    │  4. bind depth → TEXTURE1 (u_depthMap)       │
+│ depthTexture │───▶│  5. set viewProjection (world→NDC)           │
+│ GBuffer depth│    │  6. set light params (pos/color/intensity)   │
+└──────────────┘    │  7. set sampling params (samples/decay/...)  │
+                    │  8. drawArrays(fullscreen triangle)          │
+┌──────────────┐    │  9. return _outputTexture                    │
+│   camera     │───▶│                                              │
+│ (VP matrix)  │    │                                              │
+└──────────────┘    └────────────────────┬─────────────────────────┘
+                                          ▼
+                    ┌──────────────────────────────────────────────┐
+                    │ _outputTexture (RGBA16F)                     │
+                    │   sceneColor + accumulated                   │
+                    │     * exposure * lightColor * intensity      │
+                    └──────────────────────────────────────────────┘
+```
+
+#### Algorithm (Sekulic 2004, per pixel)
+
+| # | Stage | Formula / Logic |
+|---|-------|-----------------|
+| 1 | Light project | `lightClip = viewProjection * lightPos; if (w <= 0) skip;` |
+| 2 | Screen UV | `lightScreenUV = (lightNDC.xy * 0.5 + 0.5)` |
+| 3 | Radial delta | `delta = (lightScreenUV - pixelUV) * density / samples` |
+| 4 | March & accumulate | `for i in 0..samples: sampleUV += delta; ...` |
+| 5 | Brightness mask | `lightMask = max(0, luminance(sampleColor) - threshold)` |
+| 6 | Depth occlusion | `occlusion = step(maxDepth, sampleDepth)` (sky=1, geom=0) |
+| 7 | Decay accumulate | `accumulated += sampleColor * lightMask * decay^i * occlusion` |
+| 8 | Composite | `out = sceneColor + accumulated * exposure * lightColor * intensity` |
+
+The loop is bounded by `MAX_SAMPLES = 256` (GLSL ES 3.0 constant upper bound)
+with an early `break` at `u_samples`, so the actual sample count is
+configurable from 1 to 256 without shader recompilation.
+
+#### Depth-aware occlusion
+
+Without the depth test, rays would bleed through foreground geometry. The
+shader samples `u_depthMap` at each radial step and uses a `step()` gate:
+
+```glsl
+float occlusion = step(u_maxDepth, sampleDepth);
+// depth >= maxDepth → sky / far plane → occlusion = 1.0 (light passes)
+// depth <  maxDepth → foreground geometry → occlusion = 0.0 (light blocked)
+```
+
+This makes rays appear to stream **from behind** occluders rather than
+through them — the defining visual of crepuscular rays.
+
+#### Options
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `lightPosition` | `[x,y,z]` | `[0, 50, 0]` | Light world position (project to screen) |
+| `lightColor` | `[r,g,b]` | `[1.0, 0.9, 0.7]` | Ray tint (warm yellow = sunlight) |
+| `lightIntensity` | `number` | `1.0` | Ray brightness multiplier |
+| `samples` | `number` | `80` | Radial sample count (1..256, more = smoother) |
+| `decay` | `number` | `0.96` | Exponential decay per step (→1 = longer rays) |
+| `exposure` | `number` | `0.5` | Overall ray exposure |
+| `density` | `number` | `1.0` | Sample spacing multiplier (>1 stretches range) |
+| `threshold` | `number` | `0.8` | Luminance threshold for ray source extraction |
+| `maxDepth` | `number` | `0.99` | Depth above which pixels are treated as sky |
+| `enabled` | `boolean` | `true` | Enable toggle |
+
+#### API
+
+```ts
+apply(
+  gl: WebGL2RenderingContext,
+  colorTexture: WebGLTexture,
+  depthTexture: WebGLTexture,
+  camera: Camera,
+): WebGLTexture
+```
+
+#### Usage — sunlight shafts through a forest
+
+```ts
+import { GodRaysPass } from '@/engine/Renderer/PostProcess/GodRaysPass';
+
+const godRays = new GodRaysPass({
+  lightPosition: [120, 80, -40],   // sun world position
+  lightColor: [1.0, 0.9, 0.7],     // warm sunlight
+  lightIntensity: 1.5,
+  samples: 100,                     // smooth shafts
+  decay: 0.95,                      // long rays
+  threshold: 0.7,                   // bright sky + sun disc
+  maxDepth: 0.99,                   // sky pass, trees block
+});
+
+// Per frame (update light to follow the sun):
+godRays.lightPosition = sunWorldPos;
+const out = godRays.apply(gl, sceneColorTex, depthTex, camera);
+```
+
+#### Usage — cheap fallback for VolumetricFog
+
+```ts
+// GodRays is ~10x cheaper than VolumetricFogPass. Use it on low-end devices
+// or when only the light-shaft look is needed (no full fog volume).
+const godRays = new GodRaysPass({ samples: 60, decay: 0.94 });
+// No 3D noise texture, no ray-march — just a radial screen-space blur.
+```
+
+#### Usage — toggle off when light is behind camera
+
+```ts
+// The shader auto-skips when lightClip.w <= 0 (light behind camera),
+// but you can also early-out in JS to avoid the FBO bind entirely:
+if (cameraDir.dot(sunDir) < 0) {
+  godRays.enabled = false;
+} else {
+  godRays.enabled = true;
+}
+```
+
+#### Comparison with soup3D
+
+| Capability | VREEN | soup3D |
+|-----------|-------|--------|
+| Screen-space god rays | ✓ (radial sampling + depth occlusion) | ✗ |
+| Crepuscular rays | ✓ (Sekulic 2004) | ✗ |
+| Depth-aware occlusion | ✓ (foreground blocks rays) | ✗ (no depth pass) |
+| Configurable decay | ✓ (exponential per step) | ✗ |
+| Brightness threshold | ✓ (luminance mask) | ✗ |
+| HDR additive composite | ✓ (RGBA16F) | ✗ |
+| Light-behind-camera skip | ✓ (clip w test) | ✗ |
+| Cheap fog alternative | ✓ (~10x cheaper than VolumetricFog) | ✗ |
+
+#### References
+
+- GPU Gems 3, Ch. 13 "Volumetric Light Scattering in Post-Space" (Sekulic)
+- o3de Atom, Volumetric rays pass
+- Mittring 2007, "Finding Next Gen — CryEngine 2" (light shafts)
 
 ---
 

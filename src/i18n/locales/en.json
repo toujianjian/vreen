@@ -889,6 +889,11 @@
         "desc": "Screen-space planar water with 4-directional Gerstner waves, Schlick Fresnel reflection/refraction blend, Beer-Lambert depth absorption, and Blinn-Phong sun specular.",
         "advantage": "soup3D has no water rendering"
       },
+      "godRays": {
+        "title": "God Rays",
+        "desc": "Screen-space volumetric light shafts (crepuscular rays) with radial sampling, luminance-threshold extraction, exponential decay, and depth-aware occlusion — ~10x cheaper than VolumetricFog.",
+        "advantage": "soup3D has no atmospheric scattering"
+      },
       "heightFog": {
         "title": "Height Fog",
         "desc": "UE5-style exponential height fog with closed-form Beer-Lambert density and sun inscattering.",
