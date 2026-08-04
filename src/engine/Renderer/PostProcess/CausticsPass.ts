@@ -1,28 +1,41 @@
-// CausticsPass — 水下焦散后处理 Pass。
+// CausticsPass — 水下焦散后处理 Pass(v2 增强)。
 //
 // 设计目标:
 //   - 基于 GBuffer 深度纹理重建世界位置,在水面(waterLevel)以下的几何上
 //     叠加程序化焦散光纹,模拟水面折射后的光能聚焦。
-//   - 三组方向各异的正弦波叠加 + 幂增强产生锐利亮带(焦散特征)。
+//   - v2 新增三种模式:
+//     · 'procedural' — 原有 3 方向正弦波叠加(快速、艺术化);
+//     · 'gerstner'   — Gerstner 波法线 + 法线聚焦因子(物理准确);
+//     · 'hybrid'     — procedural × gerstner(默认,兼顾纹理细节与物理聚焦)。
+//   - v2 新增水面线渐变(waterLineFade)避免硬边。
 //   - 支持 RGB 色散偏移(波长差异折射)和深度衰减(Beer-Lambert)。
 //   - 独立管理 FBO + 程序,不继承 RenderPass(需要 depth + camera)。
 //
-// 算法(参考 GPU Gems 2 Ch.18 "Effective Water Simulation" + o3de Atom Water):
+// 算法(参考 GPU Gems 2 Ch.18 + Shah & Konttinen 2005 + o3de Atom Water):
 //   1. 从 depth 纹理重建世界位置(逆 viewProjection);
 //   2. worldPos.y > waterLevel 或 depth>=1.0(天空)→ 跳过;
 //   3. depthAtten = 1 / (1 + depthBelow * absorption);
-//   4. caustic = pow(max(0, (sin(三方向) 均值), power);
-//   5. RGB 色散:每通道 UV 略偏移;
-//   6. outColor = sceneColor + causticColor * caustic * intensity * depthAtten。
+//   4. lineFade = clamp(depthBelow / waterLineFade, 0, 1);
+//   5. 按模式计算焦散图案(procedural / gerstner / hybrid);
+//   6. RGB 色散:每通道 UV 略偏移;
+//   7. outColor = sceneColor + causticColor * caustic * intensity * depthAtten * lineFade。
 //
 // 参考:
 //   - GPU Gems 2, Ch. 18 "Effective Water Simulation from Physical Models"
+//   - Shah & Konttinen 2005, "Caustic Mapping"
 //   - o3de Atom Water highlights / caustics pass
 //   - ShaderToy "Caustic" by Dave_Hoskins
 
 import type { Camera } from '../../Cameras/Camera';
 import { POST_VERT as POST_VERT_SRC, CAUSTICS_FRAG } from '../../Materials/shaders';
 import { ShaderProgram } from '../ShaderProgram';
+import {
+  defaultGerstnerWaves,
+  normalize3,
+  type CausticMode,
+  type GerstnerWave,
+  type Vec3,
+} from '../CausticsGenerator';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('CausticsPass');
@@ -50,6 +63,14 @@ export interface CausticsOptions {
   power?: number;
   /** 是否启用(默认 true)。 */
   enabled?: boolean;
+  /** v2 新增:焦散模式(默认 'hybrid')。 */
+  mode?: CausticMode;
+  /** v2 新增:太阳方向(归一化,默认 [0.5, -1.0, 0.3],gerstner/hybrid 用)。 */
+  lightDir?: Vec3;
+  /** v2 新增:水面线渐变范围(世界单位,默认 1.0)。 */
+  waterLineFade?: number;
+  /** v2 新增:Gerstner 波参数数组(默认 4 组波)。 */
+  waves?: GerstnerWave[];
 }
 
 /**
@@ -75,6 +96,16 @@ export class CausticsPass {
   /** 动画时间(秒)。调用者每帧更新。 */
   time: number = 0;
 
+  // v2 新增字段
+  /** 焦散模式(默认 'hybrid')。 */
+  mode: CausticMode;
+  /** 太阳方向(归一化,gerstner/hybrid 用)。 */
+  lightDir: Vec3;
+  /** 水面线渐变范围(世界单位)。 */
+  waterLineFade: number;
+  /** Gerstner 波参数数组。 */
+  waves: GerstnerWave[];
+
   private _outputTexture: WebGLTexture | null = null;
   private _fbo: WebGLFramebuffer | null = null;
   private _program: ShaderProgram | null = null;
@@ -97,6 +128,11 @@ export class CausticsPass {
     this.dispersion = opts.dispersion ?? 0.3;
     this.power = opts.power ?? 3.0;
     this.enabled = opts.enabled ?? true;
+    // v2 新增
+    this.mode = opts.mode ?? 'hybrid';
+    this.lightDir = opts.lightDir ? normalize3(opts.lightDir) : normalize3({ x: 0.5, y: -1.0, z: 0.3 });
+    this.waterLineFade = opts.waterLineFade ?? 1.0;
+    this.waves = opts.waves ?? defaultGerstnerWaves();
   }
 
   /**
@@ -164,6 +200,15 @@ export class CausticsPass {
     prog.setUniform1f('u_time', this.time);
     prog.setUniform1i('u_enabled', this.enabled ? 1 : 0);
 
+    // v2 新增 uniform
+    const modeInt = this.mode === 'procedural' ? 0 : this.mode === 'gerstner' ? 1 : 2;
+    prog.setUniform1i('u_mode', modeInt);
+    prog.setUniform3f('u_lightDir', this.lightDir.x, this.lightDir.y, this.lightDir.z);
+    prog.setUniform1f('u_waterLineFade', this.waterLineFade);
+
+    // Gerstner 波 uniform 打包(4 组,每组打包为 vec4×2)
+    this._uploadGerstnerUniforms(gl, prog);
+
     gl.bindVertexArray(this._fullscreenQuadVao as WebGLVertexArrayObject);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
 
@@ -197,6 +242,33 @@ export class CausticsPass {
   }
 
   // ── 内部方法 ──────────────────────────────────────────────────────
+
+  /** 上传 Gerstner 波 uniform 数组(u_gerstnerA[4] + u_gerstnerB[4])。 */
+  private _uploadGerstnerUniforms(gl: WebGL2RenderingContext, prog: ShaderProgram): void {
+    // 打包 4 组波:u_gerstnerA[i] = (dir.x, dir.y, amplitude, wavelength)
+    //             u_gerstnerB[i] = (speed, steepness, 0, 0)
+    const waves = this.waves.slice(0, 4);
+    while (waves.length < 4) waves.push({ dir: { x: 1, y: 0 }, amplitude: 0, wavelength: 1, speed: 0, steepness: 0 });
+
+    const gerstnerA = new Float32Array(4 * 4); // 4 × vec4
+    const gerstnerB = new Float32Array(4 * 4);
+    for (let i = 0; i < 4; i++) {
+      const w = waves[i];
+      gerstnerA[i * 4 + 0] = w.dir.x;
+      gerstnerA[i * 4 + 1] = w.dir.y;
+      gerstnerA[i * 4 + 2] = w.amplitude;
+      gerstnerA[i * 4 + 3] = w.wavelength;
+      gerstnerB[i * 4 + 0] = w.speed;
+      gerstnerB[i * 4 + 1] = w.steepness;
+      gerstnerB[i * 4 + 2] = 0;
+      gerstnerB[i * 4 + 3] = 0;
+    }
+
+    const locA = prog.uniforms.get('u_gerstnerA[0]');
+    if (locA) gl.uniform4fv(locA, gerstnerA);
+    const locB = prog.uniforms.get('u_gerstnerB[0]');
+    if (locB) gl.uniform4fv(locB, gerstnerB);
+  }
 
   private _initResources(gl: WebGL2RenderingContext, w: number, h: number): void {
     // 输出纹理(RGBA16F,焦散加性合成可能产生 HDR 亮度)

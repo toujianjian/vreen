@@ -896,7 +896,7 @@
       },
       "caustics": {
         "title": "수중 코스틱스",
-        "desc": "스크린 공간 수중 코스틱스, 깊이 재구성 + 3파 프로시저럴 패턴 + RGB 색산란 + Beer-Lambert 깊이 감쇠.",
+        "desc": "스크린 공간 코스틱스, 3모드: 프로시저럴 3-sine / Gerstner 법선 포커싱 / 하이브리드. RGB 색산란 + Beer-Lambert + 수면선 페이드. CPU·GPU 1:1.",
         "advantage": "soup3D에 수면 렌더링 없음"
       },
       "waterSurface": {

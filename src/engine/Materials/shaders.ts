@@ -4312,7 +4312,8 @@ export const CAUSTICS_FRAG = /* glsl */ `#version 300 es
 precision highp float;
 
 // 水下焦散 — 屏幕空间深度重建 + 程序化波纹焦散
-// 参考: GPU Gems 2 Ch.18 "Effective Water Simulation" / o3de Atom Water
+// v2 增强:Gerstner 波法线 + 法线聚焦因子(hybrid 模式,匹配 CausticsGenerator.ts)
+// 参考: GPU Gems 2 Ch.18 / Shah & Konttinen 2005 "Caustic Mapping" / o3de Atom Water
 
 in vec2 v_uv;
 out vec4 outColor;
@@ -4337,18 +4338,55 @@ uniform float u_power;                 // 聚焦幂(默认 3.0,越大亮带越�
 uniform float u_time;                  // 时间(秒)
 uniform int   u_enabled;               // 0=禁用,1=启用
 
-// 三组方向各异的正弦波,模拟水面折射后的光能聚焦
-// p: 世界 XZ 平面 UV(已缩放); power: 聚焦幂,>1 增强亮带(模拟焦散)
-float causticPattern(vec2 p, float power) {
+// v2 新增:模式与 Gerstner 参数
+uniform int   u_mode;                  // 0=procedural, 1=gerstner, 2=hybrid(默认)
+uniform vec3  u_lightDir;              // 太阳方向(归一化,gerstner/hybrid 用)
+uniform float u_waterLineFade;         // 水面线渐变范围(世界单位,默认 1.0)
+// 4 组 Gerstner 波(dir.xy + amplitude + wavelength + speed + steepness,打包为 vec5)
+#define GERSTNER_COUNT 4
+uniform vec4  u_gerstnerA[GERSTNER_COUNT];  // xy=dir, z=amplitude, w=wavelength
+uniform vec4  u_gerstnerB[GERSTNER_COUNT];  // x=speed, y=steepness
+
+// ── 程序化 3-sine 焦散(v1,与 CausticsGenerator.causticPattern3Sin 1:1) ──
+float causticPattern3Sin(vec2 p, float power) {
   float t = u_time * u_waveSpeed;
   float f = u_waveFrequency;
-  // 三组方向(30° / 120° / -60°),覆盖均匀
   float w1 = sin(dot(p, vec2( 0.8660,  0.5000)) * f + t * 1.3);
   float w2 = sin(dot(p, vec2(-0.5000,  0.8660)) * f + t * 1.7);
   float w3 = sin(dot(p, vec2( 0.5000, -0.8660)) * f + t * 0.9);
-  float s = (w1 + w2 + w3) / 3.0;            // [-1, 1]
-  // 仅保留正瓣并幂增强(光线聚焦处更亮)
+  float s = (w1 + w2 + w3) / 3.0;
   return pow(max(0.0, s), power);
+}
+
+// ── Gerstner 波法线(v2,与 CausticsGenerator.gerstnerHeightNormal 1:1) ──
+// 返回水面法线(归一化)
+vec3 gerstnerNormal(vec2 worldXZ, float time) {
+  float nx = 0.0;
+  float ny = 1.0;
+  float nz = 0.0;
+
+  for (int i = 0; i < GERSTNER_COUNT; i++) {
+    vec2 dir = u_gerstnerA[i].xy;
+    float amp = u_gerstnerA[i].z;
+    float wavelength = u_gerstnerA[i].w;
+    float speed = u_gerstnerB[i].x;
+    float steepness = u_gerstnerB[i].y;
+
+    float wFreq = 6.28318530718 / wavelength;
+    float phase = wFreq * dot(dir, worldXZ) + speed * time;
+    float WA = wFreq * amp;
+
+    nx -= dir.x * WA * cos(phase);
+    ny -= steepness * WA * sin(phase);
+    nz -= dir.y * WA * cos(phase);
+  }
+
+  return normalize(vec3(nx, ny, nz));
+}
+
+// ── 法线聚焦因子(v2,与 CausticsGenerator.causticFocusing 1:1) ──
+float causticFocusing(vec3 normal, vec3 lightDir, float power) {
+  return pow(max(0.0, dot(normal, -lightDir)), power);
 }
 
 void main() {
@@ -4380,17 +4418,43 @@ void main() {
   float depthBelow = u_waterLevel - worldPos.y;
   float depthAtten = 1.0 / (1.0 + depthBelow * u_absorption);
 
+  // 水面线渐变(避免硬边)
+  float lineFade = clamp(depthBelow / max(u_waterLineFade, 0.001), 0.0, 1.0);
+
   // 焦散图案(世界 XZ 投影 + 相位偏移)
   vec2 causticUV = worldPos.xz / u_worldScale + vec2(u_wavePhase);
 
-  // RGB 色散:每通道用略有偏移的 UV,模拟波长差异折射
-  float causticR = causticPattern(causticUV + vec2( u_dispersion * 0.5, 0.0), u_power);
-  float causticG = causticPattern(causticUV, u_power);
-  float causticB = causticPattern(causticUV + vec2(-u_dispersion * 0.5, 0.0), u_power);
+  // 按模式计算焦散
+  float causticR, causticG, causticB;
+
+  if (u_mode == 0) {
+    // procedural: 3-sine + RGB 色散
+    causticR = causticPattern3Sin(causticUV + vec2( u_dispersion * 0.5, 0.0), u_power);
+    causticG = causticPattern3Sin(causticUV, u_power);
+    causticB = causticPattern3Sin(causticUV + vec2(-u_dispersion * 0.5, 0.0), u_power);
+  } else if (u_mode == 1) {
+    // gerstner: 法线聚焦 + RGB 色散
+    vec3 normal = gerstnerNormal(worldPos.xz, u_time);
+    float focusR = causticFocusing(normal, u_lightDir, u_power * 2.0);
+    // 色散通过轻微偏移采样位置实现
+    vec3 normalR = gerstnerNormal(worldPos.xz + vec2( u_dispersion * 0.5, 0.0), u_time);
+    vec3 normalB = gerstnerNormal(worldPos.xz + vec2(-u_dispersion * 0.5, 0.0), u_time);
+    causticR = causticFocusing(normalR, u_lightDir, u_power * 2.0);
+    causticG = focusR;
+    causticB = causticFocusing(normalB, u_lightDir, u_power * 2.0);
+  } else {
+    // hybrid: procedural × gerstner
+    vec3 normal = gerstnerNormal(worldPos.xz, u_time);
+    float focus = causticFocusing(normal, u_lightDir, u_power * 2.0);
+    causticR = causticPattern3Sin(causticUV + vec2( u_dispersion * 0.5, 0.0), u_power) * focus;
+    causticG = causticPattern3Sin(causticUV, u_power) * focus;
+    causticB = causticPattern3Sin(causticUV + vec2(-u_dispersion * 0.5, 0.0), u_power) * focus;
+  }
+
   vec3 caustic = vec3(causticR, causticG, causticB);
 
   // 加性合成
-  vec3 causticColor = u_causticColor * caustic * u_causticIntensity * depthAtten;
+  vec3 causticColor = u_causticColor * caustic * u_causticIntensity * depthAtten * lineFade;
   outColor = vec4(sceneColor + causticColor, 1.0);
 }
 `;

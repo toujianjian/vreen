@@ -896,7 +896,7 @@
       },
       "caustics": {
         "title": "Underwater Caustics",
-        "desc": "Screen-space underwater caustics with depth reconstruction, three-wave procedural pattern, RGB chromatic dispersion, and Beer-Lambert depth attenuation.",
+        "desc": "Screen-space caustics with 3 modes: procedural 3-sine, Gerstner normal-focusing, and hybrid. RGB dispersion + Beer-Lambert + water-line fade. CPU + GPU 1:1.",
         "advantage": "soup3D has no water rendering"
       },
       "waterSurface": {

@@ -443,4 +443,36 @@ export {
   type SVGFOptions,
   type SVGFStats,
 } from './SVGFDenoiserPass';
+// CausticsGenerator — 水下焦散 CPU 参考实现(与 GLSL `CAUSTICS_FRAG` 1:1 对应)。
+// 三种模式:procedural(3-sine)/ gerstner(法线聚焦)/ hybrid(默认,procedural × gerstner)。
+// 纯函数:causticPattern3Sin / gerstnerHeightNormal / causticFocusing / beerLambertAttenuation /
+// waterLineFade / rgbDispersion / computeCaustics / reconstructWorldPos / resolveCaustics。
+// 不依赖 WebGL,可在 Node/无头环境测试。用于 CausticsPass(GPU)的参考实现 + 离线渲染。
+export {
+  causticPattern3Sin,
+  gerstnerHeightNormal,
+  causticFocusing,
+  beerLambertAttenuation,
+  waterLineFade,
+  rgbDispersion,
+  computeCaustics,
+  reconstructWorldPos,
+  resolveCaustics,
+  defaultGerstnerWaves,
+  normalize2 as causticNormalize2,
+  normalize3 as causticNormalize3,
+  dot2 as causticDot2,
+  dot3 as causticDot3,
+  makeSolidBuffer as causticMakeSolidBuffer,
+  makeConstantDepth as causticMakeConstantDepth,
+  makeIdentityMatrix as causticMakeIdentityMatrix,
+  type CausticMode,
+  type GerstnerWave,
+  type Vec2 as CausticVec2,
+  type Vec3 as CausticVec3,
+  type CausticsOptions as CausticsGeneratorOptions,
+  type CausticsStats,
+  type PixelBuffer as CausticPixelBuffer,
+  type DepthBuffer as CausticDepthBuffer,
+} from './CausticsGenerator';
 

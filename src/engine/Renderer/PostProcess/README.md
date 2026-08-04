@@ -1260,22 +1260,34 @@ A future refactor could delegate to `Matrix4.makeInverse()` if added.
 
 ---
 
-### CausticsPass
+### CausticsPass (v2 — Gerstner + Normal-Focusing)
 
 Screen-space underwater caustics — reconstructs the world position per pixel
-from the GBuffer depth, and additively overlays a procedural caustic light
-pattern on all geometry below `waterLevel`. The caustic pattern is built
-from **three directional sine waves** (30°/120°/−60°) whose positive lobes
-are raised to a configurable power (`u_power`), sharpening the bright
-focusing lines characteristic of refracted sunlight through a water surface.
-Supports **RGB chromatic dispersion** (per-channel UV offset simulating
-wavelength-dependent refraction) and **Beer-Lambert depth attenuation**
-(caustics fade with distance below the surface). **Surpasses soup3D**
-(which ships no water rendering at all — no water surface, no caustics, no
-underwater fog).
+from the GBuffer depth, and additively overlays a caustic light pattern on all
+geometry below `waterLevel`. **v2** adds three rendering modes:
+
+- **`procedural`** — Original 3-direction sine-wave superposition (30°/120°/−60°),
+  positive lobes raised to `power`, sharpening the bright focusing lines.
+- **`gerstner`** — Physically-based: computes the Gerstner wave surface normal
+  at the receiving point, then applies a **normal-focusing factor**
+  `max(0, dot(N, −L))^power` (Shah & Konttinen 2005). Where the water surface
+  bulges toward the sun, refracted rays converge → bright caustic bands;
+  where it dips away, rays diverge → darkening.
+- **`hybrid`** (default) — `procedural × gerstner`: combines the fine texture
+  detail of the 3-sine pattern with the physically-correct large-scale focusing
+  of the Gerstner normal. Best of both worlds.
+
+All three modes support **RGB chromatic dispersion**, **Beer-Lambert depth
+attenuation**, and **water-line fade** (smooth transition at the surface to
+avoid hard edges). The CPU reference implementation (`CausticsGenerator.ts`)
+mirrors the GLSL 1:1 and is headless-testable.
+
+**Surpasses soup3D** (which ships no water rendering at all — no water surface,
+no caustics, no underwater fog).
 
 **Class**: `CausticsPass` (independent, does **not** extend `RenderPass`)
-**Shader**: `CAUSTICS_FRAG` (single-pass fullscreen)
+**CPU reference**: `CausticsGenerator` (pure functions, no WebGL dependency)
+**Shader**: `CAUSTICS_FRAG` (single-pass fullscreen, 3 modes via `u_mode`)
 **Vertex**: shared `POST_VERT` (fullscreen triangle)
 **Draw calls**: 1 per `apply()` (0 when disabled — early return)
 **Output**: RGBA16F HDR (additive caustics may push pixels > 1.0)
@@ -1292,19 +1304,21 @@ underwater fog).
 │ depthTexture │───▶│  4. bind depth → TEXTURE1 (u_depthMap)       │
 │ GBuffer depth│    │  5. set inverse VP + camera pos + screen     │
 └──────────────┘    │  6. set caustic params (color/intensity/...)  │
-                    │  7. set time (caller-updated animation)       │
-                    │  8. drawArrays(fullscreen triangle)           │
-                    │  9. return _outputTexture                     │
+                    │  7. set mode + lightDir + Gerstner uniforms   │
+                    │  8. set time (caller-updated animation)       │
+                    │  9. drawArrays(fullscreen triangle)           │
+                    │ 10. return _outputTexture                     │
                     └────────────────────┬─────────────────────────┘
                                          ▼
                     ┌──────────────────────────────────────────────┐
                     │ _outputTexture (RGBA16F)                     │
                     │   sceneColor + causticColor * caustic        │
                     │                  * intensity * depthAtten    │
+                    │                  * lineFade                   │
                     └──────────────────────────────────────────────┘
 ```
 
-#### Algorithm (5 stages, per pixel)
+#### Algorithm (7 stages, per pixel)
 
 | # | Stage | Formula / Logic |
 |---|-------|-----------------|
@@ -1312,8 +1326,11 @@ underwater fog).
 | 2 | World reconstruct | `worldPos = invVP * NDC; perspective divide` |
 | 3 | Above-water reject | `if (worldPos.y > waterLevel) return sceneColor;` |
 | 4 | Depth attenuation | `depthAtten = 1 / (1 + (waterLevel - worldPos.y) * absorption)` |
-| 5 | Caustic pattern | 3 sine waves (30°/120°/−60°), `pow(max(0, mean), power)`, RGB-dispersed |
-| 6 | Composite | `out = sceneColor + causticColor * caustic * intensity * depthAtten` |
+| 5 | Water-line fade | `lineFade = clamp(depthBelow / waterLineFade, 0, 1)` |
+| 6 | Caustic pattern | mode 0: 3-sine `pow(max(0, mean), power)` |
+| | | mode 1: `causticFocusing(gerstnerNormal(xz), lightDir, power*2)` |
+| | | mode 2: `procedural × gerstner` (hybrid, default) |
+| 7 | Composite | `out = sceneColor + causticColor * caustic * intensity * depthAtten * lineFade` |
 
 #### Options
 
@@ -1324,13 +1341,35 @@ underwater fog).
 | `waterLevel` | `number` | `0` | World Y of water surface |
 | `worldScale` | `number` | `8` | World→UV scale (higher = denser pattern) |
 | `waveSpeed` | `number` | `0.8` | Animation speed |
-| `waveFrequency` | `number` | `8` | Spatial frequency of ripples |
+| `waveFrequency` | `number` | `8` | Spatial frequency of ripples (procedural mode) |
 | `wavePhase` | `number` | `0` | Phase offset |
 | `absorption` | `number` | `0.02` | Depth fade rate (Beer-Lambert) |
 | `dispersion` | `number` | `0.3` | RGB chromatic split (0 = none) |
 | `power` | `number` | `3.0` | Focus power (higher = sharper bright lines) |
 | `enabled` | `boolean` | `true` | Enable toggle |
 | `time` | `number` | `0` | Animation time (caller updates per frame) |
+| **`mode`** | `'procedural'\|'gerstner'\|'hybrid'` | `'hybrid'` | Caustic rendering mode (v2) |
+| **`lightDir`** | `Vec3` | `[0.5, -1.0, 0.3]` | Sun direction (normalized, gerstner/hybrid) (v2) |
+| **`waterLineFade`** | `number` | `1.0` | Water-line fade range in world units (v2) |
+| **`waves`** | `GerstnerWave[]` | 4 default waves | Gerstner wave parameters (v2) |
+
+#### CausticsGenerator (CPU reference — `CausticsGenerator.ts`)
+
+The CPU reference mirrors the GLSL `CAUSTICS_FRAG` 1:1 and is headless-testable.
+All functions are pure (no WebGL dependency, no side effects).
+
+| Function | Description |
+|----------|-------------|
+| `causticPattern3Sin(p, time, freq, speed, power)` | 3-direction sine-wave caustic (procedural mode). |
+| `gerstnerHeightNormal(x, z, time, waves)` | Gerstner wave height + analytic surface normal. |
+| `causticFocusing(normal, lightDir, power)` | Normal-based light focusing factor `[0,1]`. |
+| `beerLambertAttenuation(depth, absorption)` | Beer-Lambert depth attenuation `(0,1]`. |
+| `waterLineFade(worldY, waterLevel, fadeRange)` | Water-line smooth fade `[0,1]`. |
+| `rgbDispersion(uv, dispersion, patternFn)` | RGB chromatic dispersion sampling. |
+| `computeCaustics(worldPos, time, opts)` | Single-pixel caustic color (all modes). |
+| `reconstructWorldPos(ndcX, ndcY, ndcZ, inverseVP)` | NDC → world position. |
+| `resolveCaustics(sceneColor, depth, inverseVP, time, opts, history?)` | Full-screen pipeline with optional temporal EMA. |
+| `defaultGerstnerWaves()` | 4 default Gerstner waves (matches WaterSurfacePass). |
 
 #### API
 
@@ -1343,19 +1382,21 @@ apply(
 ): WebGLTexture
 ```
 
-#### Usage — basic underwater scene
+#### Usage — hybrid mode (default, recommended)
 
 ```ts
 import { CausticsPass } from '@/engine/Renderer/PostProcess/CausticsPass';
 
 const caustics = new CausticsPass({
-  waterLevel: 0,            // sea level at Y=0
+  mode: 'hybrid',             // procedural × gerstner (default)
+  waterLevel: 0,
   causticColor: [0.2, 0.7, 0.9],
   causticIntensity: 0.8,
+  lightDir: { x: 0.5, y: -1.0, z: 0.3 },  // sun direction
+  waterLineFade: 1.5,         // smooth surface transition
   worldScale: 6,
-  waveSpeed: 1.0,
-  dispersion: 0.4,          // subtle RGB split
-  power: 4.0,               // sharp focus lines
+  dispersion: 0.4,
+  power: 4.0,
 });
 
 // Per frame:
@@ -1363,10 +1404,35 @@ caustics.time = performance.now() * 0.001;
 const out = caustics.apply(gl, sceneColorTex, depthTex, camera);
 ```
 
+#### Usage — pure Gerstner (physics-only, no procedural texture)
+
+```ts
+const caustics = new CausticsPass({
+  mode: 'gerstner',           // only normal-focusing, no 3-sine
+  lightDir: { x: 0.3, y: -1.0, z: 0.2 },
+  power: 6.0,                 // sharper focusing
+});
+```
+
+#### Usage — CPU reference (headless / offline / testing)
+
+```ts
+import { resolveCaustics, makeSolidBuffer, makeConstantDepth, makeIdentityMatrix } from '@/engine/Renderer/CausticsGenerator';
+
+const scene = makeSolidBuffer(64, 64, 50, 50, 50);
+const depth = makeConstantDepth(64, 64, 0.5);
+const invVP = makeIdentityMatrix();
+const { output, stats } = resolveCaustics(scene, depth, invVP, 1.0, {
+  mode: 'hybrid',
+  waterLevel: -5,
+  causticIntensity: 0.8,
+});
+// output.data is Uint8ClampedArray RGBA
+```
+
 #### Usage — toggle off for above-water camera
 
 ```ts
-// When camera rises above waterLevel, disable to save the draw call:
 caustics.enabled = false;
 const out = caustics.apply(gl, sceneColorTex, depthTex, camera);
 // out === sceneColorTex (zero overhead, no FBO touched)
@@ -1376,16 +1442,23 @@ const out = caustics.apply(gl, sceneColorTex, depthTex, camera);
 
 | Capability | VREEN | soup3D |
 |-----------|-------|--------|
-| Underwater caustics | ✓ (procedural + dispersion) | ✗ |
+| Underwater caustics | ✓ (3 modes: procedural/gerstner/hybrid) | ✗ |
+| Gerstner normal-focusing | ✓ (physics-based) | ✗ |
 | Water surface rendering | ✓ (via this pass + shader) | ✗ |
 | Depth-based effect | ✓ (GBuffer depth reconstruct) | ✗ (no depth pass) |
 | Chromatic dispersion | ✓ | ✗ |
+| Water-line fade | ✓ | ✗ |
+| CPU reference (headless) | ✓ (CausticsGenerator) | ✗ |
+| Temporal accumulation | ✓ (EMA in CPU reference) | ✗ |
 | HDR additive composite | ✓ (RGBA16F) | ✗ |
 
 #### References
 
 - GPU Gems 2, Ch. 18 "Effective Water Simulation from Physical Models" (Finch)
+- Shah & Konttinen 2005, "Caustic Mapping" — normal-based focusing factor
+- Tessendorf 2001, "Simulating Ocean Water" — Gerstner wave model
 - o3de Atom, Water highlights / caustics pass
+- UE5 Water plugin — production caustics reference
 - ShaderToy "Caustic" by Dave_Hoskins
 - Beer-Lambert law — depth attenuation
 

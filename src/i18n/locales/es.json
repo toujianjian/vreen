@@ -896,7 +896,7 @@
       },
       "caustics": {
         "title": "Causticas Submarinas",
-        "desc": "Causticas submarinas en espacio de pantalla con reconstrucción de profundidad, patrón procedural de tres ondas, dispersión cromática RGB y atenuación Beer-Lambert.",
+        "desc": "Causticas en espacio de pantalla con 3 modos: procedural 3-sine, enfocado por normal Gerstner, e hibrido. Dispersion RGB + Beer-Lambert + difuminado de linea de agua. CPU y GPU 1:1.",
         "advantage": "soup3D sin renderizado de agua"
       },
       "waterSurface": {

@@ -896,7 +896,7 @@
       },
       "caustics": {
         "title": "水中コースティクス",
-        "desc": "スクリーンスペース水中コースティクス、深度再構成 + 3波プロシージャルパターン + RGB 色分散 + Beer-Lambert 深度減衰。",
+        "desc": "スクリーンスペースコースティクス、3モード:プロシージャル3-sine / Gerstner 法線フォーカシング / ハイブリッド。RGB 色分散 + Beer-Lambert + 水面線フェード。CPU・GPU 1:1。",
         "advantage": "soup3D に水面描画なし"
       },
       "waterSurface": {

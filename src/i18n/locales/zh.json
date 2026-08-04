@@ -896,7 +896,7 @@
       },
       "caustics": {
         "title": "水下焦散",
-        "desc": "屏幕空间水下焦散,深度重建 + 三波程序化图案 + RGB 色散 + Beer-Lambert 深度衰减。",
+        "desc": "屏幕空间焦散,三模式:程序化 3-sine / Gerstner 法线聚焦 / hybrid 混合。RGB 色散 + Beer-Lambert + 水面线渐变。CPU 与 GPU 1:1 对应。",
         "advantage": "soup3D 无水面渲染"
       },
       "waterSurface": {
