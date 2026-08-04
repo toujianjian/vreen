@@ -2,9 +2,9 @@
 
 > Path: `src/engine/Renderer/PostProcess/`
 >
-> The enhanced post-processing pass family of the VREEN engine. Provides **31**
+> The enhanced post-processing pass family of the VREEN engine. Provides **32**
 > passes covering color grading, anti-aliasing, screen-space effects, depth-of-field,
-> motion blur, exposure adaptation, atmospheric effects, water rendering, light shafts, sharpening, upscaling, lens distortion, and stylized effects.
+> motion blur, exposure adaptation, atmospheric effects, water rendering, light shafts, sharpening, upscaling, lens distortion, screen-space refraction, and stylized effects.
 > Each pass is a self-contained class that manages its own GPU resources (FBOs,
 > textures, shader programs) and integrates into the `PostProcessingPipeline`.
 
@@ -26,7 +26,7 @@ PostProcess/
   │     ├── PixelationPass
   │     └── UnrealBloomPass  ← Unreal-style mip-chain bloom + lens dirt
   │
-  ├── GBuffer-dependent (21 passes)           ← independent FBO/program
+  ├── GBuffer-dependent (22 passes)           ← independent FBO/program
   │     ├── SSRPass          ← needs position + normal
   │     ├── SSSRPass         ← needs position + normal + roughness (GGX importance-sampled)
   │     ├── SSGIPass         ← needs position + normal + color
@@ -49,7 +49,8 @@ PostProcess/
   │     ├── GlitchPass       ← needs color (stylized)
   │     ├── SMAAPass         ← needs color (3-pass AA)
   │     ├── FSRUpscalePass   ← needs color (low→high res, independent FBO)
-  │     └── LensDistortionPass ← needs color (Brown-Conrady radial distortion + RGB CA)
+  │     ├── LensDistortionPass ← needs color (Brown-Conrady radial distortion + RGB CA)
+  │     └── ScreenSpaceRefractionPass ← needs color + refraction normal/mask (IOR + dispersion + Beer-Lambert)
   │
   └── index.ts               ← barrel exports
 ```
@@ -65,7 +66,7 @@ pipeline.add(new ColorGradingPass({ saturation: 1.2 }));
 pipeline.add(new LUTPass({ lut: myLUTTexture, lutSize: 32, is3D: true }));
 ```
 
-**Pattern 2: GBuffer-dependent** — These 21 passes have custom `apply()`
+**Pattern 2: GBuffer-dependent** — These 22 passes have custom `apply()`
 signatures that require additional GBuffer textures (depth, normal, velocity,
 position). They manage their own FBOs and shader programs independently:
 
@@ -3591,6 +3592,296 @@ matching the Brown-Conrady model used in computer vision and film VFX.
 | apply | 10 | no-throw, resource alloc, no re-alloc, disabled passthrough, resize rebuild, setDirty, CA path, zero-distortion path, multi-apply |
 | dispose | 4 | with gl, without gl, idempotent, re-apply after dispose |
 | shader source | 12 | version/precision, uniforms, Brown-Conrady formula, r², scale, CA branch, ±ca channels, UV clamp, single-sample fallback, black fill, provenance, disable passthrough |
+
+---
+
+## ScreenSpaceRefractionPass (`ScreenSpaceRefractionPass.ts`)
+
+> Path: `src/engine/Renderer/PostProcess/ScreenSpaceRefractionPass.ts`
+>
+> Screen-space refraction for arbitrary transparent surfaces (glass, ice, water
+> puddles, holograms, heat distortion). Generalises the planar `Refractor` to
+> any shape: reads a pre-rendered refraction-normal/mask texture and warps the
+> opaque background through Snell's law, with optional RGB chromatic dispersion
+> and Beer-Lambert absorption. Best applied after transparent objects render
+> their refraction data, before tonemapping.
+
+### Architecture
+
+```
+Inputs:
+  ┌──────────────────────┐   ┌──────────────────────────────┐
+  │ u_colorMap (unit 0)  │   │ u_refractionMap (unit 1)     │
+  │ opaque scene color   │   │ RGBA: RGB=view-normal [0,1]  │
+  │ (background to warp) │   │       A = refraction mask    │
+  └──────────┬───────────┘   └──────────────┬───────────────┘
+             │                              │
+             ▼                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Fragment shader (single pass)                              │
+│                                                             │
+│  n   = normalize(refractionMap.rgb * 2 - 1)   // view normal│
+│  mask = refractionMap.a                       // 0=opaque    │
+│  if mask <= 0 → passthrough color, return                  │
+│                                                             │
+│  I   = (0,0,-1)                          // view ray        │
+│  eta = 1 / IOR                                              │
+│                                                             │
+│  if chromaticDispersion <= 0:                               │
+│    refr  = refract(I, n, eta)                               │
+│    uv'   = clamp(v_uv + refr.xy * strength * mask, [0,1])   │
+│    color = texture(colorMap, uv')                           │
+│  else:  // 3-channel dispersion                             │
+│    etaR = 1/(ior-disp)  etaG = eta  etaB = 1/(ior+disp)     │
+│    sample R/G/B at 3 offset UVs (blue bends more)           │
+│                                                             │
+│  absorption = exp(-(1-absorptionColor) * scale * mask)      │
+│  out = color * absorption                                   │
+└─────────────────────────────────────────────────────────────┘
+         │
+         ▼
+Output: refracted color (RGBA16F)
+```
+
+### Algorithm (Snell's law in screen space)
+
+The pass applies Snell's law `n₁·sin(θ₁) = n₂·sin(θ₂)` in screen space.
+The incident view ray `I = (0,0,-1)` (camera looks down −Z) is refracted
+through the transparent surface normal `n` with `eta = 1/IOR` using the
+GLSL `refract()` built-in. The refracted direction's XY components give
+the screen-space UV offset:
+
+```
+refr  = refract(I, n, eta)
+uv'   = v_uv + refr.xy * strength * mask
+```
+
+For a flat surface facing the camera (`n = (0,0,1)`), `refr = (0,0,-1)`,
+so the offset is zero — head-on, no distortion (correct physical
+behaviour). Tilted normals shift the sample, producing the characteristic
+"see-through warped" look of glass/water.
+
+| IOR value | Material | Visual effect |
+|-----------|----------|---------------|
+| 1.00 | Air (vacuum) | No refraction |
+| 1.33 | Water | Mild distortion (puddles, shallow water) |
+| 1.50 | Glass | Strong distortion (windows, lenses) |
+| 1.77 | Sapphire | Very strong distortion (gems) |
+| 2.42 | Diamond | Extreme distortion + dispersion |
+
+### RGB chromatic dispersion
+
+Real transparent media disperse light by wavelength: blue has a higher
+IOR than red, so blue refracts more. The shader models this with three
+slightly different IOR values per channel:
+
+| Channel | eta | Bending |
+|---------|-----|---------|
+| R (red) | `1/(ior − disp)` | Less (larger eta) |
+| G (green) | `1/ior` | Reference |
+| B (blue) | `1/(ior + disp)` | More (smaller eta) |
+
+This produces prism-like colour fringing at the edges of refractive
+objects, most visible for high-IOR materials (diamond, sapphire).
+
+### Beer-Lambert absorption
+
+Coloured glass and liquids attenuate light by wavelength as it travels
+through the medium. The pass applies Beer-Lambert absorption using the
+refraction mask as a thickness proxy:
+
+```
+transmittance = exp(-(1 - absorptionColor) * absorptionScale * mask)
+out = refractedColor * transmittance
+```
+
+| Material | `absorptionColor` | `absorptionScale` |
+|----------|-------------------|-------------------|
+| Clear glass | `[1,1,1]` | 0 (no absorption) |
+| Green bottle glass | `[0.4, 0.9, 0.4]` | 1.5 |
+| Red wine | `[0.7, 0.2, 0.3]` | 2.0 |
+| Emerald | `[0.3, 0.95, 0.5]` | 2.5 |
+
+### Options
+
+| Option                | Default     | Range / Notes |
+|-----------------------|-------------|---------------|
+| `ior`                 | `1.33`      | Refractive index. Water=1.33, glass=1.5, diamond=2.42. |
+| `strength`            | `1.0`       | UV offset multiplier. >1 = stronger artistic distortion. |
+| `chromaticDispersion` | `0`         | RGB dispersion. 0 = single-sample path, >0 = 3-sample path. |
+| `absorptionColor`     | `[1,1,1]`   | Beer-Lambert tint per channel (1 = no absorption). |
+| `absorptionScale`     | `0`         | Absorption strength. 0 = off. Uses mask as thickness proxy. |
+| `enabled`             | `true`      | false = passthrough (shader still runs, returns background). |
+
+### API
+
+```ts
+export type AbsorptionColor = [r: number, g: number, b: number];
+
+export interface ScreenSpaceRefractionOptions {
+  ior?: number;
+  strength?: number;
+  chromaticDispersion?: number;
+  absorptionColor?: AbsorptionColor;
+  absorptionScale?: number;
+  enabled?: boolean;
+}
+
+export class ScreenSpaceRefractionPass {
+  readonly name: 'screenspacerefraction';
+  ior: number;
+  strength: number;
+  chromaticDispersion: number;
+  absorptionColor: AbsorptionColor;
+  absorptionScale: number;
+  enabled: boolean;
+
+  constructor(opts?: ScreenSpaceRefractionOptions);
+  apply(
+    gl: WebGL2RenderingContext,
+    colorTexture: WebGLTexture,
+    refractionTexture: WebGLTexture,
+  ): WebGLTexture;
+  setDirty(): void;
+  dispose(gl?: WebGL2RenderingContext): void;
+}
+```
+
+### Texture unit bindings
+
+| Unit | Sampler            | Source |
+|------|--------------------|--------|
+| 0    | `u_colorMap`       | Opaque scene color (background to refract) |
+| 1    | `u_refractionMap`  | RGBA: RGB = view-space normal `[0,1]`, A = refraction mask |
+
+### Refraction texture contract
+
+Transparent objects must pre-render the `u_refractionMap` in a separate
+pass (MRT or dedicated FBO):
+
+| Channel | Encoding | Meaning |
+|---------|----------|---------|
+| R, G, B | `[0,1]` (decode `*2−1` to view-space normal) | Surface normal in view space. Flat surface facing camera = `(0.5, 0.5, 1.0)`. |
+| A       | `[0,1]` | Refraction mask. `0` = opaque (no refraction, passthrough). `>0` = refractive; also used as thickness proxy for absorption. |
+
+### Resource layout
+
+| Resource           | Type             | Format / Notes |
+|--------------------|------------------|----------------|
+| Output texture     | `WebGLTexture`   | `RGBA16F`, `LINEAR` filter, `CLAMP_TO_EDGE` wrap (HDR-compatible) |
+| Framebuffer        | `WebGLFramebuffer` | Single `COLOR_ATTACHMENT0` |
+| Shader program     | `ShaderProgram`  | `POST_VERT` + `SCREEN_SPACE_REFRACTION_FRAG` |
+| Fullscreen quad    | VAO + buffer     | Single oversized triangle (3 verts) |
+
+### Usage
+
+```ts
+import { ScreenSpaceRefractionPass } from '@vreen/engine/renderer/postprocess';
+
+// Clear glass window with subtle dispersion
+const glass = new ScreenSpaceRefractionPass({
+  ior: 1.5,
+  chromaticDispersion: 0.015,
+  strength: 1.0,
+});
+
+// Each frame (after transparent objects write refraction normal/mask):
+let color = opaqueSceneColor;          // rendered opaque pass
+color = glass.apply(gl, color, refractionNormalTex);
+
+// Green bottle glass with absorption
+const bottle = new ScreenSpaceRefractionPass({
+  ior: 1.52,
+  absorptionColor: [0.4, 0.9, 0.4],
+  absorptionScale: 1.8,
+});
+
+// Diamond gem (extreme IOR + heavy dispersion)
+const gem = new ScreenSpaceRefractionPass({
+  ior: 2.42,
+  chromaticDispersion: 0.06,
+  strength: 1.2,
+});
+
+// Heat haze / mirage (very subtle, low IOR deviation)
+const haze = new ScreenSpaceRefractionPass({
+  ior: 1.02,
+  strength: 0.4,
+});
+```
+
+### vs planar `Refractor`
+
+| Aspect | `Refractor` (planar) | `ScreenSpaceRefractionPass` |
+|--------|----------------------|------------------------------|
+| Surface shape | Single flat plane | Arbitrary (any geometry) |
+| Scope | One object (water plane) | All transparent surfaces in view |
+| Input | Plane + IOR | Refraction normal/mask texture |
+| Chromatic dispersion | No | Yes (3-channel) |
+| Beer-Lambert absorption | No | Yes |
+| Use case | Pool/water plane | Glass, ice, gems, holograms, heat haze |
+
+The two are complementary: `Refractor` for a single hero water surface,
+`ScreenSpaceRefractionPass` for scene-wide transparent materials.
+
+### vs soup3D
+
+| Feature                    | VREEN `ScreenSpaceRefractionPass` | soup3D |
+|----------------------------|-----------------------------------|--------|
+| Screen-space refraction    | Yes (Snell's law, arbitrary shape) | No     |
+| Multi-surface refraction   | Yes (texture-driven)              | No     |
+| RGB chromatic dispersion   | Yes (3-channel eta)               | No     |
+| Beer-Lambert absorption    | Yes (coloured glass/liquid)       | No     |
+| IOR presets (water/glass/diamond) | Yes                       | No     |
+| Provenance (UE5/o3de)      | Yes                               | No     |
+
+soup3D has **no refraction** at all (not even planar). VREEN ships both a
+planar `Refractor` (CPU math) and this screen-space pass (GPU, arbitrary
+surfaces), covering the full range from a single water plane to
+scene-wide glass/gem/hologram rendering.
+
+### Design Notes
+
+1. **Screen-space approximation.** Like all screen-space effects, the
+   refraction can only sample what is already on screen — objects outside
+   the frame or occluded behind opaque geometry are not refracted. For
+   hero close-ups, combine with a cubemap fallback or the planar
+   `Refractor` for off-screen content.
+
+2. **Single-pass, no ray-march.** Unlike SSR/SSSR which ray-march, this
+   pass evaluates `refract()` analytically per pixel — one (or three)
+   texture fetches, no iteration. It is among the cheapest screen-space
+   effects.
+
+3. **Mask as thickness proxy.** True refraction absorption needs the
+   geometric thickness (depth difference between front and back faces).
+   To keep the pass single-texture, the mask doubles as a thickness
+   proxy — transparent objects should write a higher alpha for thicker
+   regions. For physically accurate absorption, extend the contract to a
+   second thickness texture.
+
+4. **Normal in view space.** The refraction normal must be in view space
+   (not world or tangent space) because the incident ray `I = (0,0,-1)`
+   is defined in view space. The encoding `[0,1]` matches the standard
+   view-space normal GBuffer convention.
+
+5. **Pipeline placement.** Apply after opaque + transparent objects have
+   written the refraction texture, and before tonemapping (works on HDR
+   color). The output is `RGBA16F` to preserve HDR through the warp.
+
+6. **Complementary passes.** Pair with `WaterSurfacePass` (planar water
+   reflection/refraction), `SSSRPass` (reflective transparents), and
+   `LensDistortionPass` (camera lens warp) for a complete
+   transmission/reflection stack.
+
+### Test coverage (`ScreenSpaceRefractionPass.test.ts`, 37 tests)
+
+| Suite | Tests | Coverage |
+|-------|-------|----------|
+| construction | 10 | defaults, all options, field updatability, water/diamond IOR presets |
+| apply | 10 | no-throw, resource alloc (2 input + 1 output), no re-alloc, return value, resize rebuild, setDirty, dispersion path, absorption path, multi-apply, disabled passthrough |
+| dispose | 4 | with gl, without gl, idempotent, re-apply after dispose |
+| shader source | 13 | version/precision, uniforms, refract(), eta=1/IOR, normal decode, dispersion branch, blue higher IOR, UV clamp, Beer-Lambert exp, mask as thickness, mask<=0 passthrough, u_enabled passthrough, provenance |
 
 ---
 

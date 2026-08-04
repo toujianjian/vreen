@@ -914,6 +914,11 @@
         "desc": "Brown-Conrady 방사형 렌즈 왜곡 + 선택적 RGB 색수차 — 배럴(광각)/핀쿠션(망원), 주점 오프셋과 스케일 보정. OpenCV/o3de 급 카메라 광학.",
         "advantage": "soup3D에 렌즈 왜곡 없음"
       },
+      "screenSpaceRefraction": {
+        "title": "스크린 공간 굴절",
+        "desc": "Snell 법칙 기반 임의 투명 표면 굴절(유리/얼음/웅덩이/홀로그램), RGB 색분산과 Beer-Lambert 흡수 지원. 평면 Refractor를 임의 형상으로 일반화.",
+        "advantage": "soup3D에 굴절 없음"
+      },
       "heightFog": {
         "title": "높이 안개",
         "desc": "UE5 스타일 지수 높이 안개, 폐쇄형 Beer-Lambert 밀도 + 태양 내산란.",

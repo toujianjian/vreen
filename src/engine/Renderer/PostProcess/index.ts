@@ -1,7 +1,7 @@
 // PostProcess barrel — 增强后处理 Pass 集合。
 //
 // 与 RenderPass.ts 中的基础后处理 Bloom/CA/Vignette/FinalCompose 平行。
-// 本模块提供 31 个增强 Pass:
+// 本模块提供 32 个增强 Pass:
 //   - ColorGradingPass  : 色彩分级(8 个 ASC-CDL 参数)
 //   - LUTPass           : LUT 色彩查找表(3D 或 2D strip)
 //   - ChromaticAberrationPass : 增强色差(Vector2 偏移 + 径向调制)
@@ -33,6 +33,7 @@
 //   - ScreenSpaceLensFlarePass : 屏幕空间镜头光晕(ghosts + halo + starburst + 色散)
 //   - LocalExposurePass : 局部曝光(对数空间局部-全局亮度差异驱动的曝光补偿)
 //   - LensDistortionPass: 镜头畸变(Brown-Conrady 径向畸变 + RGB 色差,模拟广角/长焦镜头)
+//   - ScreenSpaceRefractionPass : 屏幕空间折射(任意透明表面 + IOR + 色散 + Beer-Lambert 吸收)
 //
 // 注意:
 //   - 前 7 个 Pass 都实现 RenderPass 接口,可直接加入 PostProcessingPipeline。
@@ -92,3 +93,8 @@ export {
   type LensDistortionOptions,
   type PrincipalPoint,
 } from './LensDistortionPass';
+export {
+  ScreenSpaceRefractionPass,
+  type ScreenSpaceRefractionOptions,
+  type AbsorptionColor,
+} from './ScreenSpaceRefractionPass';

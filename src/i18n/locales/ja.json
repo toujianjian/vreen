@@ -914,6 +914,11 @@
         "desc": "Brown-Conrady 放射状レンズ歪み + オプションの RGB 色収差 — バレル(広角)/ピンクッション(望遠)、主点オフセットとスケール補償。OpenCV/o3de 水準のカメラ光学。",
         "advantage": "soup3D にレンズ歪みなし"
       },
+      "screenSpaceRefraction": {
+        "title": "スクリーン空間屈折",
+        "desc": "Snell の法則による任意の透明表面の屈折(ガラス/氷/水たまり/ホログラム)、RGB 色分散と Beer-Lambert 吸収をサポート。平面 Refractor を任意形状に一般化。",
+        "advantage": "soup3D に屈折なし"
+      },
       "heightFog": {
         "title": "ハイトフォグ",
         "desc": "UE5 風指数ハイトフォグ、閉形式 Beer-Lambert 密度 + 太陽内散乱。",

@@ -914,6 +914,11 @@
         "desc": "Brown-Conrady 径向镜头畸变 + 可选 RGB 色差 — 桶形(广角)/枕形(长焦),支持畸变中心偏移与缩放补偿。OpenCV/o3de 级相机光学。",
         "advantage": "soup3D 无镜头畸变"
       },
+      "screenSpaceRefraction": {
+        "title": "屏幕空间折射",
+        "desc": "基于 Snell 定律的任意透明表面折射(玻璃/冰/水洼/全息),支持 RGB 色散与 Beer-Lambert 吸收。将平面 Refractor 推广到任意形状。",
+        "advantage": "soup3D 无折射"
+      },
       "heightFog": {
         "title": "高度雾",
         "desc": "UE5 风格指数高度雾,闭式 Beer-Lambert 密度 + 太阳入射散射。",

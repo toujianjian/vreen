@@ -4921,5 +4921,78 @@ void main() {
 }
 `;
 
+export const SCREEN_SPACE_REFRACTION_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+// 屏幕空间折射 — 任意透明表面的折射扭曲(玻璃/冰/水洼/全息)
+// 参考: UE5 Screen-Space Refraction / o3de Atom TransparencySystem / three.js Refractor
+//
+// 与 planar Refractor(单平面 CPU 折射)互补:本 pass 在屏幕空间对任意形状的
+// 透明表面做折射采样,只需一张折射法线/遮罩纹理(由透明物体预渲染)。
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;        // 不透明场景颜色(被折射的背景)
+uniform sampler2D u_refractionMap;   // RGBA: RGB=视空间法线[0,1], A=折射遮罩(0=不透明,>0=折射)
+uniform float u_ior;                 // 折射率(水 1.33, 玻璃 1.5, 空气 1.0)
+uniform float u_strength;            // 折射强度倍数(默认 1.0)
+uniform float u_chromaticDispersion; // RGB 色散强度(默认 0)
+uniform vec3  u_absorptionColor;     // Beer-Lambert 吸收颜色(默认 1,1,1 = 无吸收)
+uniform float u_absorptionScale;     // 吸收强度(默认 0)
+uniform int   u_enabled;             // 0=禁用, 1=启用
+
+void main() {
+  vec3 color = texture(u_colorMap, v_uv).rgb;
+  vec4 refrData = texture(u_refractionMap, v_uv);
+
+  // 禁用或非折射像素: 直接输出背景色
+  if (u_enabled == 0 || refrData.a <= 0.0) {
+    outColor = vec4(color, 1.0);
+    return;
+  }
+
+  // 视空间法线(透明表面),[0,1] → [-1,1] 并归一化
+  vec3 n = normalize(refrData.rgb * 2.0 - 1.0);
+  float mask = refrData.a;
+
+  // 入射方向(视空间): 相机看向 -Z, 入射光沿 -Z 进入表面
+  vec3 I = vec3(0.0, 0.0, -1.0);
+  float eta = 1.0 / max(u_ior, 1.0001);
+
+  // Beer-Lambert 吸收(以 mask 作为厚度代理): 透过率 = exp(-(1-absorptionColor) * scale * mask)
+  vec3 absorption = exp(-(1.0 - u_absorptionColor) * u_absorptionScale * mask);
+
+  if (u_chromaticDispersion <= 0.0) {
+    // ── 无色散: 单次折射采样 ────────────────────────────────────
+    vec3 refr = refract(I, n, eta);
+    vec2 offset = refr.xy * u_strength * mask;
+    vec2 uv = clamp(v_uv + offset, vec2(0.0), vec2(1.0));
+    vec3 refracted = texture(u_colorMap, uv).rgb;
+    outColor = vec4(refracted * absorption, 1.0);
+  } else {
+    // ── 色散: R/G/B 用不同 eta(蓝光折射率更高 → 弯曲更强) ───────
+    float disp = u_chromaticDispersion;
+    float etaR = 1.0 / max(u_ior - disp, 1.0001);  // R: 折射弱(eta 大,偏移小)
+    float etaG = eta;                              // G: 参考
+    float etaB = 1.0 / max(u_ior + disp, 1.0001);  // B: 折射强(eta 小,偏移大)
+
+    vec3 refrR = refract(I, n, etaR);
+    vec3 refrG = refract(I, n, etaG);
+    vec3 refrB = refract(I, n, etaB);
+
+    vec2 uvR = clamp(v_uv + refrR.xy * u_strength * mask, vec2(0.0), vec2(1.0));
+    vec2 uvG = clamp(v_uv + refrG.xy * u_strength * mask, vec2(0.0), vec2(1.0));
+    vec2 uvB = clamp(v_uv + refrB.xy * u_strength * mask, vec2(0.0), vec2(1.0));
+
+    float r = texture(u_colorMap, uvR).r;
+    float g = texture(u_colorMap, uvG).g;
+    float b = texture(u_colorMap, uvB).b;
+
+    outColor = vec4(vec3(r, g, b) * absorption, 1.0);
+  }
+}
+`;
+
 
 

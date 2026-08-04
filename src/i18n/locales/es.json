@@ -914,6 +914,11 @@
         "desc": "Distorsión radial de lente Brown-Conrady con aberración cromática RGB opcional — barril (gran angular) / cojín (teleobjetivo), offset del punto principal y compensación de escala. Óptica de cámara nivel OpenCV/o3de.",
         "advantage": "soup3D sin distorsión de lente"
       },
+      "screenSpaceRefraction": {
+        "title": "Refracción en Espacio de Pantalla",
+        "desc": "Refracción por ley de Snell para superficies transparentes arbitrarias (vidrio, hielo, charcos, hologramas) con dispersión cromática RGB y absorción Beer-Lambert. Generaliza el Refractor planar a cualquier forma.",
+        "advantage": "soup3D sin refracción"
+      },
       "heightFog": {
         "title": "Niebla de altura",
         "desc": "Niebla de altura exponencial estilo UE5 con densidad Beer-Lambert de forma cerrada e inscattering solar.",

@@ -914,6 +914,11 @@
         "desc": "Brown-Conrady radial lens distortion with optional RGB chromatic aberration — barrel (wide-angle) / pincushion (telephoto), principal-point offset, scale compensation. OpenCV/o3de-grade camera optics.",
         "advantage": "soup3D has no lens distortion"
       },
+      "screenSpaceRefraction": {
+        "title": "Screen-Space Refraction",
+        "desc": "Snell's law refraction for arbitrary transparent surfaces (glass, ice, water puddles, holograms) with RGB chromatic dispersion and Beer-Lambert absorption. Generalizes planar Refractor to any shape.",
+        "advantage": "soup3D has no refraction"
+      },
       "heightFog": {
         "title": "Height Fog",
         "desc": "UE5-style exponential height fog with closed-form Beer-Lambert density and sun inscattering.",
