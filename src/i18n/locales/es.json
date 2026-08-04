@@ -1073,6 +1073,11 @@
         "title": "Sonda de Reflexión",
         "desc": "Captura de cubo IBL local (6 caras 90° → textura cube). Volumen de influencia AABB (position + boxSize + priority). Prefiltro PMREM opcional (muestreo de importancia split-sum GGX Karis 2013 → cadena mip RGBA16F) para IBL especular físicamente correcta dependiente de rugosidad. Recaptura bajo demanda al cambiar geometría.",
         "advantage": "soup3D sin sondas de reflexión"
+      },
+      "lookModification": {
+        "title": "Modificación de Look (ASC-CDL)",
+        "desc": "ASC-CDL 1.2 lista de decisión de color estándar de la industria (Slope/Offset/Power + Saturation). Interoperable con DaVinci Resolve / Nuke / Baselight vía .cdl XML. Función de referencia ascCDL() CPU pura + Pass GPU. Salta trabajo GPU en transformación identidad. Intercambio de look cinematográfico, normalmente solo en Unreal/o3de.",
+        "advantage": "soup3D sin gradación de color"
       }
     }
   }

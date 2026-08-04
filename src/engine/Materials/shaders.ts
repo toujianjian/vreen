@@ -6048,5 +6048,42 @@ void main() {
 }
 `;
 
+// ── LookModification (ASC-CDL) ─────────────────────────────────────
+// ASC-CDL (American Society of Cinematographers Color Decision List) 色彩决策表。
+// 影视后期行业标准,用于 DaVinci Resolve / Nuke / Baselight 等工具之间交换色彩分级。
+// 公式:  out = (in * S + O) ^ P         (per-channel Slope / Offset / Power)
+//        luma = dot(out, rec709_weights)
+//        out  = luma + sat * (out - luma)  (global saturation)
+// 默认 S=(1,1,1) O=(0,0,0) P=(1,1,1) sat=1 为"不调整"。
+// 参考: ASC-CDL 1.2 规范 / o3de Atom LookModificationPass / ACES 1.0
+export const LOOK_MODIFICATION_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;     // 输入场景颜色(HDR 或 LDR 均可)
+uniform vec3  u_slope;            // ASC-CDL Slope (gain/multiply), 默认 (1,1,1)
+uniform vec3  u_offset;           // ASC-CDL Offset (lift/add),       默认 (0,0,0)
+uniform vec3  u_power;            // ASC-CDL Power (gamma),           默认 (1,1,1)
+uniform float u_saturation;       // ASC-CDL Saturation,              默认 1.0
+uniform vec3  u_lumaWeights;      // 亮度权重(默认 Rec709: 0.2126, 0.7152, 0.0722)
+
+void main() {
+  vec3 color = texture(u_colorMap, v_uv).rgb;
+
+  // ── ASC-CDL: Slope / Offset / Power ────────────────────────────
+  // out = pow(max(color * S + O, 0.0), P)
+  // max(..., 0.0) 防止负值在 pow 时产生 NaN
+  vec3 cdl = color * u_slope + u_offset;
+  cdl = pow(max(cdl, vec3(0.0)), u_power);
+
+  // ── Saturation (Rec709 luma) ───────────────────────────────────
+  float luma = dot(cdl, u_lumaWeights);
+  vec3 result = mix(vec3(luma), cdl, u_saturation);
+
+  outColor = vec4(result, 1.0);
+}
+`;
 
 

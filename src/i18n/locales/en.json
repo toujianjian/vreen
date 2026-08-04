@@ -1073,6 +1073,11 @@
         "title": "Reflection Probe",
         "desc": "Local IBL cube capture (6-face 90° render → cube texture). AABB influence volume (position + boxSize + priority). Optional PMREM prefilter (Karis 2013 split-sum GGX importance sampling → RGBA16F mip chain) for physically-correct roughness-dependent specular IBL. Per-probe re-capture on geometry change.",
         "advantage": "soup3D has no reflection probes"
+      },
+      "lookModification": {
+        "title": "Look Modification (ASC-CDL)",
+        "desc": "ASC-CDL 1.2 industry-standard color decision list (Slope/Offset/Power + Saturation). Interoperable with DaVinci Resolve / Nuke / Baselight via .cdl XML. Pure CPU ascCDL() reference + GPU pass. Auto-skips GPU work on identity transform. Film-grade look exchange, normally only in Unreal/o3de.",
+        "advantage": "soup3D has no color grading"
       }
     }
   }

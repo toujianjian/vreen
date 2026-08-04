@@ -524,4 +524,22 @@ export {
   type ProjectionCenter,
   paniniProject,
 } from './PostProcess';
+// LookModificationPass — ASC-CDL 色彩决策表后处理 Pass(PostProcess/ 顶层重导出)。
+// 适配 o3de Atom LookModificationTransformPass + ASC-CDL 1.2 规范。
+// 实现影视后期行业标准的 Slope/Offset/Power + Saturation 色彩变换:
+//   out = (in * S + O) ^ P,然后 out = luma + sat * (out - luma)
+// 与 ColorGradingPass(自有 8 参数)互补:本 Pass 严格遵循 ASC-CDL 标准,
+// 可与 DaVinci Resolve / Nuke / Baselight 等专业调色工具交换 .cdl 文件。
+// CPU 纯函数 ascCDL 与 GLSL `LOOK_MODIFICATION_FRAG` chunk 1:1 对应,可在无头环境测试。
+// 恒等变换(全默认参数)时自动跳过 GPU 工作以节省开销。
+// soup3D 无任何色彩决策表支持。
+export {
+  LookModificationPass,
+  type LookModificationOptions,
+  type ASCCDLParams,
+  type CDLColor,
+  REC709_LUMA,
+  ascCDL,
+  isIdentityCDL,
+} from './PostProcess';
 

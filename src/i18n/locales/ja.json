@@ -1073,6 +1073,11 @@
         "title": "リフレクションプローブ",
         "desc": "ローカル IBL キューブキャプチャ(6 面 90° レンダ → cube テクスチャ)。AABB 影響範囲(position + boxSize + priority)。オプション PMREM プレフィルタ(Karis 2013 split-sum GGX 重要度サンプリング → RGBA16F mip チェイン)、物理的に正確な粗さ依存鏡面 IBL。ジオメトリ変更時に必要に応じて再キャプチャ。",
         "advantage": "soup3D にリフレクションプローブなし"
+      },
+      "lookModification": {
+        "title": "ルック修正(ASC-CDL)",
+        "desc": "ASC-CDL 1.2 業界標準カラーディシジョンリスト(Slope/Offset/Power + Saturation)。.cdl XML で DaVinci Resolve / Nuke / Baselight と相互運用可能。純 CPU ascCDL() 参照関数 + GPU Pass。恒等変換時に GPU 処理を自動スキップ。映画級ルック交換、通常 Unreal/o3de のみが備える機能。",
+        "advantage": "soup3D にカラーグレーディングなし"
       }
     }
   }

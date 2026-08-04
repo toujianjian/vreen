@@ -1073,6 +1073,11 @@
         "title": "리플렉션 프로브",
         "desc": "로컬 IBL 큐브 캡처(6면 90° 렌더 → cube 텍스처). AABB 영향 범위(position + boxSize + priority). 옵션 PMREM 사전 필터(Karis 2013 split-sum GGX 중요도 샘플링 → RGBA16F mip 체인), 물리적으로 올바른 거칠기 종속 경면 IBL. 지오메트리 변경 시 필요에 따라 재캡처.",
         "advantage": "soup3D 리플렉션 프로브 없음"
+      },
+      "lookModification": {
+        "title": "룩 수정(ASC-CDL)",
+        "desc": "ASC-CDL 1.2 산업 표준 컬러 디시전 리스트(Slope/Offset/Power + Saturation). .cdl XML로 DaVinci Resolve / Nuke / Baselight와 상호 운용 가능. 순수 CPU ascCDL() 참조 함수 + GPU Pass. 항등 변환 시 GPU 작업 자동 스킵. 영화급 룩 교환, 일반적으로 Unreal/o3de만 갖춘 기능.",
+        "advantage": "soup3D 컬러 그레이딩 없음"
       }
     }
   }

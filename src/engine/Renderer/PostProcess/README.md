@@ -2570,6 +2570,134 @@ allows toggling at runtime without re-rendering the scene.
 
 ---
 
+### LookModificationPass
+
+ASC-CDL (American Society of Cinematographers Color Decision List) 1.2
+color transform. Implements the industry-standard **Slope / Offset /
+Power + Saturation** (SOP+Sat) formula used by DaVinci Resolve, Nuke,
+Baselight, and other professional color grading tools for interchange
+via `.cdl` XML files.
+
+Adapted from o3de Atom `LookModificationTransformPass` +
+`LookModificationCompositePass`, simplified to a single-pass ASC-CDL
+transform (no LUT compositing — use `LUTPass` for that).
+
+**Class**: `LookModificationPass` (independent, does **not** extend `RenderPass`)
+**Shader**: `LOOK_MODIFICATION_FRAG`
+**CPU reference**: `ascCDL()` (pure function, headless-testable)
+**Identity check**: `isIdentityCDL()` (skips GPU work when all params are default)
+
+#### Algorithm (ASC-CDL SOP+Sat)
+
+```
+1. Slope (gain/multiply):  cd = color * S       (per-channel)
+2. Offset (lift/add):      cd = cd + O          (per-channel)
+3. Power (gamma):          cd = pow(max(cd, 0), P)  (per-channel, clamp prevents NaN)
+4. Luma (Rec709):          luma = dot(cd, [0.2126, 0.7152, 0.0722])
+5. Saturation:             out = luma + sat * (cd - luma)
+```
+
+Default `S=(1,1,1)`, `O=(0,0,0)`, `P=(1,1,1)`, `sat=1.0` = identity transform.
+
+#### Options
+
+| Option         | Type   | Default             | Description                                              |
+|----------------|--------|---------------------|----------------------------------------------------------|
+| `slope`        | `[r,g,b]` | `[1,1,1]`        | Per-channel gain/multiply (ASC-CDL Slope)                |
+| `offset`       | `[r,g,b]` | `[0,0,0]`        | Per-channel lift/add (ASC-CDL Offset)                    |
+| `power`        | `[r,g,b]` | `[1,1,1]`        | Per-channel gamma (ASC-CDL Power)                        |
+| `saturation`   | `float` | `1.0`               | Global saturation (0=grayscale, 1=original, >1=boosted)  |
+| `lumaWeights`  | `[r,g,b]` | Rec709           | Luma weights for saturation (swap to Rec601/ACES if needed) |
+| `enabled`      | `bool`  | `true`              | Master toggle                                           |
+
+All fields are public and runtime-mutable. The pass auto-skips GPU work
+when `isIdentityCDL()` returns true (all defaults).
+
+#### Usage
+
+```ts
+import { LookModificationPass } from '@/engine/Renderer';
+
+// Create with a cinematic look
+const look = new LookModificationPass({
+  slope:      [1.10, 1.05, 0.95],   // warm tilt
+  offset:     [-0.02, -0.02, -0.02], // slight lift crush
+  power:      [0.95, 1.00, 1.05],    // mid-tone contrast shift
+  saturation: 1.08,                   // mild saturation boost
+});
+
+// Each frame (after Tonemapping):
+const graded = look.apply(gl, finalColorTexture);
+
+// Runtime tweak (e.g., day/night transition):
+look.slope = [1.2, 1.1, 0.8];
+look.saturation = 0.9;
+```
+
+#### CPU reference (headless / testing)
+
+```ts
+import { ascCDL, isIdentityCDL, REC709_LUMA } from '@/engine/Renderer';
+
+// Pure function, no WebGL dependency
+const out = ascCDL([0.5, 0.4, 0.3], {
+  slope: [1.2, 1.0, 0.8],
+  offset: [-0.05, 0, 0.05],
+  power: [0.9, 1.0, 1.1],
+  saturation: 1.1,
+});
+// out = [r, g, b]
+
+// Check if params are identity (no-op)
+isIdentityCDL({ slope: [1,1,1] }); // true
+```
+
+#### vs ColorGradingPass
+
+| Aspect                | ColorGradingPass            | LookModificationPass             |
+|-----------------------|-----------------------------|----------------------------------|
+| Standard              | VREEN-proprietary           | ASC-CDL 1.2 (industry standard)  |
+| Parameters            | 8 (temp/tint/sat/cont/gain/lift/gamma/hue) | 4 (SOP + Sat) |
+| `.cdl` interop        | No                          | Yes (import/export to DaVinci/Nuke) |
+| Identity skip         | No                          | Yes (`isIdentityCDL()`)          |
+| Use case              | In-engine creative grading  | Pipeline interchange, look inheritance |
+
+Both passes can coexist — use `ColorGradingPass` for in-engine creative
+look, and `LookModificationPass` for CDL-compliant look exchange with
+external color grading tools.
+
+#### vs soup3D
+
+soup3D has **no color grading** of any kind — not even basic brightness
+control. VREEN's `LookModificationPass` adds professional ASC-CDL
+interoperability, a feature normally found only in film-grade engines
+like Unreal (LUT) and o3de (Look Modification).
+
+#### Test coverage
+
+61 tests covering:
+- CPU `ascCDL()` math: identity, slope, offset, power, saturation,
+  combined SOP+Sat, negative input clamping, HDR input, custom luma
+- `isIdentityCDL()` detection
+- Construction defaults + option overrides
+- All fields runtime-mutable
+- `apply()` resource lifecycle: alloc/dealloc, resolution change,
+  setDirty, identity skip, disabled skip, transition identity↔non-identity
+- `dispose()` safety (repeated calls, re-init after dispose)
+- `REC709_LUMA` constant correctness
+- Shader source validation (uniforms, SOP formula, saturation mix,
+  NaN-prevention clamp)
+
+#### References
+
+- ASC-CDL 1.2 specification — https://asc-ddl.org/
+- o3de Atom, `LookModificationTransformPass` / `LookModificationCompositePass`
+- DaVinci Resolve, CDL node documentation
+- ACES 1.0, Look Modification Transform
+- Rec709 luma weights: ITU-R BT.709
+
+---
+
 ### VelocityPass
 
 Per-pixel motion vectors for TAA and motion blur. Outputs a velocity texture

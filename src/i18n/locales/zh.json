@@ -1073,6 +1073,11 @@
         "title": "反射探针",
         "desc": "局部 IBL 立方体捕获(6 面 90° 渲染 → cube 纹理)。AABB 影响范围(position + boxSize + priority)。可选 PMREM 预滤波(Karis 2013 split-sum GGX 重要性采样 → RGBA16F mip 链),物理正确的粗糙度相关镜面 IBL。几何变化时按需重新捕获。",
         "advantage": "soup3D 无反射探针"
+      },
+      "lookModification": {
+        "title": "Look 修改(ASC-CDL)",
+        "desc": "ASC-CDL 1.2 行业标准色彩决策表(Slope/Offset/Power + Saturation)。可通过 .cdl XML 与 DaVinci Resolve / Nuke / Baselight 互操作。纯 CPU ascCDL() 参考函数 + GPU Pass。恒等变换时自动跳过 GPU 工作。影视级 Look 交换,通常仅 Unreal/o3de 具备。",
+        "advantage": "soup3D 无色彩分级"
       }
     }
   }
