@@ -1088,6 +1088,11 @@
         "title": "亮度直方图",
         "desc": "128-bin EV100 亮度直方图 + 自动曝光眼适应(适配 o3de LuminanceHistogramGeneratorPass)。通过百分位裁剪的加权平均忽略极端像素(明亮天空 / 深邃阴影),得到鲁棒的目标 EV。非对称适应(变亮快 / 变暗慢)匹配人眼瞳孔反应。Rec709 亮度,EV100=log2(L*8),范围 [-8,16]。纯 CPU,可无头测试,可驱动 GPU EyeAdaptationPass。",
         "advantage": "soup3D 仅有基础对数平均自动曝光"
+      },
+      "whiteBalance": {
+        "title": "白平衡(Bradford CAT)",
+        "desc": "基于物理的白平衡,使用 Bradford 色彩适应变换(适配 o3de WhiteBalancePass)。temperature/tint → CIE xy → LMS 锥响应 → 每通道缩放。与简单 RGB 偏移不同,保持颜色相对比例。匹配相机/电影白平衡(ISO/CIE 11664-3、ACES IDT)。CPU 参考函数 whiteBalance() + GPU Pass。恒等 (0,0) 自动跳过。在线性空间 Tonemapping 之前应用。",
+        "advantage": "soup3D 无白平衡特性"
       }
     }
   }

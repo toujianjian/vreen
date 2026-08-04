@@ -1088,6 +1088,11 @@
         "title": "휘도 히스토그램",
         "desc": "128-bin EV100 휘도 히스토그램 + 자동 노출 눈 적응(o3de LuminanceHistogramGeneratorPass 적응). 백분위수 클리핑 가중 평균으로 극단적 픽셀(밝은 하늘 / 깊은 그림자)을 무시하고 견고한 목표 EV 산출. 비대칭 적응(밝아짐 빠름 / 어두워짐 느림)은 인간 동공 반응과 일치. Rec709 휘도, EV100=log2(L*8), 범위 [-8,16]. 순수 CPU, 헤드리스 테스트 가능, GPU EyeAdaptationPass 구동 가능.",
         "advantage": "soup3D는 기본 대수 평균 자동 노출만 보유"
+      },
+      "whiteBalance": {
+        "title": "화이트 밸런스(Bradford CAT)",
+        "desc": "Bradford 색채 적응 변환을 통한 물리 기반 화이트 밸런스(o3de WhiteBalancePass 적응). temperature/tint → CIE xy → LMS 추체 응답 → 채널별 스케일. 단순 RGB 시프트와 달리 색상 상대 비율 유지. 카메라/영화 화이트 밸런스와 일치(ISO/CIE 11664-3, ACES IDT). CPU 참조 함수 whiteBalance() + GPU Pass. 항등 (0,0) 시 자동 스킵. 선형 공간에서 톤매핑 이전에 적용.",
+        "advantage": "soup3D에 화이트 밸런스 기능 없음"
       }
     }
   }

@@ -1088,6 +1088,11 @@
         "title": "Luminance Histogram",
         "desc": "128-bin EV100 luminance histogram + auto-exposure eye adaptation (o3de LuminanceHistogramGeneratorPass adapted). Percentile-clipped weighted average ignores extreme pixels (bright sky / deep shadow) for robust target EV. Asymmetric adaptation (fast brightening / slow darkening) matches human pupil response. Rec709 luma, EV100=log2(L*8), range [-8,16]. Pure CPU, headless-testable, can drive GPU EyeAdaptationPass.",
         "advantage": "soup3D only has basic log-average auto-exposure"
+      },
+      "whiteBalance": {
+        "title": "White Balance (Bradford CAT)",
+        "desc": "Physically-based white balance via Bradford chromatic adaptation transform (o3de WhiteBalancePass adapted). temperature/tint → CIE xy → LMS cone response → per-channel scale. Preserves relative color ratios unlike naive RGB shifts. Matches camera/cinema white balance (ISO/CIE 11664-3, ACES IDT). CPU reference whiteBalance() + GPU pass. Identity skip on (0,0). Apply in linear space before tonemapping.",
+        "advantage": "soup3D has no white balance feature"
       }
     }
   }

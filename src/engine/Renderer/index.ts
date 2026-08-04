@@ -585,4 +585,28 @@ export {
   type AutoExposureOptions,
   type HistogramResult,
 } from './PostProcess';
+// WhiteBalancePass — 白平衡后处理(PostProcess/ 顶层重导出)。
+// 适配 o3de Atom WhiteBalancePass + WhiteBalance.azsl。
+// 通过 temperature/tint 参数调整场景白点,使用 Bradford 色彩适应变换(CAT):
+//   1. (temperature, tint) → CIE xy 色度(目标白点)
+//   2. xy → LMS 锥响应空间
+//   3. balance = D65_LMS / target_LMS
+//   4. input → LMS → LMS*balance → linear
+// 与 ColorGradingPass 的 temperature/tint 不同:本 Pass 是物理 CAT 变换
+// (改变感知白点,保持色域内颜色相对关系),与相机/电影白平衡一致。
+// soup3D 无白平衡特性。
+export {
+  WhiteBalancePass,
+  whiteBalance,
+  temperatureTintToWhiteXY,
+  xyToLMS,
+  computeWhiteBalance,
+  isIdentityWhiteBalance,
+  D65_WHITE_X,
+  D65_WHITE_LMS,
+  LIN_2_LMS_MAT,
+  LMS_2_LIN_MAT,
+  type WBColor,
+  type WhiteBalanceOptions,
+} from './PostProcess';
 

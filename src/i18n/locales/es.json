@@ -1088,6 +1088,11 @@
         "title": "Histograma de luminancia",
         "desc": "Histograma de luminancia EV100 de 128 bins + adaptación ocular de exposición automática (o3de LuminanceHistogramGeneratorPass adaptado). Promedio ponderado con recorte de percentiles ignora píxeles extremos (cielo brillante / sombra profunda) para un EV objetivo robusto. Adaptación asimétrica (aclaramiento rápido / oscurecimiento lento) coincide con la respuesta pupilar humana. Luma Rec709, EV100=log2(L*8), rango [-8,16]. CPU pura, testeable sin GPU, puede controlar GPU EyeAdaptationPass.",
         "advantage": "soup3D solo tiene exposición automática básica de promedio logarítmico"
+      },
+      "whiteBalance": {
+        "title": "Balance de blancos (Bradford CAT)",
+        "desc": "Balance de blancos físicamente basado vía transformación de adaptación cromática Bradford (o3de WhiteBalancePass adaptado). temperature/tint → CIE xy → respuesta de conos LMS → escala por canal. Preserva relaciones relativas de color a diferencia de simples desplazamientos RGB. Coincide con balance de blancos de cámara/cine (ISO/CIE 11664-3, ACES IDT). Función CPU whiteBalance() + pass GPU. Omisión de identidad en (0,0). Aplicar en espacio lineal antes del tonemapping.",
+        "advantage": "soup3D no tiene función de balance de blancos"
       }
     }
   }

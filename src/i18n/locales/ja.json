@@ -1088,6 +1088,11 @@
         "title": "輝度ヒストグラム",
         "desc": "128-bin EV100 輝度ヒストグラム + 自動露光眼順応(o3de LuminanceHistogramGeneratorPass 適応)。パーセンタイルクリップ付き加重平均で極端なピクセル(明るい空 / 深い影)を無視し、堅牢な目標 EV を算出。非対称順応(明る化高速 / 暗化低速)は人間の瞳孔反応に一致。Rec709 輝度、EV100=log2(L*8)、範囲 [-8,16]。純 CPU、ヘッドレステスト可能、GPU EyeAdaptationPass の駆動可能。",
         "advantage": "soup3D は基本的な対数平均自動露光のみ"
+      },
+      "whiteBalance": {
+        "title": "ホワイトバランス(Bradford CAT)",
+        "desc": "Bradford 色彩適応変換による物理ベースのホワイトバランス(o3de WhiteBalancePass 適応)。temperature/tint → CIE xy → LMS 錐体応答 → チャネル別スケール。単純な RGB シフトと異なり色の相対比率を保持。カメラ/シネマのホワイトバランスに一致(ISO/CIE 11664-3、ACES IDT)。CPU 参照関数 whiteBalance() + GPU Pass。恒等 (0,0) で自動スキップ。線形空間でトーンマッピング前に適用。",
+        "advantage": "soup3D にホワイトバランス機能なし"
       }
     }
   }

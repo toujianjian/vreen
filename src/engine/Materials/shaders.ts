@@ -6086,4 +6086,52 @@ void main() {
 }
 `;
 
+// ── WhiteBalance ───────────────────────────────────────────────────
+// 白平衡后处理:Bradford 色彩适应变换(CAT)。
+// 适配自 o3de Atom WhiteBalance.azsl。
+//
+// 通过 temperature/tint 参数调整场景白点,在 LMS 锥响应空间应用缩放,
+// 物理 CAT 变换比简单 RGB 偏移更准确,与相机/电影白平衡一致。
+//
+// balance 向量由 CPU 端 computeWhiteBalance() 预计算,避免 GPU 重复计算。
+export const WHITE_BALANCE_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;     // 输入场景颜色(推荐 HDR 线性空间)
+uniform vec3  u_balance;          // LMS 空间白平衡缩放向量(CPU 预计算)
+
+// 线性 RGB → LMS 转换矩阵(Bradford 锥响应)
+// 行主序数据按列填入 mat3 构造器(等价于转置后上传,WebGL 不支持 transpose=true)
+const mat3 LIN_2_LMS_MAT = mat3(
+  3.90405e-1, 7.08416e-2, 2.31082e-2,   // column 0 = row 0 of row-major matrix
+  5.49941e-1, 9.63172e-1, 1.28021e-1,   // column 1 = row 1
+  8.92632e-3, 1.35775e-3, 9.36245e-1    // column 2 = row 2
+);
+
+// LMS → 线性 RGB 转换矩阵(LIN_2_LMS_MAT 的逆)
+const mat3 LMS_2_LIN_MAT = mat3(
+  2.85847e+0, -2.10182e-1, -4.18120e-2,
+  -1.62879e+0, 1.15820e+0, -1.18169e-1,
+  -2.48910e-2, 3.24281e-4, 1.06867e+0
+);
+
+void main() {
+  vec3 color = texture(u_colorMap, v_uv).rgb;
+
+  // input → LMS
+  vec3 lms = LIN_2_LMS_MAT * color;
+
+  // LMS * balance(每通道缩放)
+  lms *= u_balance;
+
+  // LMS → linear
+  vec3 result = LMS_2_LIN_MAT * lms;
+
+  outColor = vec4(result, 1.0);
+}
+`;
+
 
