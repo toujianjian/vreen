@@ -6663,4 +6663,100 @@ void main() {
 }
 `;
 
+// ── FastDepthAwareBlur ─────────────────────────────────────────────
+// 适配 o3de Atom FastDepthAwareBlurPasses(H+V 双 pass 可分离深度感知模糊)。
+// 算法核心:沿模糊方向逐纹素推进,用前后深度斜率差检测边缘,在边缘处
+// 递减混合权重以防止前景/背景渗色。两个方向(正向 + 反向)各贡献 0.5。
+//
+// 与普通高斯模糊的区别:普通高斯按固定权重混合邻域,会跨越深度边缘
+// 产生 halo;深度感知模糊在深度斜率突变时降低权重,把模糊限制在
+// 同一深度层内,适合 AO/SSGI/Bloom 等需要保持边缘锐利的后处理。
+//
+// 单 pass 处理一个方向(H 或 V),通过 u_direction 切换:
+//   u_direction = vec2(1, 0)  → 水平
+//   u_direction = vec2(0, 1)  → 垂直
+// 调用方需 ping-pong 两次:input → H blur → intermediate → V blur → output。
+export const FAST_DEPTH_AWARE_BLUR_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;        // 待模糊的源(RGBA)
+uniform sampler2D u_depthMap;        // 线性深度纹理(单通道,view space Z)
+uniform vec2  u_texel;               // 1/width, 1/height
+uniform vec2  u_direction;           // 模糊方向:(1,0)=H, (0,1)=V
+uniform int   u_blurRadius;          // 模糊半径(纹素数,默认 8)
+uniform float u_constFalloff;        // 平面表面恒定衰减(默认 2/3)
+uniform float u_depthFalloffThreshold; // 深度差阈值(默认 0)
+uniform float u_depthFalloffStrength;  // 深度斜率强度(默认 50)
+
+// 计算深度斜率差对应的衰减权重(0..1)
+float calculateDepthFalloff(float prevSlope, float curSlope) {
+  float diff = abs(prevSlope - curSlope) - u_depthFalloffThreshold;
+  return clamp(1.0 - diff * u_depthFalloffStrength, 0.0, 1.0);
+}
+
+// 沿 direction 方向执行单侧模糊(从 startUV 向 dir 步进 radius 步)
+// 返回该方向的累加值(已乘 0.5)
+vec3 blurDirection(vec2 startUV, vec2 dir, float centerDepth) {
+  vec2 step = dir * u_texel;
+
+  // 初始化:前一个纹素 = 起点
+  float prevDepth = centerDepth;
+  vec3  prevValue = texture(u_colorMap, startUV).rgb;
+  float prevSlope = 0.0;
+
+  // 第一步:前进 1 纹素,建立初始 slope
+  vec2 uv = startUV + step;
+  float curDepth = texture(u_depthMap, uv).r;
+  vec3  curValue = texture(u_colorMap, uv).rgb;
+  prevSlope = curDepth - prevDepth;
+
+  // 第一个采样:无 prevSlope,直接用 constFalloff
+  curValue = mix(curValue, prevValue, u_constFalloff);
+
+  vec3 acc = curValue * 0.5;
+
+  // 剩余 radius-1 步
+  for (int i = 1; i < 32; ++i) {
+    if (i >= u_blurRadius) break;
+    vec3  prevValueLocal = curValue;
+    float prevDepthLocal = curDepth;
+    float prevSlopeLocal = prevSlope;
+
+    uv += step;
+    curDepth = texture(u_depthMap, uv).r;
+    curValue = texture(u_colorMap, uv).rgb;
+    float curSlope = curDepth - prevDepthLocal;
+
+    float falloff = calculateDepthFalloff(prevSlopeLocal, curSlope) * u_constFalloff;
+    curValue = mix(curValue, prevValueLocal, falloff);
+
+    acc += curValue * 0.5;
+  }
+
+  return acc;
+}
+
+void main() {
+  vec3 centerColor = texture(u_colorMap, v_uv).rgb;
+  float centerDepth = texture(u_depthMap, v_uv).r;
+
+  // 正方向(+direction)
+  vec3 posAcc = blurDirection(v_uv, u_direction, centerDepth);
+
+  // 反方向(-direction)
+  vec3 negAcc = blurDirection(v_uv, -u_direction, centerDepth);
+
+  // 双向平均
+  vec3 result = (posAcc + negAcc) * 0.5;
+
+  // 保留 alpha
+  float alpha = texture(u_colorMap, v_uv).a;
+  outColor = vec4(result, alpha);
+}
+`;
+
+
 

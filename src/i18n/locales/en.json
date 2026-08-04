@@ -1108,6 +1108,11 @@
         "title": "FXAA 3.11 Enhanced (3 Quality Presets)",
         "desc": "Industry-standard FXAA 3.11 (Timothy Lottes, NVIDIA 2009) with 3 quality presets: Console (4-step edge walk, fastest), PC High (8-step, balanced default), PC Extreme (10-step, best quality). Full algorithm: Rec601 luma → local contrast detection → edge direction (H/V gradient) → decreasing-length edge endpoint search → blend factor (edge + subpixel). Configurable subpixel (0.75), edgeThreshold (1/6), edgeThresholdMin (1/16). Single-pass, no extra buffers needed. Supersedes basic FXAAPass (2-step search). 1:1 CPU/GPU reference. VREEN now offers 3 complementary AA techniques: FXAA + SMAA + TAA.",
         "advantage": "soup3D has no anti-aliasing at all"
+      },
+      "fastDepthAwareBlur": {
+        "title": "Fast Depth-Aware Blur (o3de Atom H+V)",
+        "desc": "Depth-aware separable blur adapted from o3de Atom FastDepthAwareBlurPasses (Horizontal + Vertical). Walks the blur direction one texel at a time, comparing consecutive depth slopes to detect edges and reduce mix weight at depth discontinuities — preventing foreground/background color bleeding (halo artifact). Building-block pass for AO/SSGI/Bloom/DoF that need edge-preserving blur. Standard Gaussian crosses depth edges producing halos; depth-aware variant confines blur to same depth layer. H+V dual-pass (ping-pong FBOs), O(2*blurRadius) samples/pixel. Configurable blurRadius (1..32), constFalloff (2/3), depthFalloffThreshold (0), depthFalloffStrength (50). 1:1 CPU/GPU reference (calculateDepthFalloff / blurDirection / fastDepthAwareBlurPixel). Algorithm core identical to o3de Atom; VREEN trades compute/LDS optimizations for WebGL2 portability.",
+        "advantage": "soup3D has no depth-aware blur"
       }
     }
   }

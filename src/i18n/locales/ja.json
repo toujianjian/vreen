@@ -1108,6 +1108,11 @@
         "title": "FXAA 3.11 拡張版(3 品質プリセット)",
         "desc": "業界標準 FXAA 3.11(Timothy Lottes, NVIDIA 2009)、3 品質プリセット対応:Console(4 ステップエッジ走査、最速)、PC High(8 ステップ、バランス型デフォルト)、PC Extreme(10 ステップ、最高品質)。完全アルゴリズム:Rec601 輝度 → 局部コントラスト検出 → エッジ方向(H/V 勾配)→ 減少ステップ長エッジ端点探索 → ブレンド係数(エッジ + サブピクセル)。設定可能な subpixel(0.75)、edgeThreshold(1/6)、edgeThresholdMin(1/16)。シングルパス、追加バッファ不要。基本 FXAAPass(2 ステップ走査)を置き換え。CPU/GPU 1:1 参照実装。VREEN は 3 つの相補アンチエイリアス技術を提供:FXAA + SMAA + TAA。",
         "advantage": "soup3D はアンチエイリアス実装なし"
+      },
+      "fastDepthAwareBlur": {
+        "title": "高速深度対応ブラー(o3de Atom H+V)",
+        "desc": "深度対応分離可能ブラー、o3de Atom FastDepthAwareBlurPasses(水平 + 垂直)から適応。ブラー方向に沿って 1 テクセルずつ進み、連続する深度勾配を比較してエッジを検出し、深度不連続部でミックス重みを減少——前景/背景の色滲み(halo アーティファクト)を防止。AO/SSGI/Bloom/DoF などエッジ保持ブラーが必要な後処理のビルディングブロック。通常ガウシアンブラーは深度エッジを越えて halo を生成、深度対応版はブラーを同じ深度レイヤー内に制限。H+V デュアルパス(ping-pong FBO)、O(2*blurRadius) サンプル/ピクセル。設定可能な blurRadius(1..32)、constFalloff(2/3)、depthFalloffThreshold(0)、depthFalloffStrength(50)。CPU/GPU 1:1 参照実装。アルゴリズム核心は o3de Atom と完全一致、VREEN は WebGL2 互換性のため compute/LDS 最適化をフラグメントシェーダーで代替。",
+        "advantage": "soup3D は深度対応ブラーなし"
       }
     }
   }

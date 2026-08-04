@@ -685,4 +685,23 @@ export {
   type FXAAParams,
   type FXAAEnhancedPassOptions,
 } from './PostProcess';
+// FastDepthAwareBlurPass — 深度感知可分离模糊 Pass(PostProcess/ 顶层重导出)。
+// 适配 o3de Atom FastDepthAwareBlurPasses(Horizontal + Vertical)。
+// 沿模糊方向逐纹素推进,用前后深度斜率差检测边缘,在边缘处递减混合权重,
+// 防止前景/背景颜色渗色产生 halo。是 AO/SSGI/Bloom/DoF 等后处理的构建块:
+// 普通高斯模糊会跨越深度边缘产生 halo,深度感知模糊把模糊限制在同一深度层内。
+// H + V 双 pass(ping-pong FBO),O(2*blurRadius) 采样/像素。
+// 1:1 CPU/GPU 参考(calculateDepthFalloff / blurDirection / fastDepthAwareBlurPixel)。
+// soup3D 无深度感知模糊,任何需要保边模糊的效果都会产生 halo 或噪声。
+export {
+  FastDepthAwareBlurPass,
+  calculateDepthFalloff,
+  blurDirection,
+  fastDepthAwareBlurPixel,
+  DEFAULT_DAB_PARAMS,
+  type BlurDirection,
+  type DABColor,
+  type DABParams,
+  type FastDepthAwareBlurPassOptions,
+} from './PostProcess';
 

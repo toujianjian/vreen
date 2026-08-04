@@ -1108,6 +1108,11 @@
         "title": "FXAA 3.11 확장판(3 품질 프리셋)",
         "desc": "업계 표준 FXAA 3.11(Timothy Lottes, NVIDIA 2009), 3 품질 프리셋 지원: Console(4단계 엣지 워크, 최속), PC High(8단계, 균형 기본값), PC Extreme(10단계, 최고 품질). 완전 알고리즘: Rec601 루마 → 국부 대비 검출 → 엣지 방향(H/V 기울기) → 감소 단계 길이 엣지 단점 탐색 → 블렌드 계수(엣지 + 서브픽셀). 설정 가능한 subpixel(0.75), edgeThreshold(1/6), edgeThresholdMin(1/16). 싱글 패스, 추가 버퍼 불필요. 기본 FXAAPass(2단계 워크)를 대체. CPU/GPU 1:1 참조 구현. VREEN은 3가지 상호 보완 안티에일리어싱 기술 제공: FXAA + SMAA + TAA.",
         "advantage": "soup3D는 안티에일리어싱 구현 없음"
+      },
+      "fastDepthAwareBlur": {
+        "title": "고속 깊이 인식 블러(o3de Atom H+V)",
+        "desc": "깊이 인식 분리 가능 블러, o3de Atom FastDepthAwareBlurPasses(수평 + 수직)에서 적응. 블러 방향을 따라 한 텍셀씩 진행하며 연속 깊이 기울기를 비교하여 엣지를 검출하고, 깊이 불연속부에서 믹스 가중치를 감소——전경/배경 색 번짐(halo 아티팩트)을 방지. AO/SSGI/Bloom/DoF 등 엣지 보존 블러가 필요한 후처리의 빌딩 블록. 일반 가우시안 블러는 깊이 엣지를 가로질러 halo를 생성, 깊이 인식 변형은 블러를 동일 깊이 레이어 내로 제한. H+V 듀얼 패스(ping-pong FBO), O(2*blurRadius) 샘플/픽셀. 설정 가능한 blurRadius(1..32), constFalloff(2/3), depthFalloffThreshold(0), depthFalloffStrength(50). CPU/GPU 1:1 참조 구현. 알고리즘 핵심은 o3de Atom과 완전히 동일, VREEN은 WebGL2 호환성을 위해 compute/LDS 최적화를 프래그먼트 셰이더로 대체.",
+        "advantage": "soup3D는 깊이 인식 블러 없음"
       }
     }
   }

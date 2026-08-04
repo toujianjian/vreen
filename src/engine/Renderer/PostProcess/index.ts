@@ -249,3 +249,15 @@ export {
   type FXAAParams,
   type FXAAEnhancedPassOptions,
 } from './FXAAEnhancedPass';
+
+export {
+  FastDepthAwareBlurPass,
+  calculateDepthFalloff,
+  blurDirection,
+  fastDepthAwareBlurPixel,
+  DEFAULT_DAB_PARAMS,
+  type BlurDirection,
+  type DABColor,
+  type DABParams,
+  type FastDepthAwareBlurPassOptions,
+} from './FastDepthAwareBlurPass';

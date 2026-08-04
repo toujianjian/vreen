@@ -1108,6 +1108,11 @@
         "title": "FXAA 3.11 增强版(3 种质量预设)",
         "desc": "工业标准 FXAA 3.11(Timothy Lottes, NVIDIA 2009),支持 3 种质量预设:Console(4 步边缘搜索,最快)、PC High(8 步,均衡默认)、PC Extreme(10 步,最高质量)。完整算法:Rec601 亮度 → 局部对比检测 → 边缘方向(H/V 梯度)→ 递减步长边缘端点搜索 → 混合因子(边缘 + 子像素)。可配置 subpixel(0.75)、edgeThreshold(1/6)、edgeThresholdMin(1/16)。单 pass,无需额外缓冲。取代基础 FXAAPass(2 步搜索)。CPU/GPU 1:1 参考实现。VREEN 现拥有 3 种互补抗锯齿技术:FXAA + SMAA + TAA。",
         "advantage": "soup3D 完全没有抗锯齿实现"
+      },
+      "fastDepthAwareBlur": {
+        "title": "快速深度感知模糊(o3de Atom H+V)",
+        "desc": "深度感知可分离模糊,适配 o3de Atom FastDepthAwareBlurPasses(水平 + 垂直)。沿模糊方向逐纹素推进,比较前后深度斜率检测边缘,在深度不连续处递减混合权重,防止前景/背景颜色渗色产生 halo。是 AO/SSGI/Bloom/DoF 等需要保边模糊后处理的构建块。普通高斯模糊跨越深度边缘产生 halo,深度感知变体把模糊限制在同一深度层内。H+V 双 pass(ping-pong FBO),O(2*blurRadius) 采样/像素。可配置 blurRadius(1..32)、constFalloff(2/3)、depthFalloffThreshold(0)、depthFalloffStrength(50)。CPU/GPU 1:1 参考实现(calculateDepthFalloff / blurDirection / fastDepthAwareBlurPixel)。算法核心与 o3de Atom 完全一致,VREEN 用片段着色器替代 compute/LDS 优化以适配 WebGL2。",
+        "advantage": "soup3D 无深度感知模糊"
       }
     }
   }

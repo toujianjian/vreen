@@ -6349,6 +6349,143 @@ soup3D has no anti-aliasing implementation at all. VREEN provides:
 
 ---
 
+## FastDepthAwareBlurPass (`FastDepthAwareBlurPass.ts`)
+
+**Depth-aware separable blur** (H + V dual-pass) adapted from o3de Atom's
+`FastDepthAwareBlurPasses` (`FastDepthAwareBlurHorPass` +
+`FastDepthAwareBlurVerPass`). Walks the blur direction one texel at a
+time, comparing consecutive depth slopes to detect edges and reduce the
+mix weight at depth discontinuities — preventing foreground/background
+color bleeding (halo artifact).
+
+This is a **building-block pass** used by other post-processing effects
+(AO/SSGI/Bloom/DoF) that need to blur while keeping depth edges sharp.
+A standard Gaussian blur mixes neighborhoods with fixed weights and
+produces halos around silhouettes; the depth-aware variant stops mixing
+when the depth slope changes sharply, confining the blur to the same
+depth layer.
+
+### Algorithm (per direction)
+
+For each texel along the blur direction:
+
+```
+prevDepth    = currentDepth
+currentDepth = sampleDepth(uv + i * step)
+prevSlope    = currentSlope
+currentSlope = currentDepth - prevDepth
+
+falloff = saturate(1 - |prevSlope - currentSlope| * strength) * constFalloff
+currentValue = mix(currentValue, prevValue, falloff)
+
+accumulator += currentValue * 0.5
+```
+
+Both directions (positive + negative) are walked; the final result is
+their average. The two-pass (H then V) separable decomposition gives a
+2D Gaussian-like kernel at `O(2 * blurRadius)` cost per pixel instead
+of `O(blurRadius²)`.
+
+### Comparison with o3de Atom
+
+| Aspect                | o3de Atom                           | VREEN                                  |
+|-----------------------|-------------------------------------|----------------------------------------|
+| Shader stage          | Compute (`numthreads(64, 2, 1)`)    | Fragment (fullscreen quad)             |
+| LDS optimization      | Yes (groupshared, 3 px/thread)      | No (per-pixel texture fetches)         |
+| Gather optimization   | Yes (`Texture2D::Gather` = 4 px)    | No (1 px per `texture()`)              |
+| Channel count         | R only (single-channel AO)          | RGB (general-purpose)                  |
+| Passes                | H + V (separate compute dispatches) | H + V (ping-pong FBOs in one `apply()`)|
+| Algorithm             | Identical (depth-slope falloff)     | Identical                              |
+
+VREEN trades o3de's compute/LDS optimizations for portability (WebGL2
+has no compute shaders or `GatherRGBA`). The depth-slope falloff core
+is 1:1 identical.
+
+### Comparison with soup3D
+
+| Feature                  | soup3D | VREEN                          |
+|--------------------------|--------|--------------------------------|
+| Depth-aware blur         | None   | `FastDepthAwareBlurPass`       |
+| Edge-stopping function   | None   | Depth-slope difference         |
+| Configurable radius      | —      | `blurRadius` (1..32)           |
+| Configurable strength    | —      | `depthFalloffStrength` (0..∞)  |
+| Configurable threshold   | —      | `depthFalloffThreshold`        |
+| H + V separable          | —      | Yes (ping-pong FBOs)           |
+| CPU reference (1:1 GPU)  | —      | `fastDepthAwareBlurPixel()`    |
+
+soup3D has no depth-aware blur. Any effect requiring edge-preserving
+blur (AO, SSGI, DoF, soft shadows) in soup3D would either use a flat
+Gaussian (producing halos) or not blur at all (producing noise).
+
+### Options
+
+| Option                    | Default   | Range        | Description |
+|---------------------------|-----------|--------------|-------------|
+| `blurRadius`              | `8`       | `1..32`      | Blur radius in texels. Larger = more blur, higher cost. |
+| `constFalloff`            | `2/3`     | `[0, 1]`     | Constant falloff on flat surfaces. `0` = no mixing, `1` = max mixing. |
+| `depthFalloffThreshold`   | `0`       | `[0, ∞)`     | Depth difference ignored below this threshold. Blurs curved surfaces more like flat surfaces. |
+| `depthFalloffStrength`    | `50`      | `[0, ∞)`     | Edge sharpness. Higher = sharper edges (less cross-edge bleed). `0` = disable edge stopping (becomes flat Gaussian-like). |
+| `enabled`                 | `true`    | boolean      | Master switch. |
+
+### Usage
+
+```ts
+import { FastDepthAwareBlurPass } from '@vreen/engine';
+
+const blur = new FastDepthAwareBlurPass({
+  blurRadius: 8,
+  constFalloff: 2.0 / 3.0,
+  depthFalloffStrength: 50,
+});
+
+// Each frame: blur the AO texture using the scene depth to stop at edges
+const blurredAO = blur.apply(gl, aoTexture, depthTexture);
+
+// Composite: sceneColor *= blurredAO
+```
+
+### Typical Pipeline Position
+
+```
+SSAO/GTAO → FastDepthAwareBlur → Composite (color *= ao)
+SSGI      → FastDepthAwareBlur → Composite (color += gi)
+Bloom mip → FastDepthAwareBlur → Additive blend
+DoF       → FastDepthAwareBlur → Color composite
+```
+
+### CPU Reference (1:1 with GPU shader)
+
+```ts
+import {
+  calculateDepthFalloff,
+  blurDirection,
+  fastDepthAwareBlurPixel,
+  DEFAULT_DAB_PARAMS,
+} from '@vreen/engine';
+
+// Compute the edge-stopping weight at a single sample
+const w = calculateDepthFalloff(prevSlope, curSlope, threshold, strength);
+
+// Full pixel processing (both directions averaged)
+const result = fastDepthAwareBlurPixel(
+  centerUV,
+  (uv) => sampleColor(uv),  // RGB
+  (uv) => sampleDepth(uv),  // float
+  [1 / width, 1 / height],
+  [1, 0],  // horizontal
+  DEFAULT_DAB_PARAMS,
+);
+```
+
+### References
+
+- o3de Atom `FastDepthAwareBlurPasses.h/.cpp` — original implementation
+- o3de `FastDepthAwareBlurHor.azsl` / `FastDepthAwareBlurVer.azsl` — shaders
+- o3de `FastDepthAwareBlurCommon.azsli` — shared algorithm core
+- Jimenez, "Next Generation Post-Processing in Call of Duty" (SIGGRAPH 2014) — depth-aware blur concept
+
+---
+
 ## References
 
 | Technique | Paper / Source |
