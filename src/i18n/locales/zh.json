@@ -909,6 +909,11 @@
         "desc": "对数空间局部-全局亮度差异驱动的曝光补偿 — 提亮暗部、压暗高光、保留细节。与自动曝光互补,适用于 HDR 场景。",
         "advantage": "soup3D 无局部曝光"
       },
+      "lensDistortion": {
+        "title": "镜头畸变",
+        "desc": "Brown-Conrady 径向镜头畸变 + 可选 RGB 色差 — 桶形(广角)/枕形(长焦),支持畸变中心偏移与缩放补偿。OpenCV/o3de 级相机光学。",
+        "advantage": "soup3D 无镜头畸变"
+      },
       "heightFog": {
         "title": "高度雾",
         "desc": "UE5 风格指数高度雾,闭式 Beer-Lambert 密度 + 太阳入射散射。",

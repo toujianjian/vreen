@@ -4829,5 +4829,97 @@ void main() {
 }
 `;
 
+// ════════════════════════════════════════════════════════════════════════
+// 镜头畸变(Lens Distortion)— Brown-Conrady 径向畸变 + RGB 色差
+// ════════════════════════════════════════════════════════════════════════
+//
+// 模拟相机镜头的几何畸变:
+//   - 桶形畸变(barrel):k1 > 0,画面向外膨胀(广角镜头/鱼眼)
+//   - 枕形畸变(pincushion):k1 < 0,画面向内收缩(长焦镜头)
+//   - RGB 色差:三个通道分别用略微不同的畸变系数,模拟色散
+//
+// 算法(Brown-Conrady 径向畸变模型):
+//   r² = (uv - center)·(uv - center)
+//   distort = 1 + k1×r² + k2×r⁴
+//   uv' = center + (uv - center) × distort / scale
+//
+// 参考:
+//   - OpenCV camera calibration (Brown-Conrady model)
+//   - o3de Atom LensDistortionPass
+//   - UE5 "Lens Distortion" post-process
+
+export const LENS_DISTORTION_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+// 镜头畸变 — Brown-Conrady 径向畸变 + RGB 色差
+// 参考: OpenCV / o3de Atom LensDistortion / UE5 Lens Distortion
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;
+uniform vec2  u_principalPoint;      // 畸变中心 UV (默认 0.5, 0.5)
+uniform float u_distortion;          // 一阶径向畸变 k1 (正=桶形, 负=枕形)
+uniform float u_distortion2;         // 二阶径向畸变 k2 (默认 0)
+uniform float u_scale;               // 缩放补偿 (默认 1, >1 放大避免黑边)
+uniform float u_chromaticAberration; // RGB 色差强度 (默认 0)
+uniform int   u_enabled;             // 0=禁用, 1=启用
+
+void main() {
+  vec3 color = texture(u_colorMap, v_uv).rgb;
+
+  if (u_enabled == 0) {
+    outColor = vec4(color, 1.0);
+    return;
+  }
+
+  vec2 center = u_principalPoint;
+  vec2 d = v_uv - center;
+  float r2 = dot(d, d);
+
+  // ── 径向畸变因子: 1 + k1×r² + k2×r⁴ ────────────────────────
+  float distort = 1.0 + u_distortion * r2 + u_distortion2 * r2 * r2;
+  distort /= u_scale;
+
+  // ── RGB 色差: 三个通道分别用略微不同的畸变系数 ─────────────
+  if (u_chromaticAberration > 0.0) {
+    float ca = u_chromaticAberration;
+    // R 通道: 畸变略大 (红色折射角小,畸变更强)
+    float distortR = (1.0 + (u_distortion + ca) * r2 + u_distortion2 * r2 * r2) / u_scale;
+    // G 通道: 标准畸变
+    float distortG = distort;
+    // B 通道: 畸变略小 (蓝色折射角大,畸变更弱)
+    float distortB = (1.0 + (u_distortion - ca) * r2 + u_distortion2 * r2 * r2) / u_scale;
+
+    vec2 uvR = center + d * distortR;
+    vec2 uvG = center + d * distortG;
+    vec2 uvB = center + d * distortB;
+
+    // clamp UV 避免越界采样(边缘用 clamp 而非 discard,保持连续)
+    uvR = clamp(uvR, vec2(0.0), vec2(1.0));
+    uvG = clamp(uvG, vec2(0.0), vec2(1.0));
+    uvB = clamp(uvB, vec2(0.0), vec2(1.0));
+
+    float r = texture(u_colorMap, uvR).r;
+    float g = texture(u_colorMap, uvG).g;
+    float b = texture(u_colorMap, uvB).b;
+
+    outColor = vec4(r, g, b, 1.0);
+  } else {
+    // 无色差: 单次采样
+    vec2 distortedUV = center + d * distort;
+
+    // 边界检查: 超出 [0,1] 的 UV 用黑色填充
+    if (distortedUV.x < 0.0 || distortedUV.x > 1.0 ||
+        distortedUV.y < 0.0 || distortedUV.y > 1.0) {
+      outColor = vec4(0.0, 0.0, 0.0, 1.0);
+      return;
+    }
+
+    outColor = vec4(texture(u_colorMap, distortedUV).rgb, 1.0);
+  }
+}
+`;
+
 
 

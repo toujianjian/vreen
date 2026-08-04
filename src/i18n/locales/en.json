@@ -909,6 +909,11 @@
         "desc": "Log-space local-global luminance difference driven exposure compensation — brightens shadows, darkens highlights, preserves detail. Complements AutoExposure for HDR scenes.",
         "advantage": "soup3D has no local exposure"
       },
+      "lensDistortion": {
+        "title": "Lens Distortion",
+        "desc": "Brown-Conrady radial lens distortion with optional RGB chromatic aberration — barrel (wide-angle) / pincushion (telephoto), principal-point offset, scale compensation. OpenCV/o3de-grade camera optics.",
+        "advantage": "soup3D has no lens distortion"
+      },
       "heightFog": {
         "title": "Height Fog",
         "desc": "UE5-style exponential height fog with closed-form Beer-Lambert density and sun inscattering.",

@@ -909,6 +909,11 @@
         "desc": "対数空間のローカル-グローバル輝度差駆動の露出補償 — 暗部を明るく、ハイライトを暗く、ディテールを保持。AutoExposure と補完関係、HDR シーン向け。",
         "advantage": "soup3D にローカル露出なし"
       },
+      "lensDistortion": {
+        "title": "レンズ歪み",
+        "desc": "Brown-Conrady 放射状レンズ歪み + オプションの RGB 色収差 — バレル(広角)/ピンクッション(望遠)、主点オフセットとスケール補償。OpenCV/o3de 水準のカメラ光学。",
+        "advantage": "soup3D にレンズ歪みなし"
+      },
       "heightFog": {
         "title": "ハイトフォグ",
         "desc": "UE5 風指数ハイトフォグ、閉形式 Beer-Lambert 密度 + 太陽内散乱。",

@@ -909,6 +909,11 @@
         "desc": "Compensación de exposición por diferencia de luminancia local-global en espacio logarítmico — aclara sombras, oscurece reflejos, preserva detalle. Complementa AutoExposure para HDR.",
         "advantage": "soup3D sin exposición local"
       },
+      "lensDistortion": {
+        "title": "Distorsión de Lente",
+        "desc": "Distorsión radial de lente Brown-Conrady con aberración cromática RGB opcional — barril (gran angular) / cojín (teleobjetivo), offset del punto principal y compensación de escala. Óptica de cámara nivel OpenCV/o3de.",
+        "advantage": "soup3D sin distorsión de lente"
+      },
       "heightFog": {
         "title": "Niebla de altura",
         "desc": "Niebla de altura exponencial estilo UE5 con densidad Beer-Lambert de forma cerrada e inscattering solar.",

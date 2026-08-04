@@ -2,9 +2,9 @@
 
 > Path: `src/engine/Renderer/PostProcess/`
 >
-> The enhanced post-processing pass family of the VREEN engine. Provides **27**
+> The enhanced post-processing pass family of the VREEN engine. Provides **31**
 > passes covering color grading, anti-aliasing, screen-space effects, depth-of-field,
-> motion blur, exposure adaptation, atmospheric effects, water rendering, light shafts, sharpening, upscaling, and stylized effects.
+> motion blur, exposure adaptation, atmospheric effects, water rendering, light shafts, sharpening, upscaling, lens distortion, and stylized effects.
 > Each pass is a self-contained class that manages its own GPU resources (FBOs,
 > textures, shader programs) and integrates into the `PostProcessingPipeline`.
 
@@ -14,7 +14,7 @@
 
 ```
 PostProcess/
-  ├── RenderPass-compatible (9 passes)        ← drop-in pipeline passes
+  ├── RenderPass-compatible (10 passes)       ← drop-in pipeline passes
   │     ├── ColorGradingPass
   │     ├── LUTPass
   │     ├── TonemappingPass
@@ -23,9 +23,10 @@ PostProcess/
   │     ├── VignettePass (enhanced)
   │     ├── FilmGrainPass
   │     ├── AfterimagePass
-  │     └── PixelationPass
+  │     ├── PixelationPass
+  │     └── UnrealBloomPass  ← Unreal-style mip-chain bloom + lens dirt
   │
-  ├── GBuffer-dependent (20 passes)           ← independent FBO/program
+  ├── GBuffer-dependent (21 passes)           ← independent FBO/program
   │     ├── SSRPass          ← needs position + normal
   │     ├── SSSRPass         ← needs position + normal + roughness (GGX importance-sampled)
   │     ├── SSGIPass         ← needs position + normal + color
@@ -41,19 +42,21 @@ PostProcess/
   │     ├── TAAPass          ← needs color + velocity
   │     ├── MotionBlurPass   ← needs color + velocity
   │     ├── AutoExposurePass ← needs color (luminance)
+  │     ├── LocalExposurePass ← needs color (log-space local-global exposure)
   │     ├── GTAOPass         ← needs depth + normal
   │     ├── SSSSPass         ← needs color + depth
   │     ├── DOFEnhancedPass  ← needs color + depth
   │     ├── GlitchPass       ← needs color (stylized)
   │     ├── SMAAPass         ← needs color (3-pass AA)
-  │     └── FSRUpscalePass   ← needs color (low→high res, independent FBO)
+  │     ├── FSRUpscalePass   ← needs color (low→high res, independent FBO)
+  │     └── LensDistortionPass ← needs color (Brown-Conrady radial distortion + RGB CA)
   │
   └── index.ts               ← barrel exports
 ```
 
 ### Two Integration Patterns
 
-**Pattern 1: `RenderPass`-compatible** — These 9 passes extend `RenderPass`
+**Pattern 1: `RenderPass`-compatible** — These 10 passes extend `RenderPass`
 and accept `(input: WebGLTexture, ctx: PassContext)`. They can be added
 directly to a `PostProcessingPipeline`:
 
@@ -62,7 +65,7 @@ pipeline.add(new ColorGradingPass({ saturation: 1.2 }));
 pipeline.add(new LUTPass({ lut: myLUTTexture, lutSize: 32, is3D: true }));
 ```
 
-**Pattern 2: GBuffer-dependent** — These 20 passes have custom `apply()`
+**Pattern 2: GBuffer-dependent** — These 21 passes have custom `apply()`
 signatures that require additional GBuffer textures (depth, normal, velocity,
 position). They manage their own FBOs and shader programs independently:
 
@@ -3362,6 +3365,235 @@ providing UE5-grade HDR tone reproduction.
 
 ---
 
+## LensDistortionPass (`LensDistortionPass.ts`)
+
+> Path: `src/engine/Renderer/PostProcess/LensDistortionPass.ts`
+>
+> Lens distortion post-process. Simulates real camera lens geometry
+> distortion using the Brown-Conrady radial distortion model, with optional
+> RGB chromatic aberration. Adds photographic "lens character" — barrel
+> distortion for wide-angle, pincushion for telephoto, plus color fringing
+> at edges. Best applied after tonemapping, before final output.
+
+### Architecture
+
+```
+Input: color texture (typically LDR, post-tonemapping)
+         │
+         ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Fragment shader (single pass)                              │
+│                                                             │
+│  d = v_uv - u_principalPoint                                │
+│  r² = dot(d, d)                                             │
+│                                                             │
+│  distort = (1 + k1·r² + k2·r⁴) / scale                     │
+│                                                             │
+│  if chromaticAberration > 0:                                │
+│    distortR = (1 + (k1+ca)·r² + k2·r⁴) / scale  (red)      │
+│    distortG = distort                            (green)    │
+│    distortB = (1 + (k1-ca)·r² + k2·r⁴) / scale  (blue)     │
+│    sample R/G/B channels separately, clamp UVs to [0,1]     │
+│  else:                                                      │
+│    uv' = center + d · distort                               │
+│    out-of-bounds UV → black fill (avoid seam artifacts)     │
+└─────────────────────────────────────────────────────────────┘
+         │
+         ▼
+Output: distorted color texture (RGBA8)
+```
+
+### Algorithm (Brown-Conrady radial distortion)
+
+The Brown-Conrady model (used by OpenCV `calib3d`, o3de Atom
+`LensDistortionPass`, and UE5 lens distortion materials) maps an
+undistorted pixel coordinate `uv` to a distorted one:
+
+```
+distorted_uv = center + (uv - center) · (1 + k1·r² + k2·r⁴ + ...) / scale
+```
+
+where `r² = dot(uv - center, uv - center)` is the squared distance from
+the principal point (distortion center), and `k1`, `k2` are radial
+distortion coefficients.
+
+| Coefficient | Sign | Effect |
+|-------------|------|--------|
+| `k1 > 0` | positive | **Barrel distortion** — edges bulge outward (wide-angle / fisheye look) |
+| `k1 < 0` | negative | **Pincushion distortion** — edges pinch inward (telephoto look) |
+| `k1 = 0` | zero | No distortion (passthrough sampling) |
+| `k2` | any | Second-order term, refines distortion curve at high `r²` (image corners) |
+
+### RGB Chromatic Aberration
+
+Real lenses disperse light by wavelength: blue refracts more than red.
+The shader simulates this by applying slightly different distortion
+coefficients to each color channel:
+
+| Channel | Distortion factor | Physical rationale |
+|---------|-------------------|--------------------|
+| R (red) | `(1 + (k1 + ca)·r² + k2·r⁴) / scale` | Red refracts less → stronger distortion |
+| G (green) | `(1 + k1·r² + k2·r⁴) / scale` | Reference (no shift) |
+| B (blue) | `(1 + (k1 - ca)·r² + k2·r⁴) / scale` | Blue refracts more → weaker distortion |
+
+This produces the characteristic RGB color fringing at high-contrast
+edges near the frame borders. UVs are clamped to `[0,1]` (not discarded)
+to maintain visual continuity at the extremes.
+
+### Options
+
+| Option               | Default     | Range / Notes |
+|----------------------|-------------|---------------|
+| `principalPoint`     | `[0.5, 0.5]`| UV coords of distortion center. Off-axis simulates sensor misalignment. |
+| `distortion`         | `0.1`       | k1, first-order radial. + = barrel, − = pincushion, 0 = none. |
+| `distortion2`        | `0`         | k2, second-order radial. Refines curve at corners. |
+| `scale`              | `1.0`       | Scale compensation. >1 zooms in to avoid black borders from distortion. |
+| `chromaticAberration`| `0`         | RGB channel split strength. 0 = single-sample path. >0 = 3-sample path. |
+| `enabled`            | `true`      | false = passthrough (returns input, 0 draw calls). |
+
+### API
+
+```ts
+export type PrincipalPoint = [x: number, y: number];
+
+export interface LensDistortionOptions {
+  principalPoint?: PrincipalPoint;
+  distortion?: number;
+  distortion2?: number;
+  scale?: number;
+  chromaticAberration?: number;
+  enabled?: boolean;
+}
+
+export class LensDistortionPass {
+  readonly name: 'lensdistortion';
+  principalPoint: PrincipalPoint;
+  distortion: number;
+  distortion2: number;
+  scale: number;
+  chromaticAberration: number;
+  enabled: boolean;
+
+  constructor(opts?: LensDistortionOptions);
+  apply(gl: WebGL2RenderingContext, colorTexture: WebGLTexture): WebGLTexture;
+  setDirty(): void;
+  dispose(gl?: WebGL2RenderingContext): void;
+}
+```
+
+### Texture unit bindings
+
+| Unit | Sampler        | Source |
+|------|----------------|--------|
+| 0    | `u_colorMap`   | Input color texture |
+
+### Resource layout
+
+| Resource           | Type             | Format / Notes |
+|--------------------|------------------|----------------|
+| Output texture     | `WebGLTexture`   | `RGBA8`, `LINEAR` filter, `CLAMP_TO_EDGE` wrap |
+| Framebuffer        | `WebGLFramebuffer` | Single `COLOR_ATTACHMENT0` |
+| Shader program     | `ShaderProgram`  | `POST_VERT` + `LENS_DISTORTION_FRAG` |
+| Fullscreen quad    | VAO + buffer     | Single oversized triangle (3 verts, no index buffer) |
+
+### Usage
+
+```ts
+import { LensDistortionPass } from '@vreen/engine/renderer/postprocess';
+
+// Wide-angle lens character with subtle color fringing
+const lens = new LensDistortionPass({
+  distortion: 0.15,          // slight barrel distortion
+  chromaticAberration: 0.02, // subtle RGB split
+  scale: 1.05,               // zoom in 5% to hide black borders
+});
+
+// Pipeline order: ... → Tonemapping → LensDistortion → Output
+let color = tonemapping.apply(gl, hdrColor);
+color = lens.apply(gl, color);
+
+// Telephoto (pincushion) lens
+const tele = new LensDistortionPass({
+  distortion: -0.08,
+  scale: 1.02,
+});
+
+// Disable at runtime
+lens.enabled = false;  // next apply() returns input unchanged
+```
+
+### Tuning guide
+
+| Desired look | `distortion` | `chromaticAberration` | `scale` |
+|--------------|--------------|-----------------------|---------|
+| Clean (no distortion) | 0 | 0 | 1.0 |
+| Subtle wide-angle | 0.10–0.15 | 0–0.02 | 1.03–1.05 |
+| Strong fisheye | 0.25–0.40 | 0.03–0.05 | 1.10–1.20 |
+| Telephoto (pincushion) | −0.05 to −0.10 | 0–0.01 | 1.02–1.04 |
+| Vintage/analog lens | 0.12 | 0.04–0.08 | 1.06 |
+
+> **Black-border avoidance**: barrel distortion pushes edge pixels
+> outward, leaving the corners undersampled. Increase `scale` (>1.0) to
+> zoom the sample grid inward until no black fills remain. The shader
+> explicitly outputs black for out-of-bounds UVs in the no-CA path and
+> clamps UVs in the CA path.
+
+### vs soup3D
+
+| Feature                    | VREEN `LensDistortionPass` | soup3D |
+|----------------------------|----------------------------|--------|
+| Lens distortion            | Yes (Brown-Conrady)        | No     |
+| Barrel / pincushion        | Yes (k1 sign)              | No     |
+| Second-order (k2)          | Yes                        | No     |
+| RGB chromatic aberration   | Yes (3-sample)             | No     |
+| Principal point offset     | Yes                        | No     |
+| Scale compensation         | Yes                        | No     |
+| Provenance (o3de/OpenCV)   | Yes                        | No     |
+
+soup3D has **no lens distortion** at all. VREEN's `LensDistortionPass`
+brings OpenCV/o3de-grade camera calibration optics to the engine,
+matching the Brown-Conrady model used in computer vision and film VFX.
+
+### Design Notes
+
+1. **Why Brown-Conrady?** It is the de-facto standard radial distortion
+   model — identical to OpenCV `calib3d` and o3de Atom, so calibration
+   data (k1, k2, principal point) from real cameras or CV pipelines can
+   be fed directly into the pass.
+
+2. **Single-pass, no ping-pong.** Distortion is a pure UV remap — one
+   texture sample (or three for CA) per pixel. No temporal accumulation,
+   no multi-pass blur. Cheapest possible lens effect.
+
+3. **CA is opt-in.** When `chromaticAberration = 0`, the shader takes
+   the single-sample fast path (1 texture fetch). Only enabling CA
+   triples the cost. Default is off so the base distortion is free-ish.
+
+4. **Black-fill vs clamp.** The no-CA path explicitly fills
+   out-of-bounds UVs with black (visible vignette of the lens). The CA
+   path clamps UVs to `[0,1]` to avoid 3-channel discontinuities at the
+   edge. Choose `scale > 1` to hide both.
+
+5. **Pipeline placement.** Apply after tonemapping (on LDR) — distortion
+   is a display-space effect, not a physical/lighting one. Applying pre-
+   tonemap would smear HDR values across channels inconsistently.
+
+6. **Complementary passes.** Pair with `ChromaticAberrationPass`
+   (enhanced, shift-based) for layered fringing, `VignettePass` for dark
+   corners, and `FilmGrainPass` for analog texture — together they form
+   a complete "lens personality" stack.
+
+### Test coverage (`LensDistortionPass.test.ts`, 36 tests)
+
+| Suite | Tests | Coverage |
+|-------|-------|----------|
+| construction | 10 | defaults, all options, field updatability, zero/negative distortion |
+| apply | 10 | no-throw, resource alloc, no re-alloc, disabled passthrough, resize rebuild, setDirty, CA path, zero-distortion path, multi-apply |
+| dispose | 4 | with gl, without gl, idempotent, re-apply after dispose |
+| shader source | 12 | version/precision, uniforms, Brown-Conrady formula, r², scale, CA branch, ±ca channels, UV clamp, single-sample fallback, black fill, provenance, disable passthrough |
+
+---
+
 ## References
 
 | Technique | Paper / Source |
@@ -3377,3 +3609,5 @@ providing UE5-grade HDR tone reproduction.
 | Beer-Powder | Bouthors et al., "Real-Time Realistic Atmospheric Scattering" — 2008 |
 | Dual-lobed HG | Henyey & Greenstein (1941); UE5 Volumetric Clouds plugin |
 | Multi-scattering | Wenzel, "Real-time GI with Photon Mapping" — 2019 |
+| Brown-Conrady distortion | Brown (1966) / OpenCV `calib3d` / o3de Atom `LensDistortionPass` |
+| Local Exposure | Reinhard (2005), "Dynamic Range Reduction Inspired by Photographic Exposure"; o3de Atom LocalExposurePass |
