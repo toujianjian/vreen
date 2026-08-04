@@ -140,6 +140,30 @@ export {
   SH2_COEFF_COUNT,
   SH2_RGB_FLOATS,
 } from './GlobalIllumination';
+// DDGIVolume — 动态漫反射全局光照(3D 探针网格 + SH2 + 时序累积 + 遮挡测试)。
+// 适配 UE5 Lumen IrradianceField / o3de Atom DiffuseGlobalIllumination。
+// 纯逻辑,无 GL 依赖,可在 Node/无头环境测试。
+export {
+  DDGIVolume,
+  type DDGIVolumeOptions,
+  type IVec3 as DDGIVec3,
+  packProbeIndex,
+  unpackProbeIndex,
+  computeTrilinearWeights,
+  blendProbeSH,
+  probeOcclusionWeight,
+} from './DDGIVolume';
+// DDGIDebugVisualizer — DDGI 探针网格调试可视化(位置/有效性/SH2 辐照度/遮挡深度)。
+// 把 DDGIVolume 内部状态绘制到 DebugRenderer,对标 o3de Atom DebugDraw / UE5 Lumen.Visualize。
+// 纯逻辑,无 GL 依赖,复用 DebugRenderer 数据 API。
+export {
+  DDGIDebugVisualizer,
+  type DDGIDebugOptions,
+  heatColor,
+  tonemapColor,
+  probeIrradianceColor,
+  probeValidityColor,
+} from './DDGIDebugVisualizer';
 // CPU 侧运动模糊 Pass(基于 Float32Array 速度缓冲,不依赖 WebGL)。
 // 与 PostProcess/MotionBlurPass.ts(GPU 纹理版)互补:本类用于离线 / 无头环境。
 export {

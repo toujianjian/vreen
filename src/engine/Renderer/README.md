@@ -1358,6 +1358,150 @@ function updateDDGI() {
 
 ---
 
+### `DDGIDebugVisualizer` (`DDGIDebugVisualizer.ts`)
+
+> Path: `src/engine/Renderer/DDGIDebugVisualizer.ts`
+>
+> Debug visualization for the `DDGIVolume` probe grid. Paints probe
+> positions, validity, SH2 irradiance, and occlusion depth into the
+> engine `DebugRenderer` so artists and engineers can inspect probe
+> layout and GI quality at a glance — the same role o3de Atom's
+> `DiffuseGlobalIllumination` DebugDraw and UE5 Lumen's
+> `Lumen.Visualize ProbeView` play in their respective toolchains.
+
+**Class**: `DDGIDebugVisualizer` (independent; consumes `DDGIVolume` + `DebugRenderer`)
+**Adapted from**: o3de Atom `DiffuseGlobalIllumination` DebugDraw · UE5 Lumen `Lumen.Visualize`
+
+#### Why a dedicated visualizer?
+
+A 3D probe grid is opaque by default — you cannot tell from the API
+whether probes are placed correctly, whether they have been updated, or
+whether the SH2 irradiance they hold is plausible. A misconfigured
+`DDGIVolume` (wrong `origin`, too-small `cellSize`, probes inside
+geometry) silently produces wrong or zero indirect light. The
+visualizer turns that invisible state into a colored point/sphere field
+that exposes these faults immediately. This is standard equipment in
+production engines; **soup3D has no GI of any kind, so no GI debugging
+either**.
+
+#### Visualization modes (combinable)
+
+| Mode | Option | What it draws | Cost |
+|------|--------|---------------|------|
+| Bounds | `showBounds` (default `true`) | 12-edge wireframe of the volume AABB (`origin` → `maxCorner`) | 12 lines |
+| Probes | `showProbes` (default `true`) | One point per probe. Color = SH2 irradiance sampled at `irradianceNormal` (Reinhard-tonemapped); invalid probes are red | N points |
+| Irradiance | `showIrradiance` (default `false`) | A small wireframe sphere per valid probe, dyed the same color as the probe point — produces a "colored ball field" showing the spatial distribution of indirect light | N_valid × 24 lines (8-segment × 3 rings) |
+| Depth rays | `showDepthRays` (default `false`) | A ray from each valid probe along `irradianceNormal`, length = `probeDepths[i]` (the probe's mean hit distance) — verifies the occlusion data that drives `probeOcclusionWeight` | N_valid_with_depth lines |
+| Grid | `showGrid` (default `false`) | Line segments connecting each probe to its +X / +Y / +Z neighbors — renders the 3D lattice | ~3·N lines |
+
+#### Pure helper functions (headless-testable)
+
+The color math is factored into pure functions so it can be unit-tested
+in Node without any WebGL context:
+
+| Function | Signature | Role |
+|----------|-----------|------|
+| `heatColor` | `(t: number) → DebugColor` | 5-stop heat ramp (deep blue → cyan → green → yellow → red). Clamps `t` to `[0,1]`. |
+| `tonemapColor` | `(rgb, exposure?) → DebugColor` | Reinhard tonemap `x/(1+x)` after exposure scaling; clamps to `[0,1]`. Maps HDR irradiance to display color. |
+| `probeIrradianceColor` | `(volume, probeIdx, normal, exposure?) → DebugColor` | Evaluates a probe's SH2 at `normal`, tonemaps, returns `[0,1]` RGB. Invalid probe → red `[1, 0.15, 0.15]`; out-of-range index → black. |
+| `probeValidityColor` | `(valid: boolean) → DebugColor` | Green `[0.2, 1, 0.5]` for valid, red for invalid. |
+
+#### Options (`DDGIDebugOptions`)
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `showBounds` | `boolean` | `true` | Draw the volume AABB wireframe. |
+| `showProbes` | `boolean` | `true` | Draw one point per probe. |
+| `showIrradiance` | `boolean` | `false` | Draw a wireframe irradiance sphere per valid probe. |
+| `showDepthRays` | `boolean` | `false` | Draw occlusion-depth rays. |
+| `showGrid` | `boolean` | `false` | Draw the probe lattice grid lines. |
+| `probeSize` | `number` | `6` | Probe point size in pixels. |
+| `irradianceRadius` | `number \| null` | `null` | Sphere radius (world units). `null` = auto (`min(cellSize) × 0.18`). |
+| `irradianceNormal` | `Vector3` | `(0,1,0)` | Direction used to sample SH2 for coloring / depth rays. Cloned on assignment. |
+| `exposure` | `number` | `1` | Exposure multiplier applied before Reinhard tonemap. |
+| `boundsColor` | `DebugColor` | cyan | AABB wireframe color. |
+| `gridColor` | `DebugColor` | dark cyan | Grid line color. |
+| `depthRayColor` | `DebugColor` | yellow | Depth ray color. |
+| `duration` | `number` | `0` | DebugRenderer lifetime (seconds). `0` = single frame (re-invoke each frame); `Infinity` = permanent. |
+
+#### API
+
+```ts
+class DDGIDebugVisualizer {
+  constructor(opts?: DDGIDebugOptions): DDGIDebugVisualizer;
+
+  /** Bulk-update options. */
+  setOptions(opts: Partial<DDGIDebugOptions>): void;
+
+  /** Draw the volume's debug state into a DebugRenderer. Read-only on the volume. */
+  visualize(volume: DDGIVolume, debug: DebugRenderer): void;
+}
+```
+
+#### Usage
+
+```ts
+import { DDGIVolume, DDGIDebugVisualizer } from '@vreen/engine';
+import { DebugRenderer } from '@vreen/engine/Helpers';
+
+const ddgi = new DDGIVolume({
+  origin: new Vector3(-20, 0, -20),
+  probeCount: { x: 8, y: 4, z: 8 },
+  cellSize: new Vector3(5, 3, 5),
+});
+// ... update probes each frame ...
+
+const debug = new DebugRenderer();
+const viz = new DDGIDebugVisualizer({
+  showIrradiance: true,   // colored ball field
+  showGrid: true,         // probe lattice
+  exposure: 1.5,          // brighten for display
+});
+
+// Each frame:
+viz.visualize(ddgi, debug);
+// upload debug.getMeshData() to GPU line/point buffers, then:
+debug.update(dt);
+```
+
+#### Invariants
+
+- **Read-only on the volume** — `visualize()` never mutates `DDGIVolume`
+  state (probes / depths / validity unchanged). Verified by tests.
+- **No WebGL dependency** — all draws go through `DebugRenderer`'s data
+  API, so the visualizer runs in Node/headless tests and is
+  backend-agnostic (custom WebGL2 or Three.js).
+- **Respects `DebugRenderer.enabled`** — when the debug renderer is
+  disabled, `visualize()` is a no-op (no allocations, no draws).
+- **Invalid probes are always visible** — drawn as red points so a
+  never-updated region is obvious, not hidden.
+- **`duration` propagates** — every drawn primitive receives the
+  configured lifetime, so a single `visualize()` call with
+  `duration: Infinity` draws a persistent overlay.
+
+#### Test coverage (`DDGIDebugVisualizer.test.ts`, 35 tests)
+
+- **heatColor (5)**: endpoints, clamping, `[0,1]` range, green midpoint.
+- **tonemapColor (5)**: zero, Reinhard `x/(1+x)`, bright clamp, exposure
+  scaling, negative exposure.
+- **probeIrradianceColor (5)**: invalid → red, valid → `[0,1]`,
+  out-of-range → black, valid ≠ invalid.
+- **probeValidityColor (2)**: true/false colors.
+- **construction (3)**: defaults, full options, `irradianceNormal` clone.
+- **setOptions (2)**: partial update, normal clone.
+- **visualize (15)**: bounds on/off, one-point-per-probe, invalid probes
+  drawn red, irradiance spheres, depth rays, grid lines, combined modes,
+  no volume mutation, `enabled=false` no-op, duration propagation,
+  auto vs explicit sphere radius.
+
+#### References
+
+- o3de Atom `DiffuseGlobalIllumination` DebugDraw — probe volume debug overlay
+- UE5 Lumen `Lumen.Visualize ProbeView` — irradiance probe visualization
+- Zinke et al. 2020, "Dynamic Diffuse GI with Ray-Traced Irradiance Fields" — the DDGI algorithm this visualizes
+
+---
+
 ### `PathTracer` (`PathTracer.ts`)
 
 CPU-simplified path tracer for reference / validation rendering. **Not a
