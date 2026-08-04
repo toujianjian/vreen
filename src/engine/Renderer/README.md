@@ -2018,6 +2018,76 @@ uniform or instance attribute.
   ints so channel 31 (`0x80000000`) is positive, matching WebGL2
   `uint` uniforms.
 
+### Hierarchical Z-Buffer Occlusion Culling (`HierarchicalZBuffer.ts`)
+
+**Hierarchical Z-Buffer (HZB)** occlusion culling, adapted from o3de
+Atom's `MaskedOcclusionCulling` / `OcclusionCullingPlane` and UE5's HZB
+occlusion system. Builds a mip pyramid from the depth buffer where each
+level stores the **maximum** depth of its 2×2 children. For each object's
+AABB, projects it to screen space, selects the appropriate mip level
+based on the screen-space bounding rectangle size, and tests if the
+object's nearest depth is farther than the HZB depth at that position.
+
+This is a production-grade feature that UE5, o3de, and Unity all ship.
+soup3D has no occlusion culling — every in-frustum object is submitted
+for drawing regardless of whether it's behind a wall.
+
+**Algorithm (Greene 1993):**
+
+| Stage | Function | Description |
+|-------|----------|-------------|
+| 1. HZB Build | `buildHZB(depthBuffer, w, h)` | Creates mip pyramid. Each level stores `max(d00, d01, d10, d11)` of its 2×2 children. Coarsest level = 1×1. |
+| 2. Projection | `transformPoint(viewProj, corner)` | Transforms 8 AABB corners to clip space → NDC → screen pixels. Finds min depth and screen bounding rect. |
+| 3. Mip Selection | `log2(maxScreenDim) + mipBias` | Selects mip level where one texel covers approximately the object's screen rect. Larger objects sample finer mips; smaller objects sample coarser mips. |
+| 4. Depth Test | `objectMinDepth - bias > hzbDepth` | If the object's nearest depth (minus conservative bias) is greater than the HZB depth at the sampled position, the object is occluded. |
+
+**Conservative guarantees:**
+- `w <= 0` corners (behind camera) → not occluded (safe fallback).
+- Screen rect smaller than `minScreenSize` → not occluded (avoids
+  false positives for distant tiny objects).
+- `conservativeBias` subtracts from object depth, making it "closer"
+  and harder to cull — reduces false positives at the cost of some
+  missed culling opportunities.
+- HZB stores **max** depth (not average) → if an object is behind the
+  farthest surface at that position, it's definitely occluded.
+
+**Use cases:**
+
+| Scenario | Benefit |
+|----------|---------|
+| Indoor scene | Walls cull all objects behind them |
+| Open world | Mountains/buildings cull objects behind them |
+| GPU-driven rendering | Batch cull thousands of objects before draw call submission |
+| Forest/vegetation | Tree trunks cull objects behind them |
+
+```ts
+import { buildHZB, occlusionCull, makeOccluderDepth } from '@vreen/engine/renderer';
+
+// Build HZB from previous frame's depth buffer
+const depth = makeOccluderDepth(1920, 1080, 0.1, 0.9, 400, 200, 800, 600);
+const hzb = buildHZB(depth, 1920, 1080);
+
+// Cull objects
+const result = occlusionCull(hzb, objects, viewProjMatrix, 1920, 1080, {
+  conservativeBias: 0.1,
+  minScreenSize: 2,
+});
+// result.visible → objects to render
+// result.occluded → objects skipped
+// result.stats.cullRatio → fraction culled
+```
+
+**Design choices:**
+- **Pure CPU Float32Array** — no WebGL dependency, testable in
+  Node/headless environments (same pattern as PCSSSampler,
+  MotionBlurPass, LensFlare).
+- **Max-depth mip reduction** — conservative (never falsely culls a
+  visible object); matches UE5/o3de convention.
+- **Single-texel sample** — samples HZB at the object's screen-space
+  center. Future extension: multi-tap sampling for tighter culling.
+- **GLSL chunk** (`HZB_GLSL`) — provides `hzbReduceMax2x2` and
+  `hzbIsOccluded` for future GPU-side integration.
+
 ---
 
 **Why MRT + GBuffer?** Forward rendering (the current main path) shades

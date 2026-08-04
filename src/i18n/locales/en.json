@@ -1123,6 +1123,11 @@
         "title": "Lighting Channels (32-bit Mask, o3de/Unreal)",
         "desc": "Lighting channels adapted from o3de Atom LightingChannelConfiguration. Each light and each renderable carries a 32-bit channel mask; at render time a light only contributes to a fragment if (lightMask & objectMask) != 0. Default = ALL channels (backward compatible — every light lights every object). Use cases: player flashlight that only lights the player (not the environment), muzzle flash that lights enemies + nearby props (not the whole map), UI/emissive panels that don't pollute character lighting, indoor lights that don't leak outdoors, trigger-zone lights. o3de ships 5 channels; VREEN extends to 32 (Unreal-aligned). LightingChannelConfiguration class with fluent API (setChannel/enableChannel/disableChannel/setSingleChannel/reset/clear/affects/toJSON/fromJSON/clone) + pure helpers (channelMask/channelsMask/getChannel/setChannel/affects/countChannels/listChannels) + GLSL chunk (lightingChannelAffects). 68 unit tests.",
         "advantage": "soup3D has no lighting channels"
+      },
+      "hzbOcclusion": {
+        "title": "Hierarchical Z-Buffer Occlusion Culling (o3de/UE5)",
+        "desc": "HZB occlusion culling adapted from o3de Atom MaskedOcclusionCulling / OcclusionCullingPlane and UE5 HZB. Builds a mip pyramid from the depth buffer where each level stores the MAX depth of its 2×2 children (conservative — never falsely culls visible objects). For each object's AABB, projects 8 corners to screen space, selects mip level based on screen rect size (log2), samples HZB depth at rect center, and culls if object's nearest depth > HZB depth. Greene 1993 algorithm. Configurable: conservativeBias (reduces false positives), mipBias, minScreenSize (skips tiny objects). Pure CPU Float32Array (no WebGL dependency, testable in Node/headless). Complements frustum culling — culls in-frustum objects behind walls/mountains. Use cases: indoor scenes (walls cull behind), open world (terrain culls behind), GPU-driven rendering (batch cull thousands of objects). GLSL chunk (hzbReduceMax2x2 / hzbIsOccluded) for future GPU integration. 35 unit tests.",
+        "advantage": "soup3D has no occlusion culling"
       }
     }
   }

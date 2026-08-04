@@ -745,4 +745,30 @@ export {
   LIGHTING_CHANNEL_GLSL,
   type LightingChannelMask,
 } from './LightingChannelMask';
+// HierarchicalZBuffer — 层次化 Z 缓冲遮挡剔除(适配自 o3de Atom / UE5 HZB)。
+// 把上一帧深度缓冲构建成 mip 金字塔(每级存最大深度),
+// 对每个物体 AABB 投影到屏幕空间,选择合适 mip 级采样,
+// 物体最近深度 > HZB 深度 → 被遮挡,可跳过绘制。
+// 用途:GPU 驱动渲染海量物体批量遮挡剔除、室内场景墙后物体剔除、开放世界山体后物体剔除。
+// 与视锥剔除互补:视锥内但被遮挡的物体也被跳过。
+// o3de 用 MaskedOcclusionCulling(Intel SSE/AVX CPU 光栅化器)+ OcclusionCullingPlane(平面遮挡);
+// VREEN 用纯 CPU Float32Array mip 金字塔,无 WebGL 依赖,可在 Node/无头环境测试。
+// soup3D 无遮挡剔除,所有视锥内物体都提交绘制。
+export {
+  buildHZB,
+  isOccluded,
+  occlusionCull,
+  makeFlatDepth,
+  makeOccluderDepth,
+  identityMatrix,
+  orthoMatrix,
+  HZB_GLSL,
+  type HZB,
+  type HZBMipLevel,
+  type Occludee,
+  type HZBCullResult,
+  type HZBCullStats,
+  type OcclusionTestOptions,
+  type Vec3 as HZBVec3,
+} from './HierarchicalZBuffer';
 

@@ -1123,6 +1123,11 @@
         "title": "ライティングチャネル(32 ビットマスク、o3de/Unreal)",
         "desc": "o3de Atom LightingChannelConfiguration から適応したライティングチャネル。各ライトと各レンダリング対象オブジェクトは 32 ビットチャネルマスクを保持し、レンダー時に (lightMask & objectMask) != 0 の場合のみライトが寄与する。デフォルト = 全チャネル(後方互換、全ライトが全オブジェクトを照らす)。用途:プレイヤー懐中電灯がプレイヤーのみを照らす(環境を除く)、マズルフラッシュが敵 + 近接オブジェクトのみを照らす(マップ全体を除く)、UI/発光パネルがキャラクター照明を汚染しない、屋内ライトが屋外に漏れない、トリガーゾーンライト。o3de は 5 チャネル、VREEN は 32 チャネルに拡張(Unreal 準拠)。LightingChannelConfiguration クラスは流暢な API(setChannel/enableChannel/disableChannel/setSingleChannel/reset/clear/affects/toJSON/fromJSON/clone)+ 純粋ヘルパー(channelMask/channelsMask/getChannel/setChannel/affects/countChannels/listChannels)+ GLSL チャンク(lightingChannelAffects)を提供。68 個のユニットテスト。",
         "advantage": "soup3D はライティングチャネル概念なし"
+      },
+      "hzbOcclusion": {
+        "title": "階層化 Z バッファオクルージョンカリング(o3de/UE5)",
+        "desc": "o3de Atom MaskedOcclusionCulling / OcclusionCullingPlane および UE5 HZB から適応した HZB オクルージョンカリング。深度バッファから mip ピラミッドを構築し、各レベルは 2×2 子テクセルの最大深度を保存(保守的 — 可視オブジェクトを誤ってカリングしない)。各オブジェクト AABB の 8 コーナーをスクリーン空間に投影、スクリーン矩形サイズに基づき mip レベルを選択(log2)、矩形中心で HZB 深度をサンプリング、オブジェクトの最近深度 > HZB 深度ならカリング。Greene 1993 アルゴリズム。設定可能:conservativeBias(誤カリング削減)、mipBias、minScreenSize(小オブジェクトスキップ)。純粋 CPU Float32Array(WebGL 非依存、Node/ヘッドレス環境でテスト可能)。視錐台カリングと相補 — 視錐台内だが壁/山の後ろのオブジェクトをカリング。用途:屋内シーン(壁の後ろカリング)、オープンワールド(地形の後ろカリング)、GPU 駆動レンダリング(数千オブジェクト一括カリング)。GLSL チャンク(hzbReduceMax2x2 / hzbIsOccluded)で将来の GPU 統合に対応。35 個のユニットテスト。",
+        "advantage": "soup3D はオクルージョンカリングなし"
       }
     }
   }

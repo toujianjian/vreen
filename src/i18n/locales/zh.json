@@ -1123,6 +1123,11 @@
         "title": "灯光通道(32 位掩码,o3de/Unreal)",
         "desc": "灯光通道,适配自 o3de Atom LightingChannelConfiguration。每盏灯与每个可渲染物体各持一个 32 位通道掩码;渲染时仅当 (lightMask & objectMask) != 0 时该灯才照亮该物体。默认 = 全通道(向后兼容,所有灯照亮所有物体)。用途:玩家手电筒只照玩家不照环境、枪口闪光只照敌人与近物不照整张地图、UI/自发光面板不污染角色光照、室内灯不漏到室外、触发器灯。o3de 提供 5 通道,VREEN 扩展为 32 通道(与 Unreal 对齐)。LightingChannelConfiguration 类提供流畅 API(setChannel/enableChannel/disableChannel/setSingleChannel/reset/clear/affects/toJSON/fromJSON/clone)+ 纯函数助手(channelMask/channelsMask/getChannel/setChannel/affects/countChannels/listChannels)+ GLSL chunk(lightingChannelAffects)。68 个单元测试。",
         "advantage": "soup3D 无灯光通道概念"
+      },
+      "hzbOcclusion": {
+        "title": "层次化 Z 缓冲遮挡剔除(o3de/UE5)",
+        "desc": "HZB 遮挡剔除,适配自 o3de Atom MaskedOcclusionCulling / OcclusionCullingPlane 与 UE5 HZB。从深度缓冲构建 mip 金字塔,每级存储 2×2 子 texel 的最大深度(保守 — 永不误剔除可见物体)。对每个物体 AABB 的 8 个角点投影到屏幕空间,根据屏幕矩形大小选择 mip 级(log2),在矩形中心采样 HZB 深度,物体最近深度 > HZB 深度则被剔除。Greene 1993 算法。可配置:conservativeBias(减少误剔除)、mipBias、minScreenSize(跳过小物体)。纯 CPU Float32Array(无 WebGL 依赖,可在 Node/无头环境测试)。与视锥剔除互补 — 剔除视锥内但被墙/山体遮挡的物体。用途:室内场景(墙后剔除)、开放世界(地形后剔除)、GPU 驱动渲染(批量剔除数千物体)。GLSL chunk(hzbReduceMax2x2 / hzbIsOccluded)供未来 GPU 集成。35 个单元测试。",
+        "advantage": "soup3D 无遮挡剔除"
       }
     }
   }

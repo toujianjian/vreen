@@ -1123,6 +1123,11 @@
         "title": "라이팅 채널(32비트 마스크, o3de/Unreal)",
         "desc": "o3de Atom LightingChannelConfiguration에서 적응한 라이팅 채널. 각 라이트와 각 렌더링 대상 오브젝트는 32비트 채널 마스크를 보유하며, 렌더 시 (lightMask & objectMask) != 0인 경우에만 라이트가 기여함. 기본값 = 전체 채널(후방 호환, 모든 라이트가 모든 오브젝트를 비춤). 용도:플레이어 손전등이 플레이어만 비춤(환경 제외), 총구 섬광이 적 + 주변 오브젝트만 비춤(전체 맵 제외), UI/발광 패널이 캐릭터 조명을 오염시키지 않음, 실내 라이트가 실외로 누출되지 않음, 트리거 존 라이트. o3de는 5채널, VREEN은 32채널로 확장(Unreal 준거). LightingChannelConfiguration 클래스는 유창한 API(setChannel/enableChannel/disableChannel/setSingleChannel/reset/clear/affects/toJSON/fromJSON/clone)+ 순수 헬퍼(channelMask/channelsMask/getChannel/setChannel/affects/countChannels/listChannels)+ GLSL 청크(lightingChannelAffects)를 제공. 68개 유닛 테스트.",
         "advantage": "soup3D는 라이팅 채널 개념 없음"
+      },
+      "hzbOcclusion": {
+        "title": "계층적 Z 버퍼 오클루전 컬링(o3de/UE5)",
+        "desc": "o3de Atom MaskedOcclusionCulling / OcclusionCullingPlane 및 UE5 HZB에서 적응한 HZB 오클루전 컬링. 깊이 버퍼에서 mip 피라미드를 구축하고 각 레벨은 2×2 자식 텍셀의 최대 깊이를 저장(보수적 — 가시 오브젝트를 잘못 컬링하지 않음). 각 오브젝트 AABB의 8 코너를 스크린 공간에 투영, 스크린 사각형 크기에 기반해 mip 레벨 선택(log2), 사각형 중심에서 HZB 깊이 샘플링, 오브젝트 최근 깊이 > HZB 깊이면 컬링. Greene 1993 알고리즘. 설정 가능:conservativeBias(오탐 감소), mipBias, minScreenSize(작은 오브젝트 스킵). 순수 CPU Float32Array(WebGL 비의존, Node/헤드리스 환경에서 테스트 가능). 절두체 컬링과 상보 — 절두체 내이지만 벽/산 뒤의 오브젝트를 컬링. 용도:실내 씬(벽 뒤 컬링), 오픈 월드(지형 뒤 컬링), GPU 구동 렌더링(수천 오브젝트 일괄 컬링). GLSL 청크(hzbReduceMax2x2 / hzbIsOccluded)로 향후 GPU 통합 대응. 35개 유닛 테스트.",
+        "advantage": "soup3D는 오클루전 컬링 없음"
       }
     }
   }
