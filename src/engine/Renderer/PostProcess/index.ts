@@ -36,6 +36,7 @@
 //   - ScreenSpaceRefractionPass : 屏幕空间折射(任意透明表面 + IOR + 色散 + Beer-Lambert 吸收)
 //   - CloudShadowPass : 体积云阴影(沿太阳方向 ray-march 3D 噪声场,Beer-Lambert 透射率压暗场景)
 //   - MotionBlurEnhancedPass : 深度感知运动模糊(邻域速度钳制 + 深度拒绝 + Halton 抖动)
+//   - ScreenSpaceDecalPass : 屏幕空间延迟贴花(GBuffer 深度/法线重建世界位置 + 体积/角度剔除 + 4 混合模式 + ping-pong 链式)
 //
 // 注意:
 //   - 前 7 个 Pass 都实现 RenderPass 接口,可直接加入 PostProcessingPipeline。
@@ -112,3 +113,15 @@ export {
   MotionBlurEnhancedPass,
   type MotionBlurEnhancedOptions,
 } from './MotionBlurEnhancedPass';
+export {
+  ScreenSpaceDecalPass,
+  type ScreenSpaceDecalOptions,
+  type Decal,
+  DecalBlendMode,
+  projectToDecalLocal,
+  decalAnglePass,
+  decalEdgeFade,
+  decalBlend,
+  buildDecalMatrix,
+  transformNormalToView,
+} from './ScreenSpaceDecalPass';

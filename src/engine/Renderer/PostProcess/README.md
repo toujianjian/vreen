@@ -4580,7 +4580,286 @@ field that renders the sky cloud also darkens the ground beneath it.
 
 ---
 
+## ScreenSpaceDecalPass (`ScreenSpaceDecalPass.ts`)
 
+**Screen-Space Deferred Decal** — projects a decal texture onto arbitrary geometry described by the GBuffer (depth + normal), with volume culling, angle culling (prevent wall-bleed), edge fade, and four blend modes. Internal ping-pong double-buffer supports chained multi-decal application without feedback loops.
+
+This is the GPU screen-space counterpart to `DecalGeometry` (CPU geometry-based, one mesh per decal). A single fullscreen draw covers any concave surface; the per-pixel normal test automatically rejects pixels where the surface faces away from the decal.
+
+### Why this Pass exists
+
+| Use case | What it enables |
+|----------|-----------------|
+| Bullet holes, scorch marks, blood splatter | Drop a decal on any hit surface without rebuilding geometry |
+| Tire tracks, footprints, wet patches | Drag a decal chain along a moving contact point |
+| Graffiti, neon tags, projected logos | Additive / Normal blend modes for emissive overlays |
+| Moss, grime, dampness, weathering | Multiply blend darkens only the surface under the decal |
+| Snow accumulation on sloped surfaces | Angle threshold rejects steep faces (e.g. > 60°) so snow only lands on top |
+
+### Architecture
+
+```
+                   ┌────────────────┐
+   colorTexture ─► │                │
+   depthTexture ─► │  ScreenSpace   │ ─► outTexture (ping-pong A/B)
+  normalTexture ─► │  DecalPass     │
+   decal.texture ► │                │
+                   └────────────────┘
+                          ▲
+                          │ uniforms:
+                          │   u_viewProjInv (mat4)
+                          │   u_decalMatrix (mat4, world→local)
+                          │   u_decalNormalView (vec3)
+                          │   u_angleThreshold (float)
+                          │   u_blendMode (int 0..3)
+                          │   u_opacity (float)
+```
+
+The pass owns **two output textures + two FBOs** (ping-pong), one VAO + one buffer for the fullscreen triangle, and one `ShaderProgram`. `_pickOutput(input)` selects whichever of `texA`/`texB` differs from the input — consecutive `apply()` calls alternate output, avoiding read-write feedback on the same texture.
+
+### Algorithm (per pixel, mirrors `DECAL_FRAG` 1:1)
+
+```
+1. Read sceneColor, depth, normal from GBuffer.
+2. If depth >= 1.0 (skybox / far plane) → write sceneColor unchanged, return.
+3. Reconstruct world position:
+     clip = vec4(uv*2-1, depth*2-1, 1)
+     world = u_viewProjInv * clip
+     worldPos = world.xyz / world.w
+4. Transform world → decal local space:
+     local = u_decalMatrix * vec4(worldPos, 1.0)
+5. Volume cull: if max(|local.x|, |local.y|, |local.z|) > 0.5 → outside box, return.
+6. Decode view-space normal: n = texture(normalMap, uv).rgb * 2 - 1
+7. Angle cull: if dot(n, u_decalNormalView) < u_angleThreshold → reject (防跨墙渗漏).
+8. Compute decal UV: decalUV = local.xy + 0.5
+9. Sample decal texture: decalColor = texture(decalMap, decalUV)
+10. Modulate alpha: decalColor.a *= u_opacity
+11. Edge fade: decalColor.a *= smoothstep(0.5, 0.45, maxComp)
+12. Blend by u_blendMode:
+      Alpha     : result = mix(sceneColor, decal.rgb, decal.a)
+      Multiply  : result = sceneColor * mix(white, decal.rgb, decal.a)
+      Additive  : result = sceneColor + decal.rgb * decal.a
+      Normal    : result = decal.a > 0 ? decal.rgb : sceneColor
+13. Write result.
+```
+
+### Blend modes
+
+| Mode | Enum | Formula | Typical use |
+|------|------|---------|-------------|
+| Alpha     | `DecalBlendMode.Alpha = 0`    | `mix(scene, decal.rgb, decal.a)` | Bullet holes, blood, graffiti (default) |
+| Multiply  | `DecalBlendMode.Multiply = 1` | `scene * mix(white, decal.rgb, decal.a)` | Moss, dampness, shadow decals |
+| Additive  | `DecalBlendMode.Additive = 2` | `scene + decal.rgb * decal.a` | Neon tags, holograms, light leaks |
+| Normal    | `DecalBlendMode.Normal = 3`   | `decal.a > 0 ? decal.rgb : scene` | Full-replacement (opaque decals) |
+
+### Culling
+
+**Volume cull** — After transforming world position into the decal's local space (a unit cube `[-0.5, 0.5]³`), any pixel whose `max(|x|, |y|, |z|) > 0.5` is rejected. This confines the decal to a 3D box, so it does not "leak" onto geometry that happens to project into the same screen UV but lies outside the box (e.g. a wall behind the target surface).
+
+**Angle cull** — `dot(surfaceNormal, decalNormalView) < u_angleThreshold` rejects pixels whose surface normal diverges too far from the decal's facing direction. This is the primary defense against decals wrapping across edges onto adjacent walls:
+
+| `angleThreshold` | Cosine | Max accepted angle | Use case |
+|------------------|--------|--------------------|----------|
+| `0.0`            | 0      | 90°                | No culling (perpendicular accepted, opposite rejected) |
+| `0.5` (default)  | 0.5    | 60°                | General purpose — flat to moderately sloped |
+| `0.7071`         | √2/2   | 45°                | Tighter, only nearly-flat surfaces |
+| `0.866`          | √3/2   | 30°                | Snow on tops only |
+| `1.0`            | 1      | 0° (exactly parallel) | Debug / strict |
+
+**Edge fade** — `smoothstep(0.5, 0.45, maxComp)` smoothly attenuates alpha from 1 (at `maxComp ≤ 0.45`) to 0 (at `maxComp ≥ 0.5`), preventing hard rectangular borders at the box boundary.
+
+### Options
+
+```ts
+export interface ScreenSpaceDecalOptions {
+  defaultBlendMode?: DecalBlendMode;       // default: Alpha (0)
+  defaultOpacity?: number;                 // default: 1
+  defaultAngleThreshold?: number;          // default: 0.5 (~60°)
+  enabled?: boolean;                       // default: true
+}
+
+export interface Decal {
+  texture: WebGLTexture;                   // decal texture (uploaded)
+  decalMatrix: Float32Array | number[];    // world→local 4×4 (column-major)
+  decalNormalView: [x, y, z];              // decal +Z direction in view space
+  blendMode?: DecalBlendMode;              // overrides defaultBlendMode
+  opacity?: number;                        // overrides defaultOpacity
+  angleThreshold?: number;                 // overrides defaultAngleThreshold
+}
+```
+
+### API
+
+```ts
+class ScreenSpaceDecalPass {
+  readonly name = 'screenspacedecal';
+
+  defaultBlendMode: DecalBlendMode;
+  defaultOpacity: number;
+  defaultAngleThreshold: number;
+  enabled: boolean;
+
+  constructor(opts?: ScreenSpaceDecalOptions);
+
+  apply(
+    gl: WebGL2RenderingContext,
+    colorTexture: WebGLTexture,
+    depthTexture: WebGLTexture,
+    normalTexture: WebGLTexture,
+    decal: Decal,
+    viewProjInv: Float32Array | number[],
+  ): WebGLTexture;                          // output texture (differs from input)
+
+  setDirty(): void;                         // force rebuild on next apply
+  dispose(gl?: WebGL2RenderingContext): void;
+}
+
+// CPU helper functions (mirror GLSL 1:1, headless-testable)
+function projectToDecalLocal(worldPos: [x,y,z], decalMatrix): { x, y, z, inside };
+function decalAnglePass(surfaceNormal: [x,y,z], decalNormal: [x,y,z], threshold: number): boolean;
+function decalEdgeFade(localX: number, localY: number, localZ: number): number;
+function decalBlend(sceneColor: [r,g,b], decalColor: [r,g,b,a], mode: DecalBlendMode): [r,g,b];
+function buildDecalMatrix(position: [x,y,z], orientation: [x,y,z,w], size: [sx,sy,sz]): Float32Array;
+function transformNormalToView(worldNormal: [x,y,z], viewMatrix): [x,y,z];
+```
+
+### Texture unit bindings
+
+| Unit | Uniform        | Source            |
+|------|----------------|-------------------|
+| 0    | `u_colorMap`   | input scene color |
+| 1    | `u_depthMap`   | GBuffer linear depth [0,1] |
+| 2    | `u_normalMap`  | GBuffer view-space normal (RGB encoded to [0,1]) |
+| 3    | `u_decalMap`   | decal texture      |
+
+### Resource layout
+
+| Resource           | Count | Rebuilt on |
+|--------------------|-------|------------|
+| Output textures (RGBA16F) | 2 (ping-pong A/B) | resolution change / `setDirty()` / `dispose()` |
+| Framebuffers       | 2 (one per output texture) | same as textures |
+| VAO + buffer       | 1 + 1 (fullscreen triangle) | created once, kept across resolution changes |
+| ShaderProgram      | 1 (POST_VERT + DECAL_FRAG)  | created once, disposed with pass |
+
+### Usage — single decal
+
+```ts
+import { ScreenSpaceDecalPass, buildDecalMatrix, transformNormalToView, DecalBlendMode } from '@/engine/Renderer';
+
+const decalPass = new ScreenSpaceDecalPass({ defaultAngleThreshold: 0.5 });
+
+// Build decal data (once per spawn, e.g. on raycast hit)
+const decalMatrix = buildDecalMatrix(
+  [hitPoint.x, hitPoint.y, hitPoint.z],       // world position
+  [quat.x, quat.y, quat.z, quat.w],           // orientation (decal +Z faces surface normal)
+  [0.5, 0.5, 0.5],                            // size: 0.5m × 0.5m × 0.5m box
+);
+const decalNormalView = transformNormalToView(
+  [normal.x, normal.y, normal.z],             // world-space surface normal
+  viewMatrix,                                 // camera view matrix (column-major)
+);
+
+const decal = {
+  texture: bulletHoleTex,
+  decalMatrix,
+  decalNormalView: [decalNormalView[0], decalNormalView[1], decalNormalView[2]],
+  blendMode: DecalBlendMode.Alpha,
+  opacity: 1,
+};
+
+// Each frame, after GBuffer (depth + normal) is populated:
+const out = decalPass.apply(gl, sceneColorTex, depthTex, normalTex, decal, viewProjInv);
+// `out` feeds into the next stage (Tonemapping, etc.)
+```
+
+### Usage — chained multi-decal (ping-pong)
+
+```ts
+// Pass automatically alternates texA/texB output to avoid feedback.
+let color: WebGLTexture = sceneColorTex;
+for (const decal of activeDecals) {
+  color = decalPass.apply(gl, color, depthTex, normalTex, decal, viewProjInv);
+}
+// `color` is the final decal-composited scene color.
+```
+
+### Usage — angle threshold tuning
+
+```ts
+// Snow on tops only: reject surfaces > 30° from up
+const snowPass = new ScreenSpaceDecalPass({ defaultAngleThreshold: 0.866 }); // cos(30°)
+
+// Graffiti on walls: accept up to 60° from wall normal
+const graffitiPass = new ScreenSpaceDecalPass({ defaultAngleThreshold: 0.5 }); // default
+
+// No culling (wrap everywhere): threshold = 0 still rejects opposite-facing
+const wrapPass = new ScreenSpaceDecalPass({ defaultAngleThreshold: 0 });
+```
+
+### vs three.js `DecalGeometry`
+
+| Aspect | three.js `DecalGeometry` | VREEN `ScreenSpaceDecalPass` |
+|--------|--------------------------|------------------------------|
+| Approach | CPU geometry clipping (Sutherland–Hodgman) | GPU screen-space (depth reconstruction) |
+| Per-decal cost | One Mesh + clipped geometry upload | One fullscreen draw call |
+| Multi-decal | N meshes, N draw calls | N fullscreen draws, ping-pong |
+| Geometry rebuild on hit | Yes (reclip target triangles) | No (depth/normal already in GBuffer) |
+| Cross-wall bleed | Geometrically impossible (clipped to triangle) | Prevented by angle + volume cull |
+| Curved / organic surfaces | Works (per-triangle clip) | Works (per-pixel projection) |
+| Skin / skinned meshes | Requires re-skinning the decal mesh | Automatic (depth is post-skin) |
+| Best fit | Few precise decals on known meshes | Many decals on dynamic GBuffer scenes |
+
+### vs soup3D
+
+| Feature | soup3D | VREEN |
+|---------|--------|-------|
+| Decal system | Not implemented | `ScreenSpaceDecalPass` (GPU) + `DecalSystem` (CPU lifecycle) + `DecalGeometry` (geometric) |
+| Screen-space deferred decals | — | Yes, GBuffer-driven |
+| Blend modes | — | Alpha / Multiply / Additive / Normal |
+| Angle culling (anti-bleed) | — | Configurable cosine threshold |
+| Edge fade | — | `smoothstep`-based |
+| Multi-decal chaining | — | Ping-pong double buffer |
+| CPU helpers (testable) | — | 6 pure functions mirroring GLSL 1:1 |
+| Parity target | — | UE5 Deferred Decals / o3de Atom Decal Pass |
+
+### Design Notes
+
+- **Why ping-pong?** Reading and writing the same texture in a single draw call is undefined behavior in WebGL2 (feedback loop). Two output textures alternating per `apply()` call cleanly break the cycle. The output selection is fully automatic: `_pickOutput(input)` returns whichever of `texA`/`texB` is not the input.
+- **Why `RGBA16F` for outputs?** Matches the upstream pipeline convention (HDR-compatible). Decal blending on LDR targets would clip highlights; HDR preserves them for downstream tonemapping.
+- **Why linear depth `[0,1]`?** Reconstructing world position from non-linear depth requires expensive `1/z` math; linear depth makes the reconstruction a single matrix multiply. The pass expects the same linear depth format as the rest of the VREEN GBuffer.
+- **Normal encoding.** View-space normals are encoded to `[0,1]` (flat surface = `(0.5, 0.5, 1.0)`) to fit in an 8-bit RGB target. The shader decodes via `n = rgb * 2 - 1`.
+- **Quaternion convention.** `buildDecalMatrix` uses the standard Hamilton convention (`v' = R * v`). The rotation matrix is the standard column-major form:
+  ```
+  R = [ 1-2(y²+z²)   2(xy-zw)    2(xz+yw)  ]
+      [ 2(xy+zw)     1-2(x²+z²)  2(yz-xw)  ]
+      [ 2(xz-yw)     2(yz+xw)    1-2(x²+y²) ]
+  ```
+- **Why `>=` instead of `>` for angle threshold?** Matches the GLSL `< threshold → discard` convention: a pixel passes when `dot >= threshold`. At `threshold = 0`, perpendicular surfaces (dot = 0) pass; opposite surfaces (dot < 0) are still rejected. At `threshold = 1`, only exactly parallel surfaces pass.
+- **`transformNormalToView` uses `mat3(view)` (not `transpose(inverse(mat3(view)))`).** View matrices are rotation+translation only (no scaling), so the normal matrix equals the upper-left 3×3 of the view matrix. The formula is the standard column-major matrix-vector product:
+  ```
+  result.x = m[0]*nx + m[4]*ny + m[8]*nz
+  result.y = m[1]*nx + m[5]*ny + m[9]*nz
+  result.z = m[2]*nx + m[6]*ny + m[10]*nz
+  ```
+
+### Test coverage (`ScreenSpaceDecalPass.test.ts`, 77 tests)
+
+| Suite | Tests | Coverage |
+|-------|-------|----------|
+| `projectToDecalLocal` | 10 | origin / boundary inclusive / outside / translated matrix / scaled matrix / perspective divide (w≠1) / w=0 fallback |
+| `decalAnglePass`      | 8  | parallel / perpendicular / opposite / 60° boundary / 61° rejection / threshold=0 semantics / threshold=1 strict / 45° oblique |
+| `decalEdgeFade`       | 6  | center (1) / edge (0) / beyond edge / midpoint smoothstep / below e1 / max-of-abs |
+| `decalBlend`          | 9  | Alpha (mix) / Alpha a=0 / Alpha a=1 / Multiply / Multiply a=0 / Additive / Additive a=0 / Normal a>0 / Normal a=0 |
+| `buildDecalMatrix`    | 8  | identity / size 2 / position offset / inside-box / 90° rotation / combined / Float32Array length 16 / degenerate size clamp |
+| `transformNormalToView` | 3 | identity / 90° Y rotation (+Z → +X) / magnitude preservation |
+| `ScreenSpaceDecalPass construction` | 7 | defaults / options / updatable fields / DecalBlendMode enum |
+| `ScreenSpaceDecalPass apply` | 8 | no-throw / returns texture / first-call allocation (6 textures) / no realloc on same size / rebuild on size change / disabled passthrough / setDirty / multi-draw |
+| `ScreenSpaceDecalPass ping-pong` | 4 | alternating output / 3rd = 1st / no feedback / chain of 5 = 2 distinct textures |
+| `ScreenSpaceDecalPass dispose` | 4 | releases / idempotent / no-gl / rebuild after dispose |
+| `DECAL_FRAG shader source` | 10 | version / samplers / matrices / parameters / world-reconstruction / volume culling / angle culling / 4 blend modes / edge fade / skybox skip |
+| **Total** | **77** | All passing |
+
+---
 
 ## References
 
@@ -4600,3 +4879,4 @@ field that renders the sky cloud also darkens the ground beneath it.
 | Brown-Conrady distortion | Brown (1966) / OpenCV `calib3d` / o3de Atom `LensDistortionPass` |
 | Local Exposure | Reinhard (2005), "Dynamic Range Reduction Inspired by Photographic Exposure"; o3de Atom LocalExposurePass |
 | Cloud Shadows | Schneider & Vosin (SIGGRAPH 2015) — same density field drives sky rendering and ground shadows; UE5 Volumetric Clouds shadow / o3de Atom SkyAtmosphere shadow pass |
+| Deferred Decals | UE5 "Deferred Decals" (DBuffer); o3de Atom `DecalPass` / `DecalComponent`; three.js `DecalGeometry` (CPU geometric, this pass is its screen-space GPU generalization) |

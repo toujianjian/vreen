@@ -5864,5 +5864,122 @@ void main() {
 }
 `;
 
+// ──────────────────────────────────────────────────────────────────────────
+//  Screen-Space Deferred Decal — 屏幕空间延迟贴花
+//  参考: UE5 Deferred Decals / o3de Atom Decal / three.js DecalGeometry (CPU)
+//
+//  把贴花纹理投射到 GBuffer 描述的任意几何表面:由深度重建世界位置 → 变换到
+//  贴花局部空间 → 体积剔除 + 角度剔除 → 采样贴花纹理 → 4 种混合模式。
+//
+//  与 DecalGeometry (CPU 几何式贴花,每张贴花一个 mesh)互补:本 pass 在屏幕
+//  空间工作,单次全屏 draw 即覆盖任意凹凸表面,且自动按表面法线剔除跨墙渗漏。
+// ──────────────────────────────────────────────────────────────────────────
+export const DECAL_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+// 屏幕空间延迟贴花 — 把贴花纹理投射到 GBuffer 描述的几何表面。
+//
+// 输入纹理(均与场景同分辨率):
+//   u_colorMap   : 场景颜色(被贴花混合的背景)
+//   u_depthMap   : 线性深度(视空间,[0,1];1=远裁剪面/skybox)
+//   u_normalMap  : 视空间法线(RGB 编码到 [0,1],flat=0.5,0.5,1.0)
+//   u_decalMap   : 贴花纹理 RGBA
+//
+// 矩阵:
+//   u_viewProjInv : clip→世界(inverse(projection * view))
+//   u_decalMatrix : 世界→贴花局部(平移+旋转+缩放,使贴花盒变为 [-0.5,0.5]³)
+//
+// 贴花参数:
+//   u_decalNormalView : 贴花 +Z 方向(视空间,用于角度剔除)
+//   u_angleThreshold  : 法线夹角余弦阈值(默认 0.5 ≈ 60°,小于则不贴)
+//   u_blendMode       : 0=Alpha 混合, 1=乘法, 2=加法, 3=正常覆盖
+//   u_opacity         : 贴花整体不透明度(0..1)
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;
+uniform sampler2D u_depthMap;
+uniform sampler2D u_normalMap;
+uniform sampler2D u_decalMap;
+uniform mat4 u_viewProjInv;
+uniform mat4 u_decalMatrix;
+uniform vec3 u_decalNormalView;
+uniform float u_angleThreshold;
+uniform int   u_blendMode;
+uniform float u_opacity;
+
+// 屏幕空间 UV + 线性深度 → 世界位置。
+// depth 已是线性 [0,1],映射到 clip z ∈ [-1,1]。
+vec3 reconstructWorldPos(vec2 uv, float depth) {
+  vec4 clip = vec4(uv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
+  vec4 world = u_viewProjInv * clip;
+  return world.xyz / world.w;
+}
+
+void main() {
+  vec3 sceneColor = texture(u_colorMap, v_uv).rgb;
+  float depth = texture(u_depthMap, v_uv).r;
+
+  // 远裁剪面/skybox: 无几何,不贴花
+  if (depth >= 1.0) {
+    outColor = vec4(sceneColor, 1.0);
+    return;
+  }
+
+  // 1. 重建世界位置
+  vec3 worldPos = reconstructWorldPos(v_uv, depth);
+
+  // 2. 变换到贴花局部空间
+  vec4 local = u_decalMatrix * vec4(worldPos, 1.0);
+
+  // 3. 体积剔除: 局部坐标超出 [-0.5,0.5] 立方体 → 跳过
+  vec3 absLocal = abs(local.xyz);
+  float maxComp = max(absLocal.x, max(absLocal.y, absLocal.z));
+  if (maxComp > 0.5) {
+    outColor = vec4(sceneColor, 1.0);
+    return;
+  }
+
+  // 4. 角度剔除: 表面法线与贴花法线夹角过大 → 跳过(防止跨墙渗漏)
+  vec3 normal = normalize(texture(u_normalMap, v_uv).rgb * 2.0 - 1.0);
+  float angleCos = dot(normal, normalize(u_decalNormalView));
+  if (angleCos < u_angleThreshold) {
+    outColor = vec4(sceneColor, 1.0);
+    return;
+  }
+
+  // 5. 贴花 UV: 局部 xy + 0.5(贴花盒 xy 平面映射到纹理 [0,1]²)
+  vec2 decalUV = local.xy + 0.5;
+
+  // 6. 采样贴花纹理
+  vec4 decalColor = texture(u_decalMap, decalUV);
+  decalColor.a *= u_opacity;
+
+  // 7. 距离衰减(可选): 接近贴花盒边缘的像素轻微淡化,避免硬边
+  //    edge = maxComp 越接近 0.5 越靠边
+  float edgeFade = smoothstep(0.5, 0.45, maxComp);
+  decalColor.a *= edgeFade;
+
+  // 8. 混合
+  vec3 result;
+  if (u_blendMode == 0) {
+    // Alpha 混合(最常用: 弹孔/血迹/涂鸦)
+    result = mix(sceneColor, decalColor.rgb, decalColor.a);
+  } else if (u_blendMode == 1) {
+    // 乘法(苔藓/潮湿/阴影贴花)
+    result = sceneColor * mix(vec3(1.0), decalColor.rgb, decalColor.a);
+  } else if (u_blendMode == 2) {
+    // 加法(发光涂鸦/霓虹标记)
+    result = sceneColor + decalColor.rgb * decalColor.a;
+  } else {
+    // 正常覆盖(替换背景,贴花完全不透明时使用)
+    result = decalColor.a > 0.0 ? decalColor.rgb : sceneColor;
+  }
+
+  outColor = vec4(result, 1.0);
+}
+`;
+
 
 

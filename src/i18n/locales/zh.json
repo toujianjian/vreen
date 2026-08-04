@@ -993,6 +993,11 @@
         "title": "SVGF 去噪器",
         "desc": "时空方差引导滤波。三阶段去噪(时序累积 + 方差估计 + a-trous 小波),用于 1 spp SSR/SSGI/路径追踪降噪。",
         "advantage": "soup3D 无去噪器"
+      },
+      "screenSpaceDecal": {
+        "title": "屏幕空间贴花",
+        "desc": "GPU 延迟贴花投射到 GBuffer 几何表面。体积 + 角度剔除、4 种混合模式(Alpha/乘法/加法/正常)、边缘淡化、ping-pong 多贴花链式。",
+        "advantage": "soup3D 无贴花"
       }
     }
   }

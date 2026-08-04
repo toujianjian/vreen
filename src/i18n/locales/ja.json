@@ -993,6 +993,11 @@
         "title": "SVGF デノイザー",
         "desc": "時空分散ガイド付きフィルタリング。3 段階デノイズ(時間累積 + 分散推定 + a-trous ウェーブレット)、1 spp SSR/SSGI/パストレース用。",
         "advantage": "soup3D にデノイザーなし"
+      },
+      "screenSpaceDecal": {
+        "title": "スクリーン空間デカール",
+        "desc": "GBuffer ジオメトリに投影する GPU ディファードデカール。ボリューム + 角度カリング、4 ブレンドモード(Alpha/乗算/加算/通常)、エッジフェード、ping-pong マルチデカールチェーン。",
+        "advantage": "soup3D にデカールなし"
       }
     }
   }

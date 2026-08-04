@@ -993,6 +993,11 @@
         "title": "SVGF 디노이저",
         "desc": "시공간 분산 가이드 필터링. 3단계 디노이징(시간 누적 + 분산 추정 + a-trous 웨이블릿), 1 spp SSR/SSGI/패스 트레이싱용.",
         "advantage": "soup3D 디노이저 없음"
+      },
+      "screenSpaceDecal": {
+        "title": "스크린 공간 데칼",
+        "desc": "GBuffer 지오메트리에 투영하는 GPU 디퍼드 데칼. 볼륨 + 각도 컬링, 4 블렌드 모드(Alpha/곱하기/가산/일반), 엣지 페이드, ping-pong 멀티 데칼 체인.",
+        "advantage": "soup3D 데칼 없음"
       }
     }
   }

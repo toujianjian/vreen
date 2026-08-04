@@ -993,6 +993,11 @@
         "title": "SVGF Denoiser",
         "desc": "Spatiotemporal Variance-Guided Filtering. 3-stage denoiser (temporal accumulation + variance estimation + a-trous wavelet) for 1-spp SSR/SSGI/path-tracing.",
         "advantage": "soup3D has no denoiser"
+      },
+      "screenSpaceDecal": {
+        "title": "Screen-Space Decals",
+        "desc": "GPU deferred decals projected onto GBuffer geometry. Volume + angle culling, 4 blend modes (Alpha/Multiply/Additive/Normal), edge fade, ping-pong multi-decal chaining.",
+        "advantage": "soup3D has no decals"
       }
     }
   }

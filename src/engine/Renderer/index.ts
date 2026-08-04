@@ -475,4 +475,21 @@ export {
   type PixelBuffer as CausticPixelBuffer,
   type DepthBuffer as CausticDepthBuffer,
 } from './CausticsGenerator';
+// ScreenSpaceDecalPass — 屏幕空间延迟贴花(GPU Pass,PostProcess/ 顶层重导出)。
+// 把贴花纹理投射到 GBuffer(深度/法线)描述的任意几何表面,支持体积剔除 +
+// 角度剔除(防跨墙渗漏)+ 4 种混合模式(Alpha/Multiply/Additive/Normal)+
+// 边缘淡化 + ping-pong 双缓冲链式多贴花。对标 UE5 Deferred Decals /
+// o3de Atom Decal Pass;three.js DecalGeometry 为 CPU 几何式,本 pass 是其屏幕空间泛化。
+export {
+  ScreenSpaceDecalPass,
+  type ScreenSpaceDecalOptions,
+  type Decal,
+  DecalBlendMode,
+  projectToDecalLocal,
+  decalAnglePass,
+  decalEdgeFade,
+  decalBlend,
+  buildDecalMatrix,
+  transformNormalToView,
+} from './PostProcess';
 

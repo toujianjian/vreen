@@ -993,6 +993,11 @@
         "title": "Denoiser SVGF",
         "desc": "Filtrado guiado por varianza espacio-temporal. Denoiser de 3 etapas (acumulación temporal + estimación de varianza + wavelet a-trous) para SSR/SSGI/path-tracing a 1 spp.",
         "advantage": "soup3D sin denoiser"
+      },
+      "screenSpaceDecal": {
+        "title": "Decals en espacio de pantalla",
+        "desc": "Decals diferidos GPU proyectados sobre geometría GBuffer. Culling por volumen + ángulo, 4 modos de mezcla (Alpha/Multiplicar/Aditivo/Normal), fade de borde, encadenado ping-pong multi-decal.",
+        "advantage": "soup3D sin decals"
       }
     }
   }
