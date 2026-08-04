@@ -1113,6 +1113,11 @@
         "title": "Fast Depth-Aware Blur (o3de Atom H+V)",
         "desc": "Depth-aware separable blur adapted from o3de Atom FastDepthAwareBlurPasses (Horizontal + Vertical). Walks the blur direction one texel at a time, comparing consecutive depth slopes to detect edges and reduce mix weight at depth discontinuities — preventing foreground/background color bleeding (halo artifact). Building-block pass for AO/SSGI/Bloom/DoF that need edge-preserving blur. Standard Gaussian crosses depth edges producing halos; depth-aware variant confines blur to same depth layer. H+V dual-pass (ping-pong FBOs), O(2*blurRadius) samples/pixel. Configurable blurRadius (1..32), constFalloff (2/3), depthFalloffThreshold (0), depthFalloffStrength (50). 1:1 CPU/GPU reference (calculateDepthFalloff / blurDirection / fastDepthAwareBlurPixel). Algorithm core identical to o3de Atom; VREEN trades compute/LDS optimizations for WebGL2 portability.",
         "advantage": "soup3D has no depth-aware blur"
+      },
+      "bloomEnhanced": {
+        "title": "Bloom Enhanced (Depth-Aware Edge-Preserving)",
+        "desc": "Depth-aware edge-preserving Bloom that reuses the FastDepthAwareBlur algorithm (H+V separable, depth-slope edge stopping) to confine bloom to the same depth layer, preventing foreground/background color bleeding (halo) that classic Gaussian or box-blur bloom produces across silhouettes. Pipeline: Bright pass (soft knee, Rec.709 luminance threshold) → FastDepthAwareBlur H → FastDepthAwareBlur V → Composite (additive + lens dirt + RGB tint). 4 GPU dispatches per apply, HDR RGBA16F. Configurable strength, threshold, smoothWidth, blurRadius (1..32), depthFalloffStrength, per-channel tint, optional lens dirt texture + dirtStrength. 1:1 CPU/GPU reference (luminance / brightPassPixel / bloomCompositePixel). Complementary to UnrealBloomPass (multi-mip large glow) — stack both for glow + clean edges. Ideal for neon/cyberpunk high-contrast scenes.",
+        "advantage": "soup3D has only single box-blur bloom"
       }
     }
   }

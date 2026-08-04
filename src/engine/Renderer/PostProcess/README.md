@@ -6486,6 +6486,157 @@ const result = fastDepthAwareBlurPixel(
 
 ---
 
+## BloomEnhancedPass (`BloomEnhancedPass.ts`)
+
+**Depth-aware edge-preserving Bloom** — a single-mip bloom that uses the
+`FastDepthAwareBlurPass` algorithm (H + V separable, depth-slope edge
+stopping) to confine bloom to the same depth layer, preventing the
+foreground/background color bleeding (halo) that classic Gaussian or
+box-blur bloom produces across silhouettes.
+
+### Motivation
+
+The classic `UnrealBloomPass` (5-level mip pyramid + per-mip Gaussian)
+produces beautiful large-scale glow but suffers from one systematic
+artifact: bright pixels on the foreground object bleed across the depth
+edge onto the dark background, and vice-versa. This "halo" is especially
+visible in high-contrast cyberpunk scenes (neon edges against pure
+black). The depth-aware variant stops mixing when the depth slope changes
+sharply, so bloom stays on the same depth layer.
+
+### Pipeline (4 GPU dispatches per apply)
+
+```
+                                 ┌────────────────┐
+   colorTexture (HDR) ─────────▶ │  Bright Pass   │ ─▶ brightTex
+   depthTexture        ────────▶ │  (soft knee)   │
+                                 └────────────────┘
+                                          │
+                                          ▼
+                          ┌───────────────────────────┐
+                          │ FastDepthAwareBlur H      │ ─▶ blurHTex
+                          │ (depth-slope edge stop)   │
+                          └───────────────────────────┘
+                                          │
+                                          ▼
+                          ┌───────────────────────────┐
+                          │ FastDepthAwareBlur V      │ ─▶ blurVTex
+                          │ (depth-slope edge stop)   │
+                          └───────────────────────────┘
+                                          │
+                           colorTexture   │   dirtTexture (optional)
+                              │            │       │
+                              ▼            ▼       ▼
+                          ┌────────────────────────────┐
+                          │  Composite (additive)      │ ─▶ outputTex
+                          │  color + bloom*tint*str    │
+                          │         * (1 + dirt*str)   │
+                          └────────────────────────────┘
+```
+
+### Bright Pass (soft knee)
+
+Extracts pixels above `threshold` with a soft rolloff to avoid hard
+edges. 1:1 with `BLOOM_HIGHPASS_FRAG`:
+
+```
+knee = threshold * smoothWidth + ε
+soft = clamp(v - threshold + knee, 0, 2*knee)
+soft = soft² / (4*knee + ε)
+contribution = max(soft, v - threshold) / max(v, ε)
+out = color * contribution
+```
+
+Rec.709 luminance: `v = dot(rgb, vec3(0.2126, 0.7152, 0.0722))`.
+
+### Composite (additive + dirt + tint)
+
+```
+bloomFinal = bloom * tint * strength
+bloomFinal *= (1 + dirt * dirtStrength)   // per-channel
+out = color + bloomFinal
+```
+
+- Linear-space additive blend (apply before `OutputTransformPass`).
+- Alpha preserved from source (TAA-compatible — does not corrupt velocity
+  buffer).
+- `dirtTexture = null` binds a 1x1 black placeholder (zero cost).
+- `tint` allows warm/cool bloom (e.g. `[1.0, 0.85, 0.7]` for candle,
+  `[0.8, 0.9, 1.2]` for cold neon).
+
+### Options
+
+| Option                    | Default | Range        | Description                                            |
+|---------------------------|---------|--------------|--------------------------------------------------------|
+| `strength`                | 1.0     | 0..∞         | Bloom intensity multiplier.                            |
+| `threshold`               | 0.85    | 0..∞         | Luminosity threshold; below = no contribution.         |
+| `smoothWidth`             | 0.01    | 0..1         | Knee soft width (relative to threshold).               |
+| `blurRadius`              | 8       | 1..32        | Depth-aware blur radius in texels.                     |
+| `constFalloff`            | 2/3     | 0..1         | Flat-surface constant falloff (o3de default).          |
+| `depthFalloffThreshold`   | 0.0     | 0..∞         | Depth-diff threshold (curves ignored below this).      |
+| `depthFalloffStrength`    | 50.0    | 0..∞         | Edge sharpness; higher = sharper depth edges.          |
+| `tint`                    | [1,1,1] | 0..∞ per ch  | Per-channel RGB tint.                                  |
+| `dirtTexture`             | null    | WebGLTexture | Optional lens dirt texture.                            |
+| `dirtStrength`            | 0.0     | 0..∞         | Dirt amplification (0 = disabled).                     |
+| `enabled`                 | true    | bool         | Master switch.                                         |
+
+### Usage
+
+```typescript
+import { BloomEnhancedPass } from '@vreen/engine';
+
+const bloom = new BloomEnhancedPass({
+  strength: 1.2,
+  threshold: 0.85,
+  blurRadius: 10,
+  depthFalloffStrength: 60,   // sharper edges for neon-on-black
+  tint: [0.95, 0.9, 1.05],    // subtle cool bias
+  dirtTexture: lensDirtTex,
+  dirtStrength: 0.3,
+});
+
+// In render loop:
+const bloomOut = bloom.apply(gl, sceneColorTex, sceneDepthTex);
+// → feed bloomOut into OutputTransformPass / final composite
+```
+
+### CPU reference (1:1 with GPU)
+
+- `luminance(c)` — Rec.709 luminance.
+- `brightPassPixel(color, params)` — soft-knee high-pass.
+- `bloomCompositePixel(color, bloom, dirt, strength, dirtStrength, tint)` —
+  additive composite with dirt and tint.
+
+### Comparison with soup3D
+
+| Feature                        | soup3D        | VREEN                          |
+|--------------------------------|---------------|--------------------------------|
+| Bloom algorithm                | single box blur | depth-aware separable (H+V) |
+| Edge-preserving                | no            | yes (depth-slope edge stop)    |
+| Soft knee bright pass          | no            | yes (configurable threshold + smoothWidth) |
+| Lens dirt                      | no            | yes (`dirtTexture` + `dirtStrength`) |
+| Bloom tint                     | no            | yes (per-channel RGB `tint`)   |
+| HDR (RGBA16F)                  | unknown       | yes                            |
+| Configurable blur radius       | no            | yes (1..32)                    |
+| Configurable depth edge stop   | —             | yes (`depthFalloffStrength`)   |
+| CPU reference (1:1 GPU)        | no            | yes (`brightPassPixel` etc.)   |
+| Draw calls per apply           | ~2            | 4 (bright + H + V + composite) |
+
+**Trade-off vs UnrealBloomPass:** BloomEnhanced is single-mip (no large-scale
+diffuse glow) but edge-preserving; UnrealBloom is multi-mip (beautiful
+large glow) but produces halos. For neon/cyberpunk scenes prefer
+BloomEnhanced; for outdoor HDR scenes prefer UnrealBloom. Both can be
+stacked: `UnrealBloom → BloomEnhanced` for glow + clean edges.
+
+### References
+
+- o3de Atom `FastDepthAwareBlurPasses` — depth-aware blur core (reused)
+- three.js `UnrealBloomPass.js` — bright pass soft-knee formula
+- Jimenez, "Next Generation Post-Processing in Call of Duty" (SIGGRAPH 2014) —
+  soft knee and lens dirt
+
+---
+
 ## References
 
 | Technique | Paper / Source |

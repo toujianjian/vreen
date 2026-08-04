@@ -261,3 +261,13 @@ export {
   type DABParams,
   type FastDepthAwareBlurPassOptions,
 } from './FastDepthAwareBlurPass';
+
+export {
+  BloomEnhancedPass,
+  brightPassPixel,
+  bloomCompositePixel,
+  DEFAULT_BLOOM_ENHANCED_PARAMS,
+  type BEColor,
+  type BrightPassParams,
+  type BloomEnhancedOptions,
+} from './BloomEnhancedPass';

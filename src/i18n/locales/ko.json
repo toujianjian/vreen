@@ -1113,6 +1113,11 @@
         "title": "고속 깊이 인식 블러(o3de Atom H+V)",
         "desc": "깊이 인식 분리 가능 블러, o3de Atom FastDepthAwareBlurPasses(수평 + 수직)에서 적응. 블러 방향을 따라 한 텍셀씩 진행하며 연속 깊이 기울기를 비교하여 엣지를 검출하고, 깊이 불연속부에서 믹스 가중치를 감소——전경/배경 색 번짐(halo 아티팩트)을 방지. AO/SSGI/Bloom/DoF 등 엣지 보존 블러가 필요한 후처리의 빌딩 블록. 일반 가우시안 블러는 깊이 엣지를 가로질러 halo를 생성, 깊이 인식 변형은 블러를 동일 깊이 레이어 내로 제한. H+V 듀얼 패스(ping-pong FBO), O(2*blurRadius) 샘플/픽셀. 설정 가능한 blurRadius(1..32), constFalloff(2/3), depthFalloffThreshold(0), depthFalloffStrength(50). CPU/GPU 1:1 참조 구현. 알고리즘 핵심은 o3de Atom과 완전히 동일, VREEN은 WebGL2 호환성을 위해 compute/LDS 최적화를 프래그먼트 셰이더로 대체.",
         "advantage": "soup3D는 깊이 인식 블러 없음"
+      },
+      "bloomEnhanced": {
+        "title": "강화 Bloom(깊이 인식 엣지 보존)",
+        "desc": "깊이 인식 엣지 보존 Bloom, FastDepthAwareBlur 알고리즘(H+V 분리 가능, 깊이 기울기 엣지 정지)을 재사용하여 bloom을 동일 깊이 레이어 내로 제한. 고전 가우시안/박스 블러 bloom이 실루엣을 가로질러 생성하는 전경/배경 색 번짐(halo)을 방지. 파이프라인:Bright pass(소프트 니, Rec.709 휘도 임계값)→ FastDepthAwareBlur H → FastDepthAwareBlur V → Composite(가산 + lens dirt + RGB tint). apply마다 4회 GPU 디스패치, HDR RGBA16F. 설정 가능한 strength, threshold, smoothWidth, blurRadius(1..32), depthFalloffStrength, 채널별 tint, 옵션 lens dirt 텍스처 + dirtStrength. CPU/GPU 1:1 참조 구현(luminance / brightPassPixel / bloomCompositePixel). UnrealBloomPass(다중 mip 대면적 글로우)과 상보——둘을 스택하여 글로우 + 깔끔한 엣지 획득. 네온/사이버펑크 고대비 씬에 최적.",
+        "advantage": "soup3D는 단일 박스 블러 Bloom만 보유"
       }
     }
   }

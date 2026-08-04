@@ -1113,6 +1113,11 @@
         "title": "Desenfoque Consciente de Profundidad Rápido (o3de Atom H+V)",
         "desc": "Desenfoque separable consciente de profundidad adaptado de o3de Atom FastDepthAwareBlurPasses (Horizontal + Vertical). Avanza un texel a la vez a lo largo de la dirección del desenfoque, comparando pendientes de profundidad consecutivas para detectar bordes y reducir el peso de mezcla en discontinuidades de profundidad — previniendo el sangrado de color primer plano/fondo (artefacto halo). Bloque de construcción para AO/SSGI/Bloom/DoF que necesitan desenfoque preservando bordes. El desenfoque gaussiano estándar cruza bordes de profundidad produciendo halos; la variante consciente de profundidad confina el desenfoque a la misma capa de profundidad. Pase dual H+V (FBOs ping-pong), O(2*blurRadius) muestras/píxel. Configurable: blurRadius (1..32), constFalloff (2/3), depthFalloffThreshold (0), depthFalloffStrength (50). Referencia CPU/GPU 1:1. Núcleo del algoritmo idéntico a o3de Atom; VREEN intercambia optimizaciones compute/LDS por portabilidad WebGL2.",
         "advantage": "soup3D no tiene desenfoque consciente de profundidad"
+      },
+      "bloomEnhanced": {
+        "title": "Bloom Mejorado (Consciente de Profundidad, Preserva Bordes)",
+        "desc": "Bloom consciente de profundidad que preserva bordes, reutiliza el algoritmo FastDepthAwareBlur (H+V separable, parada por pendiente de profundidad) para confinar el bloom a la misma capa de profundidad, previniendo el sangrado de color primer plano/fondo (halo) que el bloom gaussiano o de caja clásico produce a través de siluetas. Pipeline: Bright pass (soft knee, umbral de luminancia Rec.709) → FastDepthAwareBlur H → FastDepthAwareBlur V → Composite (aditivo + lens dirt + tint RGB). 4 despachos GPU por apply, HDR RGBA16F. Configurable: strength, threshold, smoothWidth, blurRadius (1..32), depthFalloffStrength, tint por canal, textura lens dirt opcional + dirtStrength. Referencia CPU/GPU 1:1 (luminance / brightPassPixel / bloomCompositePixel). Complementario a UnrealBloomPass (glow grande multi-mip) — apila ambos para glow + bordes limpios. Ideal para escenas neón/cyberpunk de alto contraste.",
+        "advantage": "soup3D solo tiene bloom de caja único"
       }
     }
   }

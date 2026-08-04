@@ -1113,6 +1113,11 @@
         "title": "快速深度感知模糊(o3de Atom H+V)",
         "desc": "深度感知可分离模糊,适配 o3de Atom FastDepthAwareBlurPasses(水平 + 垂直)。沿模糊方向逐纹素推进,比较前后深度斜率检测边缘,在深度不连续处递减混合权重,防止前景/背景颜色渗色产生 halo。是 AO/SSGI/Bloom/DoF 等需要保边模糊后处理的构建块。普通高斯模糊跨越深度边缘产生 halo,深度感知变体把模糊限制在同一深度层内。H+V 双 pass(ping-pong FBO),O(2*blurRadius) 采样/像素。可配置 blurRadius(1..32)、constFalloff(2/3)、depthFalloffThreshold(0)、depthFalloffStrength(50)。CPU/GPU 1:1 参考实现(calculateDepthFalloff / blurDirection / fastDepthAwareBlurPixel)。算法核心与 o3de Atom 完全一致,VREEN 用片段着色器替代 compute/LDS 优化以适配 WebGL2。",
         "advantage": "soup3D 无深度感知模糊"
+      },
+      "bloomEnhanced": {
+        "title": "增强 Bloom(深度感知保边)",
+        "desc": "深度感知保边 Bloom,复用 FastDepthAwareBlur 算法(H+V 可分离,深度斜率边缘停止),把 bloom 限制在同一深度层内,防止经典高斯/盒式模糊 bloom 跨越轮廓产生的前景/背景颜色渗色(halo)。管线:Bright pass(soft knee,Rec.709 亮度阈值)→ FastDepthAwareBlur H → FastDepthAwareBlur V → Composite(加法 + lens dirt + RGB tint)。每次 apply 4 次 GPU dispatch,HDR RGBA16F。可配置 strength、threshold、smoothWidth、blurRadius(1..32)、depthFalloffStrength、每通道 tint、可选 lens dirt 纹理 + dirtStrength。CPU/GPU 1:1 参考实现(luminance / brightPassPixel / bloomCompositePixel)。与 UnrealBloomPass(多级 mip 大面积辉光)互补 —— 两者可叠加获取辉光 + 干净边缘。适合 neon/赛博朋克高对比场景。",
+        "advantage": "soup3D 仅有单级盒式模糊 Bloom"
       }
     }
   }

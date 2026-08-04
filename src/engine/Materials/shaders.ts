@@ -3502,6 +3502,49 @@ void main() {
 }
 `;
 
+/**
+ * BloomEnhancedPass 合成 shader。
+ *
+ * 把深度感知模糊后的 bloom 纹理以加法混合回源颜色,支持 ACEScg 线性空间。
+ * 与 BLOOM_ADDITIVE_BLEND_FRAG 的区别:本 shader 额外支持 lens dirt 纹理
+ * (脏镜头散射,电影感)与 tint 染色,且 alpha 保留源(便于 TAA 复用速度缓冲)。
+ *
+ * 输入:
+ *   u_colorMap    — 源颜色(HDR,线性空间)
+ *   u_bloomMap    — 深度感知模糊后的 bloom 纹理
+ *   u_dirtTexture — 镜头污渍纹理(可选,为空时绑定 1x1 黑)
+ *   u_bloomStrength — bloom 强度
+ *   u_dirtStrength  — 污渍强度(0 = 禁用)
+ *   u_bloomTint     — bloom RGB 染色
+ */
+export const BLOOM_ENHANCED_COMPOSITE_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;
+uniform sampler2D u_bloomMap;
+uniform sampler2D u_dirtTexture;
+uniform float u_bloomStrength;
+uniform float u_dirtStrength;
+uniform vec3  u_bloomTint;
+
+void main() {
+  vec3 color = texture(u_colorMap, v_uv).rgb;
+  vec3 bloom = texture(u_bloomMap, v_uv).rgb;
+  vec3 dirt  = texture(u_dirtTexture, v_uv).rgb;
+
+  // tint + strength,dirt 调制 bloom(脏区域放大 bloom)
+  vec3 bloomFinal = bloom * u_bloomTint * u_bloomStrength;
+  bloomFinal *= (1.0 + dirt * u_dirtStrength);
+
+  // 加法混合,保留源 alpha(TAA 兼容)
+  vec3 rgb = color + bloomFinal;
+  outColor = vec4(rgb, texture(u_colorMap, v_uv).a);
+}
+`;
+
 // ── SkyAtmosphere ───────────────────────────────────────────────
 // GPU 物理大气散射(UE5 SkyAtmosphere / Unity HDRP 风格)。
 // 光线步进单次散射 + Ozone 臭氧吸收 + 简化多重散射(Bruneton ψ 近似)。

@@ -1,7 +1,7 @@
 // Capabilities — 渲染能力展示区(赛博朋克风格 + i18n)。
 // 把 VREEN 旗舰渲染特性与 soup3D 对比亮出来,直接服务"比 soup3D 更有优势"。
 import { useTranslation } from 'react-i18next';
-import { Sparkles, Sun, Scan, Aperture, Droplets, Waves, FastForward, Box, Cloud, CloudSun, CloudOff, Mountain, Lightbulb, Moon, Palette, Sticker, Smile, Focus, Maximize, Gem, Layers, Globe, Sailboat, Anchor, Sunrise, Star, Flame, Contrast, Camera, GlassWater, Wind, Hourglass, Filter, SprayCan, Boxes, Eye, ScanLine, Umbrella, Map, Trees, Grid3x3, SlidersHorizontal, Atom, Brain, Move, Expand, Brush, Frame, Orbit, Film, Blend, BarChart3, ThermometerSun, Monitor, Zap, Haze } from 'lucide-react';
+import { Sparkles, Sun, Scan, Aperture, Droplets, Waves, FastForward, Box, Cloud, CloudSun, CloudOff, Mountain, Lightbulb, Moon, Palette, Sticker, Smile, Focus, Maximize, Gem, Layers, Globe, Sailboat, Anchor, Sunrise, Star, Flame, Contrast, Camera, GlassWater, Wind, Hourglass, Filter, SprayCan, Boxes, Eye, ScanLine, Umbrella, Map, Trees, Grid3x3, SlidersHorizontal, Atom, Brain, Move, Expand, Brush, Frame, Orbit, Film, Blend, BarChart3, ThermometerSun, Monitor, Zap, Haze, Sparkle } from 'lucide-react';
 
 interface Cap {
   key: string;        // i18n key suffix under capabilities.items
@@ -67,6 +67,7 @@ const CAPS: Cap[] = [
   { key: 'sao', icon: Aperture, accent: 'text-neon-magenta' },
   { key: 'fxaa', icon: Zap, accent: 'text-neon-cyan' },
   { key: 'fastDepthAwareBlur', icon: Haze, accent: 'text-neon-magenta' },
+  { key: 'bloomEnhanced', icon: Sparkle, accent: 'text-neon-cyan' },
 ];
 
 export function Capabilities() {

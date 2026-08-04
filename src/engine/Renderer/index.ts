@@ -704,4 +704,21 @@ export {
   type DABParams,
   type FastDepthAwareBlurPassOptions,
 } from './PostProcess';
+// BloomEnhancedPass — 深度感知保边 Bloom(PostProcess/ 顶层重导出)。
+// 单 mip + FastDepthAwareBlur(H+V)→ bloom 限制在同一深度层内,前景/背景不互相污染。
+// 与 UnrealBloomPass(5 级 mip + 普通高斯,跨深度边缘产生 halo)互补:
+//   - BloomEnhanced:边缘锐利,适合 neon/cyberpunk 高对比场景
+//   - UnrealBloom:大面积柔和辉光,适合户外 HDR 场景
+// 4 次 GPU draw:Bright pass(soft knee)+ H blur + V blur + Composite(additive + dirt + tint)。
+// 1:1 CPU/GPU 参考(luminance / brightPassPixel / bloomCompositePixel)。
+// soup3D 仅有单级 box blur Bloom,无深度感知、无 soft knee、无 lens dirt、无 tint。
+export {
+  BloomEnhancedPass,
+  brightPassPixel,
+  bloomCompositePixel,
+  DEFAULT_BLOOM_ENHANCED_PARAMS,
+  type BEColor,
+  type BrightPassParams,
+  type BloomEnhancedOptions,
+} from './PostProcess';
 
