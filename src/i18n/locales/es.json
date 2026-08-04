@@ -1053,6 +1053,11 @@
         "title": "Cinemática Inversa",
         "desc": "Solvers CCD + FABRIK, jerarquía cadena/hueso IK, límites de articulación con restricciones. Placement procedural de pies, alcance de manos, orientación look-at.",
         "advantage": "soup3D sin IK"
+      },
+      "paniniProjection": {
+        "title": "Proyección Panini",
+        "desc": "Proyección cilíndrica de FOV amplio (Sharpless/o3de Atom). Mantiene líneas verticales rectas permitiendo FOV horizontal más amplio sin estiramiento de bordes. Parámetro depth controla intensidad; modo vertical opcional para salida panorámica/360°. Visualización arquitectónica + gran angular cinematográfico.",
+        "advantage": "soup3D sin corrección de proyección"
       }
     }
   }

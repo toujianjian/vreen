@@ -1053,6 +1053,11 @@
         "title": "逆運動学",
         "desc": "CCD + FABRIK ソルバー、IK チェーン/ボーン階層、制約対応関節制限。手続き的足配置、手到達、注視方向。",
         "advantage": "soup3D に IK なし"
+      },
+      "paniniProjection": {
+        "title": "Panini 投影",
+        "desc": "円柱ワイド FOV 投影(Sharpless/o3de Atom)。垂直線を垂直に保ちながらより広い水平視野を許可、広角エッジ伸張なし。depth パラメータで強度制御、パノラマ/360° 出力用の垂直モード可选。建築ビズ + シネマティック広角。",
+        "advantage": "soup3D に投影補正なし"
       }
     }
   }

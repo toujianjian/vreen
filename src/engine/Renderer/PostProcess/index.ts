@@ -1,7 +1,7 @@
 // PostProcess barrel — 增强后处理 Pass 集合。
 //
 // 与 RenderPass.ts 中的基础后处理 Bloom/CA/Vignette/FinalCompose 平行。
-// 本模块提供 32 个增强 Pass:
+// 本模块提供 36 个增强 Pass:
 //   - ColorGradingPass  : 色彩分级(8 个 ASC-CDL 参数)
 //   - LUTPass           : LUT 色彩查找表(3D 或 2D strip)
 //   - ChromaticAberrationPass : 增强色差(Vector2 偏移 + 径向调制)
@@ -38,6 +38,7 @@
 //   - MotionBlurEnhancedPass : 深度感知运动模糊(邻域速度钳制 + 深度拒绝 + Halton 抖动)
 //   - ScreenSpaceDecalPass : 屏幕空间延迟贴花(GBuffer 深度/法线重建世界位置 + 体积/角度剔除 + 4 混合模式 + ping-pong 链式)
 //   - VolumetricCloudsPass : GPU 体积云 ray-march(3D 噪声 + Beer-Powder + 双叶 HG + 多散射 + 可选 v3 时序累积)
+//   - PaniniProjectionPass : Panini 宽 FOV 圆柱投影(保持垂直线垂直 + 可选垂直投影 + 裁剪补偿)
 //
 // 注意:
 //   - 前 7 个 Pass 都实现 RenderPass 接口,可直接加入 PostProcessingPipeline。
@@ -130,3 +131,9 @@ export {
   VolumetricCloudsPass,
   type VolumetricCloudsPassOptions,
 } from './VolumetricCloudsPass';
+export {
+  PaniniProjectionPass,
+  type PaniniProjectionOptions,
+  type ProjectionCenter,
+  paniniProject,
+} from './PaniniProjectionPass';

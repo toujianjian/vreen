@@ -1053,6 +1053,11 @@
         "title": "역운동학",
         "desc": "CCD + FABRIK 솔버, IK 체인/본 계층, 제약 인식 관절 한계. 절차적 발 배치, 손 도달, 주시 방향.",
         "advantage": "soup3D IK 없음"
+      },
+      "paniniProjection": {
+        "title": "Panini 투영",
+        "desc": "원통형 와이드 FOV 투영(Sharpless/o3de Atom). 수직선을 수직으로 유지하면서 더 넓은 수평 시야 허용, 광각 엣지 늘어남 없음. depth 매개변수로 강도 제어, 파노라마/360° 출력용 수직 모드 선택 가능. 건축 비즈 + 시네마틱 광각.",
+        "advantage": "soup3D 투영 보정 없음"
       }
     }
   }

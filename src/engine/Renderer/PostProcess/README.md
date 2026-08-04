@@ -2413,6 +2413,163 @@ fog will correctly blend with HDR cloud pixels.
 
 ---
 
+### PaniniProjectionPass
+
+Cylindrical wide-FOV projection that keeps vertical lines straight while
+allowing wider horizontal field of view without the edge stretching
+characteristic of standard perspective projection at wide FOV. Adapted
+from o3de Atom `PaniniProjectionPass` + Sharpless et al. "Pannini" paper.
+
+**Class**: `PaniniProjectionPass` (independent, does **not** extend `RenderPass`)
+**Shader**: `PANINI_PROJECTION_FRAG`
+**CPU reference**: `paniniProject()` (pure function, headless-testable)
+
+#### Algorithm (Sharpless Panini projection)
+
+```
+1. Center UV:        uv = (pixel - center) / center
+2. Horizontal proj:  ol = 1 / sqrt(2 - uv.x²)        // complimentary uv.x²
+3. Scale ratio:      pspl = (depth + 1) / (depth + ol)
+4. Transform:        coords.x = uv.x * (ol * pspl)
+5. [Optional] Vert:  ol_y = 1 / sqrt(2 - uv.y²)
+                     pspl_y = (depth + 1) / (depth + ol_y)
+                     coords.y = uv.y * (ol_y * pspl_y)
+6. Crop + remap:     coords = coords / crop
+                     outUV = coords * center + center
+7. Sample:           color = texture(input, outUV)
+```
+
+The `depth` parameter (d) controls projection intensity:
+- `d = 0`: near-identity (standard perspective)
+- `d = 1.0`: standard Panini projection (o3de default)
+- `d > 1`: stronger cylindrical projection for ultra-wide FOV
+
+#### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `center` | `[x, y]` | `[0.5, 0.5]` | Projection center UV. Offset to simulate off-axis projection. |
+| `depth` | `number` | `1.0` | Projection depth d. 0=perspective, 1=standard Panini, >1=stronger. |
+| `vertical` | `boolean` | `false` | Apply projection to Y axis too (panoramic/360° mode). |
+| `crop` | `number` | `1.0` | Crop compensation. >1 zoom in (avoid black edges), <1 zoom out. |
+| `enabled` | `boolean` | `true` | Enable/disable the pass. |
+
+#### Data flow
+
+```
+│ colorTexture │───▶│ PaniniProjectionPass.apply()  │───▶│ outputTexture │
+│ (LDR)        │    │  - fullscreen triangle       │    │ (RGBA8)       │
+└──────────────┘    │  - PANINI_PROJECTION_FRAG     │    └───────────────┘
+                    │  - 1 texture sample/pixel     │
+                    └───────────────────────────────┘
+```
+
+#### Usage
+
+```ts
+import { PaniniProjectionPass } from '@vreen/engine/Renderer/PostProcess';
+
+const panini = new PaniniProjectionPass({
+  depth: 1.0,        // standard Panini projection
+  vertical: false,   // horizontal only (keeps verticals straight)
+  crop: 1.1,         // slight zoom to avoid black edges
+});
+
+// Each frame (after tonemapping):
+const projected = panini.apply(gl, finalColorTexture);
+```
+
+#### Vertical mode (panoramic output)
+
+```ts
+// Apply projection to both axes for 360°/panoramic rendering
+const panini = new PaniniProjectionPass({
+  depth: 1.5,        // stronger projection
+  vertical: true,    // both X and Y
+  crop: 1.2,         // compensate for stronger distortion
+});
+```
+
+#### Comparison with soup3D
+
+| Capability | soup3D | VREEN |
+|------------|--------|-------|
+| Wide-FOV projection | **None** | `PaniniProjectionPass` (cylindrical) |
+| Vertical line preservation | **None** | Horizontal-only mode |
+| Panoramic output | **None** | Vertical mode (X+Y projection) |
+| Crop compensation | **None** | `crop` parameter |
+| Adjustable intensity | **None** | `depth` parameter (0..∞) |
+| Off-axis projection | **None** | `center` offset |
+
+**Where VREEN pulls ahead.** Wide-FOV rendering is essential for
+architectural visualization (keeping verticals straight), cinematic
+wide-angle shots, and panoramic/360° output. Standard perspective
+projection at wide FOV produces extreme edge stretching — objects at
+screen edges appear disproportionately large. Panini projection solves
+this by applying a cylindrical projection that compresses edge content
+while keeping vertical lines vertical, matching human perception of
+architectural scenes. soup3D has no projection correction at all.
+
+#### Design Notes
+
+**Why horizontal-only by default?** The Panini projection was designed
+for architectural vedutismo paintings where vertical lines (building
+edges, columns) must remain straight. Applying the projection to the Y
+axis would curve vertical lines, breaking the architectural aesthetic.
+The `vertical` option is provided for panoramic/360° use cases where
+both axes need projection.
+
+**Why `crop` parameter?** The Panini projection compresses edge content
+toward the center, which can leave the outer edges of the output
+sampling outside the input texture (producing black borders). `crop > 1`
+scales the sampling coordinates inward to avoid this, at the cost of
+slightly zooming into the scene. Typical values: 1.0 (no compensation),
+1.1 (slight), 1.3 (aggressive).
+
+**Why CPU `paniniProject()` function?** The pure function mirrors the
+GLSL shader 1:1, enabling headless testing of the projection math
+without a WebGL2 context. This follows the same pattern as
+`LensDistortionPass`, `CausticsGenerator`, and `TemporalSuperResolution`
+— CPU reference implementation + GPU pass, both validated against the
+same test suite.
+
+**Why not a camera projection matrix?** Panini is a screen-space
+post-process, not a camera projection. It can be applied to any rendered
+image regardless of the camera's projection matrix. This makes it
+compatible with any rendering pipeline (Forward/Deferred/Forward+) and
+allows toggling at runtime without re-rendering the scene.
+
+#### Test coverage (`PaniniProjectionPass.test.ts`, 36 tests)
+
+- **CPU `paniniProject()` (12)**: center maps to itself; left/right edges
+  map to 0/1; horizontal center preserves y; `vertical=true` affects y;
+  `depth=0` produces near-identity; `depth>0` compresses edges; `crop>1`
+  scales inward; `crop<1` scales outward; `inside` flag for out-of-bounds;
+  custom center; object form `{x,y}`; horizontal + vertical symmetry.
+- **Construction (2)**: defaults match option table; all options accepted.
+- **apply() behavior (6)**: disabled returns input (0 draw calls); first
+  frame allocates 1 texture + 1 FBO + 1 VAO + 1 buffer; same size no
+  re-allocate; resolution change triggers reallocation; `setDirty()`
+  triggers rebuild; returns output texture ≠ input.
+- **dispose (4)**: releases resources; without gl parameter; repeated
+  calls safe; apply after dispose re-initializes.
+- **Field updates (5)**: center / depth / vertical / crop / enabled
+  mutable.
+- **Shader source validation (7)**: `#version 300 es`; declares
+  `u_colorMap` + `u_center` + `u_depth` + `u_vertical` + `u_crop`;
+  implements Panini formula (`sqrt(2.0 - uv.x * uv.x)`, `u_depth + 1.0`,
+  `u_depth + ol_x`); supports vertical branch (`u_vertical == 1`, `ol_y`);
+  handles out-of-bounds UV with black fill.
+
+#### References
+
+- Sharpless, T. et al., "Pannini: A New Projection for Rendering
+  Paintings" — http://tksharpless.net/vedutismo/Pannini/panini.pdf
+- o3de Atom, `PaniniProjectionPass` — PostProcessing/PaniniProjectionPass
+- UE5, Panini Projection post-process material
+
+---
+
 ### VelocityPass
 
 Per-pixel motion vectors for TAA and motion blur. Outputs a velocity texture

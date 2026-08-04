@@ -1053,6 +1053,11 @@
         "title": "Inverse Kinematics",
         "desc": "CCD + FABRIK solvers, IK chain/bone hierarchy, constraint-aware joint limits. Procedural foot placement, hand reaching, look-at targeting.",
         "advantage": "soup3D has no IK"
+      },
+      "paniniProjection": {
+        "title": "Panini Projection",
+        "desc": "Cylindrical wide-FOV projection (Sharpless/o3de Atom). Keeps vertical lines straight while allowing wider horizontal FOV without edge stretching. depth parameter controls intensity; optional vertical mode for panoramic/360° output. Architectural viz + cinematic wide-angle.",
+        "advantage": "soup3D has no projection correction"
       }
     }
   }

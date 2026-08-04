@@ -511,4 +511,17 @@ export {
   VolumetricCloudsPass,
   type VolumetricCloudsPassOptions,
 } from './PostProcess';
+// PaniniProjectionPass — Panini 宽 FOV 圆柱投影后处理 Pass(PostProcess/ 顶层重导出)。
+// 适配 o3de Atom PaniniProjectionPass + Sharpless et al. "Pannini" 投影论文。
+// 在保持垂直线垂直的同时允许更宽的水平视场,不产生普通透视投影在广角下的"边缘拉伸"失真。
+// depth 参数控制投影强度(0=接近透视,1=标准 Panini,>1=更强圆柱);
+// vertical 选项对 Y 轴也应用投影(全景/360°);crop 补偿黑边。
+// CPU 纯函数 paniniProject 与 GLSL `PANINI_PROJECTION_FRAG` chunk 1:1 对应,可在无头环境测试。
+// soup3D 无投影失真校正。
+export {
+  PaniniProjectionPass,
+  type PaniniProjectionOptions,
+  type ProjectionCenter,
+  paniniProject,
+} from './PostProcess';
 

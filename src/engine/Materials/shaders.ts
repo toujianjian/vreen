@@ -5660,6 +5660,73 @@ void main() {
 }
 `;
 
+// ── Panini Projection (宽 FOV 圆柱投影) ──────────────────────────
+// Panini 投影是一种圆柱投影,保持垂直线垂直的同时允许更宽的水平视场,
+// 不会产生普通透视投影在广角下的"边缘拉伸"失真。
+//
+// 算法(基于 Sharpless et al. "Panini" 投影论文,与 o3de Atom PaniniProjectionPass 对齐):
+//   1. 将像素坐标转换为以画面中心为原点的 UV: uv = (pixel - center) / center
+//   2. 计算 ol = 1 / sqrt(2 - uv.x²)  ( complimentary uv.x² 用于裁剪控制)
+//   3. 计算缩放比 pspl = (d + 1) / (d + ol),其中 d 为投影深度参数
+//   4. 变换坐标: coords = uv * (ol * pspl)
+//   5. 映射回像素坐标并采样输入纹理
+//
+// d (depth) 参数控制投影强度:
+//   d = 0:   接近普通透视投影
+//   d = 1.0: 标准 Panini 投影(默认,o3de 推荐值)
+//   d > 1:   更强的圆柱投影效果,适合超宽 FOV
+//
+// 可选 vertical 模式:对 Y 轴也应用相同投影(默认仅水平),
+// 适用于全景视频 / 360° 渲染输出。
+//
+// 参考:
+//   - Sharpless et al., "Pannini: A New Projection for Rendering Paintings"
+//     http://tksharpless.net/vedutismo/Pannini/panini.pdf
+//   - o3de Atom PaniniProjectionPass
+//   - UE5 Panini Projection post-process material
+export const PANINI_PROJECTION_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;        // 输入场景颜色
+uniform vec2  u_center;              // 投影中心 UV (默认 0.5, 0.5)
+uniform float u_depth;               // 投影深度参数 d (默认 1.0)
+uniform int   u_vertical;            // 0=仅水平投影, 1=水平+垂直投影
+uniform float u_crop;                // 裁剪补偿 (默认 1.0, >1 放大避免黑边)
+
+void main() {
+  vec2 uv = (v_uv - u_center) / u_center;
+
+  // ── 水平 Panini 投影 ──────────────────────────────────────────
+  // ol = 1 / sqrt(2 - uv.x²)  (complimentary uv.x²)
+  float ol_x = 1.0 / sqrt(2.0 - uv.x * uv.x);
+  float pspl_x = (u_depth + 1.0) / (u_depth + ol_x);
+  vec2 coords = vec2(uv.x * (ol_x * pspl_x), uv.y);
+
+  // ── 可选垂直投影 ──────────────────────────────────────────────
+  if (u_vertical == 1) {
+    float ol_y = 1.0 / sqrt(2.0 - uv.y * uv.y);
+    float pspl_y = (u_depth + 1.0) / (u_depth + ol_y);
+    coords.y = uv.y * (ol_y * pspl_y);
+  }
+
+  // 缩放补偿 + 映射回 [0,1] UV 空间
+  coords = coords / u_crop;
+  coords = coords * u_center + u_center;
+
+  // 边界检查:超出 [0,1] 的 UV 用黑色填充
+  if (coords.x < 0.0 || coords.x > 1.0 ||
+      coords.y < 0.0 || coords.y > 1.0) {
+    outColor = vec4(0.0, 0.0, 0.0, 1.0);
+    return;
+  }
+
+  outColor = texture(u_colorMap, coords);
+}
+`;
+
 // ── Cloud Shadow (地面云影) ───────────────────────────────────────
 // 屏幕空间云阴影:对每个场景像素,从其世界位置朝太阳方向射线,
 // 与云层 [cloudHeight, cloudHeight+thickness] 求交,沿交线步进采样

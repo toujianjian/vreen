@@ -1053,6 +1053,11 @@
         "title": "逆向运动学",
         "desc": "CCD + FABRIK 求解器、IK 链/骨骼层级、约束感知关节限制。程序化脚步放置、手部触达、注视朝向。",
         "advantage": "soup3D 无 IK"
+      },
+      "paniniProjection": {
+        "title": "Panini 投影",
+        "desc": "圆柱宽 FOV 投影(Sharpless/o3de Atom)。保持垂直线垂直的同时允许更宽的水平视场,无广角边缘拉伸。depth 参数控制强度,可选垂直模式用于全景/360° 输出。建筑可视化 + 电影广角镜头。",
+        "advantage": "soup3D 无投影失真校正"
       }
     }
   }
