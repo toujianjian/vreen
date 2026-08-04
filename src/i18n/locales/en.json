@@ -954,6 +954,11 @@
         "desc": "Percentage-closer soft shadows with blocker search and penumbra estimation.",
         "advantage": "soup3D has hard shadows only"
       },
+      "csm": {
+        "title": "Cascaded Shadow Maps",
+        "desc": "PSSM cascaded shadow maps (2-8 cascades). Logarithmic+uniform split, tight texel utilization, cascade blending for seamless transitions. Essential for large outdoor scenes.",
+        "advantage": "soup3D has single-map shadows only"
+      },
       "lut": {
         "title": "LUT Grading",
         "desc": "3D/2D strip LUT color grading with .cube file support.",

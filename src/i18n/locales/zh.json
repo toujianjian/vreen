@@ -954,6 +954,11 @@
         "desc": "物理软阴影,遮挡体搜索 + 半影估算。",
         "advantage": "soup3D 仅硬阴影"
       },
+      "csm": {
+        "title": "级联阴影贴图",
+        "desc": "PSSM 级联阴影(2-8 级)。对数+均匀混合分割,紧密纹素利用,级联间混合无缝过渡。大型户外场景必备。",
+        "advantage": "soup3D 仅单级阴影"
+      },
       "lut": {
         "title": "LUT 调色",
         "desc": "3D/2D strip LUT 调色,支持 .cube 文件。",

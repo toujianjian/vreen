@@ -954,6 +954,11 @@
         "desc": "Sombras suaves percentage-closer con búsqueda de bloqueadores y estimación de penumbra.",
         "advantage": "soup3D solo sombras duras"
       },
+      "csm": {
+        "title": "Mapas de sombras en cascada",
+        "desc": "Mapas de sombras PSSM en cascada (2-8). División logarítmica+uniforme, texels ajustados, transición fluida con blend entre cascadas. Esencial para escenas exteriores.",
+        "advantage": "soup3D solo mapa de sombra único"
+      },
       "lut": {
         "title": "Gradación LUT",
         "desc": "Gradación de color LUT 3D/2D strip con soporte .cube.",

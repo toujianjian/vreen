@@ -72,6 +72,14 @@ export {
   type SplitScheme,
   type CascadedShadowMapOptions,
 } from './CascadedShadowMap';
+// CSMShadowMap — 级联阴影贴图管理器 v2(PSSM 分割 + 级联间混合 + texel bias 缩放)。
+// 与 CascadedShadowMap 互补:后者偏算法层(分割+tight 投影),前者偏资源管理
+// (阴影纹理分配 + 级联元数据 + shader uniform 上传)。两者可配合使用。
+export {
+  CSMShadowMap,
+  type CSMShadowMapOptions,
+  type CascadeInfo,
+} from './CSMShadowMap';
 // 镜头光晕 (Lens Flare) — CPU 侧合成 Pass。
 // 适配 three.js Lensflare.js 与 o3de Atom LensFlarePass。
 // 提供 core/halo/ghost/streak 四种 flare 元素 + 沿轴分布 +

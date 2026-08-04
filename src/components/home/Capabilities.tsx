@@ -1,7 +1,7 @@
 // Capabilities — 渲染能力展示区(赛博朋克风格 + i18n)。
 // 把 VREEN 旗舰渲染特性与 soup3D 对比亮出来,直接服务"比 soup3D 更有优势"。
 import { useTranslation } from 'react-i18next';
-import { Sparkles, Sun, Scan, Aperture, Droplets, Waves, FastForward, Box, Cloud, CloudSun, CloudOff, Mountain, Lightbulb, Moon, Palette, Sticker, Smile, Focus, Maximize, Gem, Layers, Globe, Sailboat, Anchor, Sunrise, Star, Flame, Contrast, Camera, GlassWater, Wind, Hourglass, Filter, SprayCan } from 'lucide-react';
+import { Sparkles, Sun, Scan, Aperture, Droplets, Waves, FastForward, Box, Cloud, CloudSun, CloudOff, Mountain, Lightbulb, Moon, Palette, Sticker, Smile, Focus, Maximize, Gem, Layers, Globe, Sailboat, Anchor, Sunrise, Star, Flame, Contrast, Camera, GlassWater, Wind, Hourglass, Filter, SprayCan, Boxes } from 'lucide-react';
 
 interface Cap {
   key: string;        // i18n key suffix under capabilities.items
@@ -35,6 +35,7 @@ const CAPS: Cap[] = [
   { key: 'ssgi', icon: Lightbulb, accent: 'text-neon-amber' },
   { key: 'ddgi', icon: Globe, accent: 'text-neon-cyan' },
   { key: 'pcss', icon: Moon, accent: 'text-neon-magenta' },
+  { key: 'csm', icon: Boxes, accent: 'text-neon-cyan' },
   { key: 'lut', icon: Palette, accent: 'text-neon-cyan' },
   { key: 'decal', icon: Sticker, accent: 'text-neon-amber' },
   { key: 'skin', icon: Smile, accent: 'text-neon-magenta' },
