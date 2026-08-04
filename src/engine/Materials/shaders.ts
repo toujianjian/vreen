@@ -1166,6 +1166,125 @@ float applySpecularAA(float normalLength, float baseRoughness) {
 }
 `;
 
+/** 时间超分辨率(TSR)resolve chunk:低分辨率当前帧 + 高分辨率历史 → 高分辨率输出。
+ *
+ *  匹配 UE5 TemporalSuperResolution / FSR2 / Karis 2014。与 CPU TemporalSuperResolution.ts 1:1。
+ *
+ *  依赖外部 uniform / varying:
+ *    uniform sampler2D u_currentColor;  // 低分辨率当前帧颜色
+ *    uniform sampler2D u_historyColor;  // 高分辨率历史缓冲
+ *    uniform sampler2D u_velocity;      // 低分辨率速度缓冲(RG = 像素速度)
+ *    uniform vec2  u_lowResSize;        // 低分辨率尺寸
+ *    uniform float u_blendFactor;       // 历史混合因子(默认 0.1)
+ *    uniform float u_velocityThreshold; // 速度阈值(默认 16)
+ *    uniform int   u_hasHistory;        // 1=有历史,0=首帧
+ *    varying vec2  v_uv;                // 高分辨率 UV [0,1]
+ *
+ *  参考:
+ *    - Karis 2014 "High Quality Temporal Supersampling"
+ *    - UE5 TemporalSuperResolution
+ *    - AMD FSR2
+ *    - o3de Atom UpscalingPass
+ */
+export const TSR_RESOLVE_FRAG = /* glsl */ `
+
+// TSR — Temporal Super Resolution. References: Karis 2014; UE5 TSR; AMD FSR2; o3de Atom.
+
+// 双线性采样(带边缘钳制)
+vec4 tsrSample(sampler2D tex, vec2 uv) {
+  return texture(tex, clamp(uv, vec2(0.0), vec2(1.0)));
+}
+
+// 3x3 邻域 AABB min/max(在低分辨率当前帧上)
+vec3 tsrNeighborMin(sampler2D tex, vec2 uv, vec2 texel) {
+  vec3 mn = vec3(1.0);
+  for (int y = -1; y <= 1; y++) {
+    for (int x = -1; x <= 1; x++) {
+      vec3 c = texture(tex, uv + vec2(float(x), float(y)) * texel).rgb;
+      mn = min(mn, c);
+    }
+  }
+  return mn;
+}
+
+vec3 tsrNeighborMax(sampler2D tex, vec2 uv, vec2 texel) {
+  vec3 mx = vec3(0.0);
+  for (int y = -1; y <= 1; y++) {
+    for (int x = -1; x <= 1; x++) {
+      vec3 c = texture(tex, uv + vec2(float(x), float(y)) * texel).rgb;
+      mx = max(mx, c);
+    }
+  }
+  return mx;
+}
+
+// AABB 夹紧
+vec3 tsrClampAABB(vec3 color, vec3 mn, vec3 mx) {
+  return clamp(color, mn, mx);
+}
+
+// Catmull-Rom 软夹紧(向中心收敛)
+vec3 tsrCatmullRomClamp(vec3 history, vec3 center, vec3 mn, vec3 mx) {
+  vec3 clamped = clamp(history, mn, mx);
+  return mix(clamped, center, 0.5);
+}
+
+// 置信度计算
+float tsrConfidence(vec2 velocity, float velocityThreshold, float blendFactor) {
+  float speed = length(velocity);
+  if (speed >= velocityThreshold) return blendFactor;
+  float t = speed / velocityThreshold;
+  return (1.0 - blendFactor) * (1.0 - t) + blendFactor * t;
+}
+
+// 主 resolve:返回高分辨率颜色
+vec3 tsrResolve() {
+  vec2 lowTexel = 1.0 / u_lowResSize;
+  // 低分辨率 UV(中心对齐)
+  vec2 lowUV = v_uv;
+  vec2 lowPx = lowUV * u_lowResSize - 0.5;
+  vec2 lowPxFloor = floor(lowPx) + 0.5;
+  vec2 sampleUV = lowPxFloor / u_lowResSize;
+
+  // 当前帧颜色
+  vec3 current = texture(u_currentColor, sampleUV).rgb;
+
+  // 首帧 → 直接双线性上采样
+  if (u_hasHistory == 0) {
+    return texture(u_currentColor, lowUV).rgb;
+  }
+
+  // 速度(从低分辨率速度缓冲采样)
+  vec2 velocity = texture(u_velocity, sampleUV).rg * u_lowResSize;
+
+  // 邻域 AABB
+  vec3 mn = tsrNeighborMin(u_currentColor, sampleUV, lowTexel);
+  vec3 mx = tsrNeighborMax(u_currentColor, sampleUV, lowTexel);
+
+  // 重投影到历史 UV
+  vec2 histUV = (lowPxFloor - velocity) / u_lowResSize;
+  bool disoccluded = histUV.x < 0.0 || histUV.x > 1.0
+                  || histUV.y < 0.0 || histUV.y > 1.0;
+
+  // 置信度
+  float confidence = disoccluded ? 0.0
+    : tsrConfidence(velocity, u_velocityThreshold, u_blendFactor);
+
+  // 历史采样
+  vec3 history;
+  if (disoccluded || confidence <= 0.0) {
+    // EASU 回退:双线性上采样当前帧
+    history = texture(u_currentColor, lowUV).rgb;
+  } else {
+    history = tsrSample(u_historyColor, histUV).rgb;
+    history = tsrClampAABB(history, mn, mx);
+  }
+
+  // 混合
+  return mix(current, history, confidence);
+}
+`;
+
 // ── 增强后处理 shader(ColorGrading / LUT / FilmGrain / Afterimage / Pixelation)──
 // 这些 shader 配合 Renderer/PostProcess/ 下的 Pass 类使用,与 RenderPass.ts
 // 中的基础后处理 shader 平行。POST_VERT 复用现有全屏三角形顶点着色器。

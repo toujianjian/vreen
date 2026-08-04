@@ -393,4 +393,29 @@ export {
   type TexturePoolOptions,
   type TexturePoolStats,
 } from './TexturePool';
+// TemporalSuperResolution (TSR) — 时间超分辨率上采样 CPU 参考实现。
+// 将低分辨率渲染结果上采样到高分辨率,利用时间历史重建细节,匹配 UE5 TSR / FSR2 / DLSS 级别。
+// 与 TAAPass(同分辨率 TAA)互补:TSR 处理跨分辨率重建,核心难点是低分辨率输入
+// ↔ 高分辨率历史之间的重投影与子像素累积。
+// 与 GLSL `TSR_RESOLVE_FRAG` chunk 1:1 对应,纯函数,不依赖 WebGL,可在 Node/无头环境测试。
+export {
+  halton,
+  getJitter,
+  bilinearSampleRGBA,
+  reprojectToHistory,
+  neighborhoodMinMax,
+  clampToAABB,
+  catmullRomClamp,
+  computeConfidence,
+  easuSample,
+  sharpen,
+  resolveTSR,
+  makeSolidBuffer,
+  makeZeroVelocity,
+  type PixelBuffer,
+  type VelocityBuffer,
+  type DepthBuffer,
+  type TSROptions,
+  type TSRStats,
+} from './TemporalSuperResolution';
 

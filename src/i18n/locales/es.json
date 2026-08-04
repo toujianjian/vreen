@@ -979,6 +979,11 @@
         "desc": "Upscaling espacial adaptativo por bordes FidelityFX FSR1. Renderiza al 50-70% de resolución.",
         "advantage": "soup3D sin upscaling"
       },
+      "tsr": {
+        "title": "Super Res Temporal",
+        "desc": "Upscaler temporal clase UE5. Jitter Halton + reproyección + clamp de vecindario + mezcla por confianza reconstruye detalle subpíxel entre fotogramas, acercándose a calidad nativa al 50-70% del coste de render.",
+        "advantage": "soup3D solo bilineal"
+      },
       "specularAA": {
         "title": "AA Especular",
         "desc": "Filtrado Toksvig/LEAN. Elimina el shimmer especular en normales irregulares a distancia.",

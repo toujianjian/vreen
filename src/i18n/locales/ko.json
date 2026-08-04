@@ -979,6 +979,11 @@
         "desc": "FidelityFX FSR1 에지 적응 공간 업스케일링. 50-70% 해상도 렌더링.",
         "advantage": "soup3D 업스케일링 없음"
       },
+      "tsr": {
+        "title": "템포럴 초해상도",
+        "desc": "UE5 급 템포럴 업스케일러. Halton 지터 + 재투영 + 이웃 클램프 + 신뢰도 블렌드로 프레임 간 서브픽셀 디테일을 재구성하여, 50-70% 렌더링 비용으로 네이티브 해상도 품질에 근접.",
+        "advantage": "soup3D는 바이리니어만"
+      },
       "specularAA": {
         "title": "스페큘러 AA",
         "desc": "Toksvig/LEAN 필터링. 거리에 따른 법선 스페큘러 시머 제거.",

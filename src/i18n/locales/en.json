@@ -979,6 +979,11 @@
         "desc": "FidelityFX FSR1 edge-adaptive spatial upscaling. Render at 50-70% resolution.",
         "advantage": "soup3D has no upscaling"
       },
+      "tsr": {
+        "title": "Temporal Super Res",
+        "desc": "UE5-class temporal upscaler. Halton jitter + reprojection + neighborhood clamp + confidence blend reconstructs sub-pixel detail across frames, approaching native resolution quality at 50-70% render cost.",
+        "advantage": "soup3D uses only bilinear"
+      },
       "specularAA": {
         "title": "Specular AA",
         "desc": "Toksvig/LEAN filtering. Eliminates specular shimmer on bumpy normals at distance.",

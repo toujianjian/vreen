@@ -979,6 +979,11 @@
         "desc": "FidelityFX FSR1 边缘自适应空间上采样,支持 50-70% 分辨率渲染。",
         "advantage": "soup3D 无上采样"
       },
+      "tsr": {
+        "title": "时间超分辨率",
+        "desc": "UE5 级时间上采样器。Halton 抖动 + 重投影 + 邻域夹紧 + 置信度混合,跨帧重建子像素细节,以 50-70% 渲染开销逼近原生分辨率质量。",
+        "advantage": "soup3D 仅双线性"
+      },
       "specularAA": {
         "title": "镜面抗锯齿",
         "desc": "Toksvig/LEAN 过滤,消除远距离法线区域的镜面闪烁。",

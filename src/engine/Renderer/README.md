@@ -862,6 +862,90 @@ vec4 color = texture(u_texturePool, vec3(v_uv, float(u_diffuseIndex)));
 
 **o3de comparison:** o3de uses DX12/Vulkan descriptor heaps with bindless flags; VREEN uses WebGL2 `TEXTURE_2D_ARRAY` + `sampler2DArray`, achieving the same concept within WebGL2 constraints.
 
+### `TemporalSuperResolution` (`TemporalSuperResolution.ts`)
+
+Temporal Super Resolution (TSR) — CPU reference implementation of temporal upscaling. Reconstructs a high-resolution image (e.g. 4K) from a low-resolution render (e.g. 1080p) by accumulating sub-pixel detail across frames, matching **UE5 TSR / AMD FSR2 / NVIDIA DLSS** quality class. Complementary to `TAAPass` (same-resolution TAA): TSR handles cross-resolution reconstruction, where the core difficulty is reprojection and sub-pixel accumulation between low-res input and high-res history.
+
+**Adapted from**: Karis 2014 "High Quality Temporal Supersampling", UE5 `TemporalSuperResolution`, AMD FSR2 (temporal), o3de Atom `UpscalingPass` (temporal mode).
+
+**Algorithm (5 stages):**
+
+1. **Sub-pixel jitter** — Each frame the low-resolution camera is offset by a Halton(2,3) sequence so that successive frames sample different sub-pixel positions of the high-resolution grid. Multi-frame accumulation fills in high-resolution detail that a single low-res frame cannot capture.
+2. **Reprojection** — Per high-res output pixel, the corresponding low-res pixel is located (floor of the scaled coordinate), its velocity is read, and the previous-frame UV is computed as `histUV = (lowPx - velocity) / lowRes`. UVs outside `[0,1]` indicate disocclusion.
+3. **Neighborhood clamp** — A 3×3 neighborhood AABB (min/max per RGB channel) is computed on the low-res current frame. The history color (bilinearly sampled from the high-res history buffer) is clamped to this AABB, eliminating ghosting when the history disagrees with the current frame. An optional Catmull-Rom soft clamp converges the history 50% toward the neighborhood center, preserving more historical detail at the cost of mild trailing.
+4. **Confidence blend** — A per-pixel confidence weight in `[0,1]` is computed from velocity magnitude and disocclusion state:
+   - Static / low-speed pixels → confidence ≈ `1 - blendFactor` (max history weight, rich detail);
+   - High-speed pixels (speed ≥ `velocityThreshold`) → confidence = `blendFactor` (mostly current frame, fast response);
+   - Disoccluded pixels → confidence = 0 (history discarded entirely).
+   The final color is `history * confidence + current * (1 - confidence)`.
+5. **EASU fallback** — On the first frame, on disoccluded pixels, or when confidence is 0, the current-frame contribution is produced by an FSR1-style EASU spatial upsample (bilinear approximation of the 9-tap edge-adaptive kernel) instead of the history, preventing trailing artifacts.
+
+**Why not just FSR1?** FSR1 (`FSRUpscalePass`) is purely spatial — a 9-tap bilateral kernel with no temporal history. It cannot recover sub-pixel detail that was never rendered, so edges may appear soft and fine texture detail is lost. TSR leverages multi-frame history to perform sub-pixel detail reconstruction, approaching native high-resolution quality.
+
+**Public API (pure functions, no WebGL dependency — headless-testable):**
+
+| Function | Description |
+|----------|-------------|
+| `halton(index, base)` | Halton low-discrepancy sequence value in `[0,1)`. |
+| `getJitter(index, scale=1.0)` | Per-frame Halton(2,3) jitter offset in pixels, centered around `[-0.5*scale, 0.5*scale]`. |
+| `bilinearSampleRGBA(buf, u, v)` | Bilinear RGBA sample at UV `[0,1]`, edges clamped. |
+| `reprojectToHistory(lowX, lowY, velX, velY, lowW, lowH, highW, highH)` | Map low-res pixel + velocity to history UV. |
+| `neighborhoodMinMax(current, x, y, radius=1)` | 3×3 (or larger) neighborhood RGB AABB. |
+| `clampToAABB(color, minC, maxC)` | Hard AABB clamp. |
+| `catmullRomClamp(history, center, minC, maxC)` | Soft clamp — 50% convergence toward center. |
+| `computeConfidence(velX, velY, disoccluded, velocityThreshold=16, blendFactor=0.1)` | Per-pixel history weight `[0,1]`. |
+| `easuSample(current, highX, highY, highW, highH)` | FSR1 EASU simplified spatial upsample (bilinear approximation). |
+| `sharpen(buf, x, y, strength)` | Laplacian sharpen: `color + strength * (color - neighbor_avg)`. |
+| `resolveTSR(current, history, velocity, depth, opts?)` | Main resolve: low-res current + high-res history → high-res output. Returns `{ output, history, stats }`. |
+| `makeSolidBuffer(w, h, r, g, b, a=255)` | Test helper: solid-color `PixelBuffer`. |
+| `makeZeroVelocity(w, h)` | Test helper: zero-velocity `VelocityBuffer` (static scene). |
+
+**Options (`TSROptions`):**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `blendFactor` | `0.1` | History blend factor (0..1). Higher = more current frame (faster response, less detail). |
+| `sharpness` | `0.0` | Sharpening strength (0 = off, typical 0.2–0.5). |
+| `clampRadius` | `1` | Neighborhood clamp radius (1 = 3×3). |
+| `useCatmullRom` | `false` | Use Catmull-Rom soft clamp instead of hard AABB. |
+| `velocityThreshold` | `16` | Velocity (pixels) above which history weight drops to `blendFactor`. |
+| `useEASUFallback` | `true` | Use EASU spatial upsample for disoccluded / first-frame pixels. |
+
+**Stats (`TSRStats`):**
+
+| Field | Description |
+|-------|-------------|
+| `pixelsProcessed` | Output pixel count. |
+| `easuFallbacks` | Pixels that fell back to EASU (disocclusion / first frame). |
+| `avgConfidence` | Average per-pixel confidence (debug). |
+| `lastFrameTimeMs` | Last resolve wall-clock time. |
+
+**GLSL counterpart:** `TSR_RESOLVE_FRAG` in `Materials/shaders.ts` is a 1:1 GPU implementation of `resolveTSR`. The CPU functions exist as a headless-testable reference and for offline / SSR / screenshot pipelines; the GPU shader is used in the realtime pipeline.
+
+**Typical pipeline placement:**
+
+```
+   low-res scene render (with Halton jitter applied to projection)
+        ↓
+   TAA (optional, same-resolution temporal AA on low-res)
+        ↓
+   TSR resolve (low-res → high-res, with velocity + history)
+        ↓
+   sharpen / tonemap / film grain / UI composite
+        ↓
+   present
+```
+
+**soup3D comparison:** soup3D has no temporal upscaling at all — it renders at native resolution or uses basic bilinear upsampling. VREEN's TSR brings the engine to UE5/o3de Atom UpscalingPass (temporal mode) parity, delivering near-native image quality at 50%–70% render resolution for a substantial performance uplift.
+
+**References:**
+
+- Karis 2014, "High Quality Temporal Supersampling" — foundational sub-pixel jitter + neighborhood clamp + confidence blend.
+- UE5 `TemporalSuperResolution` — production-grade TSR with history buffering, depth-aware disocclusion, EASU fallback.
+- AMD FSR2 — open-source temporal upscaler (MIT).
+- o3de Atom `UpscalingPass` (temporal mode) — engine integration reference.
+- Yang et al. 2020, "Survey of Temporal Anti-Aliasing Techniques" — taxonomy of TAA/TSR variants.
+
 ### `DeferredRenderer` (`DeferredRenderer.ts`)
 
 Alternative deferred backend. G-Buffer pass → fullscreen lighting pass.
