@@ -1138,6 +1138,11 @@
         "title": "メッシュレットレンダラー(UE5 Nanite / o3de)",
         "desc": "three.js meshopt_clusterizer、o3de Atom MeshletsModule、UE5 Nanite から適応したメッシュレットレンダリングパイプライン。大規模メッシュを小さなクラスタ(メッシュレット、各最大 256 頂点 / 512 三角形)に分割し、きめ細かい可視性カリングを実現。各メッシュレットは独立したバウンディングスフィア + 法線コーン(頂点 + 軸 + カットオフ cos)を保持。完全カリングパイプライン:視錐台カリング(バウンディングスフィア vs 6 平面)+ バックフェースカリング(法線コーン:dot(viewDir, axis) >= cutoff)+ HZB オクルージョンカリング(バウンディングスフィア投影、投影半径で mip 選択、HZB 深度サンプリング)。可視メッシュレットを indirect draw command にパッキング(累積 vertexOffset/firstIndex 付き)。GPU アップロード用マージ頂点/インデックスバッファ。純粋 CPU、WebGL/WASM 非依存、Node/ヘッドレス環境でテスト可能。42 個のユニットテスト。",
         "advantage": "soup3D はメッシュレットや GPU 駆動レンダリングなし"
+      },
+      "visibilityBuffer": {
+        "title": "ビジビリティバッファ(UE5 Nanite / o3de Atom)",
+        "desc": "ビジビリティバッファディファードレンダリング、o3de Atom VisibilityBuffer.azsli + DeferredMaterial と UE5 Nanite から適応。完全 GBuffer 属性の代わりにピクセル単位のジオメトリ ID(meshInfoIndex + triangleId + 重心座標 + isFrontFace)を格納、帯域幅を半減し、マテリアルタイプをジオメトリパスから切り離す。o3de Atom 互換ビットパッキング:ピクセルあたり 2 RGBA32F texel(flagsAndMeshInfoIndex:bit 31=無効、bit 30=前面、bits 29..0=meshInfoIndex;triangleId;重心座標 xy、z=1-x-y で再構築;重心導関数 Dx/Dy xy、z=-x-y で再構築)。空ピクセルマーカー:-0.0f(0x80000000)、有効な +0.0f(meshInfoIndex=0)と区別。CPU ソフトウェアラスタライザ(edge function 重心座標 + 深度テスト + visbuf 書き込み)。完全パイプライン:pack → rasterize → build → getMeshInfoIndex(高速パス)→ unpack → decompressPixel → fetchTriangleVertices → interpolateAttributes → シェーディング。GLSL chunks(VISIBILITY_BUFFER_PACK_VERT/FRAG + GL_EXT_fragment_shader_barycentric、VISIBILITY_BUFFER_UNPACK_UTILITY でディファードシェーディング)。MeshletRenderer の自然なコンパニオン、UE5 Nanite GPU 駆動ループを構成。純粋 CPU、WebGL 非依存、Node/ヘッドレス環境でテスト可能。75 個のユニットテスト。",
+        "advantage": "soup3D はビジビリティバッファやディファードマテリアルシステムなし"
       }
     }
   }

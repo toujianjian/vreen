@@ -2315,6 +2315,218 @@ const commands = packMeshletDrawCommands(
 
 ---
 
+### Visibility Buffer (`VisibilityBuffer.ts`)
+
+**Visibility Buffer** (visbuf) — a modern deferred rendering technique
+that stores per-pixel **geometry IDs** instead of full GBuffer attributes.
+Adapted from o3de Atom `VisibilityBuffer.azsli` + `DeferredMaterial`
+and UE5 Nanite's visibility buffer pass.
+
+This is the natural companion to `MeshletRenderer`: meshlet software
+rasterization writes the visbuf, and a deferred shading pass reads it
+back to fetch attributes and shade. Together they form the UE5 Nanite
+GPU-driven rendering loop.
+
+soup3D has no visibility buffer or deferred material system — it uses
+forward rendering with a basic GBuffer. VREEN provides an o3de Atom
+-compatible visbuf format with CPU reference implementation.
+
+**Why visbuf vs GBuffer?**
+
+| Aspect | GBuffer | Visibility Buffer |
+|--------|---------|-------------------|
+| Bandwidth per pixel | 128+ bit (albedo + normal + material + ...) | 64 bit (meshInfoIndex + triangleId + bary) |
+| Material types | Limited by GBuffer layout | Unlimited (decoupled from geometry pass) |
+| Shader complexity | Bounded by GBuffer write | Geometry pass minimal; shading deferred |
+| MSAA | Expensive (per-sample GBuffer) | Cheap (per-sample visbuf, per-pixel shade) |
+| Meshlet integration | Awkward (per-meshlet material variants) | Natural (visbuf is geometry-only) |
+
+**Packing format** (o3de Atom `VisibilityBuffer.azsli`-compatible):
+
+Two RGBA32F texels per pixel (`first`, `second`):
+
+| Texel | Component | Content |
+|-------|-----------|---------|
+| `first.x` | uint | `flagsAndMeshInfoIndex`: bit 31 = meshInfo invalid, bit 30 = isFrontFace, bits 29..0 = meshInfoIndex (low 30 bits) |
+| `first.y` | uint | `triangleId` (mesh-local triangle index) |
+| `first.zw` | vec2 | barycentrics.xy (z = 1 - x - y reconstructed) |
+| `second.xy` | vec2 | barycentricsDx.xy (z = -x - y reconstructed) |
+| `second.zw` | vec2 | barycentricsDy.xy (z = -x - y reconstructed) |
+
+**Empty pixel marker:** `-0.0f` (bit pattern `0x80000000`). Note that
+`+0.0f` (bit pattern `0x00000000`) is a **valid** pixel meaning
+`meshInfoIndex=0 + isFrontFace=false`. Callers must initialize the
+visbuf with `-0.0f` before rasterization (`buildVisibilityBuffer` does
+this automatically).
+
+**Pipeline:**
+
+| Stage | Function | Description |
+|-------|----------|-------------|
+| 1. Pack geometry | `packVisibilityBuffer(entry)` | Pack `VisibilityBufferEntry` → two RGBA32F texels (bit-level, o3de-compatible). |
+| 2. Rasterize | `rasterizeTriangle(tri, visbuf, depth, w, h, opts)` | Software rasterizer: edge-function barycentric + depth test + visbuf write. |
+| 3. Build | `buildVisibilityBuffer(triangles, opts)` | Loop over triangles, init visbuf with `-0.0f`, return `VisibilityBufferResult` (visbuf + depth + stats). |
+| 4. Fast query | `getMeshInfoIndex(firstX)` | Quick check if pixel has geometry (returns `{ valid, meshInfoIndex }`). |
+| 5. Full unpack | `unpackVisibilityBuffer(first, second)` | Reconstruct full `VisibilityBufferEntry` (meshInfoIndex + triangleId + isFrontFace + barycentrics + derivatives). |
+| 6. Decompress | `decompressPixel(result, x, y, meshInfoTable)` | High-level: unpack + look up `MeshInfo` from table → `DecompressedPixel`. |
+| 7. Fetch attrs | `fetchTriangleVertices(mesh, triId)` + `interpolateAttributes(attrs, bary)` | Look up triangle vertices, interpolate via barycentrics. |
+| 8. Position | `fetchInterpolatedPosition(mesh, triId, bary)` | Convenience: fetch + interpolate position attribute. |
+
+**API surface:**
+
+```ts
+import {
+  // Bit packing
+  packVisibilityBuffer,           // entry → { first, second } (Float32Array×2)
+  unpackVisibilityBuffer,         // { first, second } → entry | null
+  getMeshInfoIndex,               // firstX → { valid, meshInfoIndex } (fast path)
+  uintAsFloat, floatAsUint,       // bit reinterpret helpers
+  MESHINFO_BITS, MESHINFO_MASK,   // bit constants (o3de-compatible)
+  MESHINFO_INVALID_MASK, FRONTFACE_MASK,
+  // Geometry
+  computeBarycentric2D,           // point + triangle → (u, v, w)
+  edgeFunctionBarycentric,        // edge function variant (returns inside + frontFace)
+  // Rasterization
+  rasterizeTriangle,              // single triangle → visbuf + depth
+  buildVisibilityBuffer,          // triangle array → full visbuf result
+  pixelOffset,                    // (x, y, width) → byte offset in visbuf
+  // Decompression (for deferred shading)
+  decompressPixel,                // visbuf + meshInfoTable → DecompressedPixel
+  interpolateAttributes,          // barycentric interpolation of vertex attrs
+  fetchTriangleVertices,          // mesh + triangleId → 3 vertex positions
+  fetchInterpolatedPosition,      // mesh + triangleId + bary → interpolated position
+  // GLSL chunks (GPU-side, same packing format)
+  VISIBILITY_BUFFER_PACK_UTILITY, // pack/unpack GLSL functions (o3de-compatible)
+  VISIBILITY_BUFFER_PACK_VERT,    // vertex shader (writes meshInfoIndex + triangleId)
+  VISIBILITY_BUFFER_PACK_FRAG,    // fragment shader (writes packed visbuf via gl_BarycentricEXT)
+  VISIBILITY_BUFFER_UNPACK_UTILITY, // alias of PACK_UTILITY (for deferred shading pass)
+  // Types
+  type VisibilityBufferEntry, type VisibilityBufferPacked,
+  type MeshInfo, type VisibilityTriangle,
+  type VisibilityBufferOptions, type VisibilityBufferResult,
+  type VisibilityBufferStats, type DecompressedPixel,
+} from '@vreen/engine/renderer';
+```
+
+**Usage (CPU reference rasterization):**
+
+```ts
+import {
+  buildVisibilityBuffer, decompressPixel, fetchInterpolatedPosition,
+  type VisibilityTriangle, type MeshInfo,
+} from '@vreen/engine/renderer';
+
+// 1. Build triangle list (already transformed to screen space)
+const triangles: VisibilityTriangle[] = [
+  {
+    meshInfoIndex: 0,
+    triangleId: 0,
+    screenPositions: [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 0, y: 100 }],
+    depths: [0.5, 0.5, 0.5],
+    isFrontFace: true,
+  },
+  // ... more triangles
+];
+
+// 2. Rasterize to visbuf
+const result = buildVisibilityBuffer(triangles, {
+  width: 1920,
+  height: 1080,
+  computeDerivatives: true, // for mip-level selection in shading
+  depthFunc: 'less',
+});
+
+console.log(result.stats);
+// → { triangleCount, culledTriangles, depthPassedFragments,
+//     depthFailedFragments, emptyPixels, coverage }
+
+// 3. Build mesh info table (for deferred shading)
+const meshTable: MeshInfo[] = [];
+meshTable[0] = {
+  index: 0,
+  vertices: mesh0Positions, // Float32Array (stride = 3)
+  indices: mesh0Indices,    // Uint32Array
+  vertexStride: 3,
+  materialIndex: 0,
+};
+
+// 4. Decompress pixel for shading
+const pixel = decompressPixel(result, x, y, meshTable);
+if (!pixel.isEmpty) {
+  const pos = fetchInterpolatedPosition(
+    pixel.meshInfo!, pixel.triangleId, pixel.barycentrics,
+  );
+  // → shaded position (Float32Array [x, y, z])
+}
+```
+
+**Usage (GPU path, GLSL chunks):**
+
+```glsl
+// Geometry pass (writes visbuf)
+#extension GL_EXT_fragment_shader_barycentric : require
+// inject VISIBILITY_BUFFER_PACK_VERT + VISIBILITY_BUFFER_PACK_FRAG
+// → writes to MRT: location 0 = first, location 1 = second
+
+// Deferred shading pass (reads visbuf)
+uniform sampler2D u_visbufFirst;
+uniform sampler2D u_visbufSecond;
+// inject VISIBILITY_BUFFER_UNPACK_UTILITY
+void main() {
+  vec4 first  = texelFetch(u_visbufFirst,  ivec2(gl_FragCoord.xy), 0);
+  vec4 second = texelFetch(u_visbufSecond, ivec2(gl_FragCoord.xy), 0);
+  int meshInfoIndex; uint triangleId; bool isFrontFace;
+  vec3 bary, baryDx, baryDy;
+  if (!unpackVisibilityBuffer(first, second, meshInfoIndex, triangleId,
+                               isFrontFace, bary, baryDx, baryDy)) {
+    discard; // empty pixel
+  }
+  // Look up mesh info from SSBO/texture by meshInfoIndex
+  // Look up triangle vertices by triangleId
+  // Interpolate attributes with bary
+  // Shade (unlimited material types)
+}
+```
+
+**Design choices:**
+- **o3de Atom-compatible packing** — same bit layout as
+  `VisibilityBuffer.azsli`, so GPU shaders can be ported 1:1.
+- **`-0.0f` empty marker** — distinguishes empty pixels from valid
+  pixels with `meshInfoIndex=0`. `Object.is(x, -0)` is the JS equivalent
+  of GLSL's `x != -0.0f` test (since JS `===` treats `-0 === 0` as true).
+- **CPU software rasterizer** — reference implementation using edge
+  functions and bounding-box traversal. No WebGL dependency; testable
+  in Node/headless (same pattern as `MeshletRenderer`,
+  `HierarchicalZBuffer`, `PCSSSampler`).
+- **Linear depth interpolation** — screen-space linear (not
+  perspective-correct). For correct perspective interpolation, callers
+  should store `1/w` and multiply. Sufficient for visbuf ID storage
+  (geometry IDs are not affected by interpolation method).
+- **Edge function barycentrics** — supports both CCW (front-facing,
+  `area2 > 0`) and CW (back-facing, `area2 < 0`) winding. The sign of
+  `area2` determines `isFrontFace`.
+- **Derivative reconstruction** — only `baryDx.xy` and `baryDy.xy` are
+  stored; `z` is reconstructed as `-x - y` (since `u + v + w = 1`,
+  `du + dv + dw = 0`). Saves 2 floats per pixel.
+- **GLSL_EXT_fragment_shader_barycentric** — the GPU fragment shader
+  uses `gl_BarycentricEXT` for hardware barycentric coordinates. This
+  extension is available in WebGL2 with `GL_EXT_fragment_shader_barycentric`
+  (requires WebGL 2.0 + driver support).
+- **75 unit tests** — covers bit packing round-trip, empty pixel
+  detection, barycentric computation, rasterization (depth test, bias,
+  derivatives, degenerate triangles, viewport culling), full pipeline
+  integration, and GLSL chunk content.
+
+**References:**
+- o3de `Gems/Atom/Feature/Common/Assets/ShaderLib/Atom/Features/Pipeline/Deferred/VisibilityBuffer.azsli` — packing format + pack/unpack functions
+- o3de `Gems/Atom/Feature/Common/Code/Source/DeferredMaterial/` — deferred material system + draw packets
+- UE5 Nanite — visibility buffer software rasterization + deferred shading
+- Schied, Pettineo "Decoupled Deferred Shading" (GDC 2018) — visbuf framework
+- Cruncher, Bentley 2018 "Visibility Buffer: A Framework for Sub-pixel Anti-aliased Decoupled Shading" — theory
+- `GL_EXT_fragment_shader_barycentric` extension spec — hardware barycentric coords in GLSL
+
+---
+
 **Why MRT + GBuffer?** Forward rendering (the current main path) shades
 each fragment once with all lights. For scenes with many lights,
 forward rendering becomes fill-rate-bound. Deferred rendering shades

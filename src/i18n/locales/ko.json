@@ -1138,6 +1138,11 @@
         "title": "메시렛 렌더러(UE5 Nanite / o3de)",
         "desc": "three.js meshopt_clusterizer, o3de Atom MeshletsModule, UE5 Nanite에서 적응한 메시렛 렌더링 파이프라인. 대규모 메시를 작은 클러스터(메시렛, 각 최대 256 정점 / 512 삼각형)로 분할하여 세밀한 가시성 컬링 구현. 각 메시렛은 독립적인 바운딩 스피어 + 법선 콘(정점 + 축 + 컷오프 cos)을 보유. 완전 컬링 파이프라인: 절두체 컬링(바운딩 스피어 vs 6 평면) + 백페이스 컬링(법선 콘: dot(viewDir, axis) >= cutoff) + HZB 오클루전 컬링(바운딩 스피어 투영, 투영 반경으로 mip 선택, HZB 깊이 샘플링). 가시 메시렛을 indirect draw command로 패킹(누적 vertexOffset/firstIndex 포함). GPU 업로드용 병합 정점/인덱스 버퍼. 순수 CPU, WebGL/WASM 비의존, Node/헤드리스 환경에서 테스트 가능. 42개 유닛 테스트.",
         "advantage": "soup3D는 메시렛이나 GPU 구동 렌더링 없음"
+      },
+      "visibilityBuffer": {
+        "title": "가시성 버퍼(UE5 Nanite / o3de Atom)",
+        "desc": "가시성 버퍼 디퍼드 렌더링, o3de Atom VisibilityBuffer.azsli + DeferredMaterial 및 UE5 Nanite에서 적응. 완전 GBuffer 속성 대신 픽셀 단위 지오메트리 ID(meshInfoIndex + triangleId + 무게중심 좌표 + isFrontFace)를 저장하여 대역폭을 절반으로 줄이고 머티리얼 타입을 지오메트리 패스에서 분리. o3de Atom 호환 비트 패킹: 픽셀당 2 RGBA32F texel(flagsAndMeshInfoIndex: bit 31=무효, bit 30=앞면, bits 29..0=meshInfoIndex; triangleId; 무게중심 좌표 xy, z=1-x-y로 재구성; 무게중심 도함수 Dx/Dy xy, z=-x-y로 재구성). 빈 픽셀 마커: -0.0f(0x80000000), 유효한 +0.0f(meshInfoIndex=0)와 구별. CPU 소프트웨어 래스터라이저(edge function 무게중심 좌표 + 깊이 테스트 + visbuf 쓰기). 완전 파이프라인: pack → rasterize → build → getMeshInfoIndex(빠른 경로) → unpack → decompressPixel → fetchTriangleVertices → interpolateAttributes → 셰이딩. GLSL chunks(VISIBILITY_BUFFER_PACK_VERT/FRAG + GL_EXT_fragment_shader_barycentric, VISIBILITY_BUFFER_UNPACK_UTILITY로 디퍼드 셰이딩). MeshletRenderer의 자연스러운 컴패니언, UE5 Nanite GPU 구동 루프 구성. 순수 CPU, WebGL 비의존, Node/헤드리스 환경에서 테스트 가능. 75개 유닛 테스트.",
+        "advantage": "soup3D는 가시성 버퍼나 디퍼드 머티리얼 시스템 없음"
       }
     }
   }

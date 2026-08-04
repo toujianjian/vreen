@@ -859,4 +859,58 @@ export {
   type MeshletCullResult,
   type MeshletDrawCommand,
 } from './MeshletRenderer';
+// VisibilityBuffer — 可见性缓冲(UE5 Nanite / o3de Atom 核心配套)。
+// 适配自 o3de Atom `VisibilityBuffer.azsli`(packing 格式 + unpack 工具)+
+// `DeferredMaterial`(visibility buffer pass + deferred shading)+ UE5 Nanite。
+// 每像素写几何 ID(meshInfoIndex + triangleId + barycentrics + isFrontFace),
+// 后续 shading pass 读 visbuf → 查表 → 插值 → 着色(完全解耦材质类型)。
+// 与 GBuffer 对比:带宽减半,材质类型无限,与 meshlet/GPU 驱动渲染天然配合。
+// 提供 CPU 软件光栅化参考实现 + 位打包/解包工具 + GLSL chunks(pack vert/frag + unpack utility)。
+// 纯 CPU,不依赖 WebGL,可在 Node/无头环境测试。
+// soup3D 无 visibility buffer / 延迟材质系统,采用前向渲染 + 简单 GBuffer。
+export {
+  // 位打包常量
+  MESHINFO_BITS,
+  MAX_MESHINFO,
+  MESHINFO_MASK,
+  MESHINFO_INVALID_BIT,
+  MESHINFO_INVALID_MASK,
+  FRONTFACE_BIT,
+  FRONTFACE_MASK,
+  // 位转换工具
+  uintAsFloat,
+  floatAsUint,
+  // 打包/解包
+  packVisibilityBuffer,
+  unpackVisibilityBuffer,
+  getMeshInfoIndex,
+  // 重心坐标
+  computeBarycentric2D,
+  edgeFunctionBarycentric,
+  // 光栅化
+  rasterizeTriangle,
+  buildVisibilityBuffer,
+  pixelOffset,
+  // 解压(用于延迟着色)
+  decompressPixel,
+  interpolateAttributes,
+  fetchTriangleVertices,
+  fetchInterpolatedPosition,
+  // GLSL chunks
+  VISIBILITY_BUFFER_PACK_UTILITY,
+  VISIBILITY_BUFFER_PACK_VERT,
+  VISIBILITY_BUFFER_PACK_FRAG,
+  VISIBILITY_BUFFER_UNPACK_UTILITY,
+  // 类型
+  type VBVec3,
+  type VBVec2,
+  type VisibilityBufferEntry,
+  type VisibilityBufferPacked,
+  type MeshInfo,
+  type VisibilityTriangle,
+  type VisibilityBufferOptions,
+  type VisibilityBufferResult,
+  type VisibilityBufferStats,
+  type DecompressedPixel,
+} from './VisibilityBuffer';
 

@@ -1138,6 +1138,11 @@
         "title": "Meshlet 渲染器(UE5 Nanite / o3de)",
         "desc": "Meshlet 渲染管线,适配自 three.js meshopt_clusterizer、o3de Atom MeshletsModule 与 UE5 Nanite。把大网格切分为小簇(meshlet,每簇最多 256 顶点 / 512 三角形)用于细粒度可见性剔除。每个 meshlet 有独立包围球 + 法线锥(顶点 + 轴向 + 截止余弦)。完整剔除管线:视锥剔除(包围球 vs 6 平面)+ 背面剔除(法线锥:dot(viewDir, axis) >= cutoff)+ HZB 遮挡剔除(投影包围球,按投影半径选 mip,采样 HZB 深度)。可见 meshlet 打包为 indirect draw command,带累积 vertexOffset/firstIndex。合并顶点/索引缓冲供 GPU 上传。纯 CPU,无 WebGL/WASM 依赖,可在 Node/无头环境测试。42 个单元测试。",
         "advantage": "soup3D 无 meshlet 或 GPU 驱动渲染能力"
+      },
+      "visibilityBuffer": {
+        "title": "可见性缓冲(UE5 Nanite / o3de Atom)",
+        "desc": "可见性缓冲延迟渲染,适配自 o3de Atom VisibilityBuffer.azsli + DeferredMaterial 与 UE5 Nanite。每像素存储几何 ID(meshInfoIndex + triangleId + 重心坐标 + isFrontFace)而非完整 GBuffer 属性,带宽减半,材质类型与几何 pass 解耦。o3de Atom 兼容位打包:每像素 2 个 RGBA32F texel(flagsAndMeshInfoIndex:bit 31=无效,bit 30=正面,bits 29..0=meshInfoIndex;triangleId;重心坐标 xy,z=1-x-y 重建;重心导数 Dx/Dy xy,z=-x-y 重建)。空像素标记:-0.0f(0x80000000),与有效 +0.0f(meshInfoIndex=0)区分。CPU 软件光栅化(edge function 重心坐标 + 深度测试 + visbuf 写入)。完整管线:pack → rasterize → build → getMeshInfoIndex(快速路径)→ unpack → decompressPixel → fetchTriangleVertices → interpolateAttributes → 着色。GLSL chunks(VISIBILITY_BUFFER_PACK_VERT/FRAG 配合 GL_EXT_fragment_shader_barycentric,VISIBILITY_BUFFER_UNPACK_UTILITY 用于延迟着色)。与 MeshletRenderer 天然配套,构成 UE5 Nanite GPU 驱动渲染闭环。纯 CPU,无 WebGL 依赖,可在 Node/无头环境测试。75 个单元测试。",
+        "advantage": "soup3D 无可见性缓冲或延迟材质系统"
       }
     }
   }

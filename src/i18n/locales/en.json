@@ -1138,6 +1138,11 @@
         "title": "Meshlet Renderer (UE5 Nanite / o3de)",
         "desc": "Meshlet rendering pipeline adapted from three.js meshopt_clusterizer, o3de Atom MeshletsModule, and UE5 Nanite. Splits large meshes into small clusters (meshlets, max 256 vertices / 512 triangles each) for fine-grained visibility culling. Each meshlet has independent bounding sphere + normal cone (apex + axis + cutoff cos). Full culling pipeline: frustum cull (bounding sphere vs 6 planes) + backface cull (normal cone: dot(viewDir, axis) >= cutoff) + HZB occlusion cull (project bounding sphere, select mip by projected radius, sample HZB depth). Visible meshlets packed into indirect draw commands with cumulative vertexOffset/firstIndex. Merged vertex/index buffers for GPU upload. Pure CPU, no WebGL/WASM dependency, testable in Node/headless. 42 unit tests.",
         "advantage": "soup3D has no meshlet or GPU-driven rendering"
+      },
+      "visibilityBuffer": {
+        "title": "Visibility Buffer (UE5 Nanite / o3de Atom)",
+        "desc": "Visibility buffer deferred rendering adapted from o3de Atom VisibilityBuffer.azsli + DeferredMaterial and UE5 Nanite. Stores per-pixel geometry IDs (meshInfoIndex + triangleId + barycentrics + isFrontFace) instead of full GBuffer attributes, halving bandwidth and decoupling material types from geometry pass. o3de Atom-compatible bit packing: 2 RGBA32F texels per pixel (flagsAndMeshInfoIndex with bit 31=invalid, bit 30=frontFace, bits 29..0=meshInfoIndex; triangleId; barycentrics.xy with z=1-x-y reconstructed; barycentricsDx/Dy.xy with z=-x-y reconstructed). Empty pixel marker: -0.0f (0x80000000) vs valid +0.0f (meshInfoIndex=0). CPU software rasterizer (edge-function barycentric + depth test + visbuf write). Full pipeline: pack -> rasterize -> build -> getMeshInfoIndex (fast path) -> unpack -> decompressPixel -> fetchTriangleVertices -> interpolateAttributes -> shade. GLSL chunks (VISIBILITY_BUFFER_PACK_VERT/FRAG with GL_EXT_fragment_shader_barycentric, VISIBILITY_BUFFER_UNPACK_UTILITY for deferred shading). Natural companion to MeshletRenderer for UE5 Nanite GPU-driven loop. Pure CPU, no WebGL dependency, testable in Node/headless. 75 unit tests.",
+        "advantage": "soup3D has no visibility buffer or deferred material system"
       }
     }
   }
