@@ -1003,6 +1003,21 @@
         "title": "Screen-Space Decals",
         "desc": "GPU deferred decals projected onto GBuffer geometry. Volume + angle culling, 4 blend modes (Alpha/Multiply/Additive/Normal), edge fade, ping-pong multi-decal chaining.",
         "advantage": "soup3D has no decals"
+      },
+      "autoExposure": {
+        "title": "Auto Exposure",
+        "desc": "Eye adaptation: downsampled logarithmic luminance average + exponential adaptation curve. Simulates human pupil response when moving between dark/bright areas.",
+        "advantage": "soup3D has no auto exposure"
+      },
+      "dof": {
+        "title": "Depth of Field",
+        "desc": "Enhanced DoF: circle-of-confusion computation + circular/hexagonal/octagonal bokeh shapes. Cinematic focus pulls with smooth background blur.",
+        "advantage": "soup3D has no DoF"
+      },
+      "contactShadows": {
+        "title": "Contact Shadows",
+        "desc": "Screen-space directional shadow rays from depth buffer. Fills small-scale contact occlusion where CSM/PCSS can't reach — under props, characters, vehicles.",
+        "advantage": "soup3D has no contact shadows"
       }
     }
   }

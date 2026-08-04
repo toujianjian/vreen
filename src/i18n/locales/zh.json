@@ -1003,6 +1003,21 @@
         "title": "屏幕空间贴花",
         "desc": "GPU 延迟贴花投射到 GBuffer 几何表面。体积 + 角度剔除、4 种混合模式(Alpha/乘法/加法/正常)、边缘淡化、ping-pong 多贴花链式。",
         "advantage": "soup3D 无贴花"
+      },
+      "autoExposure": {
+        "title": "自动曝光",
+        "desc": "眼适应:降采样对数亮度均值 + 指数适应曲线。模拟人眼瞳孔在明暗区域间的动态响应。",
+        "advantage": "soup3D 无自动曝光"
+      },
+      "dof": {
+        "title": "景深",
+        "desc": "增强景深:弥散圆计算 + 圆形/六边形/八边形散景形状。电影级焦点转换与平滑背景虚化。",
+        "advantage": "soup3D 无景深"
+      },
+      "contactShadows": {
+        "title": "接触阴影",
+        "desc": "屏幕空间方向性阴影射线,从深度缓冲追踪。填补 CSM/PCSS 无法覆盖的小尺度接触遮蔽 — 道具、角色、载具下方。",
+        "advantage": "soup3D 无接触阴影"
       }
     }
   }

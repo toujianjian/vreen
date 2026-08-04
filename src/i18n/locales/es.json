@@ -1003,6 +1003,21 @@
         "title": "Decals en espacio de pantalla",
         "desc": "Decals diferidos GPU proyectados sobre geometría GBuffer. Culling por volumen + ángulo, 4 modos de mezcla (Alpha/Multiplicar/Aditivo/Normal), fade de borde, encadenado ping-pong multi-decal.",
         "advantage": "soup3D sin decals"
+      },
+      "autoExposure": {
+        "title": "Exposición automática",
+        "desc": "Adaptación ocular:media de luminancia logarítmica submuestreada + curva de adaptación exponencial. Simula la respuesta dinámica de la pupila entre áreas oscuras/brillantes.",
+        "advantage": "soup3D sin exposición automática"
+      },
+      "dof": {
+        "title": "Profundidad de campo",
+        "desc": "DoF mejorado:cálculo de círculo de confusión + formas de bokeh circular/hexagonal/octogonal. Transiciones de enfoque cinematográficas con desenfoque suave de fondo.",
+        "advantage": "soup3D sin profundidad de campo"
+      },
+      "contactShadows": {
+        "title": "Sombras de contacto",
+        "desc": "Rayos direccionales de sombra en espacio de pantalla desde el buffer de profundidad. Rellena oclusión de contacto a pequeña escala donde CSM/PCSS no llegan — bajo props, personajes, vehículos.",
+        "advantage": "soup3D sin sombras de contacto"
       }
     }
   }
