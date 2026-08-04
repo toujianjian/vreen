@@ -1133,6 +1133,11 @@
         "title": "区域光 LTC(Heitz 2016)",
         "desc": "Linearly Transformed Cosines 区域光求值,适配自 Heitz, Dupuy, Hill, Neubelt 2016《Real-Time Polygonal-Light Shading with Linearly Transformed Cosines》、three.js LTC.js 与 o3de Atom LtcCommon.cpp。通过 LTC 矩阵变换求值矩形面光源 irradiance:在表面法线周围构造正交基,用逆 LTC 矩阵将光源顶点变换到规范余弦空间,投影到单位球,计算 4 条边的向量形式因子(有理多项式 theta/sin(theta) 近似),应用地平线裁剪。支持 specular + diffuse 双叶。LUT 采样(ltcUv)用于 64×64 预计算 LTC 矩阵(roughness × dot(N,V) 参数化)。处理 V 平行于 N 的退化情况。可配置:focusDistance、focusRange、bokehShape。纯 CPU 函数(ltcEvaluate、evaluateRectAreaLight、computeAreaLighting、approximateLTCMatrix、makeRectVertices)支持无头测试。49 个单元测试。",
         "advantage": "soup3D 仅有点光源/方向光,无面光源"
+      },
+      "meshletRenderer": {
+        "title": "Meshlet 渲染器(UE5 Nanite / o3de)",
+        "desc": "Meshlet 渲染管线,适配自 three.js meshopt_clusterizer、o3de Atom MeshletsModule 与 UE5 Nanite。把大网格切分为小簇(meshlet,每簇最多 256 顶点 / 512 三角形)用于细粒度可见性剔除。每个 meshlet 有独立包围球 + 法线锥(顶点 + 轴向 + 截止余弦)。完整剔除管线:视锥剔除(包围球 vs 6 平面)+ 背面剔除(法线锥:dot(viewDir, axis) >= cutoff)+ HZB 遮挡剔除(投影包围球,按投影半径选 mip,采样 HZB 深度)。可见 meshlet 打包为 indirect draw command,带累积 vertexOffset/firstIndex。合并顶点/索引缓冲供 GPU 上传。纯 CPU,无 WebGL/WASM 依赖,可在 Node/无头环境测试。42 个单元测试。",
+        "advantage": "soup3D 无 meshlet 或 GPU 驱动渲染能力"
       }
     }
   }

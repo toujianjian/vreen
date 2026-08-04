@@ -1133,6 +1133,11 @@
         "title": "エリアライト LTC(Heitz 2016)",
         "desc": "Heitz, Dupuy, Hill, Neubelt 2016『Real-Time Polygonal-Light Shading with Linearly Transformed Cosines』、three.js LTC.js、o3de Atom LtcCommon.cpp から適応した Linearly Transformed Cosines エリアライト評価。LTC 行列変換で矩形エリアライトの irradiance を評価:表面法線周りに正規直交基底を構築、逆 LTC 行列でライト頂点を標準コサイン空間へ変換、単位球に投影、4 辺のベクトル形状因子(有理多項式 theta/sin(theta) 近似)を計算、地平線クリッピングを適用。specular + diffuse 両ローブ対応。LUT サンプリング(ltcUv)で 64×64 事前計算 LTC 行列(roughness × dot(N,V) パラメータ化)。V が N に平行な退化ケースも処理。純粋 CPU 関数(ltcEvaluate、evaluateRectAreaLight、computeAreaLighting、approximateLTCMatrix、makeRectVertices)でヘッドレステスト対応。49 個のユニットテスト。",
         "advantage": "soup3D はポイント/ディレクショナルライトのみ、エリアライトなし"
+      },
+      "meshletRenderer": {
+        "title": "メッシュレットレンダラー(UE5 Nanite / o3de)",
+        "desc": "three.js meshopt_clusterizer、o3de Atom MeshletsModule、UE5 Nanite から適応したメッシュレットレンダリングパイプライン。大規模メッシュを小さなクラスタ(メッシュレット、各最大 256 頂点 / 512 三角形)に分割し、きめ細かい可視性カリングを実現。各メッシュレットは独立したバウンディングスフィア + 法線コーン(頂点 + 軸 + カットオフ cos)を保持。完全カリングパイプライン:視錐台カリング(バウンディングスフィア vs 6 平面)+ バックフェースカリング(法線コーン:dot(viewDir, axis) >= cutoff)+ HZB オクルージョンカリング(バウンディングスフィア投影、投影半径で mip 選択、HZB 深度サンプリング)。可視メッシュレットを indirect draw command にパッキング(累積 vertexOffset/firstIndex 付き)。GPU アップロード用マージ頂点/インデックスバッファ。純粋 CPU、WebGL/WASM 非依存、Node/ヘッドレス環境でテスト可能。42 個のユニットテスト。",
+        "advantage": "soup3D はメッシュレットや GPU 駆動レンダリングなし"
       }
     }
   }

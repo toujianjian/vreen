@@ -2215,6 +2215,104 @@ const result = evaluateRectAreaLight(surface, light, mInvSpec);
 - o3de Atom `LtcCommon.cpp` — C++ reference
 - LTC code: https://github.com/selfshadow/ltc_code/
 
+### Meshlet Renderer (`MeshletRenderer.ts`)
+
+**Meshlet** rendering pipeline — splits large meshes into small clusters
+(meshlets) for fine-grained visibility culling and GPU-driven indirect
+draw. Adapted from three.js `meshopt_clusterizer.module.js`, o3de Atom
+`MeshletsModule`, and UE5 Nanite's meshlet design.
+
+This is a flagship feature of modern engines. soup3D has no meshlet or
+GPU-driven rendering — every mesh is submitted as a whole, with no
+sub-mesh culling.
+
+**Pipeline:**
+
+| Stage | Function | Description |
+|-------|----------|-------------|
+| 1. Meshlet build | `buildMeshlets(positions, indices, opts)` | Greedy clustering: adds triangles to current meshlet until `maxVertices` (≤256) or `maxTriangles` (≤512) reached, then starts new meshlet. Vertex remapping (global→local) avoids duplicates. |
+| 2. Bounds | `computeMeshletBounds(...)` | Per-meshlet: AABB center + max-distance radius (bounding sphere) + normal cone (apex + axis + cutoff cos). |
+| 3. Frustum cull | `meshletInFrustum(bounds, planes)` | Bounding sphere vs 6 frustum planes. |
+| 4. Backface cull | `meshletIsFrontFacing(bounds, viewPos)` | Normal cone: if `dot(viewDir, coneAxis) >= coneCutoff`, entire meshlet is back-facing. Uses bounding sphere center for stable view direction. |
+| 5. HZB occlusion | `meshletIsVisibleHZB(bounds, hzb, ...)` | Projects bounding sphere to screen, selects HZB mip by projected radius, samples depth. Conservative (bias reduces false positives). |
+| 6. Pack | `packMeshletDrawCommands(result, visibleIds)` | Packs visible meshlets into `MeshletDrawCommand[]` with cumulative `vertexOffset` / `firstIndex`. |
+| 7. Merge buffers | `buildMeshletVertexIndexBuffers(result, positions)` | Merges all meshlet vertices/indices into contiguous `Float32Array` + `Uint32Array` for GPU upload. |
+
+**API surface:**
+
+```ts
+import {
+  buildMeshlets,                // positions + indices → meshlet array + bounds
+  cullMeshlets,                 // frustum + backface + HZB → visible IDs
+  packMeshletDrawCommands,      // visible IDs → indirect draw commands
+  buildMeshletVertexIndexBuffers, // merge all meshlets → contiguous buffers
+  meshletStats,                 // statistics (avg verts/tris, reuse ratio)
+  type MeshletBuildOptions,     // { maxVertices, maxTriangles, computeCone }
+  type MeshletCullOptions,      // { frustumCulling, backfaceCulling, ... }
+} from '@vreen/engine/renderer';
+```
+
+**Usage:**
+
+```ts
+import {
+  buildMeshlets, cullMeshlets, packMeshletDrawCommands,
+  buildMeshletVertexIndexBuffers,
+} from '@vreen/engine/renderer';
+
+// 1. Build meshlets from a mesh
+const buildResult = buildMeshlets(positions, indices, {
+  maxVertices: 64,
+  maxTriangles: 124,
+  computeCone: true,
+});
+
+// 2. Merge into contiguous GPU buffers
+const { vertices, indices: mergedIndices } =
+  buildMeshletVertexIndexBuffers(buildResult, positions);
+
+// 3. Cull (frustum + backface + optional HZB)
+const cullResult = cullMeshlets(buildResult, {
+  frustumCulling: true,
+  frustumPlanes: camera.frustum.planes,
+  backfaceCulling: true,
+  viewPosition: camera.position,
+  occlusionCulling: false,
+});
+
+// 4. Pack visible meshlets into indirect draw commands
+const commands = packMeshletDrawCommands(
+  buildResult,
+  cullResult.visibleMeshletIds,
+);
+// → upload vertices/indices/commands to GPU, call multiDrawElementsIndirect
+```
+
+**Design choices:**
+- **Pure CPU** — no WebGL/WASM dependency, testable in Node/headless
+  (same pattern as `GPUDrivenRenderer`, `HierarchicalZBuffer`,
+  `PCSSSampler`). three.js's meshopt_clusterizer uses WASM; VREEN's
+  implementation is pure TypeScript for zero-dependency testing.
+- **Greedy meshlet build** — does not do meshoptimizer's cache-aware
+  triangle reordering. Callers can pre-optimize indices externally.
+- **Bounding sphere** — uses AABB center + max-distance (not minimum
+  enclosing sphere). Slightly looser but O(n) and sufficient for culling.
+- **Normal cone** — `coneCutoff = min(dot(n_i, axis))` stored as cos.
+  Backface test: `dot(viewDir, axis) >= cutoff` → cull. Conservative
+  boundary (uses strict `<` so boundary = backface).
+- **HZB integration** — optional; pairs with `HierarchicalZBuffer.buildHZB`
+  for occlusion culling at meshlet granularity.
+- **42 unit tests** — covers meshlet generation, bounds, frustum/backface/
+  HZB culling, draw command packing, buffer merging, statistics.
+
+**References:**
+- three.js `examples/jsm/libs/meshopt_clusterizer.module.js` — WASM
+  meshlet generation via meshoptimizer
+- o3de Atom `MeshletsModule` — GPU-driven meshlet pipeline
+- UE5 Nanite — meshlet-level visibility culling
+- meshoptimizer (Arseny Kapoulkine) — `buildMeshlets` algorithm
+- Greene 1993 — hierarchical Z-buffer (used in HZB occlusion stage)
+
 ---
 
 **Why MRT + GBuffer?** Forward rendering (the current main path) shades

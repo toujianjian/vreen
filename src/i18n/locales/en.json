@@ -1133,6 +1133,11 @@
         "title": "Area Light LTC (Heitz 2016)",
         "desc": "Linearly Transformed Cosines area light evaluation adapted from Heitz, Dupuy, Hill, Neubelt 2016 'Real-Time Polygonal-Light Shading with Linearly Transformed Cosines', three.js LTC.js, and o3de Atom LtcCommon.cpp. Evaluates rectangular area light irradiance using LTC matrix transform: constructs orthonormal basis around surface normal, transforms light vertices into canonical cosine space via inverse LTC matrix, projects onto unit sphere, computes 4-edge vector form factors with rational polynomial theta/sin(theta) approximation, applies horizon clipping. Supports specular + diffuse lobes. LUT sampling (ltcUv) for 64x64 precomputed LTC matrices parameterized by roughness x dot(N,V). Handles degenerate case when V parallel to N. Configurable: focusDistance, focusRange, bokehShape. Pure CPU functions (ltcEvaluate, evaluateRectAreaLight, computeAreaLighting, approximateLTCMatrix, makeRectVertices) for headless testing. 49 unit tests.",
         "advantage": "soup3D only has point/directional lights, no area lights"
+      },
+      "meshletRenderer": {
+        "title": "Meshlet Renderer (UE5 Nanite / o3de)",
+        "desc": "Meshlet rendering pipeline adapted from three.js meshopt_clusterizer, o3de Atom MeshletsModule, and UE5 Nanite. Splits large meshes into small clusters (meshlets, max 256 vertices / 512 triangles each) for fine-grained visibility culling. Each meshlet has independent bounding sphere + normal cone (apex + axis + cutoff cos). Full culling pipeline: frustum cull (bounding sphere vs 6 planes) + backface cull (normal cone: dot(viewDir, axis) >= cutoff) + HZB occlusion cull (project bounding sphere, select mip by projected radius, sample HZB depth). Visible meshlets packed into indirect draw commands with cumulative vertexOffset/firstIndex. Merged vertex/index buffers for GPU upload. Pure CPU, no WebGL/WASM dependency, testable in Node/headless. 42 unit tests.",
+        "advantage": "soup3D has no meshlet or GPU-driven rendering"
       }
     }
   }

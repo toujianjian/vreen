@@ -1133,6 +1133,11 @@
         "title": "Luz de Área LTC (Heitz 2016)",
         "desc": "Evaluación de luz de área con Linearly Transformed Cosines adaptada de Heitz, Dupuy, Hill, Neubelt 2016 'Real-Time Polygonal-Light Shading with Linearly Transformed Cosines', three.js LTC.js y o3de Atom LtcCommon.cpp. Evalúa la irradiancia de luz de área rectangular mediante transformación matricial LTC: construye base ortonormal alrededor de la normal de superficie, transforma vértices de luz al espacio coseno canónico vía matriz LTC inversa, proyecta a esfera unitaria, calcula factores de forma vectoriales de 4 aristas con aproximación de polinomio racional theta/sin(theta), aplica recorte de horizonte. Soporta lóbulos specular + diffuse. Muestreo LUT (ltcUv) para matrices LTC precomputadas 64×64 parametrizadas por roughness × dot(N,V). Maneja caso degenerado cuando V paralelo a N. Funciones CPU puras (ltcEvaluate, evaluateRectAreaLight, computeAreaLighting, approximateLTCMatrix, makeRectVertices) para pruebas headless. 49 pruebas unitarias.",
         "advantage": "soup3D solo tiene luces puntuales/direccionales, sin luces de área"
+      },
+      "meshletRenderer": {
+        "title": "Renderizador Meshlet (UE5 Nanite / o3de)",
+        "desc": "Pipeline de renderizado meshlet adaptado de three.js meshopt_clusterizer, o3de Atom MeshletsModule y UE5 Nanite. Divide mallas grandes en clusters pequeños (meshlets, máximo 256 vértices / 512 triángulos cada uno) para culling de visibilidad de grano fino. Cada meshlet tiene esfera envolvente independiente + cono normal (vértice + eje + corte cos). Pipeline de culling completo: culling de frustum (esfera envolvente vs 6 planos) + culling de cara trasera (cono normal: dot(viewDir, axis) >= cutoff) + culling de oclusión HZB (proyectar esfera envolvente, seleccionar mip por radio proyectado, muestrear profundidad HZB). Meshlets visibles empaquetados en indirect draw commands con vertexOffset/firstIndex acumulativo. Buffers de vértice/índice fusionados para subida a GPU. CPU puro, sin dependencia WebGL/WASM, testeable en Node/headless. 42 pruebas unitarias.",
+        "advantage": "soup3D no tiene meshlet ni renderizado GPU-driven"
       }
     }
   }

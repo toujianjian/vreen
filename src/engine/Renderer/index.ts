@@ -834,4 +834,29 @@ export {
   type SurfacePoint as LTCSurfacePoint,
   type LTCResult,
 } from './AreaLightLTC';
+// MeshletRenderer — Meshlet 渲染器(meshlet 生成 + 可见性剔除 + indirect draw 打包)。
+// 适配自 three.js meshopt_clusterizer / o3de Atom MeshletsModule / UE5 Nanite。
+// 把大网格切分为 meshlet 簇(≤256 顶点 / ≤512 三角形),每个 meshlet 独立包围球 +
+// 法线锥,支持视锥剔除 + 背面剔除 + HZB 遮挡剔除,可见 meshlet 打包为 indirect draw。
+// 纯 CPU,不依赖 WebGL,可在 Node/无头环境测试。
+// soup3D 无 meshlet / GPU 驱动渲染能力,所有 mesh 整体提交。
+export {
+  buildMeshlets,
+  computeMeshletBounds,
+  meshletInFrustum,
+  meshletIsFrontFacing,
+  meshletIsVisibleHZB,
+  cullMeshlets,
+  packMeshletDrawCommands,
+  buildMeshletVertexIndexBuffers,
+  meshletStats,
+  type MeshletVec3,
+  type MeshletData,
+  type MeshletBounds,
+  type MeshletBuildOptions,
+  type MeshletBuildResult,
+  type MeshletCullOptions,
+  type MeshletCullResult,
+  type MeshletDrawCommand,
+} from './MeshletRenderer';
 
