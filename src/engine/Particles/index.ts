@@ -50,3 +50,8 @@ export {
   type ParticleSystemRenderData,
   type SpawnDefaults,
 } from './ParticleSystem2';
+
+export {
+  GPUParticleSystem,
+  type GPUParticleOptions,
+} from './GPUParticleSystem';

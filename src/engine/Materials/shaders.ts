@@ -4470,5 +4470,253 @@ void main() {
 }
 `;
 
+// ════════════════════════════════════════════════════════════════════════
+// GPU 粒子系统着色器(GPUParticleSystem)
+// ════════════════════════════════════════════════════════════════════════
+//
+// 数据布局(每粒子 1 texel,maxParticles = sizeX * sizeY):
+//   positionTex (RGBA32F) ping-pong: xyz = 世界位置, w = life ratio [0,1]
+//     (1 = 刚复活, 0 = 死亡)
+//   velocityTex (RGBA32F) ping-pong: xyz = 速度 (m/s), w = age (秒, 已存活)
+//   metaTex (RGBA32F) 静态: r = maxLife (s), g = startSize, b = endSize,
+//     a = seed (用于 spawn 随机)
+//
+// 模拟流程(MRT 单 pass,同时写 positionTex + velocityTex):
+//   1. 读旧 position/velocity/meta
+//   2. 判断 texelId 是否在 [u_spawnStart, u_spawnStart+u_spawnCount) 环形范围
+//      内且 life<=0 → 复活(emitterPos + 偏移, emitterVel + 随机方向)
+//   3. 否则积分:pos += vel*dt; vel += gravity*dt; vel *= (1-drag*dt);
+//      age += dt; life = max(0, 1 - age/maxLife)
+//
+// 渲染流程(POINTS + gl_VertexID):
+//   vertex: tid → texelCoord → fetch positionTex/metaTex → clipPos + PointSize
+//   fragment: 圆形 sprite + color over life + alpha fade
+//
+// 参考:
+//   - GPU Gems 3 Ch.23 "High-Performance Screen-Space Particles"
+//   - o3de Atom, RPI ParticleSystem
+//   - three.js GPGPU particles (Yomboprime)
+//   - Thomas 2014 "DirectCompute Optimizations for GPU Particles"
+
+// ── 模拟 fragment shader(MRT 输出 2 张 RGBA32F) ─────────────────────────
+export const GPU_PARTICLE_SIM_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+precision highp sampler2D;
+
+// 旧位置纹理(xyz=pos, w=life[0,1])
+uniform sampler2D u_positionTex;
+// 旧速度纹理(xyz=vel, w=age[s])
+uniform sampler2D u_velocityTex;
+// 静态元数据纹理(r=maxLife, g=startSize, b=endSize, a=seed)
+uniform sampler2D u_metaTex;
+
+uniform vec2  u_texelSize;      // (1/sizeX, 1/sizeY)
+uniform int   u_sizeX;          // 纹理宽度(texel)
+uniform int   u_maxParticles;   // sizeX * sizeY
+
+uniform float u_dt;             // 帧时间(秒)
+uniform vec3  u_emitterPos;     // 发射器世界位置
+uniform vec3  u_emitterVel;     // 发射器初始速度(基础方向)
+uniform float u_emitterRadius;  // 发射器球形半径(随机偏移)
+uniform float u_startSpeed;     // 初始速度大小
+uniform float u_startSpeedVar;  // 初始速度随机变化(0..1)
+uniform vec3  u_gravity;        // 重力加速度(m/s²)
+uniform float u_drag;           // 速度阻尼(1/秒)
+
+uniform int   u_spawnStart;     // 本帧复活 texel 起始 id(环形)
+uniform int   u_spawnCount;     // 本帧复活 texel 数量
+uniform float u_time;           // 全局时间(用于随机种子)
+
+uniform int   u_enabled;        // 0=禁用(仅 passthrough),1=启用
+
+// MRT 输出
+layout(location = 0) out highp vec4 outPosition;  // xyz=pos, w=life
+layout(location = 1) out highp vec4 outVelocity;  // xyz=vel, w=age
+
+// ── 哈希随机(返回 [0,1)) ─────────────────────────────────────────
+// 基于 PCG hash,seed = texelId + frame
+uint pcg(uint state) {
+  state = state * 747796405u + 2891336453u;
+  uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+  return (word >> 22u) ^ word;
+}
+
+float rand(uint seed) {
+  return float(pcg(seed)) / 4294967296.0;  // 2^32
+}
+
+void main() {
+  // 当前 texel 坐标(0-based)
+  ivec2 tc = ivec2(gl_FragCoord.xy) - ivec2(0);
+  // 注意:gl_FragCoord 是像素中心 (x.5, y.5),ivec2 截断 → 0-based texel id
+  int texelId = tc.y * u_sizeX + tc.x;
+
+  // UV(用于纹理采样)
+  vec2 uv = (vec2(tc) + 0.5) * u_texelSize;
+
+  // 读取旧状态
+  vec4 oldPos = texture(u_positionTex, uv);
+  vec4 oldVel = texture(u_velocityTex, uv);
+  vec4 meta   = texture(u_metaTex, uv);
+
+  float maxLife  = meta.x;
+  float life     = oldPos.w;
+  float age      = oldVel.w;
+
+  // ── 默认 passthrough(禁用或不复活不积分) ─────────────────────
+  vec3 newPos = oldPos.xyz;
+  vec3 newVel = oldVel.xyz;
+  float newLife = life;
+  float newAge  = age;
+
+  if (u_enabled == 1) {
+    // ── 判断是否本帧复活 ───────────────────────────────────────
+    // 环形范围:[start, start+count) mod maxParticles
+    int rel = texelId - u_spawnStart;
+    if (rel < 0) rel += u_maxParticles;
+    bool shouldSpawn = (life <= 0.0) && (rel < u_spawnCount);
+
+    if (shouldSpawn) {
+      // 复活:在 emitterPos 球形范围内随机出生
+      uint s1 = uint(texelId) * 1973u + uint(u_time * 1000.0);
+      uint s2 = uint(texelId) * 9277u + uint(u_time * 1000.0) + 17u;
+      uint s3 = uint(texelId) * 26699u + uint(u_time * 1000.0) + 31u;
+      float rx = rand(s1) * 2.0 - 1.0;
+      float ry = rand(s2) * 2.0 - 1.0;
+      float rz = rand(s3) * 2.0 - 1.0;
+      // 球内均匀分布(拒绝采样简化为立方体近似,够用)
+      vec3 offset = vec3(rx, ry, rz) * u_emitterRadius;
+
+      // 随机方向(单位球面)
+      float theta = rand(s1 + 7u) * 6.2831853;        // [0, 2π)
+      float phi   = acos(rand(s2 + 13u) * 2.0 - 1.0); // [0, π]
+      vec3 dir = vec3(
+        sin(phi) * cos(theta),
+        sin(phi) * sin(theta),
+        cos(phi)
+      );
+
+      float speed = u_startSpeed * (1.0 - u_startSpeedVar + u_startSpeedVar * rand(s3 + 23u));
+
+      newPos    = u_emitterPos + offset;
+      newVel    = u_emitterVel + dir * speed;
+      newLife   = 1.0;
+      newAge    = 0.0;
+    } else if (life > 0.0) {
+      // 积分:半隐式 Euler
+      newVel = oldVel.xyz + u_gravity * u_dt;
+      float dragFactor = max(0.0, 1.0 - u_drag * u_dt);
+      newVel *= dragFactor;
+      newPos = oldPos.xyz + newVel * u_dt;
+
+      newAge = age + u_dt;
+      newLife = max(0.0, 1.0 - newAge / max(maxLife, 0.0001));
+      if (newLife <= 0.0) {
+        // 死亡:位置清零避免后续帧渲染(但保留 life=0 标记)
+        newLife = 0.0;
+      }
+    }
+  }
+
+  outPosition = vec4(newPos, newLife);
+  outVelocity = vec4(newVel, newAge);
+}
+`;
+
+// ── 渲染 vertex shader(POINTS + gl_VertexID fetch) ──────────────────────
+export const GPU_PARTICLE_RENDER_VERT = /* glsl */ `#version 300 es
+precision highp float;
+precision highp sampler2D;
+
+uniform sampler2D u_positionTex;  // xyz=pos, w=life
+uniform sampler2D u_metaTex;      // r=maxLife, g=startSize, b=endSize
+uniform vec2  u_texelSize;        // (1/sizeX, 1/sizeY)
+uniform int   u_sizeX;            // 纹理宽度
+uniform mat4  u_viewProjection;   // 世界 → NDC
+uniform vec2  u_viewportSize;     // (width, height) 像素
+uniform float u_sizeScale;        // 全局大小缩放
+uniform float u_pixelRatio;       // devicePixelRatio
+
+out float v_life;     // 生命 ratio [0,1](fragment 着色用)
+out float v_tid;      // texel id(fragment 随机用)
+
+void main() {
+  int tid = gl_VertexID;
+  int x = tid % u_sizeX;
+  int y = tid / u_sizeX;
+  vec2 uv = (vec2(float(x), float(y)) + 0.5) * u_texelSize;
+
+  vec4 pos  = texture(u_positionTex, uv);  // xyz, w=life
+  vec4 meta = texture(u_metaTex, uv);
+
+  v_life = pos.w;
+  v_tid = float(tid);
+
+  // 死亡粒子裁剪(NDC 远处)
+  if (pos.w <= 0.0) {
+    gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+    gl_PointSize = 0.0;
+    return;
+  }
+
+  vec4 clipPos = u_viewProjection * vec4(pos.xyz, 1.0);
+  gl_Position = clipPos;
+
+  // 大小:life ratio 插值 startSize → endSize
+  float t = 1.0 - pos.w;  // age ratio
+  float size = mix(meta.g, meta.b, t);
+
+  // 透视投影下点大小衰减(近大远小)
+  // gl_PointSize = worldSize * viewportHeight / clipW * pixelRatio
+  float pointSize = size * u_sizeScale * u_viewportSize.y * u_pixelRatio
+                    / max(0.001, clipPos.w);
+  gl_PointSize = clamp(pointSize, 1.0, 256.0);
+}
+`;
+
+// ── 渲染 fragment shader(圆形 sprite + color over life + alpha fade) ────
+export const GPU_PARTICLE_RENDER_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in float v_life;   // [0,1]
+in float v_tid;
+
+uniform vec3  u_startColor;   // t=0(刚复活)颜色
+uniform vec3  u_endColor;     // t=1(将死)颜色
+uniform float u_alphaScale;   // 全局 alpha 缩放
+uniform int   u_blendMode;    // 0=加性,1=普通 alpha
+
+out vec4 outColor;
+
+void main() {
+  // 圆形 sprite:gl_PointCoord ∈ [0,1]²,中心 (0.5, 0.5)
+  vec2 d = gl_PointCoord * 2.0 - 1.0;  // [-1,1]
+  float r2 = dot(d, d);
+  if (r2 > 1.0) discard;  // 圆外丢弃
+
+  // 软边缘(1 - r²) 让边缘平滑
+  float edge = 1.0 - r2;
+
+  // life fade:刚复活(1)和将死(0)时略透明,中段最实
+  // 用 sin(life * π) 让中段最亮
+  float lifeFade = sin(v_life * 3.14159265);
+
+  float alpha = edge * lifeFade * u_alphaScale;
+  if (alpha <= 0.0) discard;
+
+  // color over life:life=1 → startColor, life=0 → endColor
+  float t = 1.0 - v_life;
+  vec3 color = mix(u_startColor, u_endColor, t);
+
+  if (u_blendMode == 0) {
+    // 加性混合:颜色预乘 alpha,输出 RGB + alpha(用作加性权重)
+    outColor = vec4(color * alpha, alpha);
+  } else {
+    // 普通 alpha:输出颜色 + alpha
+    outColor = vec4(color, alpha);
+  }
+}
+`;
+
 
 

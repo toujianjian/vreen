@@ -899,6 +899,11 @@
         "desc": "스크린 공간 렌즈 플레어, 고스트 체인 + RGB 색수차 + 가우시안 헤일로 링 + 스타버스트 광선 — 깊이 오클루전 + 화면 외 페이드, GodRays의 약 5분의 1 비용.",
         "advantage": "soup3D에 렌즈 플레어 없음"
       },
+      "gpuParticles": {
+        "title": "GPU 파티클",
+        "desc": "GPU 파티클 시스템, RGBA32F 텍스처 ping-pong 시뮬레이션, MRT 싱글 패스 적분, POINTS + gl_VertexID fetch 렌더링 — 65536+ 파티클, CPU 리드백 제로.",
+        "advantage": "soup3D에 파티클 시스템 없음"
+      },
       "heightFog": {
         "title": "높이 안개",
         "desc": "UE5 스타일 지수 높이 안개, 폐쇄형 Beer-Lambert 밀도 + 태양 내산란.",

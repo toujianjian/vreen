@@ -456,6 +456,289 @@ curve" contract. Per-particle-consistent randomness belongs in `customData`
 
 ---
 
+## GPUParticleSystem (`GPUParticleSystem.ts`)
+
+> Path: `src/engine/Particles/GPUParticleSystem.ts`
+>
+> High-throughput GPU particle system. Stores per-particle state in RGBA32F
+> textures, simulates in a fragment shader (MRT single-pass), and renders with
+> `POINTS` + `gl_VertexID` texture fetch. Supports **65 536+ particles** with
+> zero CPU→GPU particle data readback. Complements the CPU `ParticleSystem2`
+> (rich modifiers / trails / sub-emitters, ~10 k cap) for fire, smoke, sparks,
+> rain, snow, and starfield scenarios where particle count matters more than
+> per-particle behavior complexity.
+
+### Architecture
+
+```
+                  ┌─────────────────────────────────────────────────────┐
+                  │              CPU side (per frame)                    │
+                  │  spawnAccum += emissionRate × dt                     │
+                  │  spawnCount  = floor(spawnAccum)  (capped)           │
+                  │  spawnStart  = spawnCursor                           │
+                  │  spawnCursor = (spawnCursor + spawnCount) % max      │
+                  │  time       += dt                                    │
+                  └───────────────┬─────────────────────────────────────┘
+                                  │ uniforms
+                  ┌───────────────▼─────────────────────────────────────┐
+                  │      SIMULATE PASS (fragment, MRT ×2 outputs)       │
+                  │  read:  positionTex[read]  velocityTex[read]  metaTex │
+                  │  write: positionTex[write] velocityTex[write]        │
+                  │                                                     │
+                  │  per texel (gl_FragCoord → texelId):                │
+                  │    if life<=0 && texelId in [start,start+count)%max: │
+                  │      RESPAWN: pos=emitterPos+offset                 │
+                  │                vel=emitterVel+dir×speed              │
+                  │                life=1, age=0                         │
+                  │    elif life>0:                                     │
+                  │      INTEGRATE (semi-implicit Euler):               │
+                  │        vel += gravity×dt;  vel *= (1-drag×dt)        │
+                  │        pos += vel×dt;    age += dt                   │
+                  │        life = max(0, 1 - age/maxLife)                │
+                  │    else: passthrough (stay dead)                    │
+                  └───────────────┬─────────────────────────────────────┘
+                                  │ swap readIndex
+                  ┌───────────────▼─────────────────────────────────────┐
+                  │       RENDER PASS (vertex + fragment, POINTS)       │
+                  │  vertex:  tid = gl_VertexID                         │
+                  │           uv  = texelCoord(tid) / sizeX             │
+                  │           pos  = texture(positionTex[read], uv)     │
+                  │           if pos.w<=0 → clip (gl_Position=vec4(2))   │
+                  │           clipPos = VP × vec4(pos.xyz, 1)           │
+                  │           gl_PointSize = mix(start,end,t) × scale   │
+                  │                            × viewportH / clipW      │
+                  │  fragment: d = gl_PointCoord×2-1;  r² = dot(d,d)    │
+                  │           if r²>1 → discard                         │
+                  │           alpha = (1-r²) × sin(life×π) × alphaScale │
+                  │           color = mix(startColor, endColor, 1-life) │
+                  │           additive: out = vec4(color×alpha, alpha)  │
+                  │           alpha:    out = vec4(color, alpha)        │
+                  └─────────────────────────────────────────────────────┘
+```
+
+### Data Layout (per particle = 1 texel, `maxParticles = sizeX × sizeY`)
+
+| Texture            | Format    | Count | Channels (RGBA)                          |
+|--------------------|-----------|-------|------------------------------------------|
+| `positionTex[2]`   | RGBA32F   | 2     | xyz = world pos, w = life ratio [0,1]    |
+| `velocityTex[2]`   | RGBA32F   | 2     | xyz = velocity (m/s), w = age (s)        |
+| `metaTex`          | RGBA32F   | 1     | r = maxLife, g = startSize, b = endSize, a = seed |
+
+- `positionTex` / `velocityTex` are **ping-pong** double-buffered: each frame
+  reads `[readIndex]` and writes `[1-readIndex]`, then swaps. This avoids
+  read-write hazards on the same texture.
+- `metaTex` is **static** — written once at `_initResources` with per-particle
+  random `maxLife` (in `[lifetimeMin, lifetimeMax]`) and `seed`.
+- All data textures use `NEAREST` filtering + `CLAMP_TO_EDGE` wrap (float data
+  must not be interpolated or tiled).
+- `RGBA32F` as a render target requires the `EXT_color_buffer_float` extension
+  (enabled by the renderer before constructing the system).
+
+### Simulation Algorithm (11 stages, MRT single-pass)
+
+| Stage | Description |
+|-------|-------------|
+| 1 | CPU accumulates `spawnAccum += emissionRate × dt`; `spawnCount = floor(spawnAccum)` (capped at `maxParticles`); `spawnAccum -= spawnCount`. |
+| 2 | CPU advances `spawnCursor = (spawnCursor + spawnCount) % maxParticles`; `time += dt`. |
+| 3 | Bind MRT FBO with `COLOR_ATTACHMENT0 = positionTex[write]`, `COLOR_ATTACHMENT1 = velocityTex[write]`; `drawBuffers([0, 1])`. |
+| 4 | Bind read textures: `positionTex[read]` → unit 0, `velocityTex[read]` → unit 1, `metaTex` → unit 2. |
+| 5 | Fragment shader: `texelId = (gl_FragCoord.y - 0.5) × sizeX + (gl_FragCoord.x - 0.5)`. |
+| 6 | Compute `rel = (texelId - spawnStart + maxParticles) % maxParticles`; `shouldSpawn = (life <= 0) && (rel < spawnCount)`. |
+| 7 | If `shouldSpawn`: PCG-hash random offset (emitterPos ± radius), random unit-sphere direction × `startSpeed × (1-var + var×rand)`; `life=1`, `age=0`. |
+| 8 | Elif `life > 0`: semi-implicit Euler — `vel += gravity×dt`; `vel *= max(0, 1-drag×dt)`; `pos += vel×dt`; `age += dt`; `life = max(0, 1 - age/maxLife)`. |
+| 9 | Else: passthrough (stay dead, `life=0`). |
+| 10 | `outPosition = vec4(newPos, newLife)`; `outVelocity = vec4(newVel, newAge)`. |
+| 11 | Swap `readIndex`; restore FBO + viewport. |
+
+### Render Algorithm (7 stages, POINTS)
+
+| Stage | Description |
+|------|-------------|
+| 1 | Bind `positionTex[read]` → unit 0, `metaTex` → unit 1. |
+| 2 | Vertex: `tid = gl_VertexID`; `uv = (vec2(tid % sizeX, tid / sizeX) + 0.5) / sizeX`. |
+| 3 | Fetch `pos = texture(positionTex, uv)`; if `pos.w <= 0` → `gl_Position = vec4(2,2,2,1)` (clip out). |
+| 4 | `clipPos = VP × vec4(pos.xyz, 1)`; `gl_Position = clipPos`. |
+| 5 | `t = 1 - pos.w`; `size = mix(meta.g, meta.b, t)`; `gl_PointSize = clamp(size × scale × viewportH × pixelRatio / clipW, 1, 256)`. |
+| 6 | Fragment: `d = gl_PointCoord × 2 - 1`; `r² = dot(d,d)`; if `r² > 1` discard. |
+| 7 | `alpha = (1-r²) × sin(life×π) × alphaScale`; `color = mix(startColor, endColor, 1-life)`; additive → `vec4(color×alpha, alpha)`, alpha → `vec4(color, alpha)`. |
+
+### API
+
+```ts
+export interface GPUParticleOptions {
+  maxParticles?: number;            // default 65536 (256×256)
+  emissionRate?: number;            // particles/sec, default 1000
+  emitterPosition?: [number, number, number];  // default (0,0,0)
+  emitterVelocity?: [number, number, number];  // default (0,0,0)
+  emitterRadius?: number;           // spawn sphere radius, default 0.5
+  startSpeed?: number;              // m/s, default 2
+  startSpeedVariance?: number;      // 0..1, default 0.5
+  lifetime?: { min: number; max: number };  // seconds, default {1, 3}
+  startSize?: number;               // world units, default 0.1
+  endSize?: number;                 // default 0.0
+  gravity?: [number, number, number];  // m/s², default (0, -9.8, 0)
+  drag?: number;                    // 1/s, default 0
+  startColor?: [number, number, number];  // life=1 color, default (1,1,1)
+  endColor?: [number, number, number];    // life=0 color, default (0.2,0.2,0.2)
+  sizeScale?: number;               // global size multiplier, default 1
+  alphaScale?: number;              // global alpha multiplier, default 1
+  blendMode?: 'additive' | 'alpha'; // default 'additive'
+  enabled?: boolean;                // default true
+  pixelRatio?: number;              // devicePixelRatio, default 1
+}
+
+export class GPUParticleSystem {
+  readonly name: 'gpuparticles';
+  readonly maxParticles: number;    // sizeX × sizeY (≥ requested)
+  readonly sizeX: number;
+  readonly sizeY: number;
+
+  // configurable fields (updatable per-frame)
+  emissionRate: number;
+  emitterPosition: [number, number, number];
+  emitterVelocity: [number, number, number];
+  emitterRadius: number;
+  startSpeed: number; startSpeedVariance: number;
+  lifetimeMin: number; lifetimeMax: number;
+  startSize: number; endSize: number;
+  gravity: [number, number, number];
+  drag: number;
+  startColor: [number, number, number];
+  endColor: [number, number, number];
+  sizeScale: number; alphaScale: number;
+  blendMode: 'additive' | 'alpha';
+  enabled: boolean; pixelRatio: number;
+
+  constructor(opts?: GPUParticleOptions);
+
+  // per-frame simulation (MRT fragment pass + ping-pong swap)
+  update(gl: WebGL2RenderingContext, dt: number): void;
+  // render all alive particles as POINTS
+  render(gl: WebGL2RenderingContext, camera: Camera): void;
+
+  // clear all particles (life=0), reset cursor + time
+  reset(gl: WebGL2RenderingContext): void;
+  setDirty(): void;                 // force re-init on next update
+  dispose(gl?: WebGL2RenderingContext): void;
+
+  // getters
+  get positionTexture(): WebGLTexture | null;  // current read texture
+  get velocityTexture(): WebGLTexture | null;
+  get metaTexture(): WebGLTexture | null;
+  get time(): number;                // elapsed seconds
+  get spawnCursor(): number;         // next texel to spawn
+}
+```
+
+### Options Table
+
+| Option              | Default          | Range / Notes                                    |
+|---------------------|------------------|--------------------------------------------------|
+| `maxParticles`      | 65536            | Rounded up to `sizeX × sizeY` where `sizeX = ceil(√n)`. |
+| `emissionRate`      | 1000             | particles/sec; fractional accumulation preserved. |
+| `emitterPosition`   | (0, 0, 0)        | World-space spawn center.                        |
+| `emitterVelocity`   | (0, 0, 0)        | Base velocity added to all particles.            |
+| `emitterRadius`     | 0.5              | Spawn offset is uniform in `[-r, r]³` cube.      |
+| `startSpeed`        | 2                | m/s; random direction on unit sphere.            |
+| `startSpeedVariance`| 0.5              | 0 = uniform speed, 1 = full `[0, 2×speed]` range.|
+| `lifetime`          | {1, 3}           | Per-particle random `maxLife` baked into `metaTex`. |
+| `startSize` / `endSize` | 0.1 / 0.0    | Linearly interpolated by `t = 1 - life`.         |
+| `gravity`           | (0, -9.8, 0)     | m/s² acceleration.                               |
+| `drag`              | 0                | Velocity damping per second.                     |
+| `startColor` / `endColor` | (1,1,1) / (0.2,0.2,0.2) | Mixed by `1 - life`.            |
+| `sizeScale` / `alphaScale` | 1 / 1        | Global multipliers.                              |
+| `blendMode`         | 'additive'       | Additive: `ONE/ONE` (premultiplied). Alpha: `SRC_ALPHA/ONE_MINUS_SRC_ALPHA`. |
+| `pixelRatio`        | 1                | Affects `gl_PointSize` for HiDPI.                |
+
+### Usage
+
+#### Fire (additive, 65k particles)
+
+```ts
+import { GPUParticleSystem } from '@vreen/engine/particles';
+
+const fire = new GPUParticleSystem({
+  maxParticles: 65536,
+  emissionRate: 8000,
+  emitterPosition: [0, 0, 0],
+  emitterRadius: 0.3,
+  startSpeed: 2.5,
+  startSpeedVariance: 0.6,
+  lifetime: { min: 0.4, max: 1.2 },
+  startSize: 0.15,
+  endSize: 0.0,
+  gravity: [0, 1.5, 0],        // buoyancy (hot air rises)
+  drag: 0.8,
+  startColor: [1.0, 0.7, 0.2], // orange
+  endColor: [0.8, 0.15, 0.0],  // deep red
+  blendMode: 'additive',
+});
+
+// per frame:
+fire.update(gl, dt);
+fire.render(gl, camera);
+
+// teardown:
+fire.dispose(gl);
+```
+
+#### Rain (alpha blend, gravity)
+
+```ts
+const rain = new GPUParticleSystem({
+  maxParticles: 20000,
+  emissionRate: 2000,
+  emitterPosition: [0, 30, 0],
+  emitterRadius: 20,
+  startSpeed: 0,
+  lifetime: { min: 2, max: 4 },
+  startSize: 0.02,
+  endSize: 0.02,
+  gravity: [0, -20, 0],
+  drag: 0.1,
+  startColor: [0.6, 0.7, 0.9],
+  endColor: [0.4, 0.5, 0.8],
+  blendMode: 'alpha',
+  sizeScale: 2,
+});
+```
+
+### GPUParticleSystem vs ParticleSystem2
+
+| Aspect                | `GPUParticleSystem` (GPU)          | `ParticleSystem2` (CPU)                |
+|-----------------------|------------------------------------|----------------------------------------|
+| Max particles         | **65 536+** (texture size limit)   | ~10 000 (JS single-thread cap)         |
+| Simulation location   | Fragment shader (MRT ping-pong)    | CPU `update(dt)` loop                  |
+| Modifiers             | None (gravity + drag only)         | ForceField / Vortex / Turbulence / ColorOverLife / SizeOverLife / VelocityOverLife / SubEmitters |
+| Trails                | No                                 | Yes (`TrailModule`)                    |
+| Sub-emitters          | No                                 | Yes (`SubEmittersModifier`)            |
+| Color over life       | Yes (uniform start/end)            | Yes (per-particle `startColor`/`endColor`) |
+| Size over life        | Yes (linear start→end)             | Yes (curve-driven)                     |
+| Rendering             | POINTS + `gl_VertexID` fetch       | `Float32Array` attributes upload       |
+| CPU→GPU readback      | **Zero**                           | Full upload each frame                 |
+| Determinism           | No (GPU float + PCG hash)          | Yes (seedable `Math.random`)           |
+| Debuggability         | Low (GPU state)                    | High (CPU array inspection)            |
+| Use case              | Fire / smoke / rain / snow / stars | Gameplay effects with rich behavior    |
+
+### vs soup3D
+
+| Feature                  | VREEN `GPUParticleSystem` | soup3D |
+|--------------------------|---------------------------|--------|
+| GPU particle simulation  | Yes (MRT ping-pong)       | No     |
+| 65k+ particles           | Yes                       | No (no particle system) |
+| Texture-based state      | RGBA32F                   | N/A    |
+| `gl_VertexID` fetch      | Yes                       | No     |
+| Additive + alpha blend   | Yes                       | No     |
+| Color / size over life   | Yes                       | No     |
+| Gravity + drag           | Yes                       | No     |
+
+soup3D has **no particle system at all**. VREEN now ships both a CPU particle
+system (`ParticleSystem2`, rich modifiers) and a GPU particle system
+(`GPUParticleSystem`, high throughput), covering the full spectrum from
+gameplay-tied effects to mass-fire scenarios.
+
+---
+
 ## References
 
 - Engine `Math/MathUtils` (`clamp` / `lerp`), `Math/Vector3` / `Color` /

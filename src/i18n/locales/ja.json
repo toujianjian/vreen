@@ -899,6 +899,11 @@
         "desc": "スクリーンスペースレンズフレア、ゴーストチェーン + RGB 色収差 + ガウスハローリング + スターバースト光線 — 深度オクルージョン + 画面外フェード、GodRays の約5分の1のコスト。",
         "advantage": "soup3D にレンズフレアなし"
       },
+      "gpuParticles": {
+        "title": "GPU パーティクル",
+        "desc": "GPU パーティクルシステム、RGBA32F テクスチャ ping-pong シミュレーション、MRT シングルパス積分、POINTS + gl_VertexID fetch レンダリング — 65536+ パーティクル、CPU 読み戻しゼロ。",
+        "advantage": "soup3D にパーティクルシステムなし"
+      },
       "heightFog": {
         "title": "ハイトフォグ",
         "desc": "UE5 風指数ハイトフォグ、閉形式 Beer-Lambert 密度 + 太陽内散乱。",

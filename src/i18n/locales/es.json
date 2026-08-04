@@ -899,6 +899,11 @@
         "desc": "Destello de lente en espacio de pantalla con cadena de fantasmas, aberración cromática RGB, halo gaussiano y rayos estelares — ocluido por profundidad, fundido fuera de pantalla, ~5x más barato que GodRays.",
         "advantage": "soup3D sin destello de lente"
       },
+      "gpuParticles": {
+        "title": "Partículas GPU",
+        "desc": "Sistema de partículas GPU con simulación ping-pong de textura RGBA32F, integración MRT de un solo paso, renderizado POINTS + gl_VertexID fetch — 65536+ partículas, cero readback de CPU.",
+        "advantage": "soup3D sin sistema de partículas"
+      },
       "heightFog": {
         "title": "Niebla de altura",
         "desc": "Niebla de altura exponencial estilo UE5 con densidad Beer-Lambert de forma cerrada e inscattering solar.",

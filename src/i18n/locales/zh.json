@@ -899,6 +899,11 @@
         "desc": "屏幕空间镜头光晕,ghost 重影链 + RGB 色散 + 高斯光环 + 星芒射线 — 深度遮挡 + 屏幕外淡出,比 GodRays 便宜约 5 倍。",
         "advantage": "soup3D 无镜头光晕"
       },
+      "gpuParticles": {
+        "title": "GPU 粒子",
+        "desc": "GPU 粒子系统,RGBA32F 纹理 ping-pong 模拟,MRT 单 pass 积分,POINTS + gl_VertexID fetch 渲染 — 65536+ 粒子,零 CPU 回读。",
+        "advantage": "soup3D 无粒子系统"
+      },
       "heightFog": {
         "title": "高度雾",
         "desc": "UE5 风格指数高度雾,闭式 Beer-Lambert 密度 + 太阳入射散射。",
