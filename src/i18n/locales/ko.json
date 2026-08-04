@@ -1058,6 +1058,21 @@
         "title": "Panini 투영",
         "desc": "원통형 와이드 FOV 투영(Sharpless/o3de Atom). 수직선을 수직으로 유지하면서 더 넓은 수평 시야 허용, 광각 엣지 늘어남 없음. depth 매개변수로 강도 제어, 파노라마/360° 출력용 수직 모드 선택 가능. 건축 비즈 + 시네마틱 광각.",
         "advantage": "soup3D 투영 보정 없음"
+      },
+      "colorGrading": {
+        "title": "컬러 그레이딩",
+        "desc": "싱글 패스 ASC-CDL 컬러 그레이딩(8 매개변수:색온도/색조/채도/대비/게인/리프트/감마/색상 이동). DaVinci 스타일 lift/gamma/gain + 화이트 밸런스 + 색상 회전. 런타임 필드 직접 수정 가능, 애니메이션 시스템 통합 지원.",
+        "advantage": "soup3D 컬러 그레이딩 없음"
+      },
+      "outline": {
+        "title": "아웃라인 Pass",
+        "desc": "선택 객체 하이라이트 아웃라인(three.js OutlinePass를 CPU에 적응). Mask → 분리 가능 가우시안 블러 → 엣지 감산 → 알파 블렌드. 엣지 색/강도/블러 반경/글로우 설정 가능. 에디터/인스펙터 객체 선택 하이라이트.",
+        "advantage": "soup3D 아웃라인 없음"
+      },
+      "reflectionProbe": {
+        "title": "리플렉션 프로브",
+        "desc": "로컬 IBL 큐브 캡처(6면 90° 렌더 → cube 텍스처). AABB 영향 범위(position + boxSize + priority). 옵션 PMREM 사전 필터(Karis 2013 split-sum GGX 중요도 샘플링 → RGBA16F mip 체인), 물리적으로 올바른 거칠기 종속 경면 IBL. 지오메트리 변경 시 필요에 따라 재캡처.",
+        "advantage": "soup3D 리플렉션 프로브 없음"
       }
     }
   }

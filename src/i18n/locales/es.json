@@ -1058,6 +1058,21 @@
         "title": "Proyección Panini",
         "desc": "Proyección cilíndrica de FOV amplio (Sharpless/o3de Atom). Mantiene líneas verticales rectas permitiendo FOV horizontal más amplio sin estiramiento de bordes. Parámetro depth controla intensidad; modo vertical opcional para salida panorámica/360°. Visualización arquitectónica + gran angular cinematográfico.",
         "advantage": "soup3D sin corrección de proyección"
+      },
+      "colorGrading": {
+        "title": "Gradación de Color",
+        "desc": "Gradación de color ASC-CDL de paso único (8 parámetros: temperatura/tinte/saturación/contraste/ganancia/elevación/gama/desplazamiento de tono). lift/gamma/gain estilo DaVinci + balance de blancos + rotación de tono. Campos ajustables en tiempo de ejecución para integración con sistema de animación.",
+        "advantage": "soup3D sin gradación de color"
+      },
+      "outline": {
+        "title": "Pass de Contorno",
+        "desc": "Contorno de resaltado de selección (three.js OutlinePass adaptado a CPU). Máscara → desenfoque gaussiano separable → sustracción de bordes → mezcla alfa. Color/intensidad/radio de desenfoque/brillo de borde configurables. Resaltado de selección de objetos en editor/inspector.",
+        "advantage": "soup3D sin contorno"
+      },
+      "reflectionProbe": {
+        "title": "Sonda de Reflexión",
+        "desc": "Captura de cubo IBL local (6 caras 90° → textura cube). Volumen de influencia AABB (position + boxSize + priority). Prefiltro PMREM opcional (muestreo de importancia split-sum GGX Karis 2013 → cadena mip RGBA16F) para IBL especular físicamente correcta dependiente de rugosidad. Recaptura bajo demanda al cambiar geometría.",
+        "advantage": "soup3D sin sondas de reflexión"
       }
     }
   }

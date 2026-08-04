@@ -1058,6 +1058,21 @@
         "title": "Panini Projection",
         "desc": "Cylindrical wide-FOV projection (Sharpless/o3de Atom). Keeps vertical lines straight while allowing wider horizontal FOV without edge stretching. depth parameter controls intensity; optional vertical mode for panoramic/360° output. Architectural viz + cinematic wide-angle.",
         "advantage": "soup3D has no projection correction"
+      },
+      "colorGrading": {
+        "title": "Color Grading",
+        "desc": "Single-pass ASC-CDL color grading (8 parameters: temperature/tint/saturation/contrast/gain/lift/gamma/hueShift). DaVinci-style lift/gamma/gain + white balance + hue rotation. Runtime-tunable fields for animation system integration.",
+        "advantage": "soup3D has no color grading"
+      },
+      "outline": {
+        "title": "Outline Pass",
+        "desc": "Selection highlight outline (three.js OutlinePass adapted to CPU). Mask → separable Gaussian blur → edge subtraction → alpha blend. Configurable edge color / strength / blur radius / glow. Editor/inspector object selection highlighting.",
+        "advantage": "soup3D has no outline"
+      },
+      "reflectionProbe": {
+        "title": "Reflection Probe",
+        "desc": "Local IBL cube capture (6-face 90° render → cube texture). AABB influence volume (position + boxSize + priority). Optional PMREM prefilter (Karis 2013 split-sum GGX importance sampling → RGBA16F mip chain) for physically-correct roughness-dependent specular IBL. Per-probe re-capture on geometry change.",
+        "advantage": "soup3D has no reflection probes"
       }
     }
   }

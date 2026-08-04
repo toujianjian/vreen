@@ -1058,6 +1058,21 @@
         "title": "Panini 投影",
         "desc": "圆柱宽 FOV 投影(Sharpless/o3de Atom)。保持垂直线垂直的同时允许更宽的水平视场,无广角边缘拉伸。depth 参数控制强度,可选垂直模式用于全景/360° 输出。建筑可视化 + 电影广角镜头。",
         "advantage": "soup3D 无投影失真校正"
+      },
+      "colorGrading": {
+        "title": "色彩分级",
+        "desc": "单 pass ASC-CDL 色彩分级(8 个参数:色温/色调/饱和度/对比度/增益/提升/伽马/色相偏移)。DaVinci 风格 lift/gamma/gain + 白平衡 + 色相旋转。运行时字段可直接修改,支持动画系统集成。",
+        "advantage": "soup3D 无色彩分级"
+      },
+      "outline": {
+        "title": "描边 Pass",
+        "desc": "选中物体高亮描边(适配 three.js OutlinePass 至 CPU 路径)。Mask → 可分离高斯模糊 → 边缘相减 → Alpha 混合。可配置描边颜色/强度/模糊半径/发光。编辑器/检视器物体选中高亮。",
+        "advantage": "soup3D 无描边"
+      },
+      "reflectionProbe": {
+        "title": "反射探针",
+        "desc": "局部 IBL 立方体捕获(6 面 90° 渲染 → cube 纹理)。AABB 影响范围(position + boxSize + priority)。可选 PMREM 预滤波(Karis 2013 split-sum GGX 重要性采样 → RGBA16F mip 链),物理正确的粗糙度相关镜面 IBL。几何变化时按需重新捕获。",
+        "advantage": "soup3D 无反射探针"
       }
     }
   }

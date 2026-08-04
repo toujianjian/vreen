@@ -1058,6 +1058,21 @@
         "title": "Panini 投影",
         "desc": "円柱ワイド FOV 投影(Sharpless/o3de Atom)。垂直線を垂直に保ちながらより広い水平視野を許可、広角エッジ伸張なし。depth パラメータで強度制御、パノラマ/360° 出力用の垂直モード可选。建築ビズ + シネマティック広角。",
         "advantage": "soup3D に投影補正なし"
+      },
+      "colorGrading": {
+        "title": "カラーグレーディング",
+        "desc": "シングンパス ASC-CDL カラーグレーディング(8 パラメータ:色温度/色相/彩度/コントラスト/ゲイン/リフト/ガンマ/色相シフト)。DaVinci 風 lift/gamma/gain + ホワイトバランス + 色相回転。実行時フィールド直接変更可能、アニメーションシステム統合対応。",
+        "advantage": "soup3D にカラーグレーディングなし"
+      },
+      "outline": {
+        "title": "アウトライン Pass",
+        "desc": "選択オブジェクトハイライトアウトライン(three.js OutlinePass を CPU に適応)。Mask → 分離可能ガウシアンブラー → エッジ減算 → アルファブレンド。エッジ色/強度/ブラー半径/グロー設定可能。エディタ/インスペクタオブジェクト選択ハイライト。",
+        "advantage": "soup3D にアウトラインなし"
+      },
+      "reflectionProbe": {
+        "title": "リフレクションプローブ",
+        "desc": "ローカル IBL キューブキャプチャ(6 面 90° レンダ → cube テクスチャ)。AABB 影響範囲(position + boxSize + priority)。オプション PMREM プレフィルタ(Karis 2013 split-sum GGX 重要度サンプリング → RGBA16F mip チェイン)、物理的に正確な粗さ依存鏡面 IBL。ジオメトリ変更時に必要に応じて再キャプチャ。",
+        "advantage": "soup3D にリフレクションプローブなし"
       }
     }
   }
