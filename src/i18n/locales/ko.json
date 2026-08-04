@@ -904,6 +904,11 @@
         "desc": "GPU 파티클 시스템, RGBA32F 텍스처 ping-pong 시뮬레이션, MRT 싱글 패스 적분, POINTS + gl_VertexID fetch 렌더링 — 65536+ 파티클, CPU 리드백 제로.",
         "advantage": "soup3D에 파티클 시스템 없음"
       },
+      "localExposure": {
+        "title": "로컬 노출",
+        "desc": "로그 공간 국소-전역 휘도 차이 구동 노출 보정 — 어두운 부분 밝게, 하이라이트 어둡게, 디테일 보존. AutoExposure와 보완, HDR 장면용.",
+        "advantage": "soup3D에 로컬 노출 없음"
+      },
       "heightFog": {
         "title": "높이 안개",
         "desc": "UE5 스타일 지수 높이 안개, 폐쇄형 Beer-Lambert 밀도 + 태양 내산란.",

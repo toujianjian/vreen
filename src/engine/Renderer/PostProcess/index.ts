@@ -84,3 +84,4 @@ export {
   ScreenSpaceLensFlarePass,
   type ScreenSpaceLensFlareOptions,
 } from './ScreenSpaceLensFlarePass';
+export { LocalExposurePass, type LocalExposureOptions } from './LocalExposurePass';

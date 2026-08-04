@@ -904,6 +904,11 @@
         "desc": "GPU particle system with RGBA32F texture ping-pong simulation, MRT single-pass integrate, POINTS + gl_VertexID fetch rendering — 65536+ particles, zero CPU readback.",
         "advantage": "soup3D has no particle system"
       },
+      "localExposure": {
+        "title": "Local Exposure",
+        "desc": "Log-space local-global luminance difference driven exposure compensation — brightens shadows, darkens highlights, preserves detail. Complements AutoExposure for HDR scenes.",
+        "advantage": "soup3D has no local exposure"
+      },
       "heightFog": {
         "title": "Height Fog",
         "desc": "UE5-style exponential height fog with closed-form Beer-Lambert density and sun inscattering.",

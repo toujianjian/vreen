@@ -904,6 +904,11 @@
         "desc": "GPU パーティクルシステム、RGBA32F テクスチャ ping-pong シミュレーション、MRT シングルパス積分、POINTS + gl_VertexID fetch レンダリング — 65536+ パーティクル、CPU 読み戻しゼロ。",
         "advantage": "soup3D にパーティクルシステムなし"
       },
+      "localExposure": {
+        "title": "ローカル露出",
+        "desc": "対数空間のローカル-グローバル輝度差駆動の露出補償 — 暗部を明るく、ハイライトを暗く、ディテールを保持。AutoExposure と補完関係、HDR シーン向け。",
+        "advantage": "soup3D にローカル露出なし"
+      },
       "heightFog": {
         "title": "ハイトフォグ",
         "desc": "UE5 風指数ハイトフォグ、閉形式 Beer-Lambert 密度 + 太陽内散乱。",

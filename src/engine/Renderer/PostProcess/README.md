@@ -3220,6 +3220,148 @@ npx vitest run src/engine/Renderer/PostProcess/
 
 ---
 
+## LocalExposurePass (`LocalExposurePass.ts`)
+
+> Path: `src/engine/Renderer/PostProcess/LocalExposurePass.ts`
+>
+> Local exposure post-process. Applies log-space local-global luminance
+> difference driven exposure compensation — brightens shadows, darkens
+> highlights, preserves detail. Complements `AutoExposurePass` (global exposure)
+> for HDR scenes where both dark interiors and bright skies need to be visible.
+
+### Architecture
+
+```
+Input: HDR color texture
+         │
+         ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Fragment shader (single pass, ~50 texture samples)         │
+│                                                             │
+│  1. localLum  = avg luminance of 5×5 neighborhood           │
+│     (radius = localRadius, stride = 1 texel)                │
+│                                                             │
+│  2. globalLum = avg luminance of 5×5 neighborhood           │
+│     (radius = globalRadius, stride = globalStride texels)   │
+│                                                             │
+│  3. logDelta  = log(globalLum) - log(localLum)              │
+│     > 0 → local darker than global → brighten               │
+│     < 0 → local brighter than global → darken               │
+│                                                             │
+│  4. exposureComp = clamp(logDelta × strength, ±maxComp)     │
+│     exposureFactor = exp(exposureComp)                      │
+│                                                             │
+│  5. adjusted = color × exposureFactor                       │
+│                                                             │
+│  6. Detail preservation:                                    │
+│     detail = pixelLum - localLum   (high-frequency)         │
+│     adjusted += detail × (1 - exposureFactor) × detailPres  │
+│     → high-frequency detail not compressed by exposure      │
+└─────────────────────────────────────────────────────────────┘
+         │
+         ▼
+Output: locally exposure-adjusted HDR color (RGBA16F)
+```
+
+### Algorithm (8 stages)
+
+| Stage | Description |
+|-------|-------------|
+| 1 | Sample 5×5 neighborhood (`localRadius=2`, stride=1) → `localLum` (local average luminance). |
+| 2 | Sample 5×5 neighborhood (`globalRadius=2`, stride=8) → `globalLum` (global average luminance). |
+| 3 | Convert to log space: `logLocal = log(max(localLum, 1e-4))`, `logGlobal = log(max(globalLum, 1e-4))`. |
+| 4 | Compute delta: `logDelta = logGlobal - logLocal`. Positive = local darker → brighten; negative = local brighter → darken. |
+| 5 | Apply strength + clamp: `exposureComp = clamp(logDelta × strength, -maxComp, +maxComp)`. |
+| 6 | Convert to linear: `exposureFactor = exp(exposureComp)`. e^1.5 ≈ 4.5× max boost/cut. |
+| 7 | Apply: `adjusted = color × exposureFactor`. |
+| 8 | Detail preservation: `detail = pixelLum - localLum`; `adjusted += detail × (1 - exposureFactor) × detailPreservation`. |
+
+### Why log space?
+
+Luminance perception is approximately logarithmic (Weber-Fechner law). A
+difference of 0.1→0.2 is perceptually similar to 1.0→2.0. Working in log space
+ensures the exposure compensation is perceptually uniform across the dynamic
+range:
+- `log(0.2) - log(0.1) ≈ 0.69` (same as)
+- `log(2.0) - log(1.0) ≈ 0.69`
+
+### Options
+
+| Option                | Default | Range / Notes |
+|-----------------------|---------|---------------|
+| `strength`            | 1.0     | 0=off, 2=strong. Scales logDelta before exp. |
+| `localRadius`         | 2       | 1..4 texel. Local neighborhood (5×5 at r=2). |
+| `globalRadius`        | 2       | 1..4. Global neighborhood size. |
+| `globalStride`        | 8       | texel multiplier. Global range = r × stride (±16 at r=2, s=8). |
+| `maxCompensation`     | 1.5     | ln domain. e^1.5 ≈ 4.5× max boost/cut. |
+| `detailPreservation`  | 0.7     | 0..1. 1=full detail preserved, 0=detail also adjusted. |
+| `enabled`             | true    | false = passthrough (returns input). |
+
+### API
+
+```ts
+export class LocalExposurePass {
+  readonly name: 'localexposure';
+  strength: number;
+  localRadius: number;
+  globalRadius: number;
+  globalStride: number;
+  maxCompensation: number;
+  detailPreservation: number;
+  enabled: boolean;
+
+  constructor(opts?: LocalExposureOptions);
+  apply(gl: WebGL2RenderingContext, colorTexture: WebGLTexture): WebGLTexture;
+  setDirty(): void;
+  dispose(gl?: WebGL2RenderingContext): void;
+}
+```
+
+### Usage
+
+```ts
+import { LocalExposurePass } from '@vreen/engine/renderer/postprocess';
+
+const localExposure = new LocalExposurePass({
+  strength: 1.0,
+  localRadius: 2,
+  globalStride: 8,
+  maxCompensation: 1.5,
+  detailPreservation: 0.7,
+});
+
+// Pipeline order: AutoExposure → LocalExposure → Tonemapping
+let color = autoExposure.apply(gl, hdrColor);
+color = localExposure.apply(gl, color);
+color = tonemapping.apply(gl, color);
+```
+
+### vs AutoExposurePass
+
+| Aspect          | `AutoExposurePass`          | `LocalExposurePass`                    |
+|-----------------|-----------------------------|----------------------------------------|
+| Scope           | Global (whole frame)        | Local (per-pixel neighborhood)         |
+| Metric          | Frame average luminance     | Local vs global luminance delta        |
+| Effect          | Uniform brightness shift    | Brighten shadows, darken highlights    |
+| Detail          | May wash out                | Preserved (detail preservation)        |
+| Pipeline order  | Before LocalExposure        | After AutoExposure, before Tonemapping |
+| Use case        | Day/night adaptation        | HDR contrast reduction                 |
+
+### vs soup3D
+
+| Feature              | VREEN `LocalExposurePass` | soup3D |
+|----------------------|---------------------------|--------|
+| Local exposure       | Yes (log-space delta)     | No     |
+| Detail preservation  | Yes                       | No     |
+| Complements auto exp | Yes                       | No     |
+| HDR scene support    | Yes                       | No     |
+
+soup3D has **no exposure control at all** (neither global nor local). VREEN
+ships both `AutoExposurePass` (global) and `LocalExposurePass` (local),
+providing UE5-grade HDR tone reproduction.
+
+---
+
 ## References
 
 | Technique | Paper / Source |

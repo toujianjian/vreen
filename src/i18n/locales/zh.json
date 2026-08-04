@@ -904,6 +904,11 @@
         "desc": "GPU 粒子系统,RGBA32F 纹理 ping-pong 模拟,MRT 单 pass 积分,POINTS + gl_VertexID fetch 渲染 — 65536+ 粒子,零 CPU 回读。",
         "advantage": "soup3D 无粒子系统"
       },
+      "localExposure": {
+        "title": "局部曝光",
+        "desc": "对数空间局部-全局亮度差异驱动的曝光补偿 — 提亮暗部、压暗高光、保留细节。与自动曝光互补,适用于 HDR 场景。",
+        "advantage": "soup3D 无局部曝光"
+      },
       "heightFog": {
         "title": "高度雾",
         "desc": "UE5 风格指数高度雾,闭式 Beer-Lambert 密度 + 太阳入射散射。",

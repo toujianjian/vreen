@@ -125,6 +125,8 @@ export {
   type TrailRenderData,
   type ParticleSystemRenderData,
   type SpawnDefaults,
+  GPUParticleSystem,
+  type GPUParticleOptions,
 } from './Particles';
 export {
   Profiler,

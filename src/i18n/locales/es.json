@@ -904,6 +904,11 @@
         "desc": "Sistema de partículas GPU con simulación ping-pong de textura RGBA32F, integración MRT de un solo paso, renderizado POINTS + gl_VertexID fetch — 65536+ partículas, cero readback de CPU.",
         "advantage": "soup3D sin sistema de partículas"
       },
+      "localExposure": {
+        "title": "Exposición Local",
+        "desc": "Compensación de exposición por diferencia de luminancia local-global en espacio logarítmico — aclara sombras, oscurece reflejos, preserva detalle. Complementa AutoExposure para HDR.",
+        "advantage": "soup3D sin exposición local"
+      },
       "heightFog": {
         "title": "Niebla de altura",
         "desc": "Niebla de altura exponencial estilo UE5 con densidad Beer-Lambert de forma cerrada e inscattering solar.",

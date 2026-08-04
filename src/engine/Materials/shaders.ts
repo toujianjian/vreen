@@ -4718,5 +4718,116 @@ void main() {
 }
 `;
 
+// ════════════════════════════════════════════════════════════════════════
+// 局部曝光(Local Exposure)— 对数空间局部-全局亮度差异驱动的曝光补偿
+// ════════════════════════════════════════════════════════════════════════
+//
+// 与 AutoExposure(全局曝光)互补:
+//   - AutoExposure 根据整帧平均亮度调整全局曝光(整画面提亮/压暗)
+//   - LocalExposure 在局部区域调整曝光(暗部提亮、亮部压暗),保留细节
+//
+// 算法(o3de Atom LocalExposurePass / UE5 Eye Adaptation 简化版):
+//   1. 局部平均亮度 localLum(小范围邻域,5×5)
+//   2. 全局平均亮度 globalLum(大范围邻域,5×5 大步长)
+//   3. 对数空间差异 logDelta = log(globalLum) - log(localLum)
+//      logDelta > 0 → 局部偏暗 → 提亮
+//      logDelta < 0 → 局部偏亮 → 压暗
+//   4. 曝光补偿 exposureFactor = exp(clamp(logDelta × strength, ±maxComp))
+//   5. 细节保留:像素级 detail = pixelLum - localLum 不被曝光压缩
+//
+// 参考:
+//   - o3de Atom, PostProcessing LocalExposurePass
+//   - UE5 "Eye Adaptation" / "Local Exposure"
+//   - Reinhard 2005 "Dynamic Range Reduction Inspired by Photographic Exposure"
+//   - Reinhard 2002 "Photographic Tone Reproduction"
+
+export const LOCAL_EXPOSURE_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+// 局部曝光 — 对数空间局部-全局亮度差异驱动的曝光补偿
+// 参考: o3de Atom LocalExposurePass / UE5 Local Exposure
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;       // HDR 场景颜色
+uniform vec2  u_texelSize;          // (1/width, 1/height)
+uniform float u_strength;           // 曝光调整强度 (0..2, 默认 1.0)
+uniform int   u_localRadius;        // 局部采样半径 (1..4, 默认 2)
+uniform int   u_globalRadius;       // 全局采样半径 (1..4, 默认 2)
+uniform float u_globalStride;       // 全局采样步长 (texel 倍数, 默认 8)
+uniform float u_maxCompensation;    // 最大曝光补偿 (ln 域, 默认 1.5 → e^1.5≈4.5x)
+uniform float u_detailPreservation; // 细节保留率 (0..1, 默认 0.7)
+uniform int   u_enabled;            // 0=禁用, 1=启用
+
+#define MAX_R 4
+
+float luminance(vec3 c) {
+  return dot(c, vec3(0.2126, 0.7152, 0.0722));
+}
+
+void main() {
+  vec3 color = texture(u_colorMap, v_uv).rgb;
+
+  if (u_enabled == 0) {
+    outColor = vec4(color, 1.0);
+    return;
+  }
+
+  // ── 局部平均亮度(小范围,细节级) ───────────────────────────
+  float localLum = 0.0;
+  int localCount = 0;
+  for (int x = -MAX_R; x <= MAX_R; x++) {
+    for (int y = -MAX_R; y <= MAX_R; y++) {
+      if (abs(x) > u_localRadius || abs(y) > u_localRadius) continue;
+      vec3 c = texture(u_colorMap, v_uv + vec2(float(x), float(y)) * u_texelSize).rgb;
+      localLum += luminance(c);
+      localCount++;
+    }
+  }
+  localLum /= float(max(localCount, 1));
+
+  // ── 全局平均亮度(大范围,大步长) ───────────────────────────
+  float globalLum = 0.0;
+  int globalCount = 0;
+  for (int x = -MAX_R; x <= MAX_R; x++) {
+    for (int y = -MAX_R; y <= MAX_R; y++) {
+      if (abs(x) > u_globalRadius || abs(y) > u_globalRadius) continue;
+      vec2 offset = vec2(float(x), float(y)) * u_texelSize * u_globalStride;
+      vec3 c = texture(u_colorMap, v_uv + offset).rgb;
+      globalLum += luminance(c);
+      globalCount++;
+    }
+  }
+  globalLum /= float(max(globalCount, 1));
+
+  // ── 对数空间局部-全局差异 ─────────────────────────────────
+  // logDelta > 0 → 局部偏暗(logLocal < logGlobal)→ 需提亮
+  // logDelta < 0 → 局部偏亮(logLocal > logGlobal)→ 需压暗
+  float logLocal = log(max(localLum, 0.0001));
+  float logGlobal = log(max(globalLum, 0.0001));
+  float logDelta = logGlobal - logLocal;
+
+  // 曝光补偿(对数域 → 线性域:exp)
+  float exposureComp = logDelta * u_strength;
+  exposureComp = clamp(exposureComp, -u_maxCompensation, u_maxCompensation);
+  float exposureFactor = exp(exposureComp);
+
+  // ── 应用曝光 ───────────────────────────────────────────────
+  vec3 adjusted = color * exposureFactor;
+
+  // ── 细节保留(高频不被压缩) ────────────────────────────────
+  // 像素级亮度与局部平均的差值 = 细节
+  float pixelLum = luminance(color);
+  float detail = pixelLum - localLum;
+  // 细节在曝光调整后应保持原样(不被 exp 压缩)
+  // adjusted 已乘 exposureFactor → 细节部分 = detail * exposureFactor
+  // 期望细节部分 = detail(原样)→ 补偿回 detail * (1 - exposureFactor)
+  adjusted += vec3(detail) * (1.0 - exposureFactor) * u_detailPreservation;
+
+  outColor = vec4(adjusted, 1.0);
+}
+`;
+
 
 
