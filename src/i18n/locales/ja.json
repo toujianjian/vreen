@@ -1128,6 +1128,11 @@
         "title": "階層化 Z バッファオクルージョンカリング(o3de/UE5)",
         "desc": "o3de Atom MaskedOcclusionCulling / OcclusionCullingPlane および UE5 HZB から適応した HZB オクルージョンカリング。深度バッファから mip ピラミッドを構築し、各レベルは 2×2 子テクセルの最大深度を保存(保守的 — 可視オブジェクトを誤ってカリングしない)。各オブジェクト AABB の 8 コーナーをスクリーン空間に投影、スクリーン矩形サイズに基づき mip レベルを選択(log2)、矩形中心で HZB 深度をサンプリング、オブジェクトの最近深度 > HZB 深度ならカリング。Greene 1993 アルゴリズム。設定可能:conservativeBias(誤カリング削減)、mipBias、minScreenSize(小オブジェクトスキップ)。純粋 CPU Float32Array(WebGL 非依存、Node/ヘッドレス環境でテスト可能)。視錐台カリングと相補 — 視錐台内だが壁/山の後ろのオブジェクトをカリング。用途:屋内シーン(壁の後ろカリング)、オープンワールド(地形の後ろカリング)、GPU 駆動レンダリング(数千オブジェクト一括カリング)。GLSL チャンク(hzbReduceMax2x2 / hzbIsOccluded)で将来の GPU 統合に対応。35 個のユニットテスト。",
         "advantage": "soup3D はオクルージョンカリングなし"
+      },
+      "areaLightLTC": {
+        "title": "エリアライト LTC(Heitz 2016)",
+        "desc": "Heitz, Dupuy, Hill, Neubelt 2016『Real-Time Polygonal-Light Shading with Linearly Transformed Cosines』、three.js LTC.js、o3de Atom LtcCommon.cpp から適応した Linearly Transformed Cosines エリアライト評価。LTC 行列変換で矩形エリアライトの irradiance を評価:表面法線周りに正規直交基底を構築、逆 LTC 行列でライト頂点を標準コサイン空間へ変換、単位球に投影、4 辺のベクトル形状因子(有理多項式 theta/sin(theta) 近似)を計算、地平線クリッピングを適用。specular + diffuse 両ローブ対応。LUT サンプリング(ltcUv)で 64×64 事前計算 LTC 行列(roughness × dot(N,V) パラメータ化)。V が N に平行な退化ケースも処理。純粋 CPU 関数(ltcEvaluate、evaluateRectAreaLight、computeAreaLighting、approximateLTCMatrix、makeRectVertices)でヘッドレステスト対応。49 個のユニットテスト。",
+        "advantage": "soup3D はポイント/ディレクショナルライトのみ、エリアライトなし"
       }
     }
   }

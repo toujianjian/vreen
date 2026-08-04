@@ -795,4 +795,43 @@ export {
   type OcclusionTestOptions,
   type Vec3 as HZBVec3,
 } from './HierarchicalZBuffer';
+// AreaLightLTC — Linearly Transformed Cosines 区域光求值(CPU 参考实现)。
+// 适配自 Heitz et al. 2016 "Real-Time Polygonal-Light Shading with Linearly
+// Transformed Cosines" + three.js LTC.js + o3de Atom LtcCommon.cpp。
+// 提供 ltcEvaluate(矩形面光源 irradiance 求值)+ ltcUv(LUT 采样坐标)+
+// ltcEdgeVectorFormFactor / ltcClippedSphereFormFactor(球面形式因子)+
+// evaluateRectAreaLight(specular + diffuse)+ computeAreaLighting(批量)+
+// approximateLTCMatrix(测试用解析近似)+ makeRectVertices(顶点生成)。
+// 纯函数,不依赖 WebGL,可在 Node/无头环境测试。
+// soup3D 仅有点光源 / 方向光,无面光源。
+export {
+  ltcUv,
+  ltcEdgeVectorFormFactor,
+  ltcClippedSphereFormFactor,
+  ltcEvaluate,
+  evaluateRectAreaLight,
+  computeAreaLighting,
+  approximateLTCMatrix,
+  makeRectVertices,
+  mat3MulVec as ltcMat3MulVec,
+  mat3MulMat3 as ltcMat3MulMat3,
+  vec3 as ltcVec3,
+  sub as ltcSub,
+  add as ltcAdd,
+  scale as ltcScale,
+  dot as ltcDot,
+  cross as ltcCross,
+  length as ltcLength,
+  normalize as ltcNormalize,
+  saturate as ltcSaturate,
+  LTC_LUT_SIZE,
+  LTC_LUT_SCALE,
+  LTC_LUT_BIAS,
+  type Vec3 as LTCVec3,
+  type Mat3 as LTCMat3,
+  type LTCColor,
+  type RectLightParams,
+  type SurfacePoint as LTCSurfacePoint,
+  type LTCResult,
+} from './AreaLightLTC';
 

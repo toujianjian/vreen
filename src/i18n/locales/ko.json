@@ -1128,6 +1128,11 @@
         "title": "계층적 Z 버퍼 오클루전 컬링(o3de/UE5)",
         "desc": "o3de Atom MaskedOcclusionCulling / OcclusionCullingPlane 및 UE5 HZB에서 적응한 HZB 오클루전 컬링. 깊이 버퍼에서 mip 피라미드를 구축하고 각 레벨은 2×2 자식 텍셀의 최대 깊이를 저장(보수적 — 가시 오브젝트를 잘못 컬링하지 않음). 각 오브젝트 AABB의 8 코너를 스크린 공간에 투영, 스크린 사각형 크기에 기반해 mip 레벨 선택(log2), 사각형 중심에서 HZB 깊이 샘플링, 오브젝트 최근 깊이 > HZB 깊이면 컬링. Greene 1993 알고리즘. 설정 가능:conservativeBias(오탐 감소), mipBias, minScreenSize(작은 오브젝트 스킵). 순수 CPU Float32Array(WebGL 비의존, Node/헤드리스 환경에서 테스트 가능). 절두체 컬링과 상보 — 절두체 내이지만 벽/산 뒤의 오브젝트를 컬링. 용도:실내 씬(벽 뒤 컬링), 오픈 월드(지형 뒤 컬링), GPU 구동 렌더링(수천 오브젝트 일괄 컬링). GLSL 청크(hzbReduceMax2x2 / hzbIsOccluded)로 향후 GPU 통합 대응. 35개 유닛 테스트.",
         "advantage": "soup3D는 오클루전 컬링 없음"
+      },
+      "areaLightLTC": {
+        "title": "에리어 라이트 LTC(Heitz 2016)",
+        "desc": "Heitz, Dupuy, Hill, Neubelt 2016 'Real-Time Polygonal-Light Shading with Linearly Transformed Cosines', three.js LTC.js, o3de Atom LtcCommon.cpp에서 적응한 Linearly Transformed Cosines 에리어 라이트 평가. LTC 행렬 변환으로 사각형 에리어 라이트 irradiance 평가: 표면 법선 주위 정규직교 기저 구축, 역 LTC 행렬로 라이트 정점을 표준 코사인 공간으로 변환, 단위 구에 투영, 4 변의 벡터 형태 인자(유리 다항식 theta/sin(theta) 근사) 계산, 지평선 클리핑 적용. specular + diffuse 양 로브 지원. LUT 샘플링(ltcUv)으로 64×64 사전 계산 LTC 행렬(roughness × dot(N,V) 매개변수화). V가 N에 평행한 퇴화 케이스 처리. 순수 CPU 함수(ltcEvaluate, evaluateRectAreaLight, computeAreaLighting, approximateLTCMatrix, makeRectVertices)로 헤드리스 테스트 지원. 49개 유닛 테스트.",
+        "advantage": "soup3D는 포인트/디렉셔널 라이트만, 에리어 라이트 없음"
       }
     }
   }

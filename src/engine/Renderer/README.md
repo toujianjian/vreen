@@ -2088,6 +2088,133 @@ const result = occlusionCull(hzb, objects, viewProjMatrix, 1920, 1080, {
 - **GLSL chunk** (`HZB_GLSL`) — provides `hzbReduceMax2x2` and
   `hzbIsOccluded` for future GPU-side integration.
 
+### Area Light LTC (`AreaLightLTC.ts`)
+
+**Linearly Transformed Cosines (LTC)** area light evaluation, adapted from
+Heitz, Dupuy, Hill, Neubelt 2016 *"Real-Time Polygonal-Light Shading with
+Linearly Transformed Cosines"*, three.js `nodes/functions/BSDF/LTC.js`,
+and o3de Atom `LtcCommon.cpp`. Evaluates rectangular area light irradiance
+using a 3×3 LTC matrix transform that maps GGX BRDF shape into a canonical
+cosine lobe, where polygon irradiance has a closed-form spherical-polygon
+solution.
+
+This is a production-grade feature shipped by UE5 (`RectLight`), o3de
+(`ArenaLight`), and Unity. soup3D only has point/directional lights — no
+area lights at all.
+
+**Core idea:**
+
+| Concept | Description |
+|---------|-------------|
+| LTC matrix `M` | A 3×3 matrix that approximates the GGX BRDF lobe shape as a linearly transformed cosine. |
+| Inverse `M⁻¹` | Transforms polygon vertices *from* BRDF space *into* canonical cosine space where the form factor is analytic. |
+| LUT | 64×64 texture parameterized by `roughness × dot(N,V)` storing precomputed `M⁻¹`. Two LUTs: specular + diffuse. |
+| Spherical form factor | Closed-form irradiance of a horizon-clipped polygon on a unit sphere (4-edge vector form factor sum). |
+
+**Algorithm pipeline (`ltcEvaluate`):**
+
+| Stage | Function | Description |
+|-------|----------|-------------|
+| 1. Backface cull | `dot(lightNormal, P - p0) <= 0` | Light vertices are CCW; `lightNormal = cross(p1-p0, p3-p0)`. If the shading point is on the back side of the light plane, irradiance = 0. |
+| 2. Orthonormal basis | `T1 = normalize(V - N·dot(V,N))`, `T2 = -N×T1` | Constructs tangent frame around `N`. **Degenerate case:** when `V ∥ N` (`|dot(V,N)| > 0.999`), falls back to `(1,0,0)` or `(0,0,1)` — whichever is less parallel to `N`. |
+| 3. Matrix transform | `mat = M⁻¹ · transpose(mat3(T1, T2, N))` | Combines the inverse LTC matrix with the basis transpose (column-major). |
+| 4. Sphere projection | `coords_i = normalize(mat · (p_i - P))` | Transforms 4 rect vertices into LTC space and projects onto unit sphere. |
+| 5. Edge form factors | `ltcEdgeVectorFormFactor(coords_i, coords_{i+1})` | 4 edges summed. Rational polynomial approximates `θ/sin(θ)/2π`. |
+| 6. Horizon clip | `ltcClippedSphereFormFactor(f)` | `max((|f|² + f.z) / (|f| + 1), 0)` — clips to [0,1] irradiance. |
+
+**API surface:**
+
+```ts
+import {
+  ltcEvaluate,           // core: scalar irradiance for one rect light
+  evaluateRectAreaLight, // specular + diffuse + total for one surface
+  computeAreaLighting,   // batch: multiple surfaces × one light
+  ltcUv,                 // LUT sampling coords (roughness, dotNV)
+  approximateLTCMatrix,  // analytic M⁻¹ approximation (for tests, no LUT)
+  makeRectVertices,      // center + forward + up + w/h → 4 CCW vertices
+  LTC_LUT_SIZE,          // 64
+  // vector/matrix utils aliased with ltc prefix to avoid clashes with
+  // Physics (Mat3 / mat3MulVec / mat3MulMat3) and SurfaceData (SurfacePoint):
+  ltcVec3, ltcSub, ltcAdd, ltcScale, ltcDot, ltcCross, ltcLength, ltcNormalize,
+  ltcMat3MulVec, ltcMat3MulMat3,
+  type LTCVec3, type LTCMat3, type LTCSurfacePoint, type RectLightParams,
+} from '@vreen/engine/renderer';
+```
+
+**Usage:**
+
+```ts
+import {
+  evaluateRectAreaLight,
+  makeRectVertices,
+  approximateLTCMatrix,
+  ltcVec3 as vec3,
+  type LTCSurfacePoint as SurfacePoint,
+  type RectLightParams,
+} from '@vreen/engine/renderer';
+
+// Rectangular area light at (0, 5, 0) pointing down, 2×2 units
+const [p0, p1, p2, p3] = makeRectVertices(
+  vec3(0, 5, 0),    // center
+  vec3(0, -1, 0),   // forward (toward surface)
+  vec3(0, 0, 1),    // up
+  2, 2,             // width, height
+);
+
+const light: RectLightParams = {
+  p0, p1, p2, p3,
+  color: [1, 1, 1],  // linear RGB
+  intensity: 5.0,     // nits
+};
+
+// Shading point at origin, normal up, view up
+const surface: SurfacePoint = {
+  P: vec3(0, 0, 0),
+  N: vec3(0, 1, 0),
+  V: vec3(0, 1, 0),
+  roughness: 0.5,
+};
+
+// In production: sample M⁻¹ from the 64×64 LTC LUT texture.
+// For tests: use the analytic approximation (no LUT needed).
+const mInvSpec = approximateLTCMatrix(surface.roughness, 1.0);
+
+const result = evaluateRectAreaLight(surface, light, mInvSpec);
+// result.specular → [r, g, b]
+// result.diffuse  → [r, g, b]
+// result.total    → [r, g, b]  (specular + diffuse)
+```
+
+**Design choices:**
+- **Pure CPU functions** — no WebGL dependency, fully testable in
+  Node/headless environments (same pattern as `PCSSSampler`,
+  `MotionBlurPass`, `HierarchicalZBuffer`). The GPU path will consume the
+  same math via GLSL `LTC_Uv` / `LTC_Evaluate` chunks (ported from
+  three.js TSL).
+- **`M⁻¹` as parameter** — the inverse LTC matrix is passed in by the
+  caller, decoupling the evaluation from LUT storage. Production code
+  samples the 64×64 LUT; tests use `approximateLTCMatrix()`.
+- **CCW winding order** — matches three.js / o3de convention:
+  `lightNormal = cross(p1-p0, p3-p0)` points toward the illuminated
+  side. `dot(lightNormal, P-p0) > 0` → front-facing (lit).
+- **Degenerate basis fallback** — when `V ∥ N` (grazing or head-on),
+  `T1 = V - N·dot(V,N)` → 0. The code picks `(1,0,0)` or `(0,0,1)`
+  (whichever is less parallel to `N`) and re-orthogonalizes. This
+  prevents NaN without discontinuity.
+- **Specular + diffuse lobes** — `evaluateRectAreaLight` evaluates both
+  lobes (each needs its own `M⁻¹` from a separate LUT). The diffuse LUT
+  is nearly identity; passing `undefined` uses the identity matrix.
+- **49 unit tests** — covers vector/matrix utils, LTC core functions,
+  backface culling, front-facing irradiance > 0, symmetry, batch
+  evaluation, boundary roughness/dotNV, and CCW vertex generation.
+
+**References:**
+- Heitz et al. 2016, "Real-Time Polygonal-Light Shading with Linearly
+  Transformed Cosines" — the LTC algorithm
+- three.js `nodes/functions/BSDF/LTC.js` — TSL reference implementation
+- o3de Atom `LtcCommon.cpp` — C++ reference
+- LTC code: https://github.com/selfshadow/ltc_code/
+
 ---
 
 **Why MRT + GBuffer?** Forward rendering (the current main path) shades

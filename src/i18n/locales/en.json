@@ -1128,6 +1128,11 @@
         "title": "Hierarchical Z-Buffer Occlusion Culling (o3de/UE5)",
         "desc": "HZB occlusion culling adapted from o3de Atom MaskedOcclusionCulling / OcclusionCullingPlane and UE5 HZB. Builds a mip pyramid from the depth buffer where each level stores the MAX depth of its 2×2 children (conservative — never falsely culls visible objects). For each object's AABB, projects 8 corners to screen space, selects mip level based on screen rect size (log2), samples HZB depth at rect center, and culls if object's nearest depth > HZB depth. Greene 1993 algorithm. Configurable: conservativeBias (reduces false positives), mipBias, minScreenSize (skips tiny objects). Pure CPU Float32Array (no WebGL dependency, testable in Node/headless). Complements frustum culling — culls in-frustum objects behind walls/mountains. Use cases: indoor scenes (walls cull behind), open world (terrain culls behind), GPU-driven rendering (batch cull thousands of objects). GLSL chunk (hzbReduceMax2x2 / hzbIsOccluded) for future GPU integration. 35 unit tests.",
         "advantage": "soup3D has no occlusion culling"
+      },
+      "areaLightLTC": {
+        "title": "Area Light LTC (Heitz 2016)",
+        "desc": "Linearly Transformed Cosines area light evaluation adapted from Heitz, Dupuy, Hill, Neubelt 2016 'Real-Time Polygonal-Light Shading with Linearly Transformed Cosines', three.js LTC.js, and o3de Atom LtcCommon.cpp. Evaluates rectangular area light irradiance using LTC matrix transform: constructs orthonormal basis around surface normal, transforms light vertices into canonical cosine space via inverse LTC matrix, projects onto unit sphere, computes 4-edge vector form factors with rational polynomial theta/sin(theta) approximation, applies horizon clipping. Supports specular + diffuse lobes. LUT sampling (ltcUv) for 64x64 precomputed LTC matrices parameterized by roughness x dot(N,V). Handles degenerate case when V parallel to N. Configurable: focusDistance, focusRange, bokehShape. Pure CPU functions (ltcEvaluate, evaluateRectAreaLight, computeAreaLighting, approximateLTCMatrix, makeRectVertices) for headless testing. 49 unit tests.",
+        "advantage": "soup3D only has point/directional lights, no area lights"
       }
     }
   }

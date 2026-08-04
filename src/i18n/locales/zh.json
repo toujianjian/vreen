@@ -1128,6 +1128,11 @@
         "title": "层次化 Z 缓冲遮挡剔除(o3de/UE5)",
         "desc": "HZB 遮挡剔除,适配自 o3de Atom MaskedOcclusionCulling / OcclusionCullingPlane 与 UE5 HZB。从深度缓冲构建 mip 金字塔,每级存储 2×2 子 texel 的最大深度(保守 — 永不误剔除可见物体)。对每个物体 AABB 的 8 个角点投影到屏幕空间,根据屏幕矩形大小选择 mip 级(log2),在矩形中心采样 HZB 深度,物体最近深度 > HZB 深度则被剔除。Greene 1993 算法。可配置:conservativeBias(减少误剔除)、mipBias、minScreenSize(跳过小物体)。纯 CPU Float32Array(无 WebGL 依赖,可在 Node/无头环境测试)。与视锥剔除互补 — 剔除视锥内但被墙/山体遮挡的物体。用途:室内场景(墙后剔除)、开放世界(地形后剔除)、GPU 驱动渲染(批量剔除数千物体)。GLSL chunk(hzbReduceMax2x2 / hzbIsOccluded)供未来 GPU 集成。35 个单元测试。",
         "advantage": "soup3D 无遮挡剔除"
+      },
+      "areaLightLTC": {
+        "title": "区域光 LTC(Heitz 2016)",
+        "desc": "Linearly Transformed Cosines 区域光求值,适配自 Heitz, Dupuy, Hill, Neubelt 2016《Real-Time Polygonal-Light Shading with Linearly Transformed Cosines》、three.js LTC.js 与 o3de Atom LtcCommon.cpp。通过 LTC 矩阵变换求值矩形面光源 irradiance:在表面法线周围构造正交基,用逆 LTC 矩阵将光源顶点变换到规范余弦空间,投影到单位球,计算 4 条边的向量形式因子(有理多项式 theta/sin(theta) 近似),应用地平线裁剪。支持 specular + diffuse 双叶。LUT 采样(ltcUv)用于 64×64 预计算 LTC 矩阵(roughness × dot(N,V) 参数化)。处理 V 平行于 N 的退化情况。可配置:focusDistance、focusRange、bokehShape。纯 CPU 函数(ltcEvaluate、evaluateRectAreaLight、computeAreaLighting、approximateLTCMatrix、makeRectVertices)支持无头测试。49 个单元测试。",
+        "advantage": "soup3D 仅有点光源/方向光,无面光源"
       }
     }
   }
