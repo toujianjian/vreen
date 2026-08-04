@@ -2,9 +2,9 @@
 
 > Path: `src/engine/Renderer/PostProcess/`
 >
-> The enhanced post-processing pass family of the VREEN engine. Provides **32**
+> The enhanced post-processing pass family of the VREEN engine. Provides **38**
 > passes covering color grading, anti-aliasing, screen-space effects, depth-of-field,
-> motion blur, exposure adaptation, atmospheric effects, water rendering, light shafts, sharpening, upscaling, lens distortion, screen-space refraction, and stylized effects.
+> motion blur, exposure adaptation, atmospheric effects, water rendering, light shafts, sharpening, upscaling, lens distortion, screen-space refraction, ACES output transform, and stylized effects.
 > Each pass is a self-contained class that manages its own GPU resources (FBOs,
 > textures, shader programs) and integrates into the `PostProcessingPipeline`.
 
@@ -5736,6 +5736,362 @@ const wrapPass = new ScreenSpaceDecalPass({ defaultAngleThreshold: 0 });
 | `ScreenSpaceDecalPass dispose` | 4 | releases / idempotent / no-gl / rebuild after dispose |
 | `DECAL_FRAG shader source` | 10 | version / samplers / matrices / parameters / world-reconstruction / volume culling / angle culling / 4 blend modes / edge fade / skybox skip |
 | **Total** | **77** | All passing |
+
+---
+
+## OutputTransformPass (`OutputTransformPass.ts`)
+
+ACES output transform with **10 industry-standard tonemappers** and **HDR10
+(PQ) encoding**. Converts linear ACEScg scene-referred HDR color to
+display-referred output (sRGB Gamma 2.2 or SMPTE ST 2084 PQ), unifying the
+final stage of the rendering pipeline.
+
+Adapted from o3de Atom `OutputTransform.azsl` + `Tonemap.azsli` +
+`Aces.azsli` + `AcesColorSpaceConversion.azsli`, AgX (Blender/Filament), and
+Khronos PBR Neutral.
+
+**Class**: `OutputTransformPass` (GPU pass)
+**Pure functions**: `outputTransform()`, `tonemapReinhard()`,
+`tonemapReinhardExtended()`, `tonemapAcesFitted()`, `tonemapAcesFilmic()`,
+`tonemapFilmic()`, `tonemapAgx()`, `tonemapAgxInternal()`,
+`tonemapAgxGolden()`, `tonemapAgxPunchy()`, `tonemapAgxWarm()`,
+`tonemapPbrNeutral()`, `acescgToLinearSrgb()`, `perceptualQuantizerRev()`,
+`perceptualQuantizerRevF3()`, `linearCVToY()`
+**Constants**: `ACESCG_TO_SRGB` (precomposed 3×3 matrix)
+**Types**: `TonemapperType`, `TransferFunctionType`, `OTColor`,
+`OutputTransformOptions`
+
+### Why a unified OutputTransform?
+
+The output transform is the **single most important pass** in the pipeline —
+it determines the final look of the rendered image. A naive tonemapper
+(`x / (1 + x)`) destroys color relationships in HDR highlights; a wrong
+color space conversion introduces hue shifts. Industry pipelines (ACES,
+o3de, Unreal) consolidate tonemapping, color space conversion, and transfer
+function into one physically-correct stage.
+
+VREEN's `OutputTransformPass` provides **10 tonemappers** spanning the full
+spectrum from filmic (ACES), to neutral (PbrNeutral), to look-based (AgX
+family), plus **PQ HDR10 output** for HDR displays — all in a single
+drop-in pass with a 1:1 CPU reference for headless testing.
+
+### Tonemapper reference
+
+| Tonemapper        | Source                              | Use case                                          |
+|-------------------|-------------------------------------|---------------------------------------------------|
+| `none`            | —                                   | Bypass (HDR passthrough)                          |
+| `reinhard`        | Reinhard (2002)                     | Simple, fast, classic global tonemap              |
+| `reinhardExtended`| Reinhard (2002) with white point    | Controlled highlight compression via `Lw`         |
+| `acesFitted`      | Stephen Hill (2016) fit of ACES RRT+ODT | Industry-standard filmic; matches ACES 1.0    |
+| `acesFilmic`      | Narkowicz (2015) ACES approximation | Fast ACES-style filmic curve                      |
+| `filmic`          | Hable (Uncharted 2)                 | Punchy game-style filmic                          |
+| `agx`             | Sobotka AgX (2023)                  | Natural film-like, no hue shift, Blender default  |
+| `agxGolden`       | AgX + golden CDL look               | Warm cinematic look                               |
+| `agxPunchy`       | AgX + high-contrast/saturation CDL  | High-impact stylized look                         |
+| `agxWarm`         | AgX + subtle warm tint              | Slightly warmer neutral                           |
+| `pbrNeutral`      | Khronos PBR Neutral (2023)          | Preserves PBR material color accuracy (e-commerce)|
+
+### Transfer functions
+
+| Transfer function     | Standard            | Output range | Use case               |
+|-----------------------|---------------------|--------------|------------------------|
+| `none`                | —                   | Linear HDR   | Debug / pipeline pass-through |
+| `gamma22`             | sRGB approximation  | [0, 1] LDR   | Standard SDR displays  |
+| `perceptualQuantizer` | SMPTE ST 2084-2014  | [0, 1] HDR   | HDR10 / DolbyVision   |
+
+### Color space
+
+Input is assumed to be **linear ACEScg (AP1)** — the Academy Color Encoding
+System's working space. The pass converts ACEScg → Linear sRGB using the
+precomposed matrix:
+
+```
+ACESCG_TO_SRGB = XYZ_TO_SRGB * D60_TO_D65 * AP1_TO_XYZ
+```
+
+This matches o3de's `AcesCg_To_LinearSrgb.azsli` exactly. For `acesFitted`,
+the tonemap happens **in ACEScg** (per ACES spec) before the sRGB
+conversion; for all other tonemappers, the conversion happens first, then
+the tonemap operates in sRGB.
+
+### Algorithm (per pixel, mirrors `OUTPUT_TRANSFORM_FRAG` 1:1)
+
+```
+1. Exposure compensation:
+   color *= 2^exposure         (EV stops, default 0)
+
+2. Color space + tonemap:
+   if (tonemapper == 'acesFitted') {
+     tonemapped = tonemapAcesFitted(color)   // in ACEScg
+     color = ACESCG_TO_SRGB * tonemapped
+   } else if (tonemapper == 'none') {
+     // passthrough (still in ACEScg)
+   } else {
+     color = ACESCG_TO_SRGB * color          // → linear sRGB
+     color = <tonemapper>(color)             // in sRGB
+   }
+
+3. Transfer function:
+   if (tf == 'gamma22')  color = pow(color, 1/2.2)
+   if (tf == 'pq') {
+     // SMPTE ST 2084-2014
+     Y  = linearCVToY(color, cinemaWhite, cinemaBlack)   // → cd/m²
+     color = perceptualQuantizerRev(Y)                   // → [0,1] code value
+   }
+```
+
+### AgX algorithm detail
+
+AgX (by Troy Sobotka, used in Blender and Filament) is a perceptual
+tonemapper that avoids the hue shifts of ACES in highly saturated HDR
+colors. It has three stages:
+
+1. **AgX transform** (inset):
+   - Multiply by `AGX_INSET` matrix (→ AgX working space)
+   - Log2 encode with EV limits (`AGX_MIN_EV = -10`, `AGX_MAX_EV = +6.6`)
+   - Apply 7th-order sigmoid approximation (Filament's polynomial fit)
+
+2. **AgX Look** (ASC-CDL):
+   - Apply per-channel `slope`, `offset`, `power`
+   - Apply `saturation` around Rec709 luma
+   - Variants: `Golden`, `Punchy`, `Warm` use preset CDL values
+
+3. **AgX EOTF** (outset):
+   - Multiply by `AGX_OUTSET` matrix (→ back to linear sRGB)
+   - Apply `pow(2.2)` gamma decode
+
+The variants provide different creative looks:
+- `agxGolden`: warm golden-hour look (slope favors red, offset warms)
+- `agxPunchy`: higher contrast and saturation for stylized scenes
+- `agxWarm`: subtle warm shift for natural feel
+
+### PQ (SMPTE ST 2084) detail
+
+The Perceptual Quantizer is the HDR10 transfer function, designed to match
+the human visual system's contrast sensitivity. Constants (from
+SMPTE ST 2084-2014):
+
+```
+m1 = 0.1593017578125     m2 = 78.84375
+c1 = 0.8359375           c2 = 18.8515625
+c3 = 18.6875             C  = 10000.0 cd/m² (peak)
+```
+
+The forward (linear → PQ code) function:
+
+```
+L  = Y / 10000                                 // normalize
+Lm = pow(L, m1)
+N  = (c1 + c2 * Lm) / (1 + c3 * Lm)
+N  = pow(N, m2)                                // → [0,1] PQ code value
+```
+
+`cinemaBlack` / `cinemaWhite` map the linear CV range [0,1] to actual
+cd/m² values, allowing the scene's dynamic range to fit within the
+display's capabilities (e.g., black=0.005 cd/m², white=1000 cd/m² for
+a 1000-nit HDR display).
+
+### Options
+
+| Option             | Type                  | Default | Description                                  |
+|--------------------|-----------------------|---------|----------------------------------------------|
+| `tonemapper`       | `TonemapperType`      | `'agx'` | Tonemapping operator (see table above)       |
+| `transferFunction` | `TransferFunctionType`| `'gamma22'` | Output transfer function                 |
+| `exposure`         | `number`              | `0`     | Exposure compensation in EV stops (`2^exp`)  |
+| `cinemaBlack`      | `number`              | `0`     | HDR black point in cd/m² (PQ only)           |
+| `cinemaWhite`      | `number`              | `100`   | HDR white point in cd/m² (PQ only)           |
+| `enabled`          | `boolean`             | `true`  | Whether to apply the pass                    |
+
+### API
+
+```ts
+import { OutputTransformPass } from '@/engine/Renderer';
+
+// Default: AgX + Gamma 2.2 (modern Blender-style look)
+const pass = new OutputTransformPass();
+
+// HDR10 output with ACES filmic tonemapping
+const hdrPass = new OutputTransformPass({
+  tonemapper: 'acesFilmic',
+  transferFunction: 'perceptualQuantizer',
+  cinemaBlack: 0.005,
+  cinemaWhite: 1000,
+  exposure: 0.5,
+});
+
+// Each frame:
+const output = pass.apply(gl, hdrColorTexture);
+
+// Runtime adjustment:
+pass.tonemapper = 'pbrNeutral';
+pass.exposure = 1.0;
+```
+
+### Pure function API (headless / testing)
+
+```ts
+import {
+  outputTransform,
+  tonemapAgx,
+  acescgToLinearSrgb,
+  perceptualQuantizerRev,
+  linearCVToY,
+  ACESCG_TO_SRGB,
+} from '@/engine/Renderer';
+
+// 1. Apply a single tonemapper (in linear sRGB)
+const tm = tonemapAgx([2.5, 1.8, 0.9]);
+
+// 2. ACEScg → sRGB color space conversion
+const srgb = acescgToLinearSrgb([0.5, 0.4, 0.3]);
+
+// 3. Full output transform (exposure + tonemap + transfer)
+const out = outputTransform([2.5, 1.8, 0.9], {
+  tonemapper: 'agx',
+  transferFunction: 'gamma22',
+  exposure: 0,
+});
+
+// 4. PQ encoding for HDR
+const pq = outputTransform([2.5, 1.8, 0.9], {
+  tonemapper: 'agx',
+  transferFunction: 'perceptualQuantizer',
+  cinemaBlack: 0,
+  cinemaWhite: 100,
+});
+
+// 5. PQ inverse function (cd/m² → [0,1] code value)
+const code = perceptualQuantizerRev(100);   // ~0.508
+```
+
+### Pipeline integration
+
+`OutputTransformPass` is the **final pass** in the post-processing chain.
+Recommended order:
+
+```
+1. AutoExposure / LuminanceHistogram      → normalize exposure
+2. WhiteBalancePass                       → physical white point correction
+3. LookModificationPass (ASC-CDL)         → creative look
+4. LUTBlender → LUTPass                   → LUT color grading
+5. Bloom / DOF / MotionBlur / etc.        → HDR effects
+6. OutputTransformPass                    → HDR → display (FINAL)
+7. FilmGrain / Vignette / CA (optional)   → post-tonemap stylization
+```
+
+If `FilmGrain`/`Vignette`/`CA` run after tonemapping, they operate in LDR
+space (cheaper, more artistic control). If they run before, they preserve
+HDR dynamic range but cost more bandwidth. Most engines (o3de, UE5) apply
+stylization **after** the output transform.
+
+### Texture unit bindings
+
+| Unit | Sampler        | Type           | Description                |
+|------|----------------|----------------|----------------------------|
+| 0    | `u_colorMap`   | `sampler2D`    | Input HDR color (ACEScg)   |
+
+### Resource layout
+
+| Resource          | Count | Notes                                              |
+|-------------------|-------|----------------------------------------------------|
+| FBO               | 1     | Output framebuffer                                 |
+| Color texture     | 1     | Output RGBA8 (LDR) or RGBA16F (HDR PQ)            |
+| Shader program    | 1     | `output-transform` (`OUTPUT_TRANSFORM_FRAG`)        |
+| Uniforms          | 5     | `u_tonemapper`, `u_transferFunction`, `u_exposure`, `u_cinemaLimits`, `u_colorMap` |
+
+### vs `TonemappingPass` (basic)
+
+VREEN also ships a simpler `TonemappingPass` (in this same module) with 5
+modes (ACES, Reinhard, AGX, Uncharted2, Linear). The differences:
+
+| Feature                  | `TonemappingPass`  | `OutputTransformPass`         |
+|--------------------------|--------------------|-------------------------------|
+| Tonemappers              | 5                  | **10** (incl. AgX family)     |
+| Color space conversion   | No                 | **Yes** (ACEScg → sRGB)       |
+| HDR output (PQ)          | No                 | **Yes** (SMPTE ST 2084)       |
+| Exposure compensation    | No                 | **Yes** (EV stops)            |
+| Cinema black/white       | No                 | **Yes** (HDR display mapping) |
+| Industry alignment       | Game-style         | **o3de / ACES / HDR10**       |
+
+For new projects, prefer `OutputTransformPass`. `TonemappingPass` is kept
+for backward compatibility with older pipelines.
+
+### vs soup3D
+
+soup3D ships only a **single basic tonemapper** (Reinhard or similar)
+with no color space conversion and no HDR output. VREEN's
+`OutputTransformPass` provides:
+
+- **10 tonemappers** vs 1 (including the AgX family, ACES fitted/filmic,
+  PBR Neutral)
+- **ACEScg → sRGB color space conversion** (matches o3de/ACES pipelines)
+- **HDR10 PQ output** (SMPTE ST 2084) for HDR displays — soup3D has none
+- **Exposure compensation** built-in (EV stops)
+- **Cinema black/white mapping** for HDR display calibration
+- **1:1 CPU reference** for headless testing and validation
+
+This brings VREEN to parity with o3de Atom (`OutputTransform.azsl`) and
+Unreal Engine 5 (ACES + PQ support in the tonemapper), and well ahead of
+soup3D's basic LDR-only tonemapping.
+
+### Design notes
+
+- **Why AgX as default?** AgX (Blender 4.x default) produces natural-looking
+  results without the hue shifts of ACES in saturated HDR colors. It's the
+  recommended starting point for modern engines.
+- **Why ACEScg input?** ACEScg is the Academy's working space for CGI — it
+  has a wide gamut and is the standard for film/TV pipelines. If your scene
+  is rendered in linear sRGB instead, the ACEScg → sRGB matrix is close to
+  identity, so the conversion is nearly a no-op.
+- **Why PQ over HLG?** PQ (ST 2084) is the standard for HDR10 and DolbyVision
+  — it's a perceptual curve optimized for displays. HLG (BBC/NHK) is for
+  broadcast and has a different gamma structure. Most HDR-capable engines
+  (UE5, o3de) use PQ.
+- **CPU/GPU 1:1 correspondence**: every tonemapper has both a TypeScript
+  pure function and a GLSL function with identical math. This allows
+  headless validation (no GPU needed) and enables future use in build-time
+  color management tools.
+- **Precomposed matrix**: `ACESCG_TO_SRGB` is computed once at module load
+  (3 matrices multiplied) and reused — the GPU shader uses a single
+  `mat3` constant for the conversion.
+
+### Test coverage (`OutputTransformPass.test.ts`, 56 tests)
+
+| Suite                  | Tests | Coverage                                                    |
+|------------------------|-------|-------------------------------------------------------------|
+| Constants              | 2     | `ACESCG_TO_SRGB` length, white-point preservation           |
+| `tonemapReinhard`      | 4     | 0→0, 1→0.5, large→~1, [0,1) range                          |
+| `tonemapReinhardExtended` | 3  | 0→0, white point, hue preservation                         |
+| `tonemapAcesFitted`    | 3     | 0→0, saturate ≤1, monotonic                                |
+| `tonemapAcesFilmic`    | 3     | 0→0, ≤1, mid-range                                         |
+| `tonemapFilmic`        | 3     | 0→0, 1→~1, monotonic                                       |
+| `tonemapAgx`           | 4     | 0→0, mid-range, finite large values, monotonic             |
+| `tonemapAgxInternal`   | 2     | default == `tonemapAgx`, saturation scaling                 |
+| AgX variants           | 4     | Golden/Punchy/Warm != base, all finite                     |
+| `tonemapPbrNeutral`    | 4     | 0→0, low-value passthrough, ≤1, highlight desaturation     |
+| `acescgToLinearSrgb`   | 3     | white preservation, black preservation, finite             |
+| `perceptualQuantizerRev` | 3   | 0→0, 10000→1, monotonic                                    |
+| `perceptualQuantizerRevF3` | 1 | vec3 consistency                                          |
+| `linearCVToY`          | 3     | 0→Ymin, 1→Ymax, midpoint                                   |
+| `outputTransform`      | 6     | none+none=exposure only, gamma22, all tonemappers finite, PQ [0,1], exposure direction, default = AgX+gamma22 |
+| `OutputTransformPass` class | 7+ | defaults, custom params, setters, enabled toggle, dispose, apply lifecycle |
+| **Total**              | **56** | All passing                                                |
+
+### References
+
+- o3de Atom, `OutputTransform.azsl` + `Tonemap.azsli` + `Aces.azsli`
+  + `AcesColorSpaceConversion.azsli`
+- Academy Color Encoding System (ACES) 1.0, RRT + ODT
+  — https://github.com/ampas/aces-dev
+- Stephen Hill, "ACES Filmic Tone Mapper fitted curve" (2016)
+- Narkowicz, "ACES Filmic Tone Mapping Curve" (2015)
+- Hable, "Filmic Tonemapping with Piecewise Power Curves" (Uncharted 2)
+- Sobotka, AgX — https://github.com/sobotka/AgX (2023)
+- Khronos PBR Neutral — https://github.com/KhronosGroup/ToneMapping (2023)
+- SMPTE ST 2084-2014, "High Dynamic Range EOTF of Mastering Reference Displays"
+- Reinhard et al., "Photographic Tone Reproduction for Digital Images"
+  (2002)
+- NVIDIA HDR Sample — https://developer.nvidia.com/high-dynamic-range-display-development
 
 ---
 

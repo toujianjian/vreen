@@ -6134,4 +6134,212 @@ void main() {
 }
 `;
 
+// ── Output Transform (ACES 输出变换 + 多色调映射器) ───────────────
+// 适配 o3de Atom OutputTransform.azsl + Tonemap.azsli
+// 支持 10 种色调映射算子 + 2 种传输函数 (Gamma22 / PQ HDR10)
+
+export const OUTPUT_TRANSFORM_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;      // 输入 HDR 颜色 (ACEScg 线性)
+uniform int   u_tonemapper;        // 0=none 1=reinhard 2=reinhardExt 3=acesFitted 4=acesFilmic 5=filmic 6=agx 7=agxGolden 8=agxPunchy 9=agxWarm 10=pbrNeutral
+uniform int   u_transferFunction; // 0=none 1=gamma22 2=pq
+uniform float u_exposure;         // EV 补偿
+uniform vec2  u_cinemaLimits;     // (black, white) cd/m² for PQ
+
+// ── ACEScg → Linear sRGB ──
+// M = XYZToSRGB * D60ToD65 * AP1ToXYZ (行主序数据按列填入 mat3 构造器)
+const mat3 ACESCG_TO_SRGB = mat3(
+  2.52165561e+0, -2.76478310e-1, -1.51807981e-2,
+  -1.13415122e+0,  1.37271810e+0, -1.52986493e-1,
+  -3.87507728e-1, -9.62409223e-2,  1.16816695e+0
+);
+
+// ── AgX 矩阵 (列主序 → 直接用于 mat3) ──
+const mat3 AGX_INSET = mat3(
+  0.856627153315983,  0.137318972929847,  0.11189821299995,
+  0.0951212405381588, 0.761241990602591,  0.0767994186031903,
+  0.0482516061458583, 0.101439036467562,  0.811302368396859
+);
+
+const mat3 AGX_OUTSET = mat3(
+  1.1271005818144368, -0.1413297634984383,  -0.14132976349843826,
+  -0.11060664309660323, 1.157823702216272,  -0.11060664309660294,
+  -0.016493938717834573, -0.016493938717834257, 1.2519364065950405
+);
+
+const float AGX_MIN_EV = -12.47393;
+const float AGX_MAX_EV = 4.026069;
+
+const vec3 REC709_LUMA = vec3(0.2126, 0.7152, 0.0722);
+
+// ── PQ 常量 (SMPTE ST 2084) ──
+const float PQ_M1 = 0.1593017578125;
+const float PQ_M2 = 78.84375;
+const float PQ_C1 = 0.8359375;
+const float PQ_C2 = 18.8515625;
+const float PQ_C3 = 18.6875;
+const float PQ_C  = 10000.0;
+
+// ── 色调映射函数 ──
+
+vec3 tonemapReinhard(vec3 c) {
+  return c / (1.0 + c);
+}
+
+vec3 tonemapReinhardExtended(vec3 c) {
+  float maxWhite = 6.0;
+  float luma = max(dot(c, REC709_LUMA), 1e-10);
+  float num = luma * (1.0 + luma / (maxWhite * maxWhite));
+  float outLuma = num / (1.0 + luma);
+  return c * (outLuma / luma);
+}
+
+vec3 tonemapAcesFitted(vec3 c) {
+  float a = 0.0245786, b = 0.000090537, cc = 0.983729, d = 0.4329510, e = 0.238081;
+  return clamp((c * (c + a) - b) / (c * (cc * c + d) + e), 0.0, 1.0);
+}
+
+vec3 tonemapAcesFilmic(vec3 c) {
+  float a = 2.51, b = 0.03, cc = 2.43, d = 0.59, e = 0.14;
+  return clamp((c * (a * c + b)) / (c * (cc * c + d) + e), 0.0, 1.0);
+}
+
+vec3 tonemapFilmic(vec3 c) {
+  vec3 v = max(c - 0.004, 0.0);
+  return (v * (6.2 * v + 0.5)) / (v * (6.2 * v + 1.7) + 0.06);
+}
+
+// AgX sigmoid 近似 (7 阶多项式)
+float agxSigmoid(float x) {
+  float x2 = x * x;
+  float x4 = x2 * x2;
+  float x6 = x4 * x2;
+  return -17.86 * x6 * x
+       + 78.01 * x6
+       -126.7 * x4 * x
+       + 92.06 * x4
+       -28.72 * x2 * x
+       + 4.361 * x2
+       - 0.1718 * x
+       + 0.002857;
+}
+
+vec3 tonemapAgxInternal(vec3 c, vec3 slope, vec3 offset, vec3 power, float saturation) {
+  // 1. AgX 变换
+  c = max(c, 0.0);
+  c = AGX_INSET * c;
+  c = max(c, 1e-10);
+  c = log2(c);
+  c = (c - AGX_MIN_EV) / (AGX_MAX_EV - AGX_MIN_EV);
+  c = clamp(c, 0.0, 1.0);
+
+  // Sigmoid
+  c = vec3(agxSigmoid(c.r), agxSigmoid(c.g), agxSigmoid(c.b));
+
+  // 2. AgX Look (ASC-CDL)
+  float luma = dot(c, REC709_LUMA);
+  c = pow(c * slope + offset, power);
+  c = luma + saturation * (c - luma);
+
+  // 3. AgX EOTF
+  c = AGX_OUTSET * c;
+  c = pow(max(c, 0.0), vec3(2.2));
+  return c;
+}
+
+vec3 tonemapAgx(vec3 c) {
+  return tonemapAgxInternal(c, vec3(1.0), vec3(0.0), vec3(1.0), 1.0);
+}
+
+vec3 tonemapAgxGolden(vec3 c) {
+  return tonemapAgxInternal(c, vec3(1.0, 0.9, 0.5), vec3(0.0), vec3(0.8), 1.3);
+}
+
+vec3 tonemapAgxPunchy(vec3 c) {
+  return tonemapAgxInternal(c, vec3(1.0), vec3(0.0), vec3(1.35), 1.4);
+}
+
+vec3 tonemapAgxWarm(vec3 c) {
+  return tonemapAgxInternal(c, vec3(1.0, 0.95, 0.85), vec3(0.0), vec3(0.95), 1.1);
+}
+
+vec3 tonemapPbrNeutral(vec3 c) {
+  float startCompression = 0.8 - 0.04;
+  float desaturation = 0.15;
+
+  float x = min(c.r, min(c.g, c.b));
+  float off = x < 0.08 ? x - 6.25 * x * x : 0.04;
+  c -= off;
+
+  float peak = max(c.r, max(c.g, c.b));
+  if (peak < startCompression) return c;
+
+  float d = 1.0 - startCompression;
+  float newPeak = 1.0 - d * d / (peak + d - startCompression);
+  c *= newPeak / peak;
+
+  float g = 1.0 - 1.0 / (desaturation * (peak - newPeak) + 1.0);
+  return mix(c, newPeak * vec3(1.0), g);
+}
+
+// ── PQ 编码 ──
+float perceptualQuantizerRev(float C) {
+  float L = C / PQ_C;
+  float Lm = pow(L, PQ_M1);
+  float N = (PQ_C1 + PQ_C2 * Lm) / (1.0 + PQ_C3 * Lm);
+  return pow(N, PQ_M2);
+}
+
+float linearCVToY(float linCV, float yMax, float yMin) {
+  return linCV * (yMax - yMin) + yMin;
+}
+
+// ── 主函数 ──
+void main() {
+  vec3 color = texture(u_colorMap, v_uv).rgb;
+
+  // 曝光补偿
+  color *= pow(2.0, u_exposure);
+
+  // 色调映射
+  if (u_tonemapper == 3) {
+    // AcesFitted: 先在 ACEScg 中 tonemap,再转换到 sRGB
+    color = tonemapAcesFitted(color);
+    color = ACESCG_TO_SRGB * color;
+  } else if (u_tonemapper > 0) {
+    // 其他: 先转换到 sRGB,再 tonemap
+    color = ACESCG_TO_SRGB * color;
+    if (u_tonemapper == 1) color = tonemapReinhard(color);
+    else if (u_tonemapper == 2) color = tonemapReinhardExtended(color);
+    else if (u_tonemapper == 4) color = tonemapAcesFilmic(color);
+    else if (u_tonemapper == 5) color = tonemapFilmic(color);
+    else if (u_tonemapper == 6) color = tonemapAgx(color);
+    else if (u_tonemapper == 7) color = tonemapAgxGolden(color);
+    else if (u_tonemapper == 8) color = tonemapAgxPunchy(color);
+    else if (u_tonemapper == 9) color = tonemapAgxWarm(color);
+    else if (u_tonemapper == 10) color = tonemapPbrNeutral(color);
+  }
+
+  // 传输函数
+  if (u_transferFunction == 1) {
+    // Gamma 2.2
+    color = pow(color, vec3(1.0 / 2.2));
+  } else if (u_transferFunction == 2) {
+    // PQ (HDR10)
+    color.r = linearCVToY(color.r, u_cinemaLimits.y, u_cinemaLimits.x);
+    color.g = linearCVToY(color.g, u_cinemaLimits.y, u_cinemaLimits.x);
+    color.b = linearCVToY(color.b, u_cinemaLimits.y, u_cinemaLimits.x);
+    color = vec3(perceptualQuantizerRev(color.r),
+                 perceptualQuantizerRev(color.g),
+                 perceptualQuantizerRev(color.b));
+  }
+
+  outColor = vec4(color, 1.0);
+}
+`;
+
 

@@ -609,4 +609,36 @@ export {
   type WBColor,
   type WhiteBalanceOptions,
 } from './PostProcess';
+// OutputTransformPass — ACES 输出变换后处理(PostProcess/ 顶层重导出)。
+// 适配 o3de Atom OutputTransform.azsl + Tonemap.azsli + Aces.azsli。
+// 提供 10 种行业级色调映射算子(Reinhard/ACES/AcesFitted/AcesFilmic/Filmic/
+// AgX/AgxGolden/AgxPunchy/AgxWarm/PbrNeutral)+ ACEScg→sRGB 色彩空间转换 +
+// 2 种传输函数(Gamma 2.2 / SMPTE ST 2084 PQ HDR10)+ EV 曝光补偿。
+// 与基础 TonemappingPass(5 种算子,无色彩空间转换,无 HDR 输出)互补:
+// 本 Pass 对齐 o3de/ACES/HDR10 工业标准,适用于专业级渲染管线。
+// soup3D 仅有一个基础 Reinhard,无色彩空间转换,无 HDR 输出。
+export {
+  OutputTransformPass,
+  outputTransform,
+  tonemapReinhard,
+  tonemapReinhardExtended,
+  tonemapAcesFitted,
+  tonemapAcesFilmic,
+  tonemapFilmic,
+  tonemapAgx,
+  tonemapAgxInternal,
+  tonemapAgxGolden,
+  tonemapAgxPunchy,
+  tonemapAgxWarm,
+  tonemapPbrNeutral,
+  acescgToLinearSrgb,
+  perceptualQuantizerRev,
+  perceptualQuantizerRevF3,
+  linearCVToY,
+  ACESCG_TO_SRGB,
+  type TonemapperType,
+  type TransferFunctionType,
+  type OTColor,
+  type OutputTransformOptions,
+} from './PostProcess';
 

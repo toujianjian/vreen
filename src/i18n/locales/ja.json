@@ -1093,6 +1093,11 @@
         "title": "ホワイトバランス(Bradford CAT)",
         "desc": "Bradford 色彩適応変換による物理ベースのホワイトバランス(o3de WhiteBalancePass 適応)。temperature/tint → CIE xy → LMS 錐体応答 → チャネル別スケール。単純な RGB シフトと異なり色の相対比率を保持。カメラ/シネマのホワイトバランスに一致(ISO/CIE 11664-3、ACES IDT)。CPU 参照関数 whiteBalance() + GPU Pass。恒等 (0,0) で自動スキップ。線形空間でトーンマッピング前に適用。",
         "advantage": "soup3D にホワイトバランス機能なし"
+      },
+      "outputTransform": {
+        "title": "ACES 出力変換(10 トーンマッパー + PQ HDR)",
+        "desc": "業界標準 ACES 出力変換、o3de Atom OutputTransform.azsl + Tonemap.azsli + Aces.azsli 適応。10 トーンマッパー:Reinhard、ReinhardExtended、AcesFitted(Stephen Hill フィット)、AcesFilmic(Narkowicz)、Filmic(Hable Uncharted 2)、AgX ファミリー(AgX/AgxGolden/AgxPunchy/AgxWarm — Blender/Filament)、PbrNeutral(Khronos)。ACEScg → sRGB 色空間変換(事前合成行列 XYZ_TO_SRGB * D60_TO_D65 * AP1_TO_XYZ)。2 伝達関数:Gamma 2.2(SDR)と SMPTE ST 2084 PQ(HDR10)。EV 露出補正 + シネマ黒/白点マッピング。CPU/GPU 1:1 参照実装。パイプライン最終段階。",
+        "advantage": "soup3D は基本トーンマッパー 1 つのみ、色空間変換なし、HDR 出力なし"
       }
     }
   }

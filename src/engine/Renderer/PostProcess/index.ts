@@ -1,7 +1,7 @@
 // PostProcess barrel — 增强后处理 Pass 集合。
 //
 // 与 RenderPass.ts 中的基础后处理 Bloom/CA/Vignette/FinalCompose 平行。
-// 本模块提供 37 个增强 Pass + 1 个 LUT 混合器 + 1 个亮度直方图工具 + 1 个白平衡 Pass:
+// 本模块提供 38 个增强 Pass + 1 个 LUT 混合器 + 1 个亮度直方图工具 + 1 个白平衡 Pass + 1 个 ACES 输出变换 Pass:
 //   - ColorGradingPass  : 色彩分级(8 个 ASC-CDL 参数)
 //   - LUTPass           : LUT 色彩查找表(3D 或 2D strip)
 //   - ChromaticAberrationPass : 增强色差(Vector2 偏移 + 径向调制)
@@ -43,6 +43,7 @@
 //   - LUTBlender           : 多 LUT 层级混合器(最多 4 个 LUT 按 intensity+override 层级混合)
 //   - LuminanceHistogram   : 128-bin 亮度直方图 + 自动曝光(百分位裁剪 + 非对称眼适应,与 o3de 对齐)
 //   - WhiteBalancePass     : 白平衡(Bradford 色彩适应变换 CAT,temperature/tint → CIE xy → LMS 缩放)
+//   - OutputTransformPass  : ACES 输出变换(10 种色调映射 + ACEScg→sRGB 色彩空间转换 + PQ HDR10 编码)
 //
 // 注意:
 //   - 前 7 个 Pass 都实现 RenderPass 接口,可直接加入 PostProcessingPipeline。
@@ -192,3 +193,27 @@ export {
   type WBColor,
   type WhiteBalanceOptions,
 } from './WhiteBalancePass';
+export {
+  OutputTransformPass,
+  outputTransform,
+  tonemapReinhard,
+  tonemapReinhardExtended,
+  tonemapAcesFitted,
+  tonemapAcesFilmic,
+  tonemapFilmic,
+  tonemapAgx,
+  tonemapAgxInternal,
+  tonemapAgxGolden,
+  tonemapAgxPunchy,
+  tonemapAgxWarm,
+  tonemapPbrNeutral,
+  acescgToLinearSrgb,
+  perceptualQuantizerRev,
+  perceptualQuantizerRevF3,
+  linearCVToY,
+  ACESCG_TO_SRGB,
+  type TonemapperType,
+  type TransferFunctionType,
+  type OTColor,
+  type OutputTransformOptions,
+} from './OutputTransformPass';

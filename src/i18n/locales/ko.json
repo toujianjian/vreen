@@ -1093,6 +1093,11 @@
         "title": "화이트 밸런스(Bradford CAT)",
         "desc": "Bradford 색채 적응 변환을 통한 물리 기반 화이트 밸런스(o3de WhiteBalancePass 적응). temperature/tint → CIE xy → LMS 추체 응답 → 채널별 스케일. 단순 RGB 시프트와 달리 색상 상대 비율 유지. 카메라/영화 화이트 밸런스와 일치(ISO/CIE 11664-3, ACES IDT). CPU 참조 함수 whiteBalance() + GPU Pass. 항등 (0,0) 시 자동 스킵. 선형 공간에서 톤매핑 이전에 적용.",
         "advantage": "soup3D에 화이트 밸런스 기능 없음"
+      },
+      "outputTransform": {
+        "title": "ACES 출력 변환(10 톤매퍼 + PQ HDR)",
+        "desc": "업계 표준 ACES 출력 변환, o3de Atom OutputTransform.azsl + Tonemap.azsli + Aces.azsli 적응. 10 톤매퍼: Reinhard, ReinhardExtended, AcesFitted(Stephen Hill 피트), AcesFilmic(Narkowicz), Filmic(Hable Uncharted 2), AgX 패밀리(AgX/AgxGolden/AgxPunchy/AgxWarm — Blender/Filament), PbrNeutral(Khronos). ACEScg → sRGB 색공간 변환(사전 합성 행렬 XYZ_TO_SRGB * D60_TO_D65 * AP1_TO_XYZ). 2 전달 함수: Gamma 2.2(SDR)와 SMPTE ST 2084 PQ(HDR10). EV 노출 보정 + 시네마 흑/백점 매핑. CPU/GPU 1:1 참조 구현. 파이프라인 최종 단계.",
+        "advantage": "soup3D는 기본 톤매퍼 1개만, 색공간 변환 없음, HDR 출력 없음"
       }
     }
   }

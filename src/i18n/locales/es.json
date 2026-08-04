@@ -1093,6 +1093,11 @@
         "title": "Balance de blancos (Bradford CAT)",
         "desc": "Balance de blancos físicamente basado vía transformación de adaptación cromática Bradford (o3de WhiteBalancePass adaptado). temperature/tint → CIE xy → respuesta de conos LMS → escala por canal. Preserva relaciones relativas de color a diferencia de simples desplazamientos RGB. Coincide con balance de blancos de cámara/cine (ISO/CIE 11664-3, ACES IDT). Función CPU whiteBalance() + pass GPU. Omisión de identidad en (0,0). Aplicar en espacio lineal antes del tonemapping.",
         "advantage": "soup3D no tiene función de balance de blancos"
+      },
+      "outputTransform": {
+        "title": "Transformación de salida ACES (10 tonemappers + PQ HDR)",
+        "desc": "Transformación de salida ACES estándar de la industria adaptada de o3de Atom OutputTransform.azsl + Tonemap.azsli + Aces.azsli. 10 tonemappers: Reinhard, ReinhardExtended, AcesFitted (ajuste Stephen Hill), AcesFilmic (Narkowicz), Filmic (Hable Uncharted 2), familia AgX (AgX/AgxGolden/AgxPunchy/AgxWarm — Blender/Filament), PbrNeutral (Khronos). Conversión de espacio de color ACEScg → sRGB vía matriz precompuesta (XYZ_TO_SRGB * D60_TO_D65 * AP1_TO_XYZ). 2 funciones de transferencia: Gamma 2.2 (SDR) y SMPTE ST 2084 PQ (HDR10). Compensación de exposición EV + mapeo de punto negro/blanco cine. Referencia CPU/GPU 1:1. Etapa final del pipeline.",
+        "advantage": "soup3D solo tiene 1 tonemapper básico, sin conversión de espacio de color, sin salida HDR"
       }
     }
   }
