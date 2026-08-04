@@ -492,4 +492,15 @@ export {
   buildDecalMatrix,
   transformNormalToView,
 } from './PostProcess';
+// VolumetricCloudsPass — GPU 体积云 ray-march Pass(PostProcess/ 顶层重导出)。
+// 把 VolumetricClouds(数据层)产出的 3D 噪声密度场 + 光照参数灌入
+// VOLUMETRIC_CLOUDS_FRAG 片元 shader,执行 GPU ray-march:射线-AABB 求交 +
+// 光线步进采样 3D 噪声 + Beer-Lambert/Powder + 双叶 HG 相位 + 多散射近似 +
+// 可选 v3 时序累积(blue-noise 抖动 + 重投影 EMA)。对标 UE5 Volumetric Clouds /
+// o3de Atom SkyAtmosphere + Clouds / Schneider & Vosin SIGGRAPH 2015。
+// soup3D 仅有静态 skybox,无动态体积云。
+export {
+  VolumetricCloudsPass,
+  type VolumetricCloudsPassOptions,
+} from './PostProcess';
 
