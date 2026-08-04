@@ -1103,6 +1103,11 @@
         "title": "可扩展环境光遮蔽(SAO)",
         "desc": "性能导向的屏幕空间环境光遮蔽,适配 three.js SAOPass.js + SAOShader.js(McGuire, Mara, Luebke 2012, HPG)。螺旋采样模式(默认 7 采样 × 4 环 = 28 次),每次采样 O(1) 计算遮蔽。遮蔽公式:max(0, (dot(N, delta) - minRes) / scaledDist - bias) / (1 + scaledDist²)。比 GTAO 更快(28 vs 128 采样),适合移动端/VR/大规模场景。可配置 kernelRadius、intensity、bias、scale、numSamples、numRings、randomSeed。每帧随机旋转减少 banding。天空盒检测 + 边界裁剪。CPU/GPU 1:1 参考实现。",
         "advantage": "soup3D 无 SAO 实现"
+      },
+      "fxaa": {
+        "title": "FXAA 3.11 增强版(3 种质量预设)",
+        "desc": "工业标准 FXAA 3.11(Timothy Lottes, NVIDIA 2009),支持 3 种质量预设:Console(4 步边缘搜索,最快)、PC High(8 步,均衡默认)、PC Extreme(10 步,最高质量)。完整算法:Rec601 亮度 → 局部对比检测 → 边缘方向(H/V 梯度)→ 递减步长边缘端点搜索 → 混合因子(边缘 + 子像素)。可配置 subpixel(0.75)、edgeThreshold(1/6)、edgeThresholdMin(1/16)。单 pass,无需额外缓冲。取代基础 FXAAPass(2 步搜索)。CPU/GPU 1:1 参考实现。VREEN 现拥有 3 种互补抗锯齿技术:FXAA + SMAA + TAA。",
+        "advantage": "soup3D 完全没有抗锯齿实现"
       }
     }
   }

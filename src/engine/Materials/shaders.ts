@@ -734,6 +734,171 @@ void main() {
 }
 `;
 
+// ── FXAA 3.11 Enhanced (Timothy Lottes, NVIDIA 2009) ──────────────
+// 完整 FXAA 3.11 实现,支持 3 种质量预设(console / pcHigh / pcExtreme)。
+// 与基础 FXAA_FRAG(2 步搜索)不同,本 shader 使用 8-10 步递减步长搜索,
+// 并支持可配置的 subpixel / edgeThreshold / edgeThresholdMin 参数。
+//
+// 算法 1:1 对应 FXAAEnhancedPass.ts 的 fxaaPixel() CPU 参考实现。
+//
+// 质量预设(通过 #define FXAA_QUALITY_* 选择):
+//   - console:    4 步/侧,步长 [1.5, 2.0, 2.0, 4.0]           (最快)
+//   - pcHigh:     8 步/侧,步长 [1.5, 2.0, 2.0, 2.0, 2.0, 4.0, 8.0, 8.0]  (均衡,默认)
+//   - pcExtreme: 10 步/侧,步长 [1.0, 1.5, 2.0, 2.0, 2.0, 2.0, 2.0, 4.0, 8.0, 8.0]  (最高)
+//
+// uniforms:
+//   u_colorMap         — 输入颜色纹理
+//   u_texel            — 纹素大小 [1/w, 1/h]
+//   u_subpixel         — 子像素混合量 (0..1, 默认 0.75)
+//   u_edgeThreshold    — 边缘阈值 (默认 1/6)
+//   u_edgeThresholdMin — 最小边缘阈值 (默认 1/16)
+export const FXAA_ENHANCED_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;
+uniform vec2  u_texel;
+uniform float u_subpixel;
+uniform float u_edgeThreshold;
+uniform float u_edgeThresholdMin;
+
+// ── 质量预设步长序列 ──
+#if defined(FXAA_QUALITY_CONSOLE)
+  #define FXAA_EDGE_STEPS 4
+  const float edgeSteps[4] = float[](1.5, 2.0, 2.0, 4.0);
+#elif defined(FXAA_QUALITY_PCEXTREME)
+  #define FXAA_EDGE_STEPS 10
+  const float edgeSteps[10] = float[](1.0, 1.5, 2.0, 2.0, 2.0, 2.0, 2.0, 4.0, 8.0, 8.0);
+#else
+  // 默认 PC High
+  #ifndef FXAA_QUALITY_PCHIGH
+    #define FXAA_QUALITY_PCHIGH
+  #endif
+  #define FXAA_EDGE_STEPS 8
+  const float edgeSteps[8] = float[](1.5, 2.0, 2.0, 2.0, 2.0, 4.0, 8.0, 8.0);
+#endif
+
+// Rec601 luma
+float luminance(vec3 c) {
+  return dot(c, vec3(0.299, 0.587, 0.114));
+}
+
+void main() {
+  vec2 texel = u_texel;
+
+  // ── 1. 采样中心 + 4 邻域 ──
+  vec3 m = texture(u_colorMap, v_uv).rgb;
+  vec3 nN = texture(u_colorMap, v_uv + vec2(0.0,  texel.y)).rgb;
+  vec3 nS = texture(u_colorMap, v_uv + vec2(0.0, -texel.y)).rgb;
+  vec3 nW = texture(u_colorMap, v_uv + vec2(-texel.x, 0.0)).rgb;
+  vec3 nE = texture(u_colorMap, v_uv + vec2( texel.x, 0.0)).rgb;
+
+  float lM = luminance(m);
+  float lN = luminance(nN);
+  float lS = luminance(nS);
+  float lW = luminance(nW);
+  float lE = luminance(nE);
+
+  // ── 2. 局部对比检测 ──
+  float lMin = min(min(min(min(lN, lS), lW), lE), lM);
+  float lMax = max(max(max(max(lN, lS), lW), lE), lM);
+  float range = lMax - lMin;
+
+  if (range < max(u_edgeThresholdMin, lMax * u_edgeThreshold)) {
+    outColor = vec4(m, 1.0);
+    return;
+  }
+
+  // ── 3. 边缘方向检测 ──
+  float blendN = abs(lN - lM);
+  float blendS = abs(lS - lM);
+  float blendW = abs(lW - lM);
+  float blendE = abs(lE - lM);
+
+  bool isHorizontal = (blendN + blendS) > (blendW + blendE);
+
+  float signDir;
+  float gradient;
+  float lOpp;
+
+  if (isHorizontal) {
+    if (blendN > blendS) {
+      signDir = 1.0; gradient = blendN; lOpp = lS;
+    } else {
+      signDir = -1.0; gradient = blendS; lOpp = lN;
+    }
+  } else {
+    if (blendE > blendW) {
+      signDir = 1.0; gradient = blendE; lOpp = lW;
+    } else {
+      signDir = -1.0; gradient = blendW; lOpp = lE;
+    }
+  }
+
+  // ── 4. 边缘端点搜索(递减步长) ──
+  float edgeLum = (lM + lOpp) * 0.5;
+  float threshold = gradient * 0.25;
+
+  vec2 dir = isHorizontal
+    ? vec2(0.0, signDir * texel.y)
+    : vec2(signDir * texel.x, 0.0);
+
+  // 正方向搜索
+  float pDist = 0.0;
+  bool pFound = false;
+  for (int i = 0; i < FXAA_EDGE_STEPS; i++) {
+    pDist += edgeSteps[i];
+    vec2 pUV = v_uv + dir * pDist;
+    float lP = luminance(texture(u_colorMap, pUV).rgb);
+    if (abs(lP - edgeLum) >= threshold) {
+      pFound = true;
+      break;
+    }
+  }
+
+  // 负方向搜索
+  float nDist = 0.0;
+  bool nFound = false;
+  for (int i = 0; i < FXAA_EDGE_STEPS; i++) {
+    nDist += edgeSteps[i];
+    vec2 nUV = v_uv - dir * nDist;
+    float lN2 = luminance(texture(u_colorMap, nUV).rgb);
+    if (abs(lN2 - edgeLum) >= threshold) {
+      nFound = true;
+      break;
+    }
+  }
+
+  // 未找到端点时设为极大值
+  float pDistFinal = pFound ? pDist : 999.0;
+  float nDistFinal = nFound ? nDist : 999.0;
+
+  // ── 5. 混合因子 ──
+  float distSpan = pDistFinal + nDistFinal;
+  float edgeBlend = 0.0;
+  if (distSpan > 0.0 && pFound && nFound) {
+    edgeBlend = 0.5 - min(pDistFinal, nDistFinal) / distSpan;
+    edgeBlend = max(0.0, edgeBlend);
+  }
+
+  float avg = (lN + lS + lW + lE) * 0.25;
+  float subpixelBlend = abs(avg - lM) / max(range, 1e-5);
+  subpixelBlend = min(subpixelBlend, 1.0);
+  subpixelBlend = subpixelBlend * subpixelBlend * u_subpixel;
+
+  float finalBlend = max(subpixelBlend, edgeBlend);
+
+  // ── 6. 最终采样 ──
+  vec2 sampleOff = isHorizontal
+    ? vec2(0.0, signDir * texel.y * finalBlend)
+    : vec2(signDir * texel.x * finalBlend, 0.0);
+
+  outColor = vec4(texture(u_colorMap, v_uv + sampleOff).rgb, 1.0);
+}
+`;
+
 // 色调映射:支持 ACES Filmic / Reinhard / Linear 三种模式。
 // u_mode: 0=Linear(直通), 1=Reinhard, 2=ACES Filmic
 export const TONE_MAPPING_FRAG = /* glsl */ `#version 300 es

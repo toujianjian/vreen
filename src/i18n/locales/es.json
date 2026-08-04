@@ -1103,6 +1103,11 @@
         "title": "Oclusión Ambiental Escalable (SAO)",
         "desc": "Oclusión ambiental en espacio de pantalla orientada al rendimiento, adaptada de three.js SAOPass.js + SAOShader.js (McGuire, Mara, Luebke 2012, HPG). Patrón de muestreo en espiral (por defecto 7 muestras × 4 anillos = 28 tomas), cada muestra contribuye oclusión en O(1). Fórmula: max(0, (dot(N, delta) - minRes) / scaledDist - bias) / (1 + scaledDist²). Más rápido que GTAO (28 vs 128 muestras), ideal para móviles/VR/escenas a gran escala. Configurable: kernelRadius, intensity, bias, scale, numSamples, numRings, randomSeed. Rotación aleatoria por fotograma reduce banding. Detección de skybox + clampeo de bordes. Implementación de referencia CPU/GPU 1:1.",
         "advantage": "soup3D no tiene implementación SAO"
+      },
+      "fxaa": {
+        "title": "FXAA 3.11 Mejorado (3 Presets de Calidad)",
+        "desc": "FXAA 3.11 estándar de la industria (Timothy Lottes, NVIDIA 2009) con 3 presets de calidad: Console (4 pasos de recorrido de bordes, más rápido), PC High (8 pasos, equilibrado por defecto), PC Extreme (10 pasos, mejor calidad). Algoritmo completo: luma Rec601 → detección de contraste local → dirección de borde (gradiente H/V) → búsqueda de punto final con longitud decreciente → factor de mezcla (borde + subpíxel). Configurable: subpixel (0.75), edgeThreshold (1/6), edgeThresholdMin (1/16). Pase único, sin buffers adicionales. Reemplaza el FXAAPass básico (búsqueda de 2 pasos). Referencia CPU/GPU 1:1. VREEN ahora ofrece 3 técnicas complementarias de AA: FXAA + SMAA + TAA.",
+        "advantage": "soup3D no tiene implementación de anti-aliasing"
       }
     }
   }

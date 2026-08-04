@@ -1103,6 +1103,11 @@
         "title": "スケーラブル環境光オクルージョン(SAO)",
         "desc": "性能指向のスクリーンスペース環境光オクルージョン、three.js SAOPass.js + SAOShader.js 適応(McGuire, Mara, Luebke 2012, HPG)。スパイラルサンプリングパターン(デフォルト 7 サンプル × 4 リング = 28 タップ)、各サンプル O(1) でオクルージョン計算。オクルージョン公式:max(0, (dot(N, delta) - minRes) / scaledDist - bias) / (1 + scaledDist²)。GTAO より高速(28 vs 128 サンプル)、モバイル/VR/大規模シーンに最適。kernelRadius、intensity、bias、scale、numSamples、numRings、randomSeed 設定可能。フレームごとのランダム回転でバンディング低減。スカイボックス検出 + 境界クランプ。CPU/GPU 1:1 参照実装。",
         "advantage": "soup3D は SAO 実装なし"
+      },
+      "fxaa": {
+        "title": "FXAA 3.11 拡張版(3 品質プリセット)",
+        "desc": "業界標準 FXAA 3.11(Timothy Lottes, NVIDIA 2009)、3 品質プリセット対応:Console(4 ステップエッジ走査、最速)、PC High(8 ステップ、バランス型デフォルト)、PC Extreme(10 ステップ、最高品質)。完全アルゴリズム:Rec601 輝度 → 局部コントラスト検出 → エッジ方向(H/V 勾配)→ 減少ステップ長エッジ端点探索 → ブレンド係数(エッジ + サブピクセル)。設定可能な subpixel(0.75)、edgeThreshold(1/6)、edgeThresholdMin(1/16)。シングルパス、追加バッファ不要。基本 FXAAPass(2 ステップ走査)を置き換え。CPU/GPU 1:1 参照実装。VREEN は 3 つの相補アンチエイリアス技術を提供:FXAA + SMAA + TAA。",
+        "advantage": "soup3D はアンチエイリアス実装なし"
       }
     }
   }

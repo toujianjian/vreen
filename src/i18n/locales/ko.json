@@ -1103,6 +1103,11 @@
         "title": "확장 가능 앰비언트 오클루전(SAO)",
         "desc": "성능 지향 스크린 스페이스 앰비언트 오클루전, three.js SAOPass.js + SAOShader.js 적응(McGuire, Mara, Luebke 2012, HPG). 스파이럴 샘플링 패턴(기본 7 샘플 × 4 링 = 28 탭), 각 샘플 O(1) 오클루전 계산. 오클루전 공식: max(0, (dot(N, delta) - minRes) / scaledDist - bias) / (1 + scaledDist²). GTAO보다 빠름(28 vs 128 샘플), 모바일/VR/대규모 씬에 적합. kernelRadius, intensity, bias, scale, numSamples, numRings, randomSeed 설정 가능. 프레임별 랜덤 회전으로 밴딩 감소. 스카이박스 감지 + 경계 클램프. CPU/GPU 1:1 참조 구현.",
         "advantage": "soup3D는 SAO 구현 없음"
+      },
+      "fxaa": {
+        "title": "FXAA 3.11 확장판(3 품질 프리셋)",
+        "desc": "업계 표준 FXAA 3.11(Timothy Lottes, NVIDIA 2009), 3 품질 프리셋 지원: Console(4단계 엣지 워크, 최속), PC High(8단계, 균형 기본값), PC Extreme(10단계, 최고 품질). 완전 알고리즘: Rec601 루마 → 국부 대비 검출 → 엣지 방향(H/V 기울기) → 감소 단계 길이 엣지 단점 탐색 → 블렌드 계수(엣지 + 서브픽셀). 설정 가능한 subpixel(0.75), edgeThreshold(1/6), edgeThresholdMin(1/16). 싱글 패스, 추가 버퍼 불필요. 기본 FXAAPass(2단계 워크)를 대체. CPU/GPU 1:1 참조 구현. VREEN은 3가지 상호 보완 안티에일리어싱 기술 제공: FXAA + SMAA + TAA.",
+        "advantage": "soup3D는 안티에일리어싱 구현 없음"
       }
     }
   }

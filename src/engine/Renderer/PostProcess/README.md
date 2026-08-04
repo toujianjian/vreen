@@ -6232,6 +6232,123 @@ soup3D does not implement SAO. VREEN's SAO provides:
 
 ---
 
+## FXAAEnhancedPass (`FXAAEnhancedPass.ts`)
+
+**FXAA 3.11** (Fast Approximate Anti-Aliasing) — the industry-standard
+single-pass AA algorithm by Timothy Lottes (NVIDIA, 2009). Adapted from the
+FXAA 3.11 PC High quality preset, with support for 3 quality presets and
+configurable parameters.
+
+This enhanced version supersedes the basic `FXAAPass` in `RenderPass.ts`
+(which uses a simplified 2-step edge search). The enhanced version uses the
+full FXAA 3.11 algorithm with 8-10 step decreasing-length edge walking,
+proper subpixel blending, and configurable thresholds.
+
+**Class**: `FXAAEnhancedPass` (extends `RenderPass`, uses `PassContext`)
+**Pure functions**: `fxaaLuma()`, `fxaaContrastCheck()`, `fxaaEdgeDirection()`,
+`fxaaEdgeWalk()`, `fxaaComputeBlendFactor()`, `fxaaPixel()`
+**Constants**: `DEFAULT_FXAA_PARAMS`, `FXAA_QUALITY_STEPS`
+**Types**: `FXAAQuality`, `FXAAColor`, `FXAAParams`, `FXAAEnhancedPassOptions`
+
+### Algorithm
+
+1. **Luma calculation**: Convert RGB to perceptual luma using Rec601 weights
+   (`Y = 0.299R + 0.587G + 0.114B`).
+2. **Local contrast detection**: Sample the 3×3 neighborhood (center + N/S/W/E).
+   Compute `range = lMax - lMin`. If `range < max(edgeThresholdMin, lMax * edgeThreshold)`,
+   skip the pixel (flat area, no edge).
+3. **Edge direction**: Compare horizontal gradient (`|lN - lM| + |lS - lM|`)
+   vs vertical gradient (`|lW - lM| + |lE - lM|`). The larger gradient
+   indicates the edge direction (perpendicular to the gradient).
+4. **Edge endpoint search**: Walk along the edge direction using
+   decreasing-length steps. The step length sequence depends on the quality
+   preset. Stop when the luma difference exceeds `gradient * 0.25` (edge endpoint found).
+5. **Blend factor**:
+   - `edgeBlend = 0.5 - min(pDist, nDist) / (pDist + nDist)` (closer to edge center = more blend)
+   - `subpixelBlend = (|avg - lM| / range)² * subpixel` (subpixel coverage)
+   - `finalBlend = max(subpixelBlend, edgeBlend)`
+6. **Final sample**: Offset the sampling position by `finalBlend` texels
+   perpendicular to the edge direction.
+
+### Quality Presets
+
+| Preset       | Steps/side | Step lengths                                         | Use case                    |
+|--------------|------------|------------------------------------------------------|-----------------------------|
+| `console`    | 4          | `[1.5, 2.0, 2.0, 4.0]`                              | Mobile / VR (fastest)       |
+| `pcHigh`     | 8          | `[1.5, 2.0, 2.0, 2.0, 2.0, 4.0, 8.0, 8.0]`          | PC (balanced, default)      |
+| `pcExtreme`  | 10         | `[1.0, 1.5, 2.0, 2.0, 2.0, 2.0, 2.0, 4.0, 8.0, 8.0]`| Screenshot / offline (best)  |
+
+### Uniforms
+
+| Uniform              | Type   | Default   | Description                                    |
+|----------------------|--------|-----------|------------------------------------------------|
+| `u_colorMap`         | sampler2D | —       | Input color texture                            |
+| `u_texel`            | vec2   | —         | Texel size `[1/w, 1/h]`                        |
+| `u_subpixel`         | float  | 0.75      | Subpixel blend amount (0..1)                   |
+| `u_edgeThreshold`    | float  | 1/6       | Edge detection threshold (higher = fewer edges)|
+| `u_edgeThresholdMin` | float  | 1/16      | Minimum edge threshold (dark area skip)       |
+
+### Usage
+
+```typescript
+import { FXAAEnhancedPass } from './PostProcess';
+
+const fxaa = new FXAAEnhancedPass({
+  subpixel: 0.75,
+  edgeThreshold: 1.0 / 6.0,
+  edgeThresholdMin: 1.0 / 16.0,
+  quality: 'pcHigh',
+  enabled: true,
+});
+
+// In pipeline: ... → TAAPass → FXAAEnhancedPass → TonemappingPass → output
+```
+
+### AA Comparison
+
+| Feature         | FXAA Enhanced       | SMAA               | TAA                  |
+|-----------------|---------------------|--------------------|----------------------|
+| Passes          | 1                   | 3                  | 1 (+ history buffer) |
+| Edge search     | 8-10 step walk      | Morphological      | Temporal accumulation|
+| Quality         | Medium-high         | High               | Highest              |
+| Performance     | Fast (single pass)  | Medium (3 passes)  | Fast (but needs velocity) |
+| Temporal artifacts | None             | None               | Possible ghosting    |
+| Best for        | Mobile/VR/low-end   | High-quality still | Cinematic motion     |
+
+VREEN now offers **3 complementary AA techniques** (FXAA + SMAA + TAA) covering
+all performance/quality trade-offs.
+
+### soup3D Comparison
+
+soup3D has no anti-aliasing implementation at all. VREEN provides:
+- FXAA 3.11 with 3 quality presets (industry standard, Timothy Lottes)
+- SMAA v2.8 (subpixel morphological, Jorge Jimenez)
+- TAA (temporal, with velocity buffer)
+- Configurable parameters for each technique
+
+### Testing
+
+| Category             | Tests | Coverage                                          |
+|----------------------|-------|---------------------------------------------------|
+| `fxaaLuma`           | 4     | Black/white, Rec601 weights, linearity            |
+| `fxaaContrastCheck`  | 5     | Flat/edge, min/max, threshold, minThreshold       |
+| `fxaaEdgeDirection`  | 7     | H/V detection, sign, gradient, all directions     |
+| `fxaaEdgeWalk`       | 6     | Edge found, no edge, quality steps                |
+| `fxaaComputeBlendFactor` | 5 | No edge, positive blend, symmetric, subpixel, clamp |
+| `fxaaPixel`          | 4     | Flat, edge, quality, high threshold               |
+| `FXAAEnhancedPass` class | 5 | Construction, apply, setQuality, RenderPass     |
+| **Total**            | **36**| All passing                                       |
+
+### References
+
+- Timothy Lottes, "FXAA 3.11" (NVIDIA, 2009)
+  — https://developer.download.nvidia.com/assets/gamedev/files/sdk/11/FXAA_WhitePaper.pdf
+- three.js `FXAAShader.js` (adapted from FXAA 3.11 console)
+- Jimenez et al., "SMAA: Enhanced Subpixel Morphological Antialiasing"
+  (for AA comparison)
+
+---
+
 ## References
 
 | Technique | Paper / Source |
@@ -6239,6 +6356,7 @@ soup3D does not implement SAO. VREEN's SAO provides:
 | SMAA | Jimenez et al., "SMAA: Enhanced Subpixel Morphological Antialiasing" (2012) |
 | GTAO | Jimenez et al., "Practical Real-Time Strategies for Accurate Indirect Occlusion" (2020) |
 | SAO | McGuire, Mara, Luebke, "Scalable Ambient Obscurance" (HPG 2012); three.js `SAOPass.js` |
+| FXAA | Timothy Lottes, "FXAA 3.11" (NVIDIA, 2009) |
 | SSSS | Jimenez et al., "Separable Subsurface Scattering" (2012) |
 | TAA | Jimenez et al., "Temporal Supersampling" (2012) |
 | SSR | Sousa et al., "CRYENGINE Manual" (2013) |

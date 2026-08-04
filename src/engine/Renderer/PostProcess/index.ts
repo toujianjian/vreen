@@ -45,6 +45,7 @@
 //   - WhiteBalancePass     : 白平衡(Bradford 色彩适应变换 CAT,temperature/tint → CIE xy → LMS 缩放)
 //   - OutputTransformPass  : ACES 输出变换(10 种色调映射 + ACEScg→sRGB 色彩空间转换 + PQ HDR10 编码)
 //   - SAOPass             : Scalable Ambient Obscurance(螺旋采样 28 点,比 GTAO 更快,性能敏感场景适用)
+//   - FXAAEnhancedPass    : FXAA 3.11 增强版(12 步边缘搜索,3 种质量预设,可配置参数)
 //
 // 注意:
 //   - 前 7 个 Pass 都实现 RenderPass 接口,可直接加入 PostProcessingPipeline。
@@ -233,3 +234,18 @@ export {
   type ViewSize,
   type SAOColor,
 } from './SAOPass';
+export {
+  FXAAEnhancedPass,
+  fxaaLuma,
+  fxaaContrastCheck,
+  fxaaEdgeDirection,
+  fxaaEdgeWalk,
+  fxaaComputeBlendFactor,
+  fxaaPixel,
+  DEFAULT_FXAA_PARAMS,
+  FXAA_QUALITY_STEPS,
+  type FXAAQuality,
+  type FXAAColor,
+  type FXAAParams,
+  type FXAAEnhancedPassOptions,
+} from './FXAAEnhancedPass';

@@ -662,4 +662,27 @@ export {
   type ViewSize,
   type SAOColor,
 } from './PostProcess';
+// FXAAEnhancedPass — FXAA 3.11 增强版抗锯齿 Pass(PostProcess/ 顶层重导出)。
+// 适配 Timothy Lottes (NVIDIA) FXAA 3.11,PC High quality preset。
+// 3 种质量预设(console/pcHigh/pcExtreme),8-10 步递减步长边缘搜索,
+// 可配置 subpixel/edgeThreshold/edgeThresholdMin 参数。
+// 与基础 FXAAPass(RenderPass.ts,2 步搜索)互补:增强版对齐工业标准 FXAA 3.11。
+// 与 SMAA(3 pass,形态学搜索)/ TAA(时间累积)互补:FXAA 单 pass 最快,
+// 适合移动端/VR/低端设备。VREEN 现在拥有 3 种 AA 方案覆盖全部场景。
+// soup3D 无任何抗锯齿实现。
+export {
+  FXAAEnhancedPass,
+  fxaaLuma,
+  fxaaContrastCheck,
+  fxaaEdgeDirection,
+  fxaaEdgeWalk,
+  fxaaComputeBlendFactor,
+  fxaaPixel,
+  DEFAULT_FXAA_PARAMS,
+  FXAA_QUALITY_STEPS,
+  type FXAAQuality,
+  type FXAAColor,
+  type FXAAParams,
+  type FXAAEnhancedPassOptions,
+} from './PostProcess';
 
