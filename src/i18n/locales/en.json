@@ -988,6 +988,11 @@
         "title": "Specular AA",
         "desc": "Toksvig/LEAN filtering. Eliminates specular shimmer on bumpy normals at distance.",
         "advantage": "soup3D has no PBR"
+      },
+      "svgf": {
+        "title": "SVGF Denoiser",
+        "desc": "Spatiotemporal Variance-Guided Filtering. 3-stage denoiser (temporal accumulation + variance estimation + a-trous wavelet) for 1-spp SSR/SSGI/path-tracing.",
+        "advantage": "soup3D has no denoiser"
       }
     }
   }

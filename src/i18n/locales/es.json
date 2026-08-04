@@ -988,6 +988,11 @@
         "title": "AA Especular",
         "desc": "Filtrado Toksvig/LEAN. Elimina el shimmer especular en normales irregulares a distancia.",
         "advantage": "soup3D sin PBR"
+      },
+      "svgf": {
+        "title": "Denoiser SVGF",
+        "desc": "Filtrado guiado por varianza espacio-temporal. Denoiser de 3 etapas (acumulación temporal + estimación de varianza + wavelet a-trous) para SSR/SSGI/path-tracing a 1 spp.",
+        "advantage": "soup3D sin denoiser"
       }
     }
   }

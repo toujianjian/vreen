@@ -1285,6 +1285,188 @@ vec3 tsrResolve() {
 }
 `;
 
+// ── SVGF 去噪器 shader(Spatiotemporal Variance-Guided Filtering, Schied et al. 2017) ──
+// 三阶段:时序累积 → 方差估计 → A-trous 小波滤波。
+
+export const SVGF_TEMPORAL_FRAG = /* glsl */ `
+
+// SVGF 阶段 1:时序累积。
+// 输入:当前帧噪声颜色 + 历史颜色 + 历史样本数 + 速度缓冲。
+// 输出:累积颜色(RGBA16F)+ 累积样本数(R 通道)。
+
+uniform sampler2D u_currentColor;    // 当前帧噪声颜色
+uniform sampler2D u_historyColor;    // 上一帧累积颜色
+uniform sampler2D u_historySamples;  // 上一帧累积样本数(R 通道)
+uniform sampler2D u_velocity;        // 速度缓冲(RG,像素单位)
+uniform vec2  u_resolution;          // 屏幕尺寸
+uniform float u_temporalAlpha;       // 时序混合因子(0..1)
+uniform int   u_hasHistory;          // 1 = 有历史,0 = 首帧
+
+in vec2 v_uv;
+out vec4 outColor;
+
+void main() {
+  vec2 px = v_uv * u_resolution;
+  ivec2 ipx = ivec2(int(px.x), int(px.y));
+
+  // 当前帧颜色
+  vec4 current = texture(u_currentColor, v_uv);
+
+  // 首帧 → 直接输出,samples = 1
+  if (u_hasHistory == 0) {
+    outColor = vec4(current.rgb, 1.0);
+    return;
+  }
+
+  // 速度 → 历史 UV
+  vec2 vel = texture(u_velocity, v_uv).rg;
+  vec2 histUV = (px - vel) / u_resolution;
+
+  // 遮挡判定
+  if (histUV.x < 0.0 || histUV.x > 1.0 || histUV.y < 0.0 || histUV.y > 1.0) {
+    outColor = vec4(current.rgb, 1.0);
+    return;
+  }
+
+  // 双线性采样历史颜色 + 最近邻采样样本数
+  vec4 history = texture(u_historyColor, histUV);
+  float histS = texture(u_historySamples, histUV).r;
+
+  // 混合
+  float invAlpha = 1.0 - u_temporalAlpha;
+  vec3 accColor = history.rgb * invAlpha + current.rgb * u_temporalAlpha;
+  float accSamples = min(256.0, histS * invAlpha + 1.0);
+
+  outColor = vec4(accColor, accSamples / 256.0);
+}
+`;
+
+export const SVGF_VARIANCE_FRAG = /* glsl */ `
+
+// SVGF 阶段 2:方差估计。
+// 输入:时序累积颜色 + 累积样本数。
+// 输出:每像素亮度方差(R 通道,归一化到 [0,1])。
+
+uniform sampler2D u_accumulatedColor;  // 时序累积后的颜色
+uniform sampler2D u_samples;           // 累积样本数(R 通道)
+uniform vec2  u_resolution;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+float luminance(vec3 c) {
+  return dot(c, vec3(0.2126, 0.7152, 0.0722));
+}
+
+void main() {
+  vec2 texel = 1.0 / u_resolution;
+  float sumL = 0.0;
+  float sumL2 = 0.0;
+
+  // 3×3 邻域
+  for (int y = -1; y <= 1; y++) {
+    for (int x = -1; x <= 1; x++) {
+      vec2 offset = vec2(float(x), float(y)) * texel;
+      vec3 c = texture(u_accumulatedColor, v_uv + offset).rgb;
+      float l = luminance(c);
+      sumL += l;
+      sumL2 += l * l;
+    }
+  }
+
+  float mean = sumL / 9.0;
+  float variance = max(0.0, sumL2 / 9.0 - mean * mean);
+
+  // 样本数衰减
+  float s = texture(u_samples, v_uv).r * 256.0;
+  float sampleWeight = 1.0 / min(4.0, max(1.0, s));
+  variance *= sampleWeight;
+
+  // 归一化
+  outColor = vec4(min(1.0, variance), 0.0, 0.0, 1.0);
+}
+`;
+
+export const SVGF_ATROUS_FRAG = /* glsl */ `
+
+// SVGF 阶段 3:A-trous 5×5 小波滤波(单次迭代)。
+// 输入:累积/上次滤波颜色 + 深度 + 法线 + 方差。
+// 输出:滤波后的颜色。
+
+uniform sampler2D u_color;       // 输入颜色
+uniform sampler2D u_depth;       // NDC 深度(0..1)
+uniform sampler2D u_normal;      // 世界空间法线(RGB,-1..1)
+uniform sampler2D u_variance;    // 方差图(R 通道,0..1)
+uniform vec2  u_resolution;
+uniform int   u_step;            // 步长(1, 2, 4, 8, ...)
+uniform float u_depthSigma;      // 深度边缘 sigma
+uniform float u_normalPower;     // 法线边缘 power
+uniform float u_luminanceSigma;  // 亮度边缘 sigma
+
+in vec2 v_uv;
+out vec4 outColor;
+
+float luminance(vec3 c) {
+  return dot(c, vec3(0.2126, 0.7152, 0.0722));
+}
+
+// A-trous 5×5 cross 核偏移与权重
+const int ATROUS_COUNT = 9;
+const vec2 ATROUS_OFFSETS[9] = vec2[9](
+  vec2( 0.0,  0.0), vec2(-1.0,  0.0), vec2( 1.0,  0.0),
+  vec2( 0.0, -1.0), vec2( 0.0,  1.0), vec2(-1.0, -1.0),
+  vec2( 1.0, -1.0), vec2(-1.0,  1.0), vec2( 1.0,  1.0)
+);
+const float ATROUS_WEIGHTS[9] = float[9](
+  1.0, 0.5, 0.5, 0.5, 0.5,
+  0.25, 0.25, 0.25, 0.25
+);
+
+void main() {
+  vec2 texel = 1.0 / u_resolution;
+  float stepF = float(u_step);
+
+  vec3 centerColor = texture(u_color, v_uv).rgb;
+  float centerLum = luminance(centerColor);
+  float centerDepth = texture(u_depth, v_uv).r;
+  vec3 centerNormal = texture(u_normal, v_uv).rgb * 2.0 - 1.0;
+  float centerVar = texture(u_variance, v_uv).r;
+
+  vec3 sumColor = vec3(0.0);
+  float sumWeight = 0.0;
+
+  for (int i = 0; i < ATROUS_COUNT; i++) {
+    vec2 offset = ATROUS_OFFSETS[i] * texel * stepF;
+    vec2 sampleUV = v_uv + offset;
+
+    vec3 nColor = texture(u_color, sampleUV).rgb;
+    float nDepth = texture(u_depth, sampleUV).r;
+    vec3 nNormal = texture(u_normal, sampleUV).rgb * 2.0 - 1.0;
+    float nLum = luminance(nColor);
+
+    // 深度权重
+    float wDepth = exp(-abs(centerDepth - nDepth) / (u_depthSigma + 1e-6));
+
+    // 法线权重
+    float wNormal = pow(max(0.0, dot(centerNormal, nNormal)), u_normalPower);
+
+    // 亮度权重
+    float lumDiff = centerLum - nLum;
+    float wLum = exp(-(lumDiff * lumDiff) / (u_luminanceSigma * centerVar + 1e-6));
+
+    float w = wDepth * wNormal * wLum * ATROUS_WEIGHTS[i];
+    sumColor += nColor * w;
+    sumWeight += w;
+  }
+
+  if (sumWeight > 1e-6) {
+    outColor = vec4(sumColor / sumWeight, 1.0);
+  } else {
+    outColor = vec4(centerColor, 1.0);
+  }
+}
+`;
+
 // ── 增强后处理 shader(ColorGrading / LUT / FilmGrain / Afterimage / Pixelation)──
 // 这些 shader 配合 Renderer/PostProcess/ 下的 Pass 类使用,与 RenderPass.ts
 // 中的基础后处理 shader 平行。POST_VERT 复用现有全屏三角形顶点着色器。

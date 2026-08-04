@@ -988,6 +988,11 @@
         "title": "스페큘러 AA",
         "desc": "Toksvig/LEAN 필터링. 거리에 따른 법선 스페큘러 시머 제거.",
         "advantage": "soup3D PBR 없음"
+      },
+      "svgf": {
+        "title": "SVGF 디노이저",
+        "desc": "시공간 분산 가이드 필터링. 3단계 디노이징(시간 누적 + 분산 추정 + a-trous 웨이블릿), 1 spp SSR/SSGI/패스 트레이싱용.",
+        "advantage": "soup3D 디노이저 없음"
       }
     }
   }

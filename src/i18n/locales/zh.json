@@ -988,6 +988,11 @@
         "title": "镜面抗锯齿",
         "desc": "Toksvig/LEAN 过滤,消除远距离法线区域的镜面闪烁。",
         "advantage": "soup3D 无 PBR"
+      },
+      "svgf": {
+        "title": "SVGF 去噪器",
+        "desc": "时空方差引导滤波。三阶段去噪(时序累积 + 方差估计 + a-trous 小波),用于 1 spp SSR/SSGI/路径追踪降噪。",
+        "advantage": "soup3D 无去噪器"
       }
     }
   }

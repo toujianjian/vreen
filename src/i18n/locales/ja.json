@@ -988,6 +988,11 @@
         "title": "スペキュラーAA",
         "desc": "Toksvig/LEAN フィルタリング。距離によるバンプ法線のスペキュラーシマーを消除。",
         "advantage": "soup3D に PBR なし"
+      },
+      "svgf": {
+        "title": "SVGF デノイザー",
+        "desc": "時空分散ガイド付きフィルタリング。3 段階デノイズ(時間累積 + 分散推定 + a-trous ウェーブレット)、1 spp SSR/SSGI/パストレース用。",
+        "advantage": "soup3D にデノイザーなし"
       }
     }
   }

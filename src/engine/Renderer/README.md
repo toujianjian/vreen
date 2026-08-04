@@ -946,6 +946,95 @@ Temporal Super Resolution (TSR) — CPU reference implementation of temporal ups
 - o3de Atom `UpscalingPass` (temporal mode) — engine integration reference.
 - Yang et al. 2020, "Survey of Temporal Anti-Aliasing Techniques" — taxonomy of TAA/TSR variants.
 
+### `SVGFDenoiserPass` (`SVGFDenoiserPass.ts`)
+
+Spatiotemporal Variance-Guided Filtering (SVGF) — CPU reference implementation of a high-quality denoiser for low-sample stochastic rendering inputs (SSR, SSGI, path tracing, stochastic shadows, RT reflections). Matches **Schied et al. 2017 SVGF / UE5 Denoiser / o3de Atom `DenoiserPass` / NVIDIA NRD** quality class. The CPU pure functions are a 1:1 mirror of the GLSL `SVGF_TEMPORAL_FRAG` / `SVGF_VARIANCE_FRAG` / `SVGF_ATROUS_FRAG` chunks in `Materials/shaders.ts` — headless-testable, no WebGL dependency.
+
+**Adapted from**: Schied et al. 2017 "Spatiotemporal Variance-Guided Filtering", UE5 `Denoiser`, o3de Atom `DenoiserPass`, NVIDIA NRD (NRD is reference for the `varianceBoost` knob and edge-stopping weight tuning).
+
+**Algorithm (3 stages):**
+
+1. **Temporal accumulation** — Per pixel, the velocity buffer maps the current pixel back to the previous frame position (`histUV = (px - velX, py - velY) / dims`). The history is bilinearly sampled at `histUV`; if it falls outside `[0,1]` the pixel is treated as disoccluded and reset to the current frame (`samples = 1`). Otherwise a confidence-weighted blend is performed: `output = history * (1 - α) + current * α`, where `α = temporalAlpha` (default 0.2 → 80% history). The sample counter is accumulated as `samples = histSamples * (1 - α) + 1`, capped at 256 to prevent unbounded accumulation.
+2. **Variance estimation** — A 3×3 neighborhood luminance variance is computed per pixel: `σ² = E[X²] - E[X]²`. The variance is then scaled by `1 / min(samples, 4)`, modeling that regions with more temporal accumulation are statistically more stable. Result is normalized to `[0,1]` (divided by `255²`). Optional `varianceBoost` (default 1.0) amplifies the variance so that high-variance regions are filtered more aggressively.
+3. **A-trous wavelet filter** — Iterative 5×5 cross-kernel filtering with edge-stopping weights. Each iteration doubles the step size (`1, 2, 4, 8, ...`), so 4 iterations cover an effective `33×33` kernel at the cost of only `9×4 = 36` taps. Three edge-stopping weights are multiplied per tap:
+   - **Depth**: `w_depth = exp(-|Δdepth| / (σ_z + ε))` — preserves depth discontinuities (object silhouettes).
+   - **Normal**: `w_normal = max(0, dot(N_p, N_x))^σ_n` — preserves normal discontinuities (sharp corners).
+   - **Luminance**: `w_lum = variance < ε ? 1.0 : exp(-|Δlum|² / (σ_l * variance * 255² + ε))` — preserves luminance edges only when variance is non-zero; in stable regions (`variance ≈ 0`) the luminance weight is bypassed (returns 1.0), since there is nothing to filter.
+   The final filtered color is `Σ(w * color) / Σ(w)`, with a center-copy fallback when `Σ(w) < 1e-6` (fully occluded edges).
+
+**Why is variance needed?** Without variance guidance, a uniform spatial filter either over-blurs high-frequency detail (large kernel) or under-filters noise (small kernel). SVGF uses the per-pixel variance to modulate the luminance edge-stopping sigma: noisy regions (high variance) use a large sigma (aggressive smoothing), stable regions (low variance) use a tiny sigma (preserves detail). This adaptive behavior is what allows 4 iterations of a small 5×5 kernel to achieve the quality of a much larger uniform filter.
+
+**Public API (pure functions, no WebGL dependency — headless-testable):**
+
+| Function | Description |
+|----------|-------------|
+| `svgfLuminance(r, g, b)` | Rec. 709 luminance `0.2126R + 0.7152G + 0.0722B`. |
+| `temporalAccumulation(current, history, historySamples, velocity, alpha=0.2)` | Stage 1: velocity-based reprojection + α-blend. Returns `{ color, samples, resets }`. |
+| `estimateVariance(color, samples)` | Stage 2: 3×3 luminance variance, sample-weighted, normalized to `[0,1]`. |
+| `edgeStoppingWeight(depthP, depthX, normalP, normalX, lumP, lumX, variance, depthSigma=1, normalPower=32, luminanceSigma=4)` | Per-tap weight `[0,1]` = `w_depth * w_normal * w_lum`. |
+| `atrousFilterIteration(color, depth, normal, variance, step, opts?)` | Stage 3 single iteration: 5×5 cross kernel, step-scaled. Returns new `SVGFPixelBuffer`. |
+| `svgfDenoise(current, history, historySamples, velocity, depth, normal, opts?)` | Main entry: 3-stage pipeline. Returns `{ output, history, samples, stats }`. |
+| `makeSolidPixelBuffer(w, h, r, g, b, a=255)` | Test helper: solid-color `SVGFPixelBuffer`. |
+| `svgfMakeZeroVelocity(w, h)` | Test helper: zero-velocity `SVGFVelocityBuffer` (static scene). |
+| `makeConstantDepth(w, h, value=0.5)` | Test helper: constant `SVGFDepthBuffer`. |
+| `makeConstantNormal(w, h, nx=0, ny=0, nz=1)` | Test helper: constant `SVGFNormalBuffer` (default +Z). |
+
+**Options (`SVGFOptions`):**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `temporalAlpha` | `0.2` | Temporal blend factor (0..1). Higher = more current frame (faster response, more noise). |
+| `atrousIterations` | `4` | A-trous iterations (1..8). 4 iterations → effective 33×33 kernel. |
+| `depthSigma` | `1.0` | Depth edge-stopping sigma (NDC space). Higher = more tolerant of depth gaps. |
+| `normalPower` | `32.0` | Normal edge-stopping exponent. Higher = sharper (smaller normal difference stops filtering). |
+| `luminanceSigma` | `4.0` | Luminance edge-stopping sigma. Higher = more tolerant of luminance differences. |
+| `varianceBoost` | `1.0` | Variance amplification factor. >1 → more aggressive filtering in noisy regions. |
+
+**Stats (`SVGFStats`):**
+
+| Field | Description |
+|-------|-------------|
+| `pixelsProcessed` | Total pixels processed. |
+| `temporalResets` | Pixels that reset temporal accumulation (disocclusion / first frame). |
+| `avgSamples` | Average temporal sample count (debug). |
+| `avgVariance` | Average per-pixel variance (debug). |
+| `atrousIterations` | Actual a-trous iterations executed (clamped to `[1,8]`). |
+| `lastFrameTimeMs` | Last denoise wall-clock time. |
+
+**GLSL counterpart:** Three chunks in `Materials/shaders.ts` provide a 1:1 GPU implementation:
+- `SVGF_TEMPORAL_FRAG` — Stage 1 (temporal accumulation).
+- `SVGF_VARIANCE_FRAG` — Stage 2 (variance estimation).
+- `SVGF_ATROUS_FRAG` — Stage 3 (single a-trous iteration; called N times by the renderer with `u_step = 1, 2, 4, 8, ...`).
+
+The CPU functions exist as a headless-testable reference and for offline / screenshot / SSR pipelines; the GPU shaders are used in the realtime pipeline.
+
+**Typical pipeline placement:**
+
+```
+   GBuffer pass (color + depth + normal + velocity)
+        ↓
+   stochastic pass (SSR / SSGI / path trace) — low sample count (1 spp)
+        ↓
+   SVGF denoise:
+     stage 1: temporal accumulation (velocity reprojection + α-blend)
+     stage 2: variance estimation (3×3 neighborhood)
+     stage 3: a-trous filter × 4 (step 1, 2, 4, 8)
+        ↓
+   composite with main scene color
+        ↓
+   TAA / TSR / tonemap / present
+```
+
+**soup3D comparison:** soup3D has no dedicated denoiser at all — SSR / SSGI / shadow noise is either left raw (visible noise) or suppressed by a single-pass Gaussian blur (which destroys detail). VREEN's SVGF brings the engine to UE5 / o3de Atom / NVIDIA NRD parity, enabling 1-spp stochastic rendering (path tracing, RT reflections, RTGI) at real-time frame rates with stable, edge-preserving output.
+
+**References:**
+
+- Schied et al. 2017, "Spatiotemporal Variance-Guided Filtering" — foundational SVGF paper.
+- UE5 `Denoiser` — production-grade temporal + spatial denoiser with history buffering.
+- o3de Atom `DenoiserPass` — engine integration reference.
+- NVIDIA NRD — state-of-the-art denoiser library (reference for `varianceBoost` and edge-stopping weight tuning).
+- Dammertz et al. 2010, "Edge-Avoiding A-Trous Wavelet Transform for Fast Global Illumination Filtering" — a-trous wavelet filter origin.
+
 ### `DeferredRenderer` (`DeferredRenderer.ts`)
 
 Alternative deferred backend. G-Buffer pass → fullscreen lighting pass.

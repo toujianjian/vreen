@@ -418,4 +418,29 @@ export {
   type TSROptions,
   type TSRStats,
 } from './TemporalSuperResolution';
+// SVGFDenoiserPass — Spatiotemporal Variance-Guided Filtering 去噪器(CPU 参考实现)。
+// 适配 Schied et al. 2017 SVGF / UE5 Denoiser / o3de Atom DenoiserPass / NVIDIA NRD。
+// 三阶段管线:时序累积(velocity 重投影)+ 方差估计(3×3 邻域)+ A-trous 小波滤波
+// (5×5 cross 核 + 深度/法线/亮度边缘停止权重,迭代 4 次等效 33×33 大核)。
+// 用于 SSR / SSGI / 路径追踪 / 随机阴影等低样本随机输入的高质量去噪。
+// 与 GLSL `SVGF_TEMPORAL_FRAG` / `SVGF_VARIANCE_FRAG` / `SVGF_ATROUS_FRAG` chunks 1:1 对应,
+// 纯函数,不依赖 WebGL,可在 Node/无头环境测试。
+export {
+  luminance as svgfLuminance,
+  temporalAccumulation,
+  estimateVariance,
+  edgeStoppingWeight,
+  atrousFilterIteration,
+  svgfDenoise,
+  makeSolidPixelBuffer,
+  makeZeroVelocity as svgfMakeZeroVelocity,
+  makeConstantDepth,
+  makeConstantNormal,
+  type SVGFPixelBuffer,
+  type SVGFVelocityBuffer,
+  type SVGFDepthBuffer,
+  type SVGFNormalBuffer,
+  type SVGFOptions,
+  type SVGFStats,
+} from './SVGFDenoiserPass';
 
