@@ -562,4 +562,27 @@ export {
   type LUTBlendItem,
   type LUTBlendOptions,
 } from './PostProcess';
+// LuminanceHistogram — 128-bin 亮度直方图 + 自动曝光(PostProcess/ 顶层重导出)。
+// 适配 o3de Atom LuminanceHistogramGeneratorPass + ExposureControlSettings。
+// 生成 EV100 对数空间 128-bin 直方图,通过低/高百分位裁剪极端像素,
+// 计算加权平均 EV 作为目标曝光,再用非对称指数眼适应(亮适应快/暗适应慢)平滑过渡。
+// 与 AutoExposurePass(对数平均)互补:直方图法对天空过曝/阴影死黑更鲁棒。
+// 纯 CPU 实现,可在 Node/无头环境测试,亦可用于驱动 GPU EyeAdaptationPass 的参数。
+// soup3D 仅有简单的自动曝光,无直方图百分位裁剪。
+export {
+  LuminanceHistogram,
+  computeHistogram,
+  histogramToExposure,
+  adaptExposure,
+  luminanceToEV100,
+  ev100ToLuminance,
+  ev100ToBin,
+  binToEV100,
+  NUM_HISTOGRAM_BINS,
+  DEFAULT_EV_MIN,
+  DEFAULT_EV_MAX,
+  type HistogramOptions,
+  type AutoExposureOptions,
+  type HistogramResult,
+} from './PostProcess';
 

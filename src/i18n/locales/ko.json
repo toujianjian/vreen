@@ -1083,6 +1083,11 @@
         "title": "LUT 블렌더",
         "desc": "멀티 LUT 계층 블렌더(o3de BlendColorGradingLutsPass 적응). 우선순위 + intensity + overrideStrength로 최대 4개 컬러 그레이딩 LUT를 계층 블렌드하여 LUTPass용 단일 블렌드 LUT 생성. 부드러운 주야 컬러 전환, 무드/영역 전환, 내러티브 효과를 1 LUT 샘플/픽셀로 구현. 순수 CPU, 더티 트래킹, 헤드리스 테스트 가능.",
         "advantage": "soup3D LUT 지원 없음"
+      },
+      "luminanceHistogram": {
+        "title": "휘도 히스토그램",
+        "desc": "128-bin EV100 휘도 히스토그램 + 자동 노출 눈 적응(o3de LuminanceHistogramGeneratorPass 적응). 백분위수 클리핑 가중 평균으로 극단적 픽셀(밝은 하늘 / 깊은 그림자)을 무시하고 견고한 목표 EV 산출. 비대칭 적응(밝아짐 빠름 / 어두워짐 느림)은 인간 동공 반응과 일치. Rec709 휘도, EV100=log2(L*8), 범위 [-8,16]. 순수 CPU, 헤드리스 테스트 가능, GPU EyeAdaptationPass 구동 가능.",
+        "advantage": "soup3D는 기본 대수 평균 자동 노출만 보유"
       }
     }
   }

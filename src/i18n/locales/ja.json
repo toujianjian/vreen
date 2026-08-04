@@ -1083,6 +1083,11 @@
         "title": "LUT ブレンダー",
         "desc": "マルチ LUT 階層ブレンダー(o3de BlendColorGradingLutsPass 適応)。優先度 + intensity + overrideStrength で最大 4 つのカラーグレーディング LUT を階層ブレンドし、LUTPass 用の単一ブレンド LUT を生成。スムーズな昼夜カラー遷移、ムード/エリア切替、ナラティブ効果を 1 LUT サンプル/ピクセルで実現。純 CPU、ダーティトラッキング、ヘッドレステスト可能。",
         "advantage": "soup3D に LUT サポートなし"
+      },
+      "luminanceHistogram": {
+        "title": "輝度ヒストグラム",
+        "desc": "128-bin EV100 輝度ヒストグラム + 自動露光眼順応(o3de LuminanceHistogramGeneratorPass 適応)。パーセンタイルクリップ付き加重平均で極端なピクセル(明るい空 / 深い影)を無視し、堅牢な目標 EV を算出。非対称順応(明る化高速 / 暗化低速)は人間の瞳孔反応に一致。Rec709 輝度、EV100=log2(L*8)、範囲 [-8,16]。純 CPU、ヘッドレステスト可能、GPU EyeAdaptationPass の駆動可能。",
+        "advantage": "soup3D は基本的な対数平均自動露光のみ"
       }
     }
   }

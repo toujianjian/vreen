@@ -1083,6 +1083,11 @@
         "title": "Mezclador de LUT",
         "desc": "Mezclador jerárquico multi-LUT (o3de BlendColorGradingLutsPass adaptado). Mezcla hasta 4 LUTs de gradación de color por prioridad + intensity + overrideStrength, generando un solo LUT mezclado para LUTPass. Habilita transiciones de color día/noche suaves, cambios de mood/área, efectos narrativos con 1 muestra LUT/píxel. CPU pura, seguimiento dirty, testeable sin GPU.",
         "advantage": "soup3D sin soporte LUT"
+      },
+      "luminanceHistogram": {
+        "title": "Histograma de luminancia",
+        "desc": "Histograma de luminancia EV100 de 128 bins + adaptación ocular de exposición automática (o3de LuminanceHistogramGeneratorPass adaptado). Promedio ponderado con recorte de percentiles ignora píxeles extremos (cielo brillante / sombra profunda) para un EV objetivo robusto. Adaptación asimétrica (aclaramiento rápido / oscurecimiento lento) coincide con la respuesta pupilar humana. Luma Rec709, EV100=log2(L*8), rango [-8,16]. CPU pura, testeable sin GPU, puede controlar GPU EyeAdaptationPass.",
+        "advantage": "soup3D solo tiene exposición automática básica de promedio logarítmico"
       }
     }
   }

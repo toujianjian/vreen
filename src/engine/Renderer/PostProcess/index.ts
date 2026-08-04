@@ -1,7 +1,7 @@
 // PostProcess barrel — 增强后处理 Pass 集合。
 //
 // 与 RenderPass.ts 中的基础后处理 Bloom/CA/Vignette/FinalCompose 平行。
-// 本模块提供 37 个增强 Pass + 1 个 LUT 混合器:
+// 本模块提供 37 个增强 Pass + 1 个 LUT 混合器 + 1 个亮度直方图工具:
 //   - ColorGradingPass  : 色彩分级(8 个 ASC-CDL 参数)
 //   - LUTPass           : LUT 色彩查找表(3D 或 2D strip)
 //   - ChromaticAberrationPass : 增强色差(Vector2 偏移 + 径向调制)
@@ -41,6 +41,7 @@
 //   - PaniniProjectionPass : Panini 宽 FOV 圆柱投影(保持垂直线垂直 + 可选垂直投影 + 裁剪补偿)
 //   - LookModificationPass : ASC-CDL 色彩决策表(Slope/Offset/Power + Saturation,影视行业标准)
 //   - LUTBlender           : 多 LUT 层级混合器(最多 4 个 LUT 按 intensity+override 层级混合)
+//   - LuminanceHistogram   : 128-bin 亮度直方图 + 自动曝光(百分位裁剪 + 非对称眼适应,与 o3de 对齐)
 //
 // 注意:
 //   - 前 7 个 Pass 都实现 RenderPass 接口,可直接加入 PostProcessingPipeline。
@@ -160,3 +161,19 @@ export {
   type LUTBlendItem,
   type LUTBlendOptions,
 } from './LUTBlender';
+export {
+  LuminanceHistogram,
+  computeHistogram,
+  histogramToExposure,
+  adaptExposure,
+  luminanceToEV100,
+  ev100ToLuminance,
+  ev100ToBin,
+  binToEV100,
+  NUM_HISTOGRAM_BINS,
+  DEFAULT_EV_MIN,
+  DEFAULT_EV_MAX,
+  type HistogramOptions,
+  type AutoExposureOptions,
+  type HistogramResult,
+} from './LuminanceHistogram';

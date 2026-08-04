@@ -2827,6 +2827,267 @@ only in film-grade engines like Unreal (LUT blend) and o3de
 
 ---
 
+### LuminanceHistogram
+
+128-bin logarithmic (EV100) luminance histogram generator + auto-exposure
+eye adaptation meter (CPU utility, not a render pass). Builds a 128-bin
+histogram of scene luminance in EV100 space, then derives a target
+exposure from the **percentile-clipped weighted average** of the
+histogram, and finally applies **asymmetric eye adaptation** (fast when
+brightening, slow when darkening) to smoothly converge to the target.
+
+Adapted from o3de Atom `LuminanceHistogramGeneratorPass` +
+`ExposureControlSettings` (the same backend that drives o3de's
+`EyeAdaptationPass`).
+
+**Class**: `LuminanceHistogram` (stateful meter, manages adaptation state)
+**Pure functions**: `computeHistogram()`, `histogramToExposure()`,
+`adaptExposure()`, `luminanceToEV100()`, `ev100ToLuminance()`,
+`ev100ToBin()`, `binToEV100()`
+**Constants**: `NUM_HISTOGRAM_BINS = 128`, `DEFAULT_EV_MIN = -8`,
+`DEFAULT_EV_MAX = 16` (matches o3de `GetEvDisplayRangeMinMax()`)
+
+#### Why histogram-based auto-exposure?
+
+| Approach                | AutoExposurePass (existing)        | LuminanceHistogram (new)              |
+|-------------------------|------------------------------------|---------------------------------------|
+| Metric                  | Log-average luminance              | 128-bin EV100 histogram                |
+| Extreme pixel handling  | None (sky/shadow dominate)         | Percentile clipping (default 0.8% / 0.8%) |
+| Target EV source        | Single scalar `log2(avgLum*8)`     | Weighted EV over `[lowPct, highPct]` range |
+| Debug visualization     | None                               | Histogram bins available for heatmap   |
+| Standard alignment      | Reinhard 2005 (basic)              | UE5 / o3de / HDR10 reference           |
+| Cost                    | 1 luminance sum per frame          | 128-bin histogram + weighted average   |
+
+The histogram approach is **dramatically more robust** in scenes with
+bright skies, deep shadows, or emissive materials: the percentile
+clipping discards outlier pixels before computing the target exposure,
+so a small bright sun disk no longer forces the entire scene to be
+underexposed.
+
+#### Algorithm
+
+```
+1. For each (downsampled) pixel:
+   a. Convert sRGB → linear (Uint8 input only; Float32 assumed linear/HDR)
+   b. luminance = 0.2126*R + 0.7152*G + 0.0722*B  (Rec709)
+   c. EV100 = log2(luminance * 8)                   (S=100, K=12.5)
+   d. bin = clamp((EV - evMin) / (evMax - evMin) * 128, 0, 127)
+   e. histogram[bin]++
+
+2. Compute target exposure from histogram:
+   a. lowCount  = totalCount * (lowPercentile  / 100)
+   b. highCount = totalCount * (highPercentile / 100)
+   c. For each bin i with cumulative range [cumBefore, cumAfter]:
+        pixelsInBin = max(0,
+          min(cumAfter, totalCount - highCount) -
+          max(cumBefore, lowCount))
+        weightedEVSum += binToEV100(i) * pixelsInBin
+        validPixels += pixelsInBin
+   d. targetEV = weightedEVSum / validPixels + manualCompensation
+   e. targetEV = clamp(targetEV, minExposure, maxExposure)
+
+3. Apply asymmetric eye adaptation:
+   speed = (target > current) ? speedUp : speedDown
+   factor = 1 - exp(-dt * speed)
+   current += (target - current) * factor
+```
+
+The **partial-bin contribution** in step 2c is important: when all
+pixels fall in a single bin (e.g. flat-color UI screenshot), the
+algorithm correctly attributes the in-range portion of that bin to the
+weighted average instead of skipping it entirely.
+
+#### Photographic EV100
+
+The EV100 (Exposure Value at ISO 100) convention is used so that
+parameters match real-world camera settings and HDR display calibration:
+
+```
+EV100 = log2(L * S / K)  where S=100, K=12.5
+       = log2(L * 8)
+
+L = 2^(EV100 - 3) / 1   (inverse)
+```
+
+| Luminance (cd/m²) | EV100 | Scene example                |
+|-------------------|-------|------------------------------|
+| 0.0156            | -4    | Starlight, deep shadow       |
+| 0.125             | 0     | Dim interior                 |
+| 1.0               | 3     | Office lighting              |
+| 8.0               | 6     | Overcast sky                 |
+| 64.0              | 9     | Bright sky                   |
+| 1024.0            | 13    | Direct sunlight on snow       |
+
+The default EV range `[-8, 16]` covers 24 stops, matching o3de's
+`GetEvDisplayRangeMinMax()`.
+
+#### Usage
+
+```ts
+import { LuminanceHistogram } from '@/engine/Renderer';
+
+const meter = new LuminanceHistogram({
+  downsample: 4,           // sample every 4×4 block (16× speedup)
+  lowPercentile: 0.8,      // ignore darkest 0.8% of pixels
+  highPercentile: 0.8,     // ignore brightest 0.8% of pixels
+  minExposure: -4,         // EV100 clamp
+  maxExposure: 4,
+  speedUp: 3.0,            // brightening: fast (1/3 s time constant)
+  speedDown: 1.0,          // darkening: slow (1 s time constant)
+  manualCompensation: 0,   // user exposure compensation (EV)
+});
+
+// Each frame:
+const pixels = gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE);
+const exposureEV = meter.update(pixels, w, h, dt);
+
+// Apply exposure to scene (multiply linear color by 2^exposureEV):
+const scale = Math.pow(2, exposureEV);
+shader.uniforms.exposureScale.value = scale;
+
+// Inspect histogram (for debug heatmap / scopes):
+const hist = meter.lastHistogram;
+if (hist) {
+  // hist.bins is a Uint32Array(128)
+  // hist.totalCount is the sampled pixel count
+}
+```
+
+#### Pure function API (headless / testing)
+
+```ts
+import {
+  computeHistogram,
+  histogramToExposure,
+  adaptExposure,
+  luminanceToEV100,
+  ev100ToLuminance,
+} from '@/engine/Renderer';
+
+// 1. Generate histogram
+const hist = computeHistogram(pixels, width, height, {
+  downsample: 4,
+  evMin: -8,
+  evMax: 16,
+});
+
+// 2. Compute target exposure (stateless)
+const targetEV = histogramToExposure(hist, {
+  lowPercentile: 0.8,
+  highPercentile: 0.8,
+  minExposure: -4,
+  maxExposure: 4,
+  manualCompensation: 0,
+});
+
+// 3. Apply adaptation (stateless)
+const newExposure = adaptExposure(currentEV, targetEV, dt, 3.0, 1.0);
+
+// EV100 / luminance conversion
+const ev = luminanceToEV100(1.0);       // → 3
+const lum = ev100ToLuminance(3);        // → 1.0
+```
+
+#### Options reference
+
+| Option                | Type   | Default | Description                                              |
+|-----------------------|--------|---------|----------------------------------------------------------|
+| `downsample`          | number | 4       | Sample every Nth pixel (NxN block). 0/1 = full res.      |
+| `evMin`               | number | -8      | Lower bound of histogram EV100 range.                    |
+| `evMax`               | number | 16      | Upper bound of histogram EV100 range.                    |
+| `lowPercentile`       | number | 0.8     | Fraction of darkest pixels to ignore (percent, 0-100).   |
+| `highPercentile`      | number | 0.8     | Fraction of brightest pixels to ignore (percent, 0-100). |
+| `minExposure`         | number | -4      | Target EV clamp lower bound.                             |
+| `maxExposure`         | number | 4       | Target EV clamp upper bound.                             |
+| `speedUp`             | number | 3.0     | Adaptation speed when brightening (1/seconds).           |
+| `speedDown`           | number | 1.0     | Adaptation speed when darkening (1/seconds).             |
+| `manualCompensation`  | number | 0       | Manual exposure offset added to target EV (EV stops).    |
+
+#### Asymmetric eye adaptation
+
+Human eyes adapt **faster** to brightening (pupil contracts in ~0.3 s)
+than to darkening (pupil dilates in ~1 s). The `adaptExposure()`
+function models this by selecting `speedUp` or `speedDown` based on the
+direction of change:
+
+```
+speed = (targetExposure > currentExposure) ? speedUp : speedDown
+factor = 1 - exp(-dt * speed)
+newExposure = currentExposure + (targetExposure - currentExposure) * factor
+```
+
+The exponential form gives a smooth, frame-rate-independent convergence
+with time constant τ = 1/speed. After ~3τ the exposure reaches 95% of
+the target.
+
+#### Integration with AutoExposurePass
+
+`LuminanceHistogram` is a **complement** to `AutoExposurePass`, not a
+replacement:
+
+- `AutoExposurePass` runs on the GPU as part of the post-process
+  pipeline and writes exposure directly to a 1×1 texture consumed by
+  the tonemapping pass.
+- `LuminanceHistogram` is a CPU utility. It can be used:
+  - To drive CPU-side exposure parameters for engines without GPU
+    compute support.
+  - As a reference implementation to validate `AutoExposurePass` output
+    in headless tests.
+  - To produce debug histograms / waveforms for editor UIs (parade
+    scope, histogram scope).
+  - As the metering backend for an eventual GPU `EyeAdaptationPass`
+    that consumes a CPU-computed target EV.
+
+#### vs soup3D
+
+soup3D has a **basic log-average auto-exposure** with no percentile
+clipping, no histogram output, and no asymmetric adaptation. Bright
+skies in soup3D consistently underexpose foreground subjects.
+VREEN's `LuminanceHistogram` brings the engine to parity with UE5
+(Eye Adaptation histogram mode) and o3de (LuminanceHistogramGeneratorPass),
+both of which use histogram-based metering with percentile clipping for
+production-quality auto-exposure.
+
+#### Test coverage
+
+55 tests covering:
+- Constants: `NUM_HISTOGRAM_BINS = 128`, `DEFAULT_EV_MIN/MAX = -8/16`
+  (o3de alignment)
+- `luminanceToEV100()`: 0/negative → evMin, L=0.125 → 0, L=1 → 3, L=8 → 6
+- `ev100ToLuminance()`: inverse relationship round-trip
+- `ev100ToBin()`: evMin → 0, evMax → 127, clamp both ends, midpoint,
+  evMin==evMax divide-by-zero guard
+- `binToEV100()`: bin 0 → evMin + half-bin offset, last bin → near evMax
+- `computeHistogram()`: all-black, all-white Uint8, Float32 HDR,
+  downsample=1/4/0, custom evMin/evMax, mixed brightness distribution,
+  totalCount and bin-sum invariants
+- `histogramToExposure()`: empty histogram, all-black (clamp to min),
+  all-white (≈ EV=3), manualCompensation offset, maxExposure clamp,
+  percentile clipping isolates middle bin, all-clipped fallback,
+  custom min/max range
+- `adaptExposure()`: dt=0/negative, speedUp vs speedDown selection,
+  asymmetry (brightening faster than darkening), no-op when at target,
+  convergence after many frames, default parameters
+- `LuminanceHistogram` class: constructor defaults, custom range,
+  `update()` returns adapted exposure + updates internal state,
+  multi-frame convergence, `setOptions()`, `setExposure()` reset,
+  Float32 HDR scene, downsample invariance, bright→dark scene
+  transition uses `speedDown`
+
+#### References
+
+- o3de Atom, `LuminanceHistogramGeneratorPass.cpp` +
+  `LuminanceHistogramGenerator.azsl` + `LuminanceHistogramCommon.azsli`
+- o3de `ExposureControlSettings.cpp` (EyeAdaptation pass parameter source)
+- o3de `EyeAdaptationPass` (GPU consumer of histogram buffer)
+- UE5, "Eye Adaptation" documentation (histogram mode)
+- Reinhard et al., "Dynamic Range Reduction Inspired by Photoreceptor
+  Physiology" (2005)
+- ISO 12232, "Photography — Determination of exposure index"
+  (EV100 definition: S=100, K=12.5)
+
+---
+
 ### VelocityPass
 
 Per-pixel motion vectors for TAA and motion blur. Outputs a velocity texture

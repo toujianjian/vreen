@@ -1083,6 +1083,11 @@
         "title": "LUT 混合器",
         "desc": "多 LUT 层级混合器(适配 o3de BlendColorGradingLutsPass)。按优先级 + intensity + overrideStrength 将最多 4 个颜色分级 LUT 层级混合,生成单个 blended LUT 供 LUTPass 使用。实现平滑昼夜颜色过渡、心情/区域切换、叙事效果,每像素仅需 1 次 LUT 采样。纯 CPU,脏标记追踪,可无头测试。",
         "advantage": "soup3D 无 LUT 支持"
+      },
+      "luminanceHistogram": {
+        "title": "亮度直方图",
+        "desc": "128-bin EV100 亮度直方图 + 自动曝光眼适应(适配 o3de LuminanceHistogramGeneratorPass)。通过百分位裁剪的加权平均忽略极端像素(明亮天空 / 深邃阴影),得到鲁棒的目标 EV。非对称适应(变亮快 / 变暗慢)匹配人眼瞳孔反应。Rec709 亮度,EV100=log2(L*8),范围 [-8,16]。纯 CPU,可无头测试,可驱动 GPU EyeAdaptationPass。",
+        "advantage": "soup3D 仅有基础对数平均自动曝光"
       }
     }
   }

@@ -1083,6 +1083,11 @@
         "title": "LUT Blender",
         "desc": "Multi-LUT hierarchical blender (o3de BlendColorGradingLutsPass adapted). Blends up to 4 color grading LUTs by priority + intensity + overrideStrength, generating a single blended LUT for LUTPass. Enables smooth day/night color transitions, mood/area switches, narrative effects with 1 LUT sample/pixel. Pure CPU, dirty-tracking, headless-testable.",
         "advantage": "soup3D has no LUT support"
+      },
+      "luminanceHistogram": {
+        "title": "Luminance Histogram",
+        "desc": "128-bin EV100 luminance histogram + auto-exposure eye adaptation (o3de LuminanceHistogramGeneratorPass adapted). Percentile-clipped weighted average ignores extreme pixels (bright sky / deep shadow) for robust target EV. Asymmetric adaptation (fast brightening / slow darkening) matches human pupil response. Rec709 luma, EV100=log2(L*8), range [-8,16]. Pure CPU, headless-testable, can drive GPU EyeAdaptationPass.",
+        "advantage": "soup3D only has basic log-average auto-exposure"
       }
     }
   }
