@@ -43,9 +43,10 @@ Material (abstract)
    ├── ShaderLibrary                  15 named templates (unlit/pbr/toon/...)
    ├── ShaderCompiler                 #include + chunk injection + cache
    ├── ShaderVariant                  keyword combinations + LRU variant cache
-   └── MaterialGraph                  node-based procedural materials (50+ node kinds)
-                                      Input / Constant / Texture / Math / Channel /
-                                      Noise / Curve / Output → GLSL → ShaderMaterial
+   ├── MaterialGraph                  node-based procedural materials (50+ node kinds)
+   │                                  Input / Constant / Texture / Math / Channel /
+   │                                  Noise / Curve / Output → GLSL → ShaderMaterial
+   └── SpecularAA                     Toksvig/LEAN/CLEAN/GSAA specular anti-aliasing
 ```
 
 The renderer collects material parameters into uniforms and selects a
@@ -964,6 +965,73 @@ Stylised wireframe material — renders the mesh's triangle edges as
 coloured lines, optionally with depth-fade. Useful for technical / CAD
 / debug visualisations distinct from `wireframe: true` on a standard
 material (which just changes the draw mode).
+
+### `SpecularAA` (`SpecularAA.ts`)
+
+Specular anti-aliasing toolkit — eliminates specular shimmering / crawling
+on bumpy normal-mapped surfaces at distance. The root cause: high-frequency
+normal-map detail is under-sampled in screen space, so the GGX specular term
+leaks energy because it only evaluates one micro-normal per pixel instead of
+integrating the NDF over the pixel footprint.
+
+The fix: convert normal variance into a roughness bump, widening the specular
+lobe to cover the true micro-normal distribution. Four techniques are provided:
+
+| Technique | Source | Precompute | Channels | Quality | Use case |
+|-----------|--------|------------|----------|---------|----------|
+| **Toksvig** | Toksvig 2005 | None (runtime) | 0 | Medium | Any normal map with mip filtering |
+| **LEAN** | Olano & Baker 2010 | LEAN map (3ch) | 3 | Highest | Quality-critical assets |
+| **CLEAN** | McAuley 2012 | CLEAN map (2ch) | 2 | High | Memory-constrained, isotropic |
+| **GSAA** | Geometric | None (vertex/pixel) | 0 | Medium | Low-poly / hard-edge geometry |
+
+```ts
+import { toksvigRoughness, generateLEANMap, leanRoughness, sampleLEANMap }
+  from '@vreen/engine/materials';
+
+// ── Toksvig (runtime, no precompute) ──
+// After sampling a mip-filtered normal map, |N| < 1 when variance exists.
+const adjusted = toksvigRoughness(normalLength, baseRoughness, 1.0);
+
+// ── LEAN mapping (offline precompute + runtime sample) ──
+// 1. Offline: generate LEAN map from normal map (3 channels: m11/m22/m12)
+const leanMap = generateLEANMap(normalMapData, width, height, 1);
+// 2. Runtime: sample LEAN map and adjust roughness
+const moments = sampleLEANMap(leanMap, u, v);
+const adjustedRough = leanRoughness(moments, baseRoughness, 0, 0, 1.0);
+
+// ── GSAA (from triangle geometry) ──
+const r = gsaaRoughness(v0, v1, v2, baseRoughness, 1.0);
+```
+
+**API surface** (pure functions, headless-testable, 1:1 with `SPECULAR_AA_FRAG`):
+
+- `toksvigRoughness(normalLength, roughness, strength?)` — Toksvig 2005
+- `toksvigVariance(normalLength)` — variance proxy (debug)
+- `leanMappingVariance(m11, m22, m12, bx?, by?)` — LEAN variance
+- `leanRoughness(moments, baseRoughness, bx?, by?, strength?)` — LEAN roughness
+- `leanAnisoAngle(m11, m22, m12)` — anisotropy principal axis
+- `cleanVariance(m11, m22)` / `cleanRoughness(...)` — CLEAN (simplified LEAN)
+- `gsaaVariance(v0, v1, v2)` / `gsaaRoughness(...)` — geometric SpecularAA
+- `computeNormalVariance(normals, w, h, x, y, radius?)` — neighborhood variance
+- `filteredNormalLength(normals, w, h, x, y, radius?)` — mip-filtered |N|
+- `generateLEANMap(...)` / `generateCLEANMap(...)` / `sampleLEANMap(...)` — offline baking
+
+**GLSL injection**: inject `SPECULAR_AA_FRAG` into the PBR fragment shader and
+call `applySpecularAA(normalLength, baseRoughness)`. The chunk selects Toksvig
+or LEAN via the `u_useLEAN` uniform.
+
+| Feature | VREEN `SpecularAA` | soup3D |
+|---------|--------------------|--------|
+| Toksvig (runtime) | ✓ | ✗ |
+| LEAN mapping (precomputed) | ✓ | ✗ |
+| CLEAN mapping (2-channel) | ✓ | ✗ |
+| Geometric SpecularAA | ✓ | ✗ |
+| LEAN/CLEAN offline baking | ✓ | ✗ |
+| GLSL chunk + CPU reference | ✓ (1:1) | ✗ |
+
+soup3D has **no specular AA** — shiny normal-mapped surfaces shimmer at distance.
+VREEN's four-technique toolkit matches UE5 `MaterialSpecularAA` /
+`GetRoughnessFromNormalLength` and o3de Atom's `SpecularAA` modifier.
 
 ### `ShaderChunks/` Subdirectory
 

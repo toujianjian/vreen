@@ -1092,6 +1092,80 @@ float sampleShadowPCSS(vec3 worldPos) {
 }
 `;
 
+/** 高光抗锯齿(Specular AA)chunk:可注入到任意 PBR fragment shader。
+ *
+ *  解决法线贴图高频细节在屏幕空间欠采样导致的高光锯齿 / 闪烁。
+ *  两种运行时技术(与 CPU SpecularAA.ts 1:1 对应):
+ *
+ *    1. Toksvig (2005) — 从滤波后法线长度估算方差,调整粗糙度;
+ *    2. LEAN Mapping (Olano & Baker 2010) — 从预计算二阶矩调整粗糙度。
+ *
+ *  依赖外部 uniform(可选):
+ *    uniform float u_specularAAStrength;  // 强度 [0,1],默认 1.0;0=禁用
+ *    uniform sampler2D u_leanMap;         // LEAN 贴图(3 通道 m11/m22/m12)
+ *    uniform int   u_useLEAN;             // 1=用 LEAN 贴图,0=用 Toksvig
+ *
+ *  参考:
+ *    - Toksvig 2005 "Mipmapping Normal Maps"
+ *    - Olano & Baker 2010 "LEAN Mapping"
+ *    - UE5 MaterialSpecularAA / GetRoughnessFromNormalLength
+ *    - o3de Atom SpecularAA
+ *    - Stephen Hill 2011 "Specular AA"
+ */
+export const SPECULAR_AA_FRAG = /* glsl */ `
+
+// Specular AA — Toksvig / LEAN. References: Toksvig 2005; Olano & Baker 2010;
+// UE5 MaterialSpecularAA; o3de Atom SpecularAA; Stephen Hill 2011.
+
+// Toksvig:从滤波后法线长度估算调整后粗糙度。
+//   k = (1 - |N|) / |N|; adjustedRoughness² = roughness² + k*(1-roughness²)*strength
+float toksvigRoughness(float normalLength, float roughness, float strength) {
+  if (normalLength >= 1.0) return roughness;
+  float nl = max(normalLength, 1e-4);
+  float k = (1.0 - nl) / nl * strength;
+  float r2 = roughness * roughness;
+  return min(1.0, sqrt(r2 + k * (1.0 - r2)));
+}
+
+// LEAN mapping:从二阶矩(m11, m22)与一阶矩(bx, by)计算方差。
+//   Var(nx) = m11 - bx*bx; Var(ny) = m22 - by*by
+float leanVariance(float m11, float m22, float bx, float by) {
+  float varX = max(0.0, m11 - bx * bx);
+  float varY = max(0.0, m22 - by * by);
+  return varX + varY;
+}
+
+// LEAN mapping:从方差 + 基础粗糙度计算调整后粗糙度。
+float leanRoughness(float m11, float m22, float bx, float by,
+                    float baseRoughness, float strength) {
+  float variance = leanVariance(m11, m22, bx, by);
+  float r2 = baseRoughness * baseRoughness;
+  return min(1.0, sqrt(r2 + variance * strength));
+}
+
+// CLEAN mapping(简化 LEAN,仅对角二阶矩,假设已中心化)。
+float cleanRoughness(float m11, float m22, float baseRoughness, float strength) {
+  float variance = max(0.0, m11 + m22);
+  float r2 = baseRoughness * baseRoughness;
+  return min(1.0, sqrt(r2 + variance * strength));
+}
+
+// 主入口:根据 u_useLEAN 选择 Toksvig 或 LEAN,返回调整后粗糙度。
+// 调用方需保证法线已采样(对 Toksvig:用滤波后未归一化的法线长度)。
+float applySpecularAA(float normalLength, float baseRoughness) {
+  float strength = u_specularAAStrength;
+  if (strength <= 0.0) return baseRoughness;
+  if (u_useLEAN == 1) {
+    // 采样 LEAN 贴图(假设调用方已设置 u_leanMap)
+    vec2 leanUV = v_uv;  // 与法线贴图共享 UV
+    vec3 m = texture(u_leanMap, leanUV).rgb;
+    // LEAN 贴图存原始二阶矩;bx/by 从法线贴图一阶矩获取(此处简化为 0)
+    return leanRoughness(m.r, m.g, 0.0, 0.0, baseRoughness, strength);
+  }
+  return toksvigRoughness(normalLength, baseRoughness, strength);
+}
+`;
+
 // ── 增强后处理 shader(ColorGrading / LUT / FilmGrain / Afterimage / Pixelation)──
 // 这些 shader 配合 Renderer/PostProcess/ 下的 Pass 类使用,与 RenderPass.ts
 // 中的基础后处理 shader 平行。POST_VERT 复用现有全屏三角形顶点着色器。

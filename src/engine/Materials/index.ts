@@ -212,4 +212,28 @@ export {
   createFresnelGraph,
   createNoiseGraph,
 } from './MaterialGraph';
+// 高光抗锯齿(Specular AA)— 消除法线贴图高频细节在屏幕空间欠采样导致的高光锯齿。
+// 实现 Toksvig 2005 / LEAN Mapping (Olano & Baker 2010) / CLEAN / GSAA 四种技术。
+// 纯函数,不依赖 WebGL,可在 Node/无头环境测试。与 GLSL `SPECULAR_AA_FRAG` chunk 1:1。
+// 参考 UE5 MaterialSpecularAA / o3de Atom SpecularAA。
+export {
+  toksvigRoughness,
+  toksvigVariance,
+  leanMappingVariance,
+  leanRoughness,
+  leanAnisoAngle,
+  cleanVariance,
+  cleanRoughness,
+  gsaaVariance,
+  gsaaRoughness,
+  computeNormalVariance,
+  varianceToRoughness,
+  filteredNormalLength,
+  generateLEANMap,
+  generateCLEANMap,
+  sampleLEANMap,
+  type LEANMoments,
+  type GSAAVertex,
+  type LEANMapData,
+} from './SpecularAA';
 
