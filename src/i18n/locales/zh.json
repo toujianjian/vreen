@@ -1098,6 +1098,11 @@
         "title": "ACES 输出变换(10 种色调映射 + PQ HDR)",
         "desc": "工业标准 ACES 输出变换,适配 o3de Atom OutputTransform.azsl + Tonemap.azsli + Aces.azsli。10 种色调映射:Reinhard、ReinhardExtended、AcesFitted(Stephen Hill 拟合)、AcesFilmic(Narkowicz)、Filmic(Hable Uncharted 2)、AgX 家族(AgX/AgxGolden/AgxPunchy/AgxWarm — Blender/Filament)、PbrNeutral(Khronos)。ACEScg → sRGB 色彩空间转换(预组合矩阵 XYZ_TO_SRGB * D60_TO_D65 * AP1_TO_XYZ)。2 种传输函数:Gamma 2.2(SDR)与 SMPTE ST 2084 PQ(HDR10)。EV 曝光补偿 + 影院黑/白点映射。CPU/GPU 1:1 参考实现。管线最终阶段。",
         "advantage": "soup3D 仅有 1 个基础色调映射,无色彩空间转换,无 HDR 输出"
+      },
+      "sao": {
+        "title": "可扩展环境光遮蔽(SAO)",
+        "desc": "性能导向的屏幕空间环境光遮蔽,适配 three.js SAOPass.js + SAOShader.js(McGuire, Mara, Luebke 2012, HPG)。螺旋采样模式(默认 7 采样 × 4 环 = 28 次),每次采样 O(1) 计算遮蔽。遮蔽公式:max(0, (dot(N, delta) - minRes) / scaledDist - bias) / (1 + scaledDist²)。比 GTAO 更快(28 vs 128 采样),适合移动端/VR/大规模场景。可配置 kernelRadius、intensity、bias、scale、numSamples、numRings、randomSeed。每帧随机旋转减少 banding。天空盒检测 + 边界裁剪。CPU/GPU 1:1 参考实现。",
+        "advantage": "soup3D 无 SAO 实现"
       }
     }
   }

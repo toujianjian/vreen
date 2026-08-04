@@ -44,6 +44,7 @@
 //   - LuminanceHistogram   : 128-bin 亮度直方图 + 自动曝光(百分位裁剪 + 非对称眼适应,与 o3de 对齐)
 //   - WhiteBalancePass     : 白平衡(Bradford 色彩适应变换 CAT,temperature/tint → CIE xy → LMS 缩放)
 //   - OutputTransformPass  : ACES 输出变换(10 种色调映射 + ACEScg→sRGB 色彩空间转换 + PQ HDR10 编码)
+//   - SAOPass             : Scalable Ambient Obscurance(螺旋采样 28 点,比 GTAO 更快,性能敏感场景适用)
 //
 // 注意:
 //   - 前 7 个 Pass 都实现 RenderPass 接口,可直接加入 PostProcessingPipeline。
@@ -217,3 +218,18 @@ export {
   type OTColor,
   type OutputTransformOptions,
 } from './OutputTransformPass';
+export {
+  SAOPass,
+  saoRand,
+  perspectiveDepthToViewZ,
+  reconstructViewPos,
+  saoOcclusion,
+  saoSpiralSampleUV,
+  computeSAO,
+  DEFAULT_SAO_PARAMS,
+  type SAOPassOptions,
+  type SAOParams,
+  type SAOCameraParams,
+  type ViewSize,
+  type SAOColor,
+} from './SAOPass';

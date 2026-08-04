@@ -64,6 +64,7 @@ const CAPS: Cap[] = [
   { key: 'luminanceHistogram', icon: BarChart3, accent: 'text-neon-magenta' },
   { key: 'whiteBalance', icon: ThermometerSun, accent: 'text-neon-amber' },
   { key: 'outputTransform', icon: Monitor, accent: 'text-neon-cyan' },
+  { key: 'sao', icon: Aperture, accent: 'text-neon-magenta' },
 ];
 
 export function Capabilities() {

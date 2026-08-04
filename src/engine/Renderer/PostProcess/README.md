@@ -6095,12 +6095,150 @@ soup3D's basic LDR-only tonemapping.
 
 ---
 
+## SAOPass (`SAOPass.ts`)
+
+**Scalable Ambient Obscurance** — a performance-oriented screen-space ambient
+occlusion algorithm adapted from three.js `SAOPass.js` + `SAOShader.js`
+(McGuire, Mara, Luebke 2012, "Scalable Ambient Obscurance", HPG 2012).
+
+SAO provides a faster alternative to GTAO for performance-sensitive scenarios
+(mobile / VR / large-scale scenes). It uses a fixed spiral sampling pattern
+(default 7 samples × 4 rings = 28 taps) where each sample contributes an
+occlusion term in O(1), versus GTAO's 4-direction × 32-step horizon
+integration. The trade-off is slightly lower quality (no horizon-angle
+integration) for significantly higher throughput.
+
+**Class**: `SAOPass` (GPU pass, independent FBO/program)
+**Pure functions**: `saoRand()`, `perspectiveDepthToViewZ()`,
+`reconstructViewPos()`, `saoOcclusion()`, `saoSpiralSampleUV()`, `computeSAO()`
+**Constants**: `DEFAULT_SAO_PARAMS`
+**Types**: `SAOPassOptions`, `SAOParams`, `SAOCameraParams`, `ViewSize`,
+`SAOColor`
+
+### Algorithm
+
+1. **Depth reconstruction**: From NDC depth + inverse projection matrix,
+   reconstruct the view-space position of the center pixel.
+2. **Spiral sampling**: Starting from a random angle `θ = rand(uv + seed) * 2π`,
+   iterate `numSamples` times. Each step:
+   - Angle increments by `ANGLE_STEP = 2π * numRings / numSamples`
+   - Radius grows linearly: `radius = kernelRadius * (i+1) / numSamples`
+   - Sample UV = `center + (cos(θ), sin(θ)) * radius / screenSize`
+3. **Occlusion per sample**:
+
+   ```
+   delta = samplePos - centerPos
+   dist = |delta|
+   scaledDist = (scale / cameraFar) * dist
+   occ = max(0, (dot(N, delta) - minRes * cameraFar) / scaledDist - bias)
+         / (1 + scaledDist²)
+   ```
+
+   The `dot(N, delta)` term ensures samples *above* the surface plane (along
+   the normal) contribute occlusion, while samples *below* are clamped to 0.
+   The `(1 + scaledDist²)` falloff prevents distant samples from over-darkening.
+4. **Accumulation**: Average all sample occlusion values, multiply by
+   `intensity`. Output AO texture (grayscale, 0 = fully occluded, 1 = unoccluded).
+5. **Skybox skip**: Pixels with depth ≥ 1.0 (or samples hitting skybox) are
+   skipped to avoid artifacts at the far plane.
+
+### GPU Shader (`SAO_FRAG`)
+
+The fragment shader is a 1:1 port of `computeSAO()`, with:
+- `MAX_SAMPLES = 128` constant loop bound (GLSL ES 3.0 requirement)
+- Early-exit `break` when `i >= u_numSamples`
+- Inline `reconstructViewPos()`, `getOcclusion()`, `saoRand()` functions
+- World-space normal → view-space normal via `u_viewMatrix`
+
+### Uniforms
+
+| Uniform             | Type     | Default | Description                                   |
+|---------------------|----------|---------|-----------------------------------------------|
+| `u_depthMap`        | sampler2D | —       | NDC depth texture (0..1)                      |
+| `u_normalMap`       | sampler2D | —       | World-space normal texture (RGBA16F, xyz)     |
+| `u_projectionInverse` | mat4   | —       | Inverse projection matrix (NDC → view)        |
+| `u_viewMatrix`      | mat4     | —       | View matrix (world → view, for normal xform)  |
+| `u_screenSize`      | vec2     | —       | Viewport size [w, h]                          |
+| `u_cameraNear`      | float    | 0.1     | Camera near plane                             |
+| `u_cameraFar`       | float    | 1000    | Camera far plane                              |
+| `u_kernelRadius`    | float    | 100     | Sample radius (screen-space pixels)           |
+| `u_intensity`       | float    | 0.1     | AO strength (higher = darker)                 |
+| `u_bias`            | float    | 0.5     | Bias (prevents AO on flat surfaces)           |
+| `u_scale`           | float    | 1.0     | Distance falloff scale                        |
+| `u_minResolution`   | float    | 0.0     | Min resolution (filters very close samples)   |
+| `u_numSamples`      | int      | 7       | Samples per ring                              |
+| `u_numRings`        | int      | 4       | Number of rings (spiral density)              |
+| `u_randomSeed`      | float    | 0       | Per-frame random seed (reduces banding)       |
+
+### Usage
+
+```typescript
+import { SAOPass } from './PostProcess';
+
+const sao = new SAOPass({
+  kernelRadius: 100,
+  intensity: 0.1,
+  bias: 0.5,
+  numSamples: 7,
+  numRings: 4,
+});
+
+// Per frame:
+const aoTexture = sao.apply(gl, depthTexture, normalTexture, camera);
+// Compose: sceneColor *= aoTexture (multiply AO into scene color)
+```
+
+### SAO vs GTAO Comparison
+
+| Feature              | SAO                    | GTAO                          |
+|----------------------|------------------------|-------------------------------|
+| Sampling pattern     | Spiral (28 taps)       | 4-direction horizon sweep     |
+| Per-sample cost      | O(1)                   | O(maxPixels) per direction    |
+| Quality              | Good (approximate)     | High (horizon-angle integral) |
+| Performance          | Fast (~28 samples)     | Slower (up to 128 samples)    |
+| Best for             | Mobile / VR / low-end  | High-end PC / cinematics      |
+| Bias parameter       | Yes (flat-surface fix) | No (uses thickness)           |
+| Temporal stability   | Via randomSeed jitter  | Via direction rotation        |
+
+### soup3D Comparison
+
+soup3D does not implement SAO. VREEN's SAO provides:
+- Industry-standard algorithm (McGuire et al. 2012, used in three.js)
+- 1:1 CPU/GPU reference implementation for headless testing
+- Configurable sample count, radius, intensity, bias, scale
+- Spiral sampling with per-frame random rotation for banding reduction
+- Skybox detection and boundary clamping
+
+### Testing
+
+| Category        | Tests | Coverage                                            |
+|-----------------|-------|-----------------------------------------------------|
+| `saoRand`       | 3     | Range [0,1), determinism, seed sensitivity          |
+| `perspectiveDepthToViewZ` | 4 | near/far bounds, midpoint, monotonicity   |
+| `reconstructViewPos` | 4  | Identity matrix, UV corners, degenerate fallback    |
+| `saoOcclusion`  | 6     | Same-position, along/against normal, bias, scale    |
+| `saoSpiralSampleUV` | 4 | First ring, spiral, numSamples effect, rotation |
+| `computeSAO`    | 5     | Skybox, flat surface, OOB samples, varied depth, intensity=0 |
+| `SAOPass` class | 15    | Construction, apply lifecycle, enabled=false, dispose, re-alloc |
+| **Total**       | **41**| All passing                                         |
+
+### References
+
+- McGuire, Mara, Luebke, "Scalable Ambient Obscurance" (HPG 2012)
+- three.js `SAOPass.js` + `SAOShader.js`
+  — https://threejs.org/examples/#webgl_postprocessing_sao
+- McGuire, "The Scalable Ambient Obscurance Field" (GDC 2012)
+- Bunnell, "Dynamic Ambient Occlusion and Indirect Lighting" (GPU Gems 2)
+
+---
+
 ## References
 
 | Technique | Paper / Source |
 |-----------|---------------|
 | SMAA | Jimenez et al., "SMAA: Enhanced Subpixel Morphological Antialiasing" (2012) |
 | GTAO | Jimenez et al., "Practical Real-Time Strategies for Accurate Indirect Occlusion" (2020) |
+| SAO | McGuire, Mara, Luebke, "Scalable Ambient Obscurance" (HPG 2012); three.js `SAOPass.js` |
 | SSSS | Jimenez et al., "Separable Subsurface Scattering" (2012) |
 | TAA | Jimenez et al., "Temporal Supersampling" (2012) |
 | SSR | Sousa et al., "CRYENGINE Manual" (2013) |

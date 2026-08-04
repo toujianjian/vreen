@@ -1098,6 +1098,11 @@
         "title": "ACES Output Transform (10 Tonemappers + PQ HDR)",
         "desc": "Industry-standard ACES output transform adapted from o3de Atom OutputTransform.azsl + Tonemap.azsli + Aces.azsli. 10 tonemappers: Reinhard, ReinhardExtended, AcesFitted (Stephen Hill fit), AcesFilmic (Narkowicz), Filmic (Hable Uncharted 2), AgX family (AgX/AgxGolden/AgxPunchy/AgxWarm — Blender/Filament), PbrNeutral (Khronos). ACEScg → sRGB color space conversion via precomposed matrix (XYZ_TO_SRGB * D60_TO_D65 * AP1_TO_XYZ). 2 transfer functions: Gamma 2.2 (SDR) and SMPTE ST 2084 PQ (HDR10). EV exposure compensation + cinema black/white point mapping. 1:1 CPU/GPU reference. Final pipeline stage.",
         "advantage": "soup3D has only 1 basic tonemapper, no color space conversion, no HDR output"
+      },
+      "sao": {
+        "title": "Scalable Ambient Obscurance (SAO)",
+        "desc": "Performance-oriented screen-space ambient occlusion adapted from three.js SAOPass.js + SAOShader.js (McGuire, Mara, Luebke 2012, HPG). Spiral sampling pattern (default 7 samples × 4 rings = 28 taps), each sample contributes occlusion in O(1). Occlusion formula: max(0, (dot(N, delta) - minRes) / scaledDist - bias) / (1 + scaledDist²). Faster than GTAO (28 samples vs 128), ideal for mobile/VR/large-scale scenes. Configurable kernelRadius, intensity, bias, scale, numSamples, numRings, randomSeed. Per-frame random rotation reduces banding. Skybox detection + boundary clamping. 1:1 CPU/GPU reference implementation.",
+        "advantage": "soup3D has no SAO implementation"
       }
     }
   }

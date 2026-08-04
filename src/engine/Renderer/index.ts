@@ -641,4 +641,25 @@ export {
   type OTColor,
   type OutputTransformOptions,
 } from './PostProcess';
+// SAOPass — Scalable Ambient Obscurance 后处理 Pass(PostProcess/ 顶层重导出)。
+// 适配 three.js SAOPass.js + SAOShader.js(McGuire, Mara, Luebke 2012, HPG)。
+// 螺旋采样 28 点(默认 numSamples=7 × numRings=4),每采样 O(1) 计算,
+// 比 GTAO(4 方向 × 32 步地平线积分)更快,适合中低配 / 移动端 / VR。
+// 与 GTAO 互补:GTAO 精度更高但更慢,SAO 性能更优但质量稍低。
+// soup3D 无 SAO 实现。
+export {
+  SAOPass,
+  saoRand,
+  perspectiveDepthToViewZ,
+  reconstructViewPos,
+  saoOcclusion,
+  saoSpiralSampleUV,
+  computeSAO,
+  DEFAULT_SAO_PARAMS,
+  type SAOPassOptions,
+  type SAOParams,
+  type SAOCameraParams,
+  type ViewSize,
+  type SAOColor,
+} from './PostProcess';
 

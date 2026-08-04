@@ -2501,6 +2501,162 @@ void main() {
 }
 `;
 
+// ── SAO (Scalable Ambient Obscurance) ──────────────────────────────
+// 适配自 three.js SAOShader.js (McGuire, Mara, Luebke 2012,
+// "Scalable Ambient Obscurance", HPG 2012) + VREEN 约定。
+//
+// 与 GTAO 的区别:
+//   - SAO:螺旋采样 NUM_SAMPLES 个点(默认 28),每个 O(1) 计算,更快;
+//   - GTAO:4 方向地平线积分,精度更高但更慢。
+//
+// 算法核心(与 SAOPass.ts 的 computeSAO() 1:1 对应):
+//   1. 从 NDC 深度 + 投影矩阵逆重建视图空间位置;
+//   2. 螺旋采样:角度从随机起点开始,每次增加 ANGLE_STEP = 2π * numRings / numSamples,
+//      半径线性增加 radius = kernelRadius * (i+1) / numSamples;
+//   3. 每个采样点遮蔽贡献:
+//        occ = max(0, (dot(N, delta) - minRes) / scaledDist - bias) / (1 + scaledDist²)
+//      其中 scaledDist = (scale / cameraFar) * dist;
+//   4. 平均 × intensity,输出 AO(灰度,0=全遮蔽,1=无遮蔽)。
+//
+// 输入纹理:
+//   u_depthMap  — NDC 深度(0..1)
+//   u_normalMap — 世界空间法线(RGBA16F,xyz)
+// uniforms:
+//   u_projectionInverse — 投影矩阵逆(NDC → 视图)
+//   u_viewMatrix        — 视图矩阵(世界 → 视图,用于法线变换)
+//   u_screenSize        — 视口尺寸 [w, h]
+//   u_cameraNear / u_cameraFar — 相机近/远裁面
+//   u_kernelRadius      — 采样半径(屏幕空间像素)
+//   u_intensity         — AO 强度
+//   u_bias              — 偏移(防止平坦表面产生 AO)
+//   u_scale             — 距离衰减缩放
+//   u_minResolution     — 最小分辨率(过滤近采样)
+//   u_numSamples        — 每环采样数
+//   u_numRings          — 环数(总采样 = numSamples * numRings 的螺旋)
+//   u_randomSeed        — 随机种子(每帧变化以减少 banding)
+export const SAO_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_depthMap;
+uniform sampler2D u_normalMap;
+uniform mat4 u_projectionInverse;
+uniform mat4 u_viewMatrix;
+uniform vec2 u_screenSize;
+uniform float u_cameraNear;
+uniform float u_cameraFar;
+uniform float u_kernelRadius;
+uniform float u_intensity;
+uniform float u_bias;
+uniform float u_scale;
+uniform float u_minResolution;
+uniform int   u_numSamples;
+uniform int   u_numRings;
+uniform float u_randomSeed;
+
+const int MAX_SAMPLES = 128;
+const float PI2 = 6.283185307179586;
+const float EPSILON = 1e-6;
+
+// 伪随机 [0,1),与 SAOPass.saoRand 1:1 对应。
+float saoRand(vec2 co) {
+  return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453);
+}
+
+// 透视相机 NDC 深度 → 视图空间 Z(正值,前方距离)。
+float perspectiveDepthToViewZ(float depth, float near, float far) {
+  return (near * far) / (far - depth * (far - near));
+}
+
+// 从 UV + NDC 深度重建视图空间位置(与 GTAO_FRAG.reconstructViewPos 一致)。
+vec3 reconstructViewPos(vec2 uv, float depth) {
+  vec4 ndc = vec4(uv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
+  vec4 view = u_projectionInverse * ndc;
+  return view.xyz / view.w;
+}
+
+// 单个采样点的遮蔽贡献(与 SAOPass.saoOcclusion 1:1 对应)。
+float getOcclusion(vec3 centerViewPos, vec3 centerViewNormal, vec3 sampleViewPos,
+                   float scaleDivFar, float minResMulFar, float bias) {
+  vec3 viewDelta = sampleViewPos - centerViewPos;
+  float viewDistance = length(viewDelta);
+  if (viewDistance < EPSILON) return 0.0;
+  float scaledScreenDistance = scaleDivFar * viewDistance;
+  float occ = (dot(centerViewNormal, viewDelta) - minResMulFar) / scaledScreenDistance - bias;
+  occ = max(0.0, occ);
+  occ /= 1.0 + scaledScreenDistance * scaledScreenDistance;
+  return occ;
+}
+
+void main() {
+  float centerDepth = texture(u_depthMap, v_uv).r;
+
+  // 跳过天空盒(depth >= 1.0)
+  if (centerDepth >= 1.0 - EPSILON) {
+    outColor = vec4(1.0);
+    return;
+  }
+
+  // 重建中心视图空间位置
+  vec3 centerViewPos = reconstructViewPos(v_uv, centerDepth);
+
+  // 中心法线:从世界空间变换到视图空间
+  vec3 worldN = texture(u_normalMap, v_uv).xyz;
+  if (length(worldN) < 0.01) {
+    outColor = vec4(1.0);
+    return;
+  }
+  vec3 centerViewNormal = normalize((u_viewMatrix * vec4(worldN, 0.0)).xyz);
+
+  // 预计算常量
+  float scaleDivFar = u_scale / max(u_cameraFar, EPSILON);
+  float minResMulFar = u_minResolution * u_cameraFar;
+
+  // 螺旋采样参数
+  float angle = saoRand(v_uv + vec2(u_randomSeed)) * PI2;
+  float angleStep = PI2 * float(u_numRings) / float(max(u_numSamples, 1));
+  float invNumSamples = 1.0 / float(max(u_numSamples, 1));
+  vec2 radiusStep = vec2(u_kernelRadius * invNumSamples) / u_screenSize;
+  vec2 radius = radiusStep;
+
+  float occlusionSum = 0.0;
+  float weightSum = 0.0;
+
+  for (int i = 0; i < MAX_SAMPLES; i++) {
+    if (i >= u_numSamples) break;
+
+    // 螺旋采样 UV
+    vec2 sampleUv = v_uv + vec2(cos(angle), sin(angle)) * radius;
+    radius += radiusStep;
+    angle += angleStep;
+
+    // 边界检查
+    if (sampleUv.x < 0.0 || sampleUv.x > 1.0 || sampleUv.y < 0.0 || sampleUv.y > 1.0) continue;
+
+    float sampleDepth = texture(u_depthMap, sampleUv).r;
+    // 跳过天空盒
+    if (sampleDepth >= 1.0 - EPSILON) continue;
+
+    vec3 sampleViewPos = reconstructViewPos(sampleUv, sampleDepth);
+    occlusionSum += getOcclusion(centerViewPos, centerViewNormal, sampleViewPos,
+                                 scaleDivFar, minResMulFar, u_bias);
+    weightSum += 1.0;
+  }
+
+  if (weightSum < EPSILON) {
+    outColor = vec4(1.0);
+    return;
+  }
+
+  float ao = occlusionSum * (u_intensity / weightSum);
+  // 输出 AO(0=全遮蔽,1=无遮蔽)
+  ao = clamp(1.0 - ao, 0.0, 1.0);
+  outColor = vec4(ao, ao, ao, 1.0);
+}
+`;
+
 // ── SSSS (Screen-Space Subsurface Scattering) ──────────────────────
 // 可分离高斯模糊 + 深度感知 + 次表面颜色混合。
 // 流程(每趟):

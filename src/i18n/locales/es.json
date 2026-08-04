@@ -1098,6 +1098,11 @@
         "title": "Transformación de salida ACES (10 tonemappers + PQ HDR)",
         "desc": "Transformación de salida ACES estándar de la industria adaptada de o3de Atom OutputTransform.azsl + Tonemap.azsli + Aces.azsli. 10 tonemappers: Reinhard, ReinhardExtended, AcesFitted (ajuste Stephen Hill), AcesFilmic (Narkowicz), Filmic (Hable Uncharted 2), familia AgX (AgX/AgxGolden/AgxPunchy/AgxWarm — Blender/Filament), PbrNeutral (Khronos). Conversión de espacio de color ACEScg → sRGB vía matriz precompuesta (XYZ_TO_SRGB * D60_TO_D65 * AP1_TO_XYZ). 2 funciones de transferencia: Gamma 2.2 (SDR) y SMPTE ST 2084 PQ (HDR10). Compensación de exposición EV + mapeo de punto negro/blanco cine. Referencia CPU/GPU 1:1. Etapa final del pipeline.",
         "advantage": "soup3D solo tiene 1 tonemapper básico, sin conversión de espacio de color, sin salida HDR"
+      },
+      "sao": {
+        "title": "Oclusión Ambiental Escalable (SAO)",
+        "desc": "Oclusión ambiental en espacio de pantalla orientada al rendimiento, adaptada de three.js SAOPass.js + SAOShader.js (McGuire, Mara, Luebke 2012, HPG). Patrón de muestreo en espiral (por defecto 7 muestras × 4 anillos = 28 tomas), cada muestra contribuye oclusión en O(1). Fórmula: max(0, (dot(N, delta) - minRes) / scaledDist - bias) / (1 + scaledDist²). Más rápido que GTAO (28 vs 128 muestras), ideal para móviles/VR/escenas a gran escala. Configurable: kernelRadius, intensity, bias, scale, numSamples, numRings, randomSeed. Rotación aleatoria por fotograma reduce banding. Detección de skybox + clampeo de bordes. Implementación de referencia CPU/GPU 1:1.",
+        "advantage": "soup3D no tiene implementación SAO"
       }
     }
   }

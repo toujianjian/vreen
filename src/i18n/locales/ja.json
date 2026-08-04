@@ -1098,6 +1098,11 @@
         "title": "ACES 出力変換(10 トーンマッパー + PQ HDR)",
         "desc": "業界標準 ACES 出力変換、o3de Atom OutputTransform.azsl + Tonemap.azsli + Aces.azsli 適応。10 トーンマッパー:Reinhard、ReinhardExtended、AcesFitted(Stephen Hill フィット)、AcesFilmic(Narkowicz)、Filmic(Hable Uncharted 2)、AgX ファミリー(AgX/AgxGolden/AgxPunchy/AgxWarm — Blender/Filament)、PbrNeutral(Khronos)。ACEScg → sRGB 色空間変換(事前合成行列 XYZ_TO_SRGB * D60_TO_D65 * AP1_TO_XYZ)。2 伝達関数:Gamma 2.2(SDR)と SMPTE ST 2084 PQ(HDR10)。EV 露出補正 + シネマ黒/白点マッピング。CPU/GPU 1:1 参照実装。パイプライン最終段階。",
         "advantage": "soup3D は基本トーンマッパー 1 つのみ、色空間変換なし、HDR 出力なし"
+      },
+      "sao": {
+        "title": "スケーラブル環境光オクルージョン(SAO)",
+        "desc": "性能指向のスクリーンスペース環境光オクルージョン、three.js SAOPass.js + SAOShader.js 適応(McGuire, Mara, Luebke 2012, HPG)。スパイラルサンプリングパターン(デフォルト 7 サンプル × 4 リング = 28 タップ)、各サンプル O(1) でオクルージョン計算。オクルージョン公式:max(0, (dot(N, delta) - minRes) / scaledDist - bias) / (1 + scaledDist²)。GTAO より高速(28 vs 128 サンプル)、モバイル/VR/大規模シーンに最適。kernelRadius、intensity、bias、scale、numSamples、numRings、randomSeed 設定可能。フレームごとのランダム回転でバンディング低減。スカイボックス検出 + 境界クランプ。CPU/GPU 1:1 参照実装。",
+        "advantage": "soup3D は SAO 実装なし"
       }
     }
   }
