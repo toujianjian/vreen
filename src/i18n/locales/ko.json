@@ -854,6 +854,11 @@
         "desc": "스크린 공간 서브서피스 산란, 피부 투과.",
         "advantage": "soup3D에 SSS 없음"
       },
+      "hairMarschner": {
+        "title": "Marschner 헤어",
+        "desc": "물리 기반 모발 BCSDF(Marschner 2003):R/TT/TRT 3-로브 산란 + 유전체 Fresnel + Beer-Lambert 색소 흡수. UE5/HDRP급 헤어 렌더링.",
+        "advantage": "soup3D에 헤어 셰이딩 없음"
+      },
       "taa": {
         "title": "TAA",
         "desc": "템포럴 AA, Halton 지터 + 히스토리 클리핑.",

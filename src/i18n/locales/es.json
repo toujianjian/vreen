@@ -854,6 +854,11 @@
         "desc": "Dispersión subsuperficial en espacio de pantalla para translucidez de piel.",
         "advantage": "soup3D sin SSS"
       },
+      "hairMarschner": {
+        "title": "Cabello Marschner",
+        "desc": "BCSDF de cabello físico (Marschner 2003): dispersión de tres lóbulos R/TT/TRT con Fresnel dieléctrico y absorción de pigmento Beer-Lambert. Render de cabello grado UE5/HDRP.",
+        "advantage": "soup3D sin sombreado de cabello"
+      },
       "taa": {
         "title": "TAA",
         "desc": "Antialiasing temporal con jitter Halton y recorte de historial.",

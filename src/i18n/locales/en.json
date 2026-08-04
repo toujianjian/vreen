@@ -854,6 +854,11 @@
         "desc": "Screen-space subsurface scattering for skin translucency.",
         "advantage": "soup3D has no SSS"
       },
+      "hairMarschner": {
+        "title": "Marschner Hair",
+        "desc": "Physically-based hair BCSDF (Marschner 2003): R / TT / TRT three-lobe scattering with dielectric Fresnel and Beer-Lambert pigment absorption. UE5/HDRP-grade hair rendering.",
+        "advantage": "soup3D has no hair shading"
+      },
       "taa": {
         "title": "TAA",
         "desc": "Temporal antialiasing with Halton jitter and history clipping.",

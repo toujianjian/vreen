@@ -58,6 +58,23 @@ export {
   FUR_VERT,
   FUR_FRAG,
 } from './FurMaterial';
+// Marschner 物理毛发材质(R/TT/TRT 三叶 BCSDF + Fresnel + Beer-Lambert 吸收)。
+// 适配 Marschner 2003 / d'Eon 2011 / UE5 Strand-based Hair / Unity HDRP Hair。
+export {
+  HairMarschnerMaterial,
+  type HairMarschnerMaterialOptions,
+  HAIR_MARSCHNER_VERT,
+  HAIR_MARSCHNER_FRAG,
+  HAIR_ETA_DEFAULT,
+  HAIR_PIGMENTS,
+  hairFresnelDielectric,
+  hairRefractCosTheta,
+  hairAbsorption,
+  hairPathLength,
+  hairLongitudinalM,
+  computeHairBSDF,
+  type HairBSDFInput,
+} from './HairMarschnerMaterial';
 // 次表面散射材质(皮肤/蜡/玉石/牛奶等)。
 export {
   SubsurfaceScatteringMaterial,

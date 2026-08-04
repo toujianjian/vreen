@@ -702,6 +702,164 @@ const mesh = new Mesh(waterGeometry, material);
 - Integration with Refractor math: textureMatrix, refractionTexture,
   runtime eta updates (air→water vs air→glass).
 
+#### `HairMarschnerMaterial` (`HairMarschnerMaterial.ts`)
+
+> Path: `src/engine/Materials/HairMarschnerMaterial.ts`
+>
+> Physically-based hair shading implementing the **Marschner et al. 2003**
+> BCSDF with the three canonical scattering lobes — **R** (surface
+> reflection), **TT** (transmission through the fiber), and **TRT**
+> (internal reflection) — modulated by dielectric Fresnel and
+> Beer-Lambert pigment absorption. This is the gold-standard hair model
+> used by UE5 Strand-based Hair, Unity HDRP, and o3de Atom; **soup3D has
+> no hair shading of any kind**.
+
+**Class**: `HairMarschnerMaterial extends BasicMaterial` (type `'HairMarschner'`)
+**Adapted from**: Marschner 2003 · d'Eon 2011 (energy-conserving) · UE5 / Unity HDRP / o3de Atom hair
+
+##### Why a separate material?
+
+`FurMaterial` uses the **Kajiya-Kay** approximation — a cylindrical-cosine
+lobe with two shifted specular peaks. It is fast but non-physical: it has
+no transmission (TT) lobe, no real Fresnel modulation, and no pigment
+absorption, so it cannot reproduce back-lit translucent hair or the
+colored glints of dyed hair. `HairMarschnerMaterial` adds the missing
+physics:
+
+| Phenomenon | FurMaterial (Kajiya-Kay) | HairMarschnerMaterial |
+|------------|--------------------------|------------------------|
+| Surface highlight (R) | ✓ (cosine lobe) | ✓ (Fresnel-weighted Gaussian) |
+| Back-light transmission (TT) | ✗ | ✓ (refraction + Beer-Lambert) |
+| Secondary glint (TRT) | approx (shifted lobe) | ✓ (internal reflection + absorption) |
+| Pigment coloring (σ_a) | root/tip gradient only | ✓ per-channel absorption |
+| Grazing-angle Fresnel boost | ✗ | ✓ (Schlick dielectric) |
+
+##### The Marschner BCSDF
+
+A hair fiber is modeled as a dielectric cylinder (η ≈ 1.55). Light
+interacts along three paths, each factored into a **longitudinal**
+component `M_p` (Gaussian along the strand tangent) and an **azimuthal**
+component `N_p` (around the fiber):
+
+```
+BSDF = M_R·N_R + M_TT·N_TT + M_TRT·N_TRT
+```
+
+| Lobe | Path | Fresnel factor | Absorption |
+|------|------|----------------|------------|
+| **R** | surface reflection (1 bounce) | `F` | none |
+| **TT** | refract in → refract out (2 bounces) | `(1-F)²` | `exp(-σ_a · l_TT)` |
+| **TRT** | refract in → internal reflect → refract out (3 bounces) | `(1-F)·F·(1-F)` | `exp(-σ_a · l_TRT)` |
+
+where `F = fresnelDielectric(cosθ_d, η)`, `θ_d = (θ_i - θ_r)/2`,
+`l_TT = chord/cosθ_t`, `l_TRT = 2·chord/cosθ_t`, and `chord = 2·√(1-h²)`
+(the geometric chord length at fiber offset `h`).
+
+##### CPU pure functions (headless-testable)
+
+The physics is factored into pure functions that mirror the GLSL 1:1, so
+the model can be unit-tested in Node and validated offline:
+
+| Function | Role |
+|----------|------|
+| `hairFresnelDielectric(cosθ, η)` | Schlick dielectric Fresnel. `R0 = ((η-1)/(η+1))²`. |
+| `hairRefractCosTheta(cosθ_i, η)` | Snell refraction; `0` on total internal reflection. |
+| `hairAbsorption(pathLength, σ_a)` | Beer-Lambert `exp(-σ_a·l)`, per RGB channel. |
+| `hairPathLength(h, cosθ_t, passes)` | Geometric path length through the fiber chord. |
+| `hairLongitudinalM(θ_r, α, β)` | Normalized Gaussian longitudinal scattering. |
+| `computeHairBSDF(input)` | Full R+TT+TRT evaluation (RGB). |
+
+##### Pigment presets (`HAIR_PIGMENTS`)
+
+Pre-baked σ_a values per hair color (linear RGB), after Marschner 2003 Table:
+
+| Preset | σ_a (r, g, b) | Notes |
+|--------|---------------|-------|
+| `black` | `(1.0, 1.0, 1.0)` | strong absorption, all channels |
+| `brown` | `(0.6, 0.8, 1.2)` | blue absorbed most → warm透射 |
+| `blonde` | `(0.2, 0.3, 0.5)` | weak absorption, blue slightly more |
+| `red` | `(0.3, 1.5, 0.4)` | green absorbed most → red透射 |
+| `white` | `(0.05, 0.05, 0.05)` | near-transparent (gray hair) |
+
+##### Options (`HairMarschnerMaterialOptions`)
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `baseColor` | `RGB` | `(0.4, 0.25, 0.1)` | 毛发基础色(色素)。 |
+| `eta` | `number` | `1.55` | 折射率。 |
+| `sigmaA` | `RGB` | `HAIR_PIGMENTS.brown` | 吸收系数 σ_a。 |
+| `betaR` / `betaTT` / `betaTRT` | `number` | `0.05 / 0.1 / 0.15` | 各叶纵向宽度(弧度)。 |
+| `alphaR` / `alphaTT` / `alphaTRT` | `number` | `-0.035 / -0.1 / -0.2` | 各叶中心偏移(弧度,朝毛根)。 |
+| `roughness` | `number` | `0.3` | 毛干粗糙度(调制高光锐度)。 |
+| `ttScale` / `trtScale` | `number` | `1 / 1` | TT / TRT 叶强度倍数。 |
+| `diffuseScale` | `number` | `0.5` | Kajiya-Kay 圆柱漫反射强度。 |
+| `opacity` | `number` | `1` | 透明度。 |
+| `lightDirection` | `Vector3` | `(1,1,1)` | 光照方向(指向光源,自动归一化)。 |
+| `lightColor` | `Color` | white | 光照颜色。 |
+| `transparent` / `doubleSided` | `boolean` | `true` | 透明 / 双面。 |
+
+##### API
+
+```ts
+class HairMarschnerMaterial extends BasicMaterial {
+  constructor(opts?: HairMarschnerMaterialOptions): HairMarschnerMaterial;
+  static fromPigment(pigment: keyof typeof HAIR_PIGMENTS, baseColor?: RGB): HairMarschnerMaterial;
+  /** CPU BCSDF evaluation (mirrors GLSL, for offline validation/testing). */
+  evaluate(thetaI: number, thetaR: number): RGB;
+  copy(source: HairMarschnerMaterial): this;
+  clone(): HairMarschnerMaterial;
+  // inherited: onBeforeCompile, customProgramCacheKey ('hair-marschner')
+}
+```
+
+##### Usage
+
+```ts
+import { HairMarschnerMaterial, HAIR_PIGMENTS } from '@vreen/engine';
+
+// 预设色素
+const blackHair = HairMarschnerMaterial.fromPigment('black');
+// 自定义
+const dyed = new HairMarschnerMaterial({
+  baseColor: { r: 0.5, g: 0.1, b: 0.4 },
+  sigmaA: HAIR_PIGMENTS.red,
+  roughness: 0.25,
+  ttScale: 1.2,   // 强调背光透射
+});
+mesh.material = dyed;
+```
+
+##### Invariants
+
+- **CPU ⇄ GLSL parity** — `evaluate()` reproduces `computeHairBSDF` with
+  the material's parameters; the GLSL implements the same R/TT/TRT
+  factorization. Verified by tests.
+- **Non-negative output** — all BCSDF components are ≥ 0 (Gaussian ×
+  Fresnel × absorption). Verified by tests.
+- **Energy-conserving Fresnel** — `R + T ≤ 1` per interface; TT/TRT
+  carry the transmitted fraction `(1-F)`.
+- **Per-channel absorption** — σ_a is RGB, so dyed hair tints the TT/TRT
+  lobes correctly (red hair absorbs green → red透射).
+- **Pigment presets are copied** — `fromPigment()` returns a fresh σ_a
+  object; mutating it does not affect `HAIR_PIGMENTS`.
+
+##### Test coverage (`HairMarschnerMaterial.test.ts`, 46 tests)
+
+- **Fresnel (5)**: R0 at normal incidence, grazing → 1, monotonic, clamp, [0,1] range.
+- **Snell (4)**: normal incidence, TIR, bending toward normal (η<1), Snell identity.
+- **Absorption (6)**: zero length, zero σ_a, monotonic decrease, channel independence, negative length, (0,1] range.
+- **Path length (5)**: h=0 chord, h=±1 zero, passes scaling, cosθ_t obliquity, h clamp.
+- **Longitudinal M (5)**: peak at α, peak value, symmetry, β spreading, non-negative.
+- **BSDF (6)**: non-negative, R dominance at specular, absorption reduces TT/TRT, channel tinting, ttScale=0, grazing Fresnel.
+- **Material (10)**: defaults, full options, normalized light, fromPigment presets + copy independence, copy/clone independence, RGB deep-copy, evaluate parity.
+- **Shader source (4)**: vertex inputs/uniforms, Marschner uniforms, three-lobe logic, Beer-Lambert.
+
+##### References
+
+- Marschner et al. 2003, "Light Scattering from Human Hair Fibers" — the BCSDF model
+- d'Eon et al. 2011, "An Energy-Conserving Hair Reflectance Model" — UE5/Unity basis
+- UE5 Strand-based Hair · Unity HDRP Hair · o3de Atom Hair shading — production references
+
 #### `SubsurfaceScatteringMaterial` (`SubsurfaceScatteringMaterial.ts`)
 
 Translucent-shadow approximation of subsurface scattering (Penner / GDC

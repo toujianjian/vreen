@@ -854,6 +854,11 @@
         "desc": "スクリーン空間サブサーフェス散乱、肌の透光。",
         "advantage": "soup3D に SSS なし"
       },
+      "hairMarschner": {
+        "title": "Marschner ヘア",
+        "desc": "物理ベース毛髪 BCSDF(Marschner 2003):R/TT/TRT 三ローブ散乱 + 誘電体 Fresnel + Beer-Lambert 色素吸収。UE5/HDRP 級ヘアレンダリング。",
+        "advantage": "soup3D にヘアシェーディングなし"
+      },
       "taa": {
         "title": "TAA",
         "desc": "テンポラル AA、Halton ジッタ + 履歴クリップ。",

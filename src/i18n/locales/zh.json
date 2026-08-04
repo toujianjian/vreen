@@ -854,6 +854,11 @@
         "desc": "屏幕空间次表面散射,皮肤透光。",
         "advantage": "soup3D 无 SSS"
       },
+      "hairMarschner": {
+        "title": "Marschner 头发",
+        "desc": "物理毛发 BCSDF(Marschner 2003):R/TT/TRT 三叶散射 + 电介质 Fresnel + Beer-Lambert 色素吸收。UE5/HDRP 级头发渲染。",
+        "advantage": "soup3D 无毛发着色"
+      },
       "taa": {
         "title": "TAA",
         "desc": "时间抗锯齿,Halton 抖动 + 历史裁剪。",
