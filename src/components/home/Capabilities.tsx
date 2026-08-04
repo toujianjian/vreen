@@ -1,7 +1,7 @@
 // Capabilities — 渲染能力展示区(赛博朋克风格 + i18n)。
 // 把 VREEN 旗舰渲染特性与 soup3D 对比亮出来,直接服务"比 soup3D 更有优势"。
 import { useTranslation } from 'react-i18next';
-import { Sparkles, Sun, Scan, Aperture, Droplets, Waves, FastForward, Box, Cloud, CloudSun, CloudOff, Mountain, Lightbulb, Moon, Palette, Sticker, Smile, Focus, Maximize, Gem, Layers, Globe, Sailboat, Anchor, Sunrise, Star, Flame, Contrast, Camera, GlassWater, Wind, Hourglass, Filter, SprayCan, Boxes, Eye, ScanLine, Umbrella } from 'lucide-react';
+import { Sparkles, Sun, Scan, Aperture, Droplets, Waves, FastForward, Box, Cloud, CloudSun, CloudOff, Mountain, Lightbulb, Moon, Palette, Sticker, Smile, Focus, Maximize, Gem, Layers, Globe, Sailboat, Anchor, Sunrise, Star, Flame, Contrast, Camera, GlassWater, Wind, Hourglass, Filter, SprayCan, Boxes, Eye, ScanLine, Umbrella, Map, Trees, Grid3x3, SlidersHorizontal } from 'lucide-react';
 
 interface Cap {
   key: string;        // i18n key suffix under capabilities.items
@@ -48,6 +48,10 @@ const CAPS: Cap[] = [
   { key: 'autoExposure', icon: Eye, accent: 'text-neon-amber' },
   { key: 'dof', icon: ScanLine, accent: 'text-neon-magenta' },
   { key: 'contactShadows', icon: Umbrella, accent: 'text-neon-cyan' },
+  { key: 'tonemapping', icon: SlidersHorizontal, accent: 'text-neon-amber' },
+  { key: 'terrain', icon: Map, accent: 'text-neon-cyan' },
+  { key: 'vegetation', icon: Trees, accent: 'text-neon-amber' },
+  { key: 'voxel', icon: Grid3x3, accent: 'text-neon-magenta' },
 ];
 
 export function Capabilities() {

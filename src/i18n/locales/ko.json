@@ -1018,6 +1018,26 @@
         "title": "접촉 그림자",
         "desc": "스크린 공간 방향성 섀도우 레이, 깊이 버퍼에서 추적. CSM/PCSS가 닿지 못하는 소규모 접촉 오클루전 보완 — 소품/캐릭터/차량 아래.",
         "advantage": "soup3D 접촉 그림자 없음"
+      },
+      "tonemapping": {
+        "title": "톤 매핑",
+        "desc": "HDR→LDR 톤 매핑:ACES Filmic, Reinhard, AGX, Uncharted2, Linear. 물리 기반 조명 HDR 파이프라인 필수.",
+        "advantage": "soup3D 톤 매핑 없음"
+      },
+      "terrain": {
+        "title": "지형 시스템",
+        "desc": "하이트맵 지형:청크 LOD, 수력+열력 침식 시뮬레이션, 스플랫맵 텍스처, 실시간 지형 에디터, FBM 노이즈 생성.",
+        "advantage": "soup3D 지형 없음"
+      },
+      "vegetation": {
+        "title": "식생 시스템",
+        "desc": "인스턴스 식생 렌더링:바람 애니메이션, 표면 샘플링 밀도 배치, 다중 식생 타입, LOD 컬링.",
+        "advantage": "soup3D 식생 없음"
+      },
+      "voxel": {
+        "title": "복셀 월드",
+        "desc": "청크 복셀 월드:팔레트 블록 타입, 레이캐스트 선택/배치, 탐욕 메시 병합, Minecraft 스타일 건축 메커닉.",
+        "advantage": "soup3D 복셀 없음"
       }
     }
   }

@@ -1018,6 +1018,26 @@
         "title": "接触阴影",
         "desc": "屏幕空间方向性阴影射线,从深度缓冲追踪。填补 CSM/PCSS 无法覆盖的小尺度接触遮蔽 — 道具、角色、载具下方。",
         "advantage": "soup3D 无接触阴影"
+      },
+      "tonemapping": {
+        "title": "色调映射",
+        "desc": "HDR 转 LDR 色调映射:ACES Filmic、Reinhard、AGX、Uncharted2、Linear。物理光照 HDR 管线必备。",
+        "advantage": "soup3D 无色调映射"
+      },
+      "terrain": {
+        "title": "地形系统",
+        "desc": "高度图地形:分块 LOD、水力+热力侵蚀模拟、splatmap 纹理混合、实时地形编辑器、FBM 噪声生成。",
+        "advantage": "soup3D 无地形"
+      },
+      "vegetation": {
+        "title": "植被系统",
+        "desc": "实例化植被渲染:风动画、基于表面采样的密度放置、多种植被类型、LOD 剔除。",
+        "advantage": "soup3D 无植被"
+      },
+      "voxel": {
+        "title": "体素世界",
+        "desc": "分块体素世界:调色板方块类型、射线投射选块/放置、贪婪网格合并、Minecraft 风格建造机制。",
+        "advantage": "soup3D 无体素"
       }
     }
   }

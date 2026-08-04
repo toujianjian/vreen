@@ -1018,6 +1018,26 @@
         "title": "コンタクトシャドウ",
         "desc": "スクリーン空間の方向性シャドウレイ、深度バッファから追跡。CSM/PCSS が届かない小規模接触オクルージョンを補完 — 小物/キャラクター/車両の下。",
         "advantage": "soup3D にコンタクトシャドウなし"
+      },
+      "tonemapping": {
+        "title": "トーンマッピング",
+        "desc": "HDR→LDR トーンマッピング:ACES Filmic、Reinhard、AGX、Uncharted2、Linear。物理ベース照明 HDR パイプラインに必須。",
+        "advantage": "soup3D にトーンマッピングなし"
+      },
+      "terrain": {
+        "title": "地形システム",
+        "desc": "ハイトマップ地形:チャンク LOD、水力+熱力浸食シミュレーション、スプラットマップテクスチャ、リアルタイム地形エディタ、FBM ノイズ生成。",
+        "advantage": "soup3D に地形なし"
+      },
+      "vegetation": {
+        "title": "植生システム",
+        "desc": "インスタンス植生レンダリング:風アニメーション、表面サンプリング密度配置、複数植生タイプ、LOD カリング。",
+        "advantage": "soup3D に植生なし"
+      },
+      "voxel": {
+        "title": "ボクセルワールド",
+        "desc": "チャンクボクセルワールド:パレットブロックタイプ、レイキャスト選択/配置、貪欲メッシュ結合、Minecraft 風建造メカニクス。",
+        "advantage": "soup3D にボクセルなし"
       }
     }
   }

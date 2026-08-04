@@ -1018,6 +1018,26 @@
         "title": "Sombras de contacto",
         "desc": "Rayos direccionales de sombra en espacio de pantalla desde el buffer de profundidad. Rellena oclusión de contacto a pequeña escala donde CSM/PCSS no llegan — bajo props, personajes, vehículos.",
         "advantage": "soup3D sin sombras de contacto"
+      },
+      "tonemapping": {
+        "title": "Mapeo de tonos",
+        "desc": "Mapeo de tonos HDR→LDR:ACES Filmic, Reinhard, AGX, Uncharted2, Linear. Esencial para pipelines HDR con iluminación física.",
+        "advantage": "soup3D sin mapeo de tonos"
+      },
+      "terrain": {
+        "title": "Sistema de terreno",
+        "desc": "Terreno por mapa de alturas:LOD por chunks, simulación de erosión hidráulica+térmica, texturizado splatmap, editor de terreno en tiempo real, ruido FBM.",
+        "advantage": "soup3D sin terreno"
+      },
+      "vegetation": {
+        "title": "Sistema de vegetación",
+        "desc": "Renderizado de vegetación instanciada:animación de viento, placement por densidad muestreo superficial, múltiples tipos de vegetación, culling por LOD.",
+        "advantage": "soup3D sin vegetación"
+      },
+      "voxel": {
+        "title": "Mundo de voxeles",
+        "desc": "Mundo de voxeles por chunks:tipos de bloque por paleta, raycaster para selección/colocación, meshing voraz, mecánicas de construcción estilo Minecraft.",
+        "advantage": "soup3D sin voxeles"
       }
     }
   }
