@@ -24,6 +24,7 @@ Renderer (interface)        ← pluggable backend contract
           ├── MRTTarget     ← multi-render-target FBO
           ├── GBuffer       ← deferred rendering geometry buffer
           ├── ShadowMapManager ← shadow-map FBO/texture lifecycle
+          ├── PCSSSampler ← PCSS soft-shadow CPU reference (Ferrari 2005)
           ├── CascadedShadowMap ← CSM/PSSM for large outdoor scenes
           ├── LensFlare ← CPU-side lens flare compositor
           ├── WeightedBlendedOIT ← order-independent transparency
@@ -159,7 +160,7 @@ modes via `ShadowType`:
 |------|------|--------|-------------|
 | `'basic'` | 1 | NEAREST | Hard shadow (single depth test). Fastest; aliased edges. |
 | `'pcf'` | 9 | LINEAR | 3×3 PCF at fixed 1.5-texel radius. Smooth edges; uniform blur width. |
-| `'pcss'` | 32 | LINEAR | **PCSS** (Percentage-Closer Soft Shadows). 3-stage physical soft shadows: blocker search (16-tap Poisson) → penumbra estimation → variable-radius PCF (16-tap Poisson). Contact points render sharp; distant occluders render soft — matching real-world light behavior. Requires `lightSize` property (world units, controls penumbra width). **Surpasses soup3D** (which only has basic hard shadows). |
+| `'pcss'` | 41 | LINEAR | **PCSS** (Percentage-Closer Soft Shadows). 3-stage physical soft shadows: blocker search (5×5 = 25-tap grid) → penumbra estimation (similar-triangles formula) → variable-rate PCF (16-tap rotated Poisson disk). Contact points render sharp; distant occluders render soft — matching real-world light behavior. Requires `lightSize` property (world units, controls penumbra width). **Surpasses soup3D** (which only has basic hard shadows). |
 
 ```ts
 const sm = new ShadowMapManager(gl, {
@@ -167,8 +168,71 @@ const sm = new ShadowMapManager(gl, {
   enabled: true,
   lightSize: 0.5,   // larger = softer shadows
 });
-// Consumer shader calls sampleShadowPCSS(worldPos) — see ShaderChunks/shadow.glsl.ts
+// Consumer shader injects PCSS_SHADOW_FRAG and calls sampleShadowPCSS(worldPos)
+// CPU reference implementation: PCSSSampler.ts (samplePCSS / findBlocker / computePenumbra)
 ```
+
+### `PCSSSampler` (`PCSSSampler.ts`)
+
+CPU pure-function reference implementation of the PCSS (Percentage-Closer
+Soft Shadows) algorithm. Mirrors the GLSL `PCSS_SHADOW_FRAG` chunk 1:1,
+operates on `Float32Array` shadow maps, and runs in Node / headless / test
+environments without WebGL. Used to:
+
+1. Validate the GPU shader's correctness (reference implementation);
+2. Sample soft shadows in offline renderers / lightmap baking;
+3. Unit-test numerical behaviour (depth deltas, penumbra width, visibility).
+
+Implements Ferrari 2005's three-stage algorithm:
+
+| Stage | Function | Description |
+|-------|----------|-------------|
+| 1. Blocker Search | `findBlocker(map, u, v, receiverDepth, searchRadius, blockerBias?)` | Samples a 5×5 grid centered on the receiver's UV; a texel is a blocker if `shadowDepth < receiverDepth − blockerBias`. Returns `{ avgDepth, count }`. `count=0` → no blocker → fully lit. |
+| 2. Penumbra Estimation | `computePenumbra(blockerDepth, receiverDepth, lightSize, minPenumbra?, maxPenumbra?)` | Similar-triangles formula: `penumbra = (receiver − blocker) × lightSize / blocker`. Clamped to `[1, 16]` texels by default to bound sampling cost. |
+| 3. Variable-rate PCF | `samplePCF(map, u, v, receiverDepth, penumbraRadius, bias?, samples?)` | 16-tap rotated Poisson-disk PCF at the penumbra radius. Rotation angle is UV-hash-driven to eliminate banding. Returns visibility `[0,1]`. |
+
+```ts
+import { samplePCSS, makeBlockerShadowMap } from '@vreen/engine/renderer';
+
+// Construct a shadow map with a central blocker
+const map = makeBlockerShadowMap(1024, 1024, 0.2, 0.9, 0.5, 0.5, 0.5);
+
+// Sample soft-shadow visibility at a receiver point
+const visibility = samplePCSS(map, 0.5, 0.5, 0.6, {
+  lightSize: 2.0,       // larger = softer
+  bias: 0.001,
+  blockerBias: 0.001,
+  pcfSamples: 16,       // 1 = hard, 16 = high quality
+  maxPenumbra: 16,
+  minPenumbra: 1,
+});
+// visibility ∈ [0,1]: 1 = fully lit, 0 = fully shadowed
+```
+
+**Key properties:**
+
+- `lightSize` controls penumbra width (larger → softer). Scales both the
+  blocker search radius and the penumbra estimate.
+- `blockerBias` separates blockers from the receiver (avoids self-shadowing
+  acne during the blocker classification step).
+- `bias` is applied during the PCF depth test (same role as `PCF_SHADOW_FRAG`'s
+  `u_shadowBias`).
+- `pcfSamples` (1–16): 1 = hard shadow (cheapest), 16 = full Poisson disk.
+- `samplePCSSWithStats()` returns intermediate results (`blockerDepth`,
+  `penumbra`, `visibility`) for debugging / visualisation.
+
+| Feature | VREEN `PCSSSampler` | soup3D |
+|---------|---------------------|--------|
+| Hard shadows | ✓ (pcfSamples=1) | ✓ |
+| Fixed-radius PCF | ✓ (`PCF_SHADOW_FRAG`) | ✗ |
+| Physical soft shadows (PCSS) | ✓ (Ferrari 2005) | ✗ |
+| Variable penumbra by occluder distance | ✓ | ✗ |
+| CPU reference implementation | ✓ (headless-testable) | ✗ |
+| Poisson-disk rotated sampling | ✓ (16-tap) | ✗ |
+
+soup3D has **basic hard shadows only**. VREEN's PCSS brings contact-point-sharp
+/ distant-soft shadows matching UE5 ShadowPenumbra and o3de Atom's PCSS filter
+mode — the gold standard for real-time soft shadows.
 
 ### `CascadedShadowMap` (`CascadedShadowMap.ts`)
 

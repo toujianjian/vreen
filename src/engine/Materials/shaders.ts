@@ -935,6 +935,163 @@ float sampleShadowPCF(vec3 worldPos) {
 }
 `;
 
+/** PCSS 物理软阴影采样 chunk:可注入到任意 fragment shader。
+ *
+ *  实现 Ferrari 2005 "Percentage-Closer Soft Shadows" 三步算法:
+ *    1. Blocker Search — 在阴影贴图上以搜索半径采样,统计平均遮挡器深度;
+ *    2. Penumbra Estimation — 由 (receiver - blocker) 距离与光源尺寸估算半影宽度;
+ *    3. Variable-rate PCF — 以半影宽度为半径做 PCF 采样,产生由锐到柔的渐变软阴影。
+ *
+ *  与 PCF_SHADOW_FRAG 的区别:
+ *    - PCF 用固定半径,所有像素软度一致(几何上不正确);
+ *    - PCSS 半影随遮挡器距离变化:靠近遮挡器 → 锐,远离遮挡器 → 柔,
+ *      匹配真实物理(点光源 → 面光源半影公式)。
+ *
+ *  依赖外部 uniform(与 PCF_SHADOW_FRAG 共享 + 新增):
+ *    uniform sampler2D u_shadowMap;
+ *    uniform mat4      u_lightVP;
+ *    uniform float     u_shadowBias;
+ *    uniform vec2      u_shadowMapSize;
+ *    uniform int       u_shadowEnabled;
+ *    uniform float     u_lightSize;       // 光源尺寸(世界单位,控制半影宽度)
+ *    uniform float     u_pcssBlockerBias; // 阻挡器深度偏置(避免自阴影,默认 0.001)
+ *
+ *  性能: blocker search 25 tap + PCF 最多 16 tap,共约 41 tap/像素
+ *         (PCF 仅 9 tap),性能约为 PCF 的 4-5 倍,但质量显著更高。
+ *
+ *  参考:
+ *    - Ferrari 2005 "Percentage-Closer Soft Shadows"
+ *    - UE5 ShadowPenumbra / PCSS
+ *    - o3de Atom Shadow (PCSS filter mode)
+ *    - NVIDIA "Common Techniques to Improve Shadow Depth Maps" (PCSS section)
+ */
+export const PCSS_SHADOW_FRAG = /* glsl */ `
+
+// PCSS — Percentage-Closer Soft Shadows (Ferrari 2005).
+// References: Ferrari 2005 "Percentage-Closer Soft Shadows";
+//             UE5 ShadowPenumbra / PCSS; o3de Atom Shadow (PCSS filter mode);
+//             NVIDIA "Common Techniques to Improve Shadow Depth Maps".
+
+// ── PCSS 物理软阴影 chunk(注入 PBR_FRAG 或自定义 shader) ───────────
+// 依赖外部声明的 uniform(若 shader 未声明会编译失败):
+//   uniform sampler2D u_shadowMap;
+//   uniform mat4      u_lightVP;
+//   uniform float     u_shadowBias;
+//   uniform vec2      u_shadowMapSize;
+//   uniform int       u_shadowEnabled;
+//   uniform float     u_lightSize;       // 光源尺寸(世界单位)
+//   uniform float     u_pcssBlockerBias; // 阻挡器深度偏置(默认 0.001)
+
+// ── Step 1: Blocker Search ──
+// 在阴影贴图上以 searchRadius (texel) 为半径采样,统计遮挡器平均深度。
+// 遮挡器定义:shadowMapDepth < receiverDepth - bias(在接收者前方的几何)。
+// 返回 vec2(avgBlockerDepth, blockerCount);blockerCount=0 时无遮挡器 → 无阴影。
+vec2 pcssBlockerSearch(vec2 uv, float receiverDepth, float searchRadius) {
+  float blockerSum = 0.0;
+  float blockerCount = 0.0;
+  vec2 texel = 1.0 / u_shadowMapSize;
+  // 5x5 采样网格(步长 = searchRadius / 2.0,覆盖 [-searchRadius, +searchRadius])
+  float step = searchRadius / 2.0;
+  for (int y = -2; y <= 2; y++) {
+    for (int x = -2; x <= 2; x++) {
+      vec2 sampleUV = uv + vec2(float(x), float(y)) * step * texel;
+      // 越界采样钳制到边缘(CLAMP_TO_EDGE 行为)
+      sampleUV = clamp(sampleUV, vec2(0.0), vec2(1.0));
+      float shadowDepth = texture(u_shadowMap, sampleUV).r;
+      if (shadowDepth < receiverDepth - u_pcssBlockerBias) {
+        blockerSum += shadowDepth;
+        blockerCount += 1.0;
+      }
+    }
+  }
+  if (blockerCount < 0.5) {
+    return vec2(0.0, 0.0);  // 无遮挡器 → 无阴影
+  }
+  return vec2(blockerSum / blockerCount, blockerCount);
+}
+
+// ── Step 2: Penumbra Estimation ──
+// 半影宽度公式(相似三角形):
+//   penumbra = (receiverDepth - blockerDepth) * lightSize / blockerDepth
+// 转换到 texel 单位:penumbraTexel = penumbra / texelSize_world
+// 这里用 lightSize 直接作为 texel 缩放因子(简化:假设光源尺寸已按场景缩放)。
+float pcssPenumbra(float blockerDepth, float receiverDepth) {
+  // 防止除零:blockerDepth 最小 1e-4
+  float bd = max(blockerDepth, 1e-4);
+  float penumbra = (receiverDepth - bd) * u_lightSize / bd;
+  // 钳制到合理范围 [1, 16] texel,避免极端值导致过采样或无模糊
+  return clamp(penumbra, 1.0, 16.0);
+}
+
+// ── Step 3: Variable-rate PCF ──
+// 以 penumbra 半径做 Poisson-disk PCF 采样,产生渐变软阴影。
+// 使用 16-tap Poisson disk(固定模式,旋转角度由 UV 哈希驱动以去 banding)。
+float pcssPCF(vec2 uv, float receiverDepth, float penumbraRadius) {
+  vec2 texel = 1.0 / u_shadowMapSize;
+  // 16-tap Poisson disk 模式(单位圆内)
+  vec2 POISSON_16[16];
+  POISSON_16[0]  = vec2(-0.94201624, -0.39906216);
+  POISSON_16[1]  = vec2( 0.94558609, -0.76890725);
+  POISSON_16[2]  = vec2(-0.09418410, -0.92938870);
+  POISSON_16[3]  = vec2( 0.34495938,  0.29387733);
+  POISSON_16[4]  = vec2(-0.91588581,  0.45771432);
+  POISSON_16[5]  = vec2(-0.81544232, -0.87912464);
+  POISSON_16[6]  = vec2( 0.38277543,  0.89668509);
+  POISSON_16[7]  = vec2(-0.38277444, -0.38277642);
+  POISSON_16[8]  = vec2( 0.19311636,  0.89668509);
+  POISSON_16[9]  = vec2( 0.77512345,  0.52934567);
+  POISSON_16[10] = vec2(-0.52934567,  0.19311636);
+  POISSON_16[11] = vec2( 0.52934567, -0.19311636);
+  POISSON_16[12] = vec2(-0.19311636,  0.52934567);
+  POISSON_16[13] = vec2( 0.89668509,  0.19311636);
+  POISSON_16[14] = vec2(-0.67654321,  0.77512345);
+  POISSON_16[15] = vec2( 0.67654321, -0.77512345);
+
+  // 旋转角度(UV 哈希,消除 banding)
+  float angle = fract(sin(dot(uv, vec2(12.9898, 78.233))) * 43758.5453) * 6.2831853;
+  float s = sin(angle);
+  float c = cos(angle);
+
+  float visible = 0.0;
+  for (int i = 0; i < 16; i++) {
+    vec2 offset = POISSON_16[i];
+    // 旋转 Poisson disk
+    offset = vec2(offset.x * c - offset.y * s, offset.x * s + offset.y * c);
+    vec2 sampleUV = uv + offset * penumbraRadius * texel;
+    sampleUV = clamp(sampleUV, vec2(0.0), vec2(1.0));
+    float shadowDepth = texture(u_shadowMap, sampleUV).r;
+    visible += (shadowDepth > receiverDepth - u_shadowBias) ? 1.0 : 0.0;
+  }
+  return visible / 16.0;
+}
+
+/** PCSS 采样主入口:返回 0..1 可见性因子(1=完全照亮,0=完全阴影)。 */
+float sampleShadowPCSS(vec3 worldPos) {
+  if (u_shadowEnabled == 0) return 1.0;
+  vec4 lp = u_lightVP * vec4(worldPos, 1.0);
+  vec3 ndc = lp.xyz / lp.w;
+  // 超出阴影 frustum → 无阴影
+  if (ndc.x < -1.0 || ndc.x > 1.0 || ndc.y < -1.0 || ndc.y > 1.0 || ndc.z < -1.0 || ndc.z > 1.0) {
+    return 1.0;
+  }
+  vec2 uv = ndc.xy * 0.5 + 0.5;
+  float receiverDepth = ndc.z * 0.5 + 0.5;
+
+  // Step 1: Blocker Search
+  // 搜索半径 = lightSize (texel),随光源尺寸缩放
+  float searchRadius = max(u_lightSize, 1.0);
+  vec2 blocker = pcssBlockerSearch(uv, receiverDepth, searchRadius);
+  // 无遮挡器 → 完全照亮
+  if (blocker.y < 0.5) return 1.0;
+
+  // Step 2: Penumbra Estimation
+  float penumbra = pcssPenumbra(blocker.x, receiverDepth);
+
+  // Step 3: Variable-rate PCF
+  return pcssPCF(uv, receiverDepth, penumbra);
+}
+`;
+
 // ── 增强后处理 shader(ColorGrading / LUT / FilmGrain / Afterimage / Pixelation)──
 // 这些 shader 配合 Renderer/PostProcess/ 下的 Pass 类使用,与 RenderPass.ts
 // 中的基础后处理 shader 平行。POST_VERT 复用现有全屏三角形顶点着色器。

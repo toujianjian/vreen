@@ -43,6 +43,25 @@ export {
   type ShadowMapManagerOptions,
   isCastShadowLight,
 } from './ShadowMapManager';
+// PCSS (Percentage-Closer Soft Shadows) — 物理软阴影采样器(CPU 参考实现)。
+// 实现 Ferrari 2005 三步算法:blocker search + penumbra estimation + variable-rate PCF。
+// 与 GLSL `PCSS_SHADOW_FRAG` chunk 1:1 对应,纯函数,不依赖 WebGL,可在 Node/无头环境测试。
+// ShadowMapManager(type='pcss') 在 GPU 端用 PCSS_SHADOW_FRAG,本类是其 CPU 参考实现。
+export {
+  sampleShadowDepth,
+  findBlocker,
+  computePenumbra,
+  samplePCF,
+  samplePCSS,
+  samplePCSSWithStats,
+  makeFlatShadowMap,
+  makeBlockerShadowMap,
+  POISSON_DISK_16,
+  type ShadowMapData,
+  type BlockerSearchResult,
+  type PCSSOptions,
+  type PCSSStats,
+} from './PCSSSampler';
 // 级联阴影贴图 (CSM/PSSM) — 大型户外场景多级阴影。
 // 适配 three.js CSM.js 与 o3de Atom CascadedShadows。
 // 提供 logarithmic / uniform / practical (PSSM λ 混合) 三种分割方案 +
