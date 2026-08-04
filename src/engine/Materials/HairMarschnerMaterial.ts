@@ -243,7 +243,10 @@ void main() {
   vec4 world = u_model * vec4(a_position, 1.0);
   v_worldPos = world.xyz;
   v_worldNormal = normalize(mat3(u_normalMatrix) * a_normal);
-  v_worldTangent = normalize(mat3(u_normalMatrix) * a_tangent);
+  // 切线缺失(几何体未提供 a_tangent → 属性为 (0,0,0))时退回法线,
+  // 避免 normalize(vec3(0)) 产生 NaN(Marschner 沿毛干方向退化成表面着色)。
+  vec3 tObj = length(a_tangent) < 1e-5 ? a_normal : a_tangent;
+  v_worldTangent = normalize(mat3(u_normalMatrix) * tObj);
   v_uv = a_uv;
   gl_Position = u_projection * u_view * world;
 }

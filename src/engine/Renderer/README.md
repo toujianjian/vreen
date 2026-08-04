@@ -92,6 +92,81 @@ Toggles: `ssaoEnabled`, `postProcessingEnabled`, `bloomEnabled`,
 `bloomIntensity`, `bloomThreshold`, `chromaticAberrationEnabled`,
 `chromaticAberrationOffset`, `vignetteEnabled`, `vignetteDarkness`.
 
+#### Material dispatch in `_drawMesh`
+
+The renderer branches on the material type to pick the shader program and
+the uniform-write path:
+
+| Material | Detection | Program source | Uniform writer |
+|----------|-----------|----------------|----------------|
+| `ShaderMaterial` (user) | `instanceof ShaderMaterial` | user-supplied `vertexSrc` / `fragmentSrc` | `_applyUserShaderUniforms` (writes `u_time`, `u_cameraPos`, and the user `uniforms` map) |
+| `HairMarschnerMaterial` | `instanceof HairMarschnerMaterial` | engine built-in `HAIR_MARSCHNER_VERT` / `HAIR_MARSCHNER_FRAG` | `_applyHairMeshUniforms` (writes the 17 Marschner uniforms listed below) |
+| `StandardMaterial` (default) | fallthrough | engine built-in `STANDARD_VERTEX_SRC` / `STANDARD_FRAGMENT_SRC` | `_applyStandardMeshUniforms` (PBR textures + lights + shadow + SSAO) |
+
+##### HairMarschner rendering path
+
+When a `Mesh` is assigned a `HairMarschnerMaterial`, the renderer:
+
+1. Compiles (once, then caches under the key `'hair-marschner'` in
+   `programCache`) the engine built-in `HAIR_MARSCHNER_VERT` /
+   `HAIR_MARSCHNER_FRAG` GLSL ES 3.0 shaders via
+   `_getOrCompileHairProgram(mat)`. The compiled `ShaderProgram` is also
+   stored on `mat.program` so subsequent draws of the same material skip
+   the lookup.
+2. Writes the common matrices (`u_model`, `u_view`, `u_projection`,
+   `u_normalMatrix`) — same as every other path.
+3. Calls `_applyHairMeshUniforms(program, mesh, camera, mat)` to upload
+   the 17 Marschner-specific uniforms declared in `HAIR_MARSCHNER_FRAG`:
+
+   | Uniform | Type | Source field |
+   |---------|------|--------------|
+   | `u_cameraPos` | `vec3` | `camera.position` |
+   | `u_lightDir` | `vec3` | `mat.lightDirection` (world space, points toward light) |
+   | `u_lightColor` | `vec3` | `mat.lightColor` |
+   | `u_baseColor` | `vec3` | `mat.baseColor` (linear RGB) |
+   | `u_eta` | `float` | `mat.eta` (default 1.55) |
+   | `u_sigmaA` | `vec3` | `mat.sigmaA` (Beer-Lambert absorption RGB) |
+   | `u_betaR` / `u_betaTT` / `u_betaTRT` | `float` | `mat.betaR` / `betaTT` / `betaTRT` (lobe longitudinal widths) |
+   | `u_alphaR` / `u_alphaTT` / `u_alphaTRT` | `float` | `mat.alphaR` / `alphaTT` / `alphaTRT` (lobe center offsets) |
+   | `u_roughness` | `float` | `mat.roughness` (modulates highlight sharpness) |
+   | `u_ttScale` / `u_trtScale` | `float` | `mat.ttScale` / `trtScale` (lobe intensity multipliers) |
+   | `u_diffuseScale` | `float` | `mat.diffuseScale` (Kajiya-Kay cylindrical diffuse) |
+   | `u_opacity` | `float` | `mat.opacity` |
+
+4. Toggles GL state for hair:
+   - If `mat.doubleSided` (default `true`): disables `CULL_FACE` so
+     back-facing hair fibers render (hair cards are not consistently
+     wound).
+   - If `mat.transparent` (default `true`): enables `BLEND` with
+     `SRC_ALPHA / ONE_MINUS_SRC_ALPHA` and disables `depthMask` so
+     semi-transparent hair strands composite correctly without
+     depth-fighting.
+5. Issues the draw call (`gl.drawElements` / `gl.drawArrays`).
+6. Restores the default GL state (`CULL_FACE` on, `BLEND` off,
+   `depthMask` on) so the next mesh is unaffected.
+
+##### Tangent fallback
+
+`HAIR_MARSCHNER_VERT` declares `in vec3 a_tangent;` (location 4, same
+layout as `StandardMaterial`). If the geometry does not provide a
+`tangent` attribute, WebGL returns `(0, 0, 0)` for the unbound generic
+vertex attribute. The shader detects this via
+`length(a_tangent) < 1e-5` and substitutes `a_normal` as the fiber
+direction, so `HairMarschnerMaterial` still renders correctly on
+geometry without explicit tangents (the Marschner model degrades to a
+surface-ish shading in that case, which is the best one can do without
+fiber-direction data).
+
+##### Skinning
+
+`HairMarschnerMaterial` is fully compatible with `SkinnedMesh`. The
+`_drawMesh` skinning block writes `u_bindMatrixInverse` and
+`u_boneMatrices[0]` exactly as for `StandardMaterial`; the hair vertex
+shader applies `u_model` (which already includes the skinned transform
+when the skeleton is updated) before computing world position / normal
+/ tangent. This lets character hair rigs driven by bones render with
+the full Marschner BCSDF.
+
 ### `ShaderProgram` (`ShaderProgram.ts`)
 
 GLSL ES 3.0 (`#version 300 es`) program wrapper:

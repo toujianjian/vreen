@@ -16,6 +16,11 @@ import { Matrix4, Vector3 } from '../Math';
 import { AmbientLight, DirectionalLight } from '../Lights';
 import { StandardMaterial, STANDARD_FRAGMENT_SRC, STANDARD_VERTEX_SRC } from '../Materials/StandardMaterial';
 import { ShaderMaterial as ShaderMaterialCls } from '../Materials/ShaderMaterial';
+import {
+  HairMarschnerMaterial as HairMarschnerMaterialCls,
+  HAIR_MARSCHNER_VERT,
+  HAIR_MARSCHNER_FRAG,
+} from '../Materials/HairMarschnerMaterial';
 import { SHADOW_FRAG, SHADOW_VERT, DEPTH_NORMAL_VERT, DEPTH_NORMAL_FRAG, SSAO_VERT, SSAO_FRAG, POST_VERT, BLOOM_EXTRACT_FRAG, BLOOM_BLUR_FRAG, CHROMATIC_ABERRATION_FRAG, VIGNETTE_FRAG, FINAL_COMPOSE_FRAG } from '../Materials/shaders';
 import { ShaderProgram } from './ShaderProgram';
 import type { Renderer } from './Renderer';
@@ -662,9 +667,13 @@ export class WebGL2Renderer implements Renderer {
     const skinning = mesh instanceof SkinnedMesh;
     // 用户自定义 ShaderMaterial:用 mat.program;走简化 uniform path。
     const isUserShader = mat instanceof ShaderMaterialCls;
+    // Marschner 物理毛发材质:走 HAIR_MARSCHNER_VERT/FRAG 专用 path。
+    const isHair = mat instanceof HairMarschnerMaterialCls;
     const program = isUserShader
       ? this._getOrCompileUserShaderProgram(mat as ShaderMaterialCls)
-      : this.getProgramFor(mesh, mat as StandardMaterial).program;
+      : isHair
+        ? this._getOrCompileHairProgram(mat as HairMarschnerMaterialCls)
+        : this.getProgramFor(mesh, mat as StandardMaterial).program;
     program.use();
 
     // Uniforms
@@ -692,11 +701,26 @@ export class WebGL2Renderer implements Renderer {
     if (isUserShader) {
       // 用户 shader path:写入 builtin(u_time / u_cameraPos)+ 用户自定义 uniforms
       this._applyUserShaderUniforms(program, mesh, camera, mat as ShaderMaterialCls);
+    } else if (isHair) {
+      // Marschner 毛发 path:写入毛发专属 uniforms(baseColor/eta/sigmaA/三叶参数...)
+      this._applyHairMeshUniforms(program, mesh, camera, mat as HairMarschnerMaterialCls);
     } else {
       this._applyStandardMeshUniforms(
         program, mesh, camera, dirLight, ambient, scene, ssaoTexture,
         mat as StandardMaterial,
       );
+    }
+
+    // 毛发 GL 状态:双面关闭背面剔除,透明开启 alpha 混合 + 关深度写。
+    // 默认 GL 状态:CULL_FACE enabled / BACK / 无 blend / depthMask true。
+    const hairMat = isHair ? (mat as HairMarschnerMaterialCls) : null;
+    if (hairMat) {
+      if (hairMat.doubleSided) gl.disable(gl.CULL_FACE);
+      if (hairMat.transparent) {
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+        gl.depthMask(false);
+      }
     }
 
     if (mat.wireframe) gl.drawingBufferWidth; // placeholder
@@ -717,6 +741,15 @@ export class WebGL2Renderer implements Renderer {
       this._recordDrawCall(mesh, 'main', mr.vertexCount / 3);
     }
     this.stats.drawCalls++;
+
+    // 恢复默认 GL 状态(下个 mesh 可能不是 hair)。
+    if (hairMat) {
+      if (hairMat.doubleSided) gl.enable(gl.CULL_FACE);
+      if (hairMat.transparent) {
+        gl.disable(gl.BLEND);
+        gl.depthMask(true);
+      }
+    }
   }
 
   // ── InstancedMesh 渲染 path (Phase 2.2.2) ───────────────────────
@@ -849,6 +882,65 @@ export class WebGL2Renderer implements Renderer {
     mat.program = program;
     this._userShaderCache.set(key, program);
     return program;
+  }
+
+  /**
+   * 编译(或取缓存)Marschner 毛发 shader program。
+   *
+   * HairMarschnerMaterial 自带 `programKey`('hair-marschner'),用其作为
+   * programCache 的键;首次调用编译 HAIR_MARSCHNER_VERT/FRAG,后续直接复用。
+   * 与 _getOrCompileUserShaderProgram 不同:毛发 shader 源是引擎内置常量,
+   * 不由用户传入,且共享 programCache(便于 dispose 统一回收)。
+   */
+  private _getOrCompileHairProgram(mat: HairMarschnerMaterialCls): ShaderProgram {
+    if (mat.program) return mat.program;
+    const key = mat.programKey; // 'hair-marschner'
+    const cached = this.programCache.get(key);
+    if (cached) {
+      mat.program = cached;
+      return cached;
+    }
+    const program = this.getProgram(key, HAIR_MARSCHNER_VERT, HAIR_MARSCHNER_FRAG);
+    mat.program = program;
+    return program;
+  }
+
+  /**
+   * 写入 Marschner 毛发专属 uniforms。
+   *
+   * 对应 HAIR_MARSCHNER_FRAG 声明:
+   *   u_cameraPos / u_lightDir / u_lightColor
+   *   u_baseColor / u_eta / u_sigmaA
+   *   u_betaR / u_betaTT / u_betaTRT  (三叶纵向宽度)
+   *   u_alphaR / u_alphaTT / u_alphaTRT (三叶中心偏移)
+   *   u_roughness / u_ttScale / u_trtScale / u_diffuseScale / u_opacity
+   *
+   * 公共 uniforms(u_model/u_view/u_projection/u_normalMatrix)由 _drawMesh
+   * 在调用本方法前已写入。光照方向缺省时退回材质自带的 lightDirection。
+   */
+  private _applyHairMeshUniforms(
+    program: ShaderProgram,
+    _mesh: Mesh,
+    camera: Camera,
+    mat: HairMarschnerMaterialCls,
+  ): void {
+    program.setUniform3f('u_cameraPos', camera.position.x, camera.position.y, camera.position.z);
+    program.setUniform3f('u_lightDir', mat.lightDirection.x, mat.lightDirection.y, mat.lightDirection.z);
+    program.setUniform3f('u_lightColor', mat.lightColor.r, mat.lightColor.g, mat.lightColor.b);
+    program.setUniform3f('u_baseColor', mat.baseColor.r, mat.baseColor.g, mat.baseColor.b);
+    program.setUniform1f('u_eta', mat.eta);
+    program.setUniform3f('u_sigmaA', mat.sigmaA.r, mat.sigmaA.g, mat.sigmaA.b);
+    program.setUniform1f('u_betaR', mat.betaR);
+    program.setUniform1f('u_betaTT', mat.betaTT);
+    program.setUniform1f('u_betaTRT', mat.betaTRT);
+    program.setUniform1f('u_alphaR', mat.alphaR);
+    program.setUniform1f('u_alphaTT', mat.alphaTT);
+    program.setUniform1f('u_alphaTRT', mat.alphaTRT);
+    program.setUniform1f('u_roughness', mat.roughness);
+    program.setUniform1f('u_ttScale', mat.ttScale);
+    program.setUniform1f('u_trtScale', mat.trtScale);
+    program.setUniform1f('u_diffuseScale', mat.diffuseScale);
+    program.setUniform1f('u_opacity', mat.opacity);
   }
 
   /** 用户 shader 路径:u_time 自动更新 + 用户 uniforms 应用。 */
