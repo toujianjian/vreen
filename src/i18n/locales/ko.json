@@ -1078,6 +1078,11 @@
         "title": "룩 수정(ASC-CDL)",
         "desc": "ASC-CDL 1.2 산업 표준 컬러 디시전 리스트(Slope/Offset/Power + Saturation). .cdl XML로 DaVinci Resolve / Nuke / Baselight와 상호 운용 가능. 순수 CPU ascCDL() 참조 함수 + GPU Pass. 항등 변환 시 GPU 작업 자동 스킵. 영화급 룩 교환, 일반적으로 Unreal/o3de만 갖춘 기능.",
         "advantage": "soup3D 컬러 그레이딩 없음"
+      },
+      "lutBlender": {
+        "title": "LUT 블렌더",
+        "desc": "멀티 LUT 계층 블렌더(o3de BlendColorGradingLutsPass 적응). 우선순위 + intensity + overrideStrength로 최대 4개 컬러 그레이딩 LUT를 계층 블렌드하여 LUTPass용 단일 블렌드 LUT 생성. 부드러운 주야 컬러 전환, 무드/영역 전환, 내러티브 효과를 1 LUT 샘플/픽셀로 구현. 순수 CPU, 더티 트래킹, 헤드리스 테스트 가능.",
+        "advantage": "soup3D LUT 지원 없음"
       }
     }
   }

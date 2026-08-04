@@ -2698,6 +2698,135 @@ like Unreal (LUT) and o3de (Look Modification).
 
 ---
 
+### LUTBlender
+
+Multi-LUT hierarchical blender (CPU utility, not a render pass). Blends up
+to 4 color grading LUTs using o3de's hierarchical weight formula
+(intensity + overrideStrength per LUT), producing a single blended LUT
+that can be fed to `LUTPass`. This enables smooth color grading
+transitions (day/night cycle, mood/area switches, narrative effects)
+with only 1 LUT sample per pixel at runtime instead of N.
+
+Adapted from o3de Atom `BlendColorGradingLutsPass` +
+`LookModificationSettings`.
+
+**Class**: `LUTBlender` (stateful manager with dirty tracking)
+**Pure functions**: `computeBlendWeights()`, `sampleLUT3D()`, `blendLUTs()`
+**Constants**: `MAX_BLEND_LUTS = 4` (matches o3de)
+
+#### Algorithm (o3de hierarchical blend weights)
+
+For N LUTs (ordered low → high priority), each with `intensity[i]` and
+`override[i]`:
+
+```
+weight[0] (base/ungraded) = Σᵢ (1-intensity[i]) * override[i] * Πⱼ₌ᵢ₊₁ (1-override[j])
+weight[i+1] (LUT i)       = intensity[i] * override[i] * Πⱼ₌ᵢ₊₁ (1-override[j])
+```
+
+All weights sum to 1 (energy conservation).
+
+**Intuition**:
+- `intensity` = how strongly this LUT dyes the color (0=none, 1=full)
+- `override` = how much this LUT suppresses lower-priority LUTs (1=full override)
+- A high-priority LUT with `override=1` completely hides all lower-priority LUTs
+
+#### Blending process
+
+```
+For each texel (x, y, z) in output LUT:
+  1. baseColor = (x/size, y/size, z/size)  // identity LUT color
+  2. blendedColor = baseColor * weight[0]
+  3. For each source LUT i:
+       sampledColor = trilinearSample(LUT_i, baseColor)
+       blendedColor += sampledColor * weight[i+1]
+  4. output[texel] = blendedColor
+```
+
+#### Usage
+
+```ts
+import { LUTBlender, makeIdentityLUT } from '@/engine/Renderer';
+
+const blender = new LUTBlender();
+
+// Day/night transition
+blender.setItems([
+  { lut: dayLUT,   intensity: 1.0, overrideStrength: 1.0 },
+  { lut: nightLUT, intensity: 1.0, overrideStrength: nightFactor }, // 0=day, 1=night
+]);
+
+// Only re-blend when dirty (intensity/override changed)
+if (blender.isDirty()) {
+  const blended = blender.blend();  // → { data: Float32Array, size: number }
+  lutPass.lut = uploadToTexture(blended);
+}
+
+// Smooth transition over time:
+blender.setOverrideStrength(1, lerp(0, 1, dayProgress));
+```
+
+#### Pure function API (headless / testing)
+
+```ts
+import { computeBlendWeights, blendLUTs, sampleLUT3D } from '@/engine/Renderer';
+
+// Compute weights without blending
+const weights = computeBlendWeights([1, 1], [1, 0.5]);
+// → [0, 0.5, 0.5, 0, 0]  (base=0, LUT0=0.5, LUT1=0.5)
+
+// Blend multiple LUTs
+const result = blendLUTs([
+  { lut: dayLUT,   intensity: 1.0, overrideStrength: 1.0 },
+  { lut: nightLUT, intensity: 1.0, overrideStrength: 0.5 },
+]);
+
+// Sample a LUT at a specific color
+const [r, g, b] = sampleLUT3D(lut.data, lut.size, 0.5, 0.3, 0.7);
+```
+
+#### vs LUTPass
+
+| Aspect           | LUTPass                    | LUTBlender                      |
+|------------------|----------------------------|---------------------------------|
+| Role             | Apply single LUT to scene  | Pre-blend multiple LUTs → one   |
+| GPU cost         | 1 sample/pixel             | 0 (CPU, runs only when dirty)   |
+| LUTs supported   | 1                          | Up to 4 (MAX_BLEND_LUTS)        |
+| Transitions      | Manual intensity lerp      | Hierarchical priority blend     |
+| Use case         | Final color grading        | Day/night, mood, area transitions|
+
+Both work together: `LUTBlender` generates the blended LUT, `LUTPass`
+applies it to the scene.
+
+#### vs soup3D
+
+soup3D has **no LUT support** of any kind. VREEN's `LUTBlender` adds
+professional multi-LUT hierarchical blending, a feature normally found
+only in film-grade engines like Unreal (LUT blend) and o3de
+(BlendColorGradingLutsPass).
+
+#### Test coverage
+
+42 tests covering:
+- `computeBlendWeights()`: empty, single LUT, two LUTs, full override,
+  energy conservation (sum=1), clamping to MAX_BLEND_LUTS, mismatched lengths
+- `sampleLUT3D()`: identity LUT, solid LUT, boundary clamping, trilinear accuracy
+- `blendLUTs()`: empty → identity, single LUT (full/half/zero intensity),
+  two LUTs (50/50, full override), outputSize, clamping
+- `makeIdentityLUT()` / `makeSolidLUT()`: correctness
+- `LUTBlender` class: dirty tracking, setItems, setIntensity,
+  setOverrideStrength, setOutputSize, markDirty, getWeights (cached + recompute),
+  day/night transition scenario, clamping, invalid index safety
+- `MAX_BLEND_LUTS` constant
+
+#### References
+
+- o3de Atom, `BlendColorGradingLutsPass.cpp` + `BlendColorGradingLuts.azsl`
+- o3de `LookModificationSettings` (MaxBlendLuts = 4, LutBlendItem)
+- ACES 1.0, Look Modification Transform
+
+---
+
 ### VelocityPass
 
 Per-pixel motion vectors for TAA and motion blur. Outputs a velocity texture

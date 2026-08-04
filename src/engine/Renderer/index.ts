@@ -542,4 +542,24 @@ export {
   ascCDL,
   isIdentityCDL,
 } from './PostProcess';
+// LUTBlender — 多 LUT 层级混合器(PostProcess/ 顶层重导出)。
+// 适配 o3de Atom BlendColorGradingLutsPass + LookModificationSettings。
+// 将最多 4 个颜色分级 LUT 按优先级 + intensity + overrideStrength 层级混合,
+// 生成单个 blended LUT 供 LUTPass 使用。适用于昼夜循环颜色过渡、区域/心情切换、叙事效果。
+// 纯 CPU 实现(三线性采样 + o3de 层级权重公式),不依赖 WebGL,可在 Node/无头环境测试。
+// 与 LUTPass 互补:LUTPass 应用单个 LUT,LUTBlender 在应用前把多个 LUT 预混合为一个,
+// 每帧只需 1 次 LUT 采样(而非 N 次),显著降低 GPU 开销。
+// soup3D 无任何 LUT 支持。
+export {
+  LUTBlender,
+  computeBlendWeights,
+  sampleLUT3D,
+  blendLUTs,
+  makeIdentityLUT,
+  makeSolidLUT,
+  MAX_BLEND_LUTS,
+  type LUT3DData,
+  type LUTBlendItem,
+  type LUTBlendOptions,
+} from './PostProcess';
 

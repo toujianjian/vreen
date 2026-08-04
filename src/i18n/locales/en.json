@@ -1078,6 +1078,11 @@
         "title": "Look Modification (ASC-CDL)",
         "desc": "ASC-CDL 1.2 industry-standard color decision list (Slope/Offset/Power + Saturation). Interoperable with DaVinci Resolve / Nuke / Baselight via .cdl XML. Pure CPU ascCDL() reference + GPU pass. Auto-skips GPU work on identity transform. Film-grade look exchange, normally only in Unreal/o3de.",
         "advantage": "soup3D has no color grading"
+      },
+      "lutBlender": {
+        "title": "LUT Blender",
+        "desc": "Multi-LUT hierarchical blender (o3de BlendColorGradingLutsPass adapted). Blends up to 4 color grading LUTs by priority + intensity + overrideStrength, generating a single blended LUT for LUTPass. Enables smooth day/night color transitions, mood/area switches, narrative effects with 1 LUT sample/pixel. Pure CPU, dirty-tracking, headless-testable.",
+        "advantage": "soup3D has no LUT support"
       }
     }
   }

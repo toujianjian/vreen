@@ -1078,6 +1078,11 @@
         "title": "Look 修改(ASC-CDL)",
         "desc": "ASC-CDL 1.2 行业标准色彩决策表(Slope/Offset/Power + Saturation)。可通过 .cdl XML 与 DaVinci Resolve / Nuke / Baselight 互操作。纯 CPU ascCDL() 参考函数 + GPU Pass。恒等变换时自动跳过 GPU 工作。影视级 Look 交换,通常仅 Unreal/o3de 具备。",
         "advantage": "soup3D 无色彩分级"
+      },
+      "lutBlender": {
+        "title": "LUT 混合器",
+        "desc": "多 LUT 层级混合器(适配 o3de BlendColorGradingLutsPass)。按优先级 + intensity + overrideStrength 将最多 4 个颜色分级 LUT 层级混合,生成单个 blended LUT 供 LUTPass 使用。实现平滑昼夜颜色过渡、心情/区域切换、叙事效果,每像素仅需 1 次 LUT 采样。纯 CPU,脏标记追踪,可无头测试。",
+        "advantage": "soup3D 无 LUT 支持"
       }
     }
   }
