@@ -864,6 +864,11 @@
         "desc": "Antialiasing temporal con jitter Halton y recorte de historial.",
         "advantage": "soup3D sin TAA"
       },
+      "motionBlurEnhanced": {
+        "title": "Desenfoque de Movimiento (Mejorado)",
+        "desc": "Desenfoque de movimiento con percepción de profundidad, clampeo mínimo de velocidad de vecindad 3×3 y muestreo con jitter Halton(2,3). Elimina el ghosting en los bordes de objetos y el streaking en discontinuidades de velocidad. El recuento de muestras se adapta a la velocidad del píxel.",
+        "advantage": "soup3D sin desenfoque de movimiento"
+      },
       "ssr": {
         "title": "SSR",
         "desc": "Reflexiones en espacio de pantalla con desenfoque modulado por rugosidad.",

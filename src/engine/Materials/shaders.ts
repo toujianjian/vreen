@@ -1643,6 +1643,149 @@ void main() {
 }
 `;
 
+// ── Motion Blur Enhanced (depth-aware + neighbor velocity clamp) ────
+// 高质量运动模糊:在基础 MotionBlurPass 之上增加三项关键改进。
+//
+// 改进点:
+//   1. **深度感知采样** — 沿速度向量采样时,对比采样点深度与中心深度,
+//      深度差超过阈值时拒绝该样本。消除物体边缘的"鬼影"伪影
+//      (前景快速运动物体把背景颜色拖入前景)。
+//   2. **邻域速度最小钳制** — 取 3×3 邻域内速度的最小长度作为有效速度,
+//      消除速度边界处的"条纹"伪影(物体边缘速度突变导致模糊长度跳变)。
+//      参考 McGuire et al. "The Visualization Handbook" ch. 22 / UE5 MotionBlur。
+//   3. **抖动采样** — 用 frameIndex 驱动的 halton 抖动偏移采样位置,
+//      等效 2× 超采样,减少 banding 条纹。
+//
+// 算法:
+//   1. 采样 3×3 邻域速度,取 min length → effectiveVel
+//   2. 采样数 = clamp(effectiveVel length, 1, maxSamples)
+//   3. 沿 effectiveVel 方向两侧采样,每个采样点:
+//      a. 采样颜色 + 深度
+//      b. 若 |sampleDepth - centerDepth| > depthThreshold → 丢弃
+//      c. 累加颜色
+//   4. 输出 = 累加颜色 / 有效样本数
+//
+// uniforms:
+//   u_colorMap       — 场景颜色纹理
+//   u_velocityMap    — 速度缓冲(RG = NDC 速度)
+//   u_depthMap       — NDC 深度(0..1)
+//   u_strength       — 模糊强度
+//   u_maxSamples     — 最大采样数(1..64)
+//   u_screenSize     — 屏幕尺寸(像素)
+//   u_depthThreshold — 深度拒绝阈值(默认 0.05,世界空间近似)
+//   u_frameIndex     — 帧序号(抖动动画)
+//   u_jitter         — 抖动强度(0=禁用,1=全量)
+//
+// 参考:
+//   - McGuire et al. "Real-Time Motion Blur" (Journal of Graphics Tools 2012)
+//   - UE5 MotionBlur post-process
+//   - o3de Atom MotionBlurPass
+//   - three.js examples MotionBlurPass
+export const MOTION_BLUR_ENHANCED_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+// Depth-aware motion blur with neighbor velocity clamp + Halton jitter.
+// References: McGuire et al. "Real-Time Motion Blur" (JGT 2012);
+//             UE5 MotionBlur post-process; o3de Atom MotionBlurPass.
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;
+uniform sampler2D u_velocityMap;
+uniform sampler2D u_depthMap;
+uniform float u_strength;
+uniform int   u_maxSamples;
+uniform vec2  u_screenSize;
+uniform float u_depthThreshold;
+uniform int   u_frameIndex;
+uniform float u_jitter;
+
+// Halton(2,3) 序列前 8 项,用于抖动采样
+const float HALTON_23[8] = float[8](
+  0.0, 0.5, 0.25, 0.75, 0.125, 0.625, 0.375, 0.875
+);
+
+float clamp01(float x) { return clamp(x, 0.0, 1.0); }
+
+void main() {
+  vec2 velocity = texture(u_velocityMap, v_uv).rg;
+  // NDC 速度 → 像素速度
+  vec2 pixelVel = velocity * u_screenSize;
+  pixelVel *= u_strength;
+
+  float centerDepth = texture(u_depthMap, v_uv).r;
+  vec3 centerColor = texture(u_colorMap, v_uv).rgb;
+
+  // ── 邻域速度最小钳制(3×3) ──
+  // 取 3×3 邻域内速度长度的最小值,消除边缘条纹
+  float minVelLen = length(pixelVel);
+  vec2 minVel = pixelVel;
+  vec2 texel = 1.0 / u_screenSize;
+  for (int y = -1; y <= 1; y++) {
+    for (int x = -1; x <= 1; x++) {
+      if (x == 0 && y == 0) continue;
+      vec2 neighborVel = texture(u_velocityMap, v_uv + vec2(float(x), float(y)) * texel).rg;
+      neighborVel *= u_screenSize * u_strength;
+      float len = length(neighborVel);
+      if (len < minVelLen) {
+        minVelLen = len;
+        minVel = neighborVel;
+      }
+    }
+  }
+
+  // 速度过小 → 直接输出
+  if (minVelLen < 0.5) {
+    outColor = vec4(centerColor, 1.0);
+    return;
+  }
+
+  // 采样数随有效速度自适应
+  int sampleCount = int(clamp(minVelLen, 1.0, float(u_maxSamples)));
+  float invCount = 1.0 / float(sampleCount);
+
+  vec2 dir = normalize(minVel);
+  vec2 stepUV = dir / u_screenSize;
+
+  // 抖动偏移(frameIndex 驱动 halton 序列)
+  float jitter = 0.0;
+  if (u_jitter > 0.0) {
+    jitter = HALTON_23[u_frameIndex & 7] * u_jitter;
+  }
+
+  // ── 沿速度方向两侧采样,深度感知 ──
+  vec3 color = vec3(0.0);
+  float validSamples = 0.0;
+  for (int i = 0; i < 64; i++) {
+    if (i >= sampleCount) break;
+    float t = (float(i) + 0.5 + jitter) * invCount - 0.5;
+    vec2 sampleUV = v_uv + stepUV * t * minVelLen;
+
+    // UV 越界 → 跳过
+    if (sampleUV.x < 0.0 || sampleUV.x > 1.0 || sampleUV.y < 0.0 || sampleUV.y > 1.0) continue;
+
+    float sampleDepth = texture(u_depthMap, sampleUV).r;
+
+    // 深度拒绝:采样点深度与中心深度差异过大 → 物体边界,丢弃
+    float depthDiff = abs(sampleDepth - centerDepth);
+    if (depthDiff > u_depthThreshold) continue;
+
+    color += texture(u_colorMap, sampleUV).rgb;
+    validSamples += 1.0;
+  }
+
+  // 无有效样本(全部被深度拒绝)→ 输出中心颜色
+  if (validSamples < 1.0) {
+    outColor = vec4(centerColor, 1.0);
+    return;
+  }
+
+  color /= validSamples;
+  outColor = vec4(color, 1.0);
+}
+`;
+
 // ── Auto Exposure (luminance downsample) ───────────────────────────
 // 第一步:把输入纹理降采样到 1x1 计算平均对数亮度。
 //

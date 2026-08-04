@@ -864,6 +864,11 @@
         "desc": "Temporal antialiasing with Halton jitter and history clipping.",
         "advantage": "soup3D has no TAA"
       },
+      "motionBlurEnhanced": {
+        "title": "Motion Blur (Enhanced)",
+        "desc": "Depth-aware motion blur with 3×3 neighbor velocity min-clamp and Halton(2,3) jittered sampling. Eliminates ghosting at object edges and streaking at velocity discontinuities. Adaptive sample count scales with pixel velocity.",
+        "advantage": "soup3D has no motion blur"
+      },
       "ssr": {
         "title": "SSR",
         "desc": "Screen-space reflections with roughness-modulated blur.",

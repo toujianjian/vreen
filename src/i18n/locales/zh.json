@@ -864,6 +864,11 @@
         "desc": "时间抗锯齿,Halton 抖动 + 历史裁剪。",
         "advantage": "soup3D 无 TAA"
       },
+      "motionBlurEnhanced": {
+        "title": "运动模糊(增强)",
+        "desc": "深度感知运动模糊,3×3 邻域速度最小钳制 + Halton(2,3) 抖动采样。消除物体边缘鬼影和速度突变处的条纹伪影。采样数随像素速度自适应。",
+        "advantage": "soup3D 无运动模糊"
+      },
       "ssr": {
         "title": "SSR",
         "desc": "屏幕空间反射,粗糙度调制模糊。",

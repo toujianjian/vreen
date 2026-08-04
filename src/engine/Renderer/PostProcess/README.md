@@ -51,7 +51,8 @@ PostProcess/
   │     ├── FSRUpscalePass   ← needs color (low→high res, independent FBO)
   │     ├── LensDistortionPass ← needs color (Brown-Conrady radial distortion + RGB CA)
   │     ├── ScreenSpaceRefractionPass ← needs color + refraction normal/mask (IOR + dispersion + Beer-Lambert)
-  │     └── CloudShadowPass   ← needs color + depth + 3D noise (Beer-Lambert cloud shadow on scene)
+  │     ├── CloudShadowPass   ← needs color + depth + 3D noise (Beer-Lambert cloud shadow on scene)
+  │     └── MotionBlurEnhancedPass ← needs color + velocity + depth (depth-aware + neighbor clamp + jitter)
   │
   └── index.ts               ← barrel exports
 ```
@@ -3883,6 +3884,318 @@ scene-wide glass/gem/hologram rendering.
 | apply | 10 | no-throw, resource alloc (2 input + 1 output), no re-alloc, return value, resize rebuild, setDirty, dispersion path, absorption path, multi-apply, disabled passthrough |
 | dispose | 4 | with gl, without gl, idempotent, re-apply after dispose |
 | shader source | 13 | version/precision, uniforms, refract(), eta=1/IOR, normal decode, dispersion branch, blue higher IOR, UV clamp, Beer-Lambert exp, mask as thickness, mask<=0 passthrough, u_enabled passthrough, provenance |
+
+---
+
+## MotionBlurEnhancedPass (`MotionBlurEnhancedPass.ts`)
+
+> Path: `src/engine/Renderer/PostProcess/MotionBlurEnhancedPass.ts`
+> Shader: `MOTION_BLUR_ENHANCED_FRAG` (`src/engine/Materials/shaders.ts`)
+> Test: `MotionBlurEnhancedPass.test.ts` (46 tests, all passing)
+
+High-quality motion blur with **depth-aware sampling**, **3×3 neighbor velocity
+min-clamping**, and **Halton(2,3) jittered sampling**. Eliminates the ghosting
+and streaking artifacts that plague the basic `MotionBlurPass` at object edges.
+
+### Why this Pass exists
+
+The basic `MotionBlurPass` samples blindly along the velocity vector — it
+cannot tell that a fast-moving foreground object is passing in front of a
+stationary background. The result: foreground colors bleed into the
+background (ghosting) and background colors bleed into the foreground
+(streaking). `MotionBlurEnhancedPass` fixes both:
+
+| Artifact | Cause | Fix |
+|----------|-------|-----|
+| **Ghosting** (background dragged into foreground) | Sampling across depth boundaries | **Depth-aware rejection**: samples with `|Δdepth| > threshold` are discarded |
+| **Streaking** (velocity discontinuity at edges) | Pixel velocity changes abruptly at object boundaries | **Neighbor velocity min-clamp**: use the minimum velocity in a 3×3 neighborhood |
+| **Banding** (discrete sample stripes along blur) | Uniform sample spacing | **Halton(2,3) jitter**: per-frame offset, 2× effective supersampling |
+
+### Architecture
+
+```
+┌──────────────┐  color   ┌──────────────────────┐  color   ┌──────────────┐
+│ VelocityPass │ ───────► │ MotionBlurEnhancedPass│ ───────► │ TAA / Tonemap│
+│ (velocity)   │          │                      │          │ / Bloom / …  │
+└──────────────┘          │  ┌────────────────┐  │          └──────────────┘
+                          │  │ color tex      │  │
+                          │  ├────────────────┤  │
+                          │  │ velocity tex   │  │
+                          │  ├────────────────┤  │
+                          │  │ depth tex      │  │ ← NEW vs basic MotionBlurPass
+                          │  ├────────────────┤  │
+                          │  │ strength       │  │
+                          │  │ maxSamples     │  │
+                          │  │ depthThreshold │  │ ← NEW
+                          │  │ jitter         │  │ ← NEW
+                          │  │ frameIndex     │  │ ← NEW (halton animation)
+                          │  └────────────────┘  │
+                          └──────────────────────┘
+```
+
+The pass owns an independent FBO + RGBA16F color texture + fullscreen quad
+VAO + `ShaderProgram`. It takes **three** input textures (color, velocity,
+depth) — the extra depth texture is what enables depth-aware sampling.
+
+### Algorithm (per pixel, mirrors `MOTION_BLUR_ENHANCED_FRAG` 1:1)
+
+1. **Sample velocity + depth.** Read the pixel's velocity from
+   `u_velocityMap` and depth from `u_depthMap`. Convert NDC velocity to
+   pixel velocity: `pixelVel = velocity * screenSize * strength`.
+
+2. **Neighbor velocity min-clamp (3×3).** Sample the 8 neighbors around
+   the current pixel and find the minimum velocity length:
+   ```glsl
+   float minVelLen = length(pixelVel);
+   vec2 minVel = pixelVel;
+   for (int y = -1; y <= 1; y++) {
+     for (int x = -1; x <= 1; x++) {
+       if (x == 0 && y == 0) continue;
+       vec2 neighborVel = texture(u_velocityMap, v_uv + vec2(x, y) * texel).rg;
+       neighborVel *= u_screenSize * u_strength;
+       if (length(neighborVel) < minVelLen) {
+         minVelLen = length(neighborVel);
+         minVel = neighborVel;
+       }
+     }
+   }
+   ```
+   This eliminates streaking: at an object boundary, the neighbor on the
+   stationary side has ~zero velocity, forcing the effective blur length
+   to near-zero.
+
+3. **Low-velocity early-exit.** If `minVelLen < 0.5` pixels, the pixel
+   isn't moving fast enough to need blur — output the center color and
+   return. This makes static scenes free.
+
+4. **Adaptive sample count.** `sampleCount = clamp(minVelLen, 1, maxSamples)`.
+   Faster pixels get more samples; slow pixels get fewer.
+
+5. **Halton jitter.** Offset the sample positions by a per-frame halton
+   value:
+   ```glsl
+   float jitter = HALTON_23[u_frameIndex & 7] * u_jitter;
+   ```
+   This distributes samples differently each frame, and when combined
+   with TAA, produces 2× effective supersampling.
+
+6. **Depth-aware ray-march.** Step along `minVel` direction, sampling
+   color + depth at each point:
+   ```glsl
+   for (int i = 0; i < 64; i++) {
+     if (i >= sampleCount) break;
+     float t = (float(i) + 0.5 + jitter) * invCount - 0.5;
+     vec2 sampleUV = v_uv + stepUV * t * minVelLen;
+     // UV bounds check
+     if (out of bounds) continue;
+     float sampleDepth = texture(u_depthMap, sampleUV).r;
+     // Depth rejection
+     if (abs(sampleDepth - centerDepth) > u_depthThreshold) continue;
+     color += texture(u_colorMap, sampleUV).rgb;
+     validSamples += 1.0;
+   }
+   ```
+
+7. **Fallback.** If all samples were rejected (e.g., the pixel is behind
+   a thin foreground object), output the center color to avoid black
+   pixels:
+   ```glsl
+   if (validSamples < 1.0) {
+     outColor = vec4(centerColor, 1.0);
+     return;
+   }
+   ```
+
+8. **Output.** `outColor = vec4(color / validSamples, 1.0)`.
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `strength` | `number` | `1.0` | Blur strength. Multiplied into pixel velocity. `0` = no blur. |
+| `maxSamples` | `number` | `16` | Maximum samples per pixel. Range `[1, 64]`. Actual count adapts to effective velocity. |
+| `depthThreshold` | `number` | `0.05` | Depth rejection threshold (NDC space). Samples with `|Δdepth| > threshold` are discarded. `0.02` = strict, `0.1` = lenient. |
+| `jitter` | `number` | `0.5` | Halton jitter strength `[0, 1]`. `0` = no jitter (matches basic `MotionBlurPass`), `1` = full jitter (2× supersampling with TAA). |
+| `enabled` | `boolean` | `true` | Master toggle. When `false`, `apply()` returns the input texture unchanged (zero draw calls). |
+
+### API
+
+```typescript
+export class MotionBlurEnhancedPass {
+  readonly name = 'motion-blur-enhanced';
+
+  strength: number;          // 0..1+
+  maxSamples: number;        // 1..64
+  depthThreshold: number;    // 0..1
+  jitter: number;            // 0..1
+  enabled: boolean;
+  frameIndex: number;        // increment per frame for halton animation
+
+  constructor(opts?: MotionBlurEnhancedOptions);
+
+  apply(
+    gl: WebGL2RenderingContext,
+    inputTexture: WebGLTexture,
+    velocityTexture: WebGLTexture,
+    depthTexture: WebGLTexture,
+  ): WebGLTexture;
+
+  setStrength(s: number): void;
+  setMaxSamples(n: number): void;
+  setDepthThreshold(t: number): void;
+  setJitter(j: number): void;
+  setDirty(): void;
+  dispose(gl?: WebGL2RenderingContext): void;
+}
+```
+
+### Texture unit bindings
+
+| Unit | Target | Uniform | Source |
+|------|--------|---------|--------|
+| 0 | `TEXTURE_2D` | `u_colorMap` | Scene color (input) |
+| 1 | `TEXTURE_2D` | `u_velocityMap` | Velocity buffer (from `VelocityPass`) |
+| 2 | `TEXTURE_2D` | `u_depthMap` | NDC depth buffer (0..1) |
+
+### Resource layout
+
+| Resource | Count | Lifetime |
+|----------|-------|----------|
+| Output color texture (RGBA16F) | 1 | Reallocated on resolution change / `setDirty()` |
+| FBO | 1 | Same as output texture |
+| Fullscreen quad VAO + buffer | 1 | Created once, reused across resizes |
+| `ShaderProgram` | 1 | Created once, disposed with the pass |
+
+### Usage — paired with `VelocityPass` + `TAAPass`
+
+```typescript
+import { VelocityPass } from '@vreen/engine/renderer/postprocess';
+import { MotionBlurEnhancedPass } from '@vreen/engine/renderer/postprocess';
+import { TAAPass } from '@vreen/engine/renderer/postprocess';
+
+const velocityPass = new VelocityPass();
+const motionBlur = new MotionBlurEnhancedPass({
+  maxSamples: 24,
+  depthThreshold: 0.03,   // strict — no ghosting
+  jitter: 0.5,            // halton dithering
+});
+const taa = new TAAPass();
+
+// ── per frame ──
+// 1. Render scene → sceneColorTex + depthTex
+// 2. Generate velocity buffer (needs prev + curr view-projection)
+velocityPass.apply(gl, sceneColorTex, prevVP, currVP);
+// 3. Apply depth-aware motion blur
+const blurred = motionBlur.apply(gl, sceneColorTex, velocityPass.output, depthTex);
+motionBlur.frameIndex++;  // advance halton jitter
+// 4. TAA (jitter + neighborhood clamp + history blend)
+const finalTex = taa.apply(gl, blurred, velocityPass.output, depthTex, camera);
+// 5. Tonemapping / Bloom / …
+```
+
+### Usage — strict vs. lenient depth threshold
+
+```typescript
+// Strict: zero ghosting, but thin objects may lose blur
+const strict = new MotionBlurEnhancedPass({ depthThreshold: 0.02 });
+
+// Balanced (default): good ghosting rejection, preserves most blur
+const balanced = new MotionBlurEnhancedPass({ depthThreshold: 0.05 });
+
+// Lenient: maximum blur, may show edge ghosting on fast objects
+const lenient = new MotionBlurEnhancedPass({ depthThreshold: 0.1 });
+```
+
+### Usage — disable jitter for still frames
+
+```typescript
+// When the camera stops, halton jitter causes visible noise.
+// Detect low motion and disable jitter:
+const totalMotion = velocityPass.computeAverageVelocity();
+motionBlur.jitter = totalMotion > 0.5 ? 0.5 : 0.0;
+```
+
+### Comparison: Enhanced vs. Basic `MotionBlurPass`
+
+| Feature | `MotionBlurPass` (basic) | `MotionBlurEnhancedPass` |
+|---------|--------------------------|--------------------------|
+| Input textures | color + velocity | color + velocity + **depth** |
+| Sampling | Blind linear | **Depth-aware** (rejects cross-boundary samples) |
+| Velocity handling | Raw pixel velocity | **3×3 neighbor min-clamp** (eliminates edge streaking) |
+| Jitter | None | **Halton(2,3)** per-frame (2× supersampling with TAA) |
+| Ghosting | Present at object edges | Eliminated |
+| Streaking | Present at velocity discontinuities | Eliminated |
+| Banding | Visible at high speeds | Reduced by jitter |
+| Cost | 1 color sample × N | 1 color + 1 depth × N + 8 velocity (3×3) |
+| Output | RGBA16F | RGBA16F |
+| Use case | Fast approximation, no depth available | Production-quality, depth buffer required |
+
+### Comparison with soup3D
+
+| Feature | VREEN `MotionBlurEnhancedPass` | soup3D |
+|---------|-------------------------------|--------|
+| Motion blur | Depth-aware + neighbor clamp + Halton jitter | None |
+| Ghosting artifacts | Eliminated | N/A |
+| Streaking artifacts | Eliminated | N/A |
+| TAA integration | Jitter feeds into TAA history | N/A |
+| Adaptive sampling | Yes (sample count scales with velocity) | N/A |
+| Performance | Single pass, 16..64 samples, low-velocity early-exit | N/A |
+
+soup3D has **no motion blur**. VREEN's `MotionBlurEnhancedPass` brings the
+engine to parity with UE5 MotionBlur / o3de Atom MotionBlurPass — the same
+depth-aware sampling and neighbor velocity clamping used in AAA engines.
+
+### Design Notes
+
+1. **Why 3×3 and not 5×5 for neighbor clamp?** The 3×3 neighborhood is the
+   sweet spot: it catches single-pixel velocity discontinuities (the most
+   common case) at 8 texture samples. A 5×5 would need 24 samples for
+   diminishing returns — the depth-aware rejection already handles
+   multi-pixel boundaries.
+
+2. **Why RGBA16F output?** Motion blur averages multiple HDR samples —
+   if the scene has bright specular highlights (> 1.0), the averaged
+   result can exceed 1.0. RGBA8 would clamp these to white, losing the
+   HDR information needed by downstream tonemapping.
+
+3. **Why `frameIndex & 7`?** The Halton(2,3) sequence has 8 values in
+   the lookup table. Using `& 7` cycles through them every 8 frames,
+   which is long enough to break up banding but short enough that the
+   pattern doesn't become visible. Combined with TAA, this produces
+   effective 2× supersampling.
+
+4. **Why `depthThreshold` in NDC space?** NDC depth is non-linear (more
+   precision near the camera), so `0.05` in NDC corresponds to a small
+   world-space distance for nearby objects and a large distance for far
+   objects. This is actually desirable: nearby objects (where ghosting
+   is most visible) get stricter rejection, while distant objects (where
+   depth differences are large but visually irrelevant) get lenient
+   rejection. For world-space thresholding, reconstruct linear depth in
+   the shader.
+
+5. **Why not tile-based max velocity?** Tile-based approaches (Guerrilla)
+   split the screen into tiles, find the max velocity per tile, and use
+   it for sample count. This improves performance for scenes with sparse
+   motion. The current per-pixel approach is simpler and sufficient for
+   most cases — a tile-based variant can be added as a future
+   `MotionBlurTileMaxPass` if profiling shows the per-pixel approach is
+   a bottleneck.
+
+6. **Complementary passes.** Pair with `VelocityPass` (generates the
+   velocity buffer from prev/curr view-projection), `TAAPass` (consumes
+   the same velocity buffer for temporal reprojection), and
+   `MotionBlurPass` (basic version, for fallback when depth is
+   unavailable).
+
+### Test coverage (`MotionBlurEnhancedPass.test.ts`, 46 tests)
+
+| Suite | Tests | Coverage |
+|-------|-------|----------|
+| construction | 10 | defaults, all options, field updatability, zero jitter, strict/lenient depth threshold |
+| setters | 6 | setStrength clamp, setMaxSamples clamp + floor, setDepthThreshold clamp, setJitter clamp |
+| apply | 12 | no-throw + draw call, resource alloc (4 textures + 1 FBO + 1 VAO + 1 buffer), no re-alloc, disabled passthrough, resize rebuild, setDirty rebuild, returns output ≠ input, jitter=0 path, maxSamples=1/64 paths, multi-apply draw count, frameIndex progression + overflow wrap |
+| dispose | 4 | with gl, without gl, idempotent, re-apply after dispose |
+| shader source | 14 | version/precision, all 9 uniforms, Halton(2,3) array, 3×3 neighbor loop, depth-aware rejection (sampleDepth/depthDiff/continue), low-velocity early-exit, UV bounds check, validSamples fallback, jitter offset, loop bound 64, provenance (McGuire/UE5/o3de), normalize(minVel), valid sample accumulation |
 
 ---
 

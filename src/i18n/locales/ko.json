@@ -864,6 +864,11 @@
         "desc": "템포럴 AA, Halton 지터 + 히스토리 클리핑.",
         "advantage": "soup3D에 TAA 없음"
       },
+      "motionBlurEnhanced": {
+        "title": "모션 블러(향상)",
+        "desc": "깊이 인식 모션 블러, 3×3 이웃 속도 최소 클램프 + Halton(2,3) 지터 샘플링. 오브젝트 에지의 고스팅과 속도 불연속부의 스트리킹 아티팩트를 제거. 샘플 수는 픽셀 속도에 따라 적응적으로 스케일.",
+        "advantage": "soup3D에 모션 블러 없음"
+      },
       "ssr": {
         "title": "SSR",
         "desc": "스크린 공간 반사, 거칠기 변조 블러.",
