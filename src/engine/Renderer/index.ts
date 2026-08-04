@@ -721,6 +721,30 @@ export {
   type BrightPassParams,
   type BloomEnhancedOptions,
 } from './PostProcess';
+// DOFEnhancedPass — 增强景深后处理 Pass(PostProcess/ 顶层重导出)。
+// 基于 Circle of Confusion (CoC) 的物理散景模型,支持圆/六边形/八边形散景形状。
+// 16 方向采样 + bokehWeight 形状判定 + mix(center, blurred, coc) 合成。
+// 1:1 CPU/GPU 参考(dofReconstructViewPos / dofBokehWeight / computeCoC /
+// dofBokehRadius / dofSampleColor / dofPixel / computeDOF),纯函数不依赖 WebGL。
+// 适配 Potmesil & Chakravarty 1981 + GPU Gems 1 Ch.23 + three.js BokehShader +
+// o3de Atom DepthOfFieldBokehBlurPass。
+// soup3D 无景深实现。
+export {
+  DOFEnhancedPass,
+  dofReconstructViewPos,
+  dofBokehWeight,
+  computeCoC,
+  dofBokehRadius,
+  dofSampleColor,
+  dofPixel,
+  computeDOF,
+  DEFAULT_DOF_PARAMS,
+  DOF_SAMPLES,
+  type DOFEnhancedPassOptions,
+  type DOFParams,
+  type DOFCameraParams,
+  type DOFColor,
+} from './PostProcess';
 
 // LightingChannelMask — 灯光通道掩码(适配自 o3de Atom LightingChannelConfiguration)。
 // 每盏灯与每个物体各持一个 32 位通道掩码;渲染时 (lightMask & objectMask) != 0 才照亮。

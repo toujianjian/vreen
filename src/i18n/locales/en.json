@@ -1010,8 +1010,8 @@
         "advantage": "soup3D has no auto exposure"
       },
       "dof": {
-        "title": "Depth of Field",
-        "desc": "Enhanced DoF: circle-of-confusion computation + circular/hexagonal/octagonal bokeh shapes. Cinematic focus pulls with smooth background blur.",
+        "title": "Depth of Field (CoC + Bokeh)",
+        "desc": "Production-grade DoF adapted from Potmesil & Chakravarty 1981, GPU Gems 1 Ch.23, three.js BokehShader, and o3de Atom DepthOfFieldBokehBlurPass. Computes Circle of Confusion (CoC) from view-space depth via inverse projection: CoC = clamp(|dist - focusDistance| / focusRange, 0, 1). 16-direction bokeh sampling with three shape kernels: circle (default), hexagon (6-edge diamond, r=0.866), octagon (max(|cos|,|sin|), r=0.924). Configurable: focusDistance, focusRange, bokehShape (0/1/2), bokehSize (px), maxRadius (px, clamps GPU cost). Skybox passthrough (depth >= 0.99999). Sub-pixel radius skip (< 0.5px = sharp). 1:1 CPU/GPU reference (dofReconstructViewPos / dofBokehWeight / computeCoC / dofBokehRadius / dofSampleColor / dofPixel / computeDOF) for headless testing and offline rendering. 54 unit tests. RGBA16F output for HDR bokeh highlights.",
         "advantage": "soup3D has no DoF"
       },
       "contactShadows": {

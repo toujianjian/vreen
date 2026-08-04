@@ -1010,8 +1010,8 @@
         "advantage": "soup3D 无自动曝光"
       },
       "dof": {
-        "title": "景深",
-        "desc": "增强景深:弥散圆计算 + 圆形/六边形/八边形散景形状。电影级焦点转换与平滑背景虚化。",
+        "title": "景深 (CoC + 散景)",
+        "desc": "生产级景深,适配自 Potmesil & Chakravarty 1981、GPU Gems 1 第 23 章、three.js BokehShader 与 o3de Atom DepthOfFieldBokehBlurPass。通过逆投影矩阵从视图空间深度计算弥散圆:CoC = clamp(|dist - focusDistance| / focusRange, 0, 1)。16 方向散景采样,支持三种形状核:圆形(默认)、六边形(6 边菱形,r=0.866)、八边形(max(|cos|,|sin|),r=0.924)。可配置:focusDistance、focusRange、bokehShape(0/1/2)、bokehSize(像素)、maxRadius(像素,限制 GPU 开销)。天空盒直通(depth >= 0.99999)。亚像素半径跳过(< 0.5px = 清晰)。1:1 CPU/GPU 参考实现(dofReconstructViewPos / dofBokehWeight / computeCoC / dofBokehRadius / dofSampleColor / dofPixel / computeDOF),支持无头测试与离线渲染。54 个单元测试。RGBA16F 输出支持 HDR 散景高亮。",
         "advantage": "soup3D 无景深"
       },
       "contactShadows": {

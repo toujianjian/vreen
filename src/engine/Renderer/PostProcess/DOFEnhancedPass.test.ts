@@ -10,9 +10,24 @@
 //   7. dispose() 释放内部资源
 //   8. dispose() 幂等
 //   9. apply() after dispose 重新分配
+//  10. 纯 CPU 函数: dofReconstructViewPos / dofBokehWeight / computeCoC /
+//      dofBokehRadius / dofSampleColor / dofPixel / computeDOF
 
 import { describe, it, expect } from 'vitest';
-import { DOFEnhancedPass } from './DOFEnhancedPass';
+import {
+  DOFEnhancedPass,
+  dofReconstructViewPos,
+  dofBokehWeight,
+  computeCoC,
+  dofBokehRadius,
+  dofSampleColor,
+  dofPixel,
+  computeDOF,
+  DEFAULT_DOF_PARAMS,
+  DOF_SAMPLES,
+  type DOFParams,
+  type DOFCameraParams,
+} from './DOFEnhancedPass';
 import { Camera } from '../../Cameras/Camera';
 import { PerspectiveCamera } from '../../Cameras/PerspectiveCamera';
 
@@ -310,5 +325,397 @@ describe('DOFEnhancedPass dispose', () => {
     p.apply(gl as unknown as WebGL2RenderingContext, makeTexture('c2'), makeTexture('d2'), makeCamera());
     expect(gl.createdTextures.length).toBe(2);
     expect(gl.deletedTextures.length).toBe(deletedAfterDispose);
+  });
+});
+
+// ── 纯 CPU 函数测试 ────────────────────────────────────────────────
+
+// 单位矩阵(列主序 4×4)— 用作 inverseProjectionMatrix,使 viewPos = ndc
+const IDENTITY_MAT4 = new Float32Array([
+  1, 0, 0, 0,
+  0, 1, 0, 0,
+  0, 0, 1, 0,
+  0, 0, 0, 1,
+]);
+
+function makeIdentityCamera(): DOFCameraParams {
+  return { near: 0, far: 2, inverseProjectionMatrix: IDENTITY_MAT4 };
+}
+
+// 构造纯色 RGBA 颜色缓冲(width*height*4)
+function makeSolidColor(w: number, h: number, r: number, g: number, b: number): Float32Array {
+  const buf = new Float32Array(w * h * 4);
+  for (let i = 0; i < w * h; i++) {
+    buf[i * 4] = r;
+    buf[i * 4 + 1] = g;
+    buf[i * 4 + 2] = b;
+    buf[i * 4 + 3] = 1;
+  }
+  return buf;
+}
+
+// 构造平坦深度缓冲(所有像素同一深度)
+function makeFlatDepth(w: number, h: number, d: number): Float32Array {
+  const buf = new Float32Array(w * h);
+  buf.fill(d);
+  return buf;
+}
+
+// ── 常量 ───────────────────────────────────────────────────────────
+
+describe('DOF constants', () => {
+  it('DOF_SAMPLES = 16 (matches GPU shader)', () => {
+    expect(DOF_SAMPLES).toBe(16);
+  });
+
+  it('DEFAULT_DOF_PARAMS has correct defaults', () => {
+    expect(DEFAULT_DOF_PARAMS.focusDistance).toBe(10.0);
+    expect(DEFAULT_DOF_PARAMS.focusRange).toBe(5.0);
+    expect(DEFAULT_DOF_PARAMS.bokehShape).toBe(0);
+    expect(DEFAULT_DOF_PARAMS.bokehSize).toBe(16.0);
+    expect(DEFAULT_DOF_PARAMS.maxRadius).toBe(32.0);
+  });
+});
+
+// ── dofReconstructViewPos ──────────────────────────────────────────
+
+describe('dofReconstructViewPos', () => {
+  it('returns [0,0,-1] for uv=(0.5,0.5) depth=0 with identity matrix', () => {
+    // uv=(0.5,0.5) → ndc=(0,0,-1), depth=0 → ndc.z=-1
+    // identity: viewPos = ndc = (0, 0, -1)
+    const pos = dofReconstructViewPos([0.5, 0.5], 0.0, IDENTITY_MAT4);
+    expect(pos[0]).toBeCloseTo(0, 5);
+    expect(pos[1]).toBeCloseTo(0, 5);
+    expect(pos[2]).toBeCloseTo(-1, 5);
+  });
+
+  it('returns [0,0,1] for uv=(0.5,0.5) depth=1 with identity matrix', () => {
+    // depth=1 → ndc.z=1
+    const pos = dofReconstructViewPos([0.5, 0.5], 1.0, IDENTITY_MAT4);
+    expect(pos[0]).toBeCloseTo(0, 5);
+    expect(pos[1]).toBeCloseTo(0, 5);
+    expect(pos[2]).toBeCloseTo(1, 5);
+  });
+
+  it('maps uv corners to NDC [-1,1]', () => {
+    // uv=(0,0) → ndc=(-1,-1)
+    const p00 = dofReconstructViewPos([0, 0], 0.5, IDENTITY_MAT4);
+    expect(p00[0]).toBeCloseTo(-1, 5);
+    expect(p00[1]).toBeCloseTo(-1, 5);
+
+    // uv=(1,1) → ndc=(1,1)
+    const p11 = dofReconstructViewPos([1, 1], 0.5, IDENTITY_MAT4);
+    expect(p11[0]).toBeCloseTo(1, 5);
+    expect(p11[1]).toBeCloseTo(1, 5);
+  });
+
+  it('returns [0,0,0] when w component is ~0 (degenerate)', () => {
+    // 构造一个使 w=0 的矩阵(最后一列全 0)
+    const degenerate = new Float32Array([
+      1, 0, 0, 0,
+      0, 1, 0, 0,
+      0, 0, 1, 0,
+      0, 0, 0, 0, // w 行全 0
+    ]);
+    const pos = dofReconstructViewPos([0.5, 0.5], 0.5, degenerate);
+    expect(pos[0]).toBe(0);
+    expect(pos[1]).toBe(0);
+    expect(pos[2]).toBe(0);
+  });
+});
+
+// ── dofBokehWeight ─────────────────────────────────────────────────
+
+describe('dofBokehWeight', () => {
+  it('returns 1.0 for zero offset (center)', () => {
+    expect(dofBokehWeight([0, 0], 0)).toBe(1.0);
+    expect(dofBokehWeight([0, 0], 1)).toBe(1.0);
+    expect(dofBokehWeight([0, 0], 2)).toBe(1.0);
+  });
+
+  it('circle: returns 1.0 for |offset| <= 1', () => {
+    expect(dofBokehWeight([1, 0], 0)).toBe(1.0);
+    expect(dofBokehWeight([0, 1], 0)).toBe(1.0);
+    expect(dofBokehWeight([0.7071, 0.7071], 0)).toBe(1.0); // r=1
+  });
+
+  it('circle: returns 0.0 for |offset| > 1', () => {
+    expect(dofBokehWeight([1.001, 0], 0)).toBe(0.0);
+    expect(dofBokehWeight([0.8, 0.8], 0)).toBe(0.0); // r ≈ 1.13
+  });
+
+  it('hexagon: returns 1.0 for cardinal directions at r=0.866', () => {
+    // 六边形在 0°/60°/120° 方向的半径为 0.8660254
+    const r = 0.8660254;
+    expect(dofBokehWeight([r, 0], 1)).toBe(1.0);
+    expect(dofBokehWeight([r * 0.5, r * 0.8660254], 1)).toBe(1.0); // 60°
+  });
+
+  it('hexagon: returns 0.0 beyond shape boundary', () => {
+    // 在 45° 方向,六边形边界 < 1
+    expect(dofBokehWeight([1, 1], 1)).toBe(0.0);
+  });
+
+  it('octagon: returns 1.0 for cardinal directions at r=0.9239', () => {
+    const r = 0.9238795;
+    expect(dofBokehWeight([r, 0], 2)).toBe(1.0);
+    expect(dofBokehWeight([0, r], 2)).toBe(1.0);
+  });
+
+  it('octagon: returns 0.0 beyond shape boundary', () => {
+    expect(dofBokehWeight([1, 1], 2)).toBe(0.0);
+  });
+
+  it('unknown shape falls back to circle (0)', () => {
+    expect(dofBokehWeight([0.5, 0.5], 99)).toBe(1.0); // circle
+    expect(dofBokehWeight([1.5, 0], 99)).toBe(0.0);
+  });
+});
+
+// ── computeCoC ─────────────────────────────────────────────────────
+
+describe('computeCoC', () => {
+  it('returns 0 when dist == focusDistance', () => {
+    expect(computeCoC(10, 10, 5)).toBe(0);
+    expect(computeCoC(5, 5, 2)).toBe(0);
+  });
+
+  it('returns 0 when dist within focusRange', () => {
+    // dist=12, focus=10, range=5 → |12-10|/5 = 0.4
+    expect(computeCoC(12, 10, 5)).toBeCloseTo(0.4, 5);
+    // dist=8 → |8-10|/5 = 0.4
+    expect(computeCoC(8, 10, 5)).toBeCloseTo(0.4, 5);
+  });
+
+  it('returns 1 when dist beyond focusRange', () => {
+    // dist=20, focus=10, range=5 → |20-10|/5 = 2.0 → clamp 1.0
+    expect(computeCoC(20, 10, 5)).toBe(1.0);
+    expect(computeCoC(0, 10, 5)).toBe(1.0);
+  });
+
+  it('handles near-zero focusRange (clamps to 1e-4)', () => {
+    // focusRange=0 → range=1e-4 → coc = |10-10|/1e-4 = 0
+    expect(computeCoC(10, 10, 0)).toBe(0);
+    // dist slightly off → coc >> 1 → clamp 1.0
+    expect(computeCoC(10.001, 10, 0)).toBe(1.0);
+  });
+
+  it('is symmetric around focusDistance', () => {
+    const c1 = computeCoC(15, 10, 5);
+    const c2 = computeCoC(5, 10, 5);
+    expect(c1).toBeCloseTo(c2, 5);
+  });
+
+  it('never returns negative', () => {
+    expect(computeCoC(-100, 10, 5)).toBe(1.0);
+    expect(computeCoC(10, 10, 5)).toBeGreaterThanOrEqual(0);
+  });
+
+  it('never exceeds 1.0', () => {
+    expect(computeCoC(1000, 10, 5)).toBeLessThanOrEqual(1.0);
+    expect(computeCoC(0, 10, 5)).toBeLessThanOrEqual(1.0);
+  });
+});
+
+// ── dofBokehRadius ─────────────────────────────────────────────────
+
+describe('dofBokehRadius', () => {
+  it('returns coc * bokehSize when within maxRadius', () => {
+    expect(dofBokehRadius(0.5, 16, 32)).toBe(8); // 0.5 * 16 = 8 < 32
+    expect(dofBokehRadius(1.0, 16, 32)).toBe(16); // 1.0 * 16 = 16 < 32
+  });
+
+  it('clamps to maxRadius', () => {
+    expect(dofBokehRadius(1.0, 16, 10)).toBe(10); // 16 > 10 → 10
+    expect(dofBokehRadius(1.0, 64, 32)).toBe(32); // 64 > 32 → 32
+  });
+
+  it('returns 0 when coc=0', () => {
+    expect(dofBokehRadius(0, 16, 32)).toBe(0);
+  });
+});
+
+// ── dofSampleColor ─────────────────────────────────────────────────
+
+describe('dofSampleColor', () => {
+  it('returns exact pixel color at integer UV', () => {
+    // 2×2 buffer: (0,0)=red, (1,0)=green, (0,1)=blue, (1,1)=white
+    const w = 2, h = 2;
+    const buf = new Float32Array([
+      1, 0, 0, 1, // (0,0) red
+      0, 1, 0, 1, // (1,0) green
+      0, 0, 1, 1, // (0,1) blue
+      1, 1, 1, 1, // (1,1) white
+    ]);
+    // UV (0,0) → pixel (0,0) = red
+    const c00 = dofSampleColor(buf, w, h, 0, 0);
+    expect(c00[0]).toBeCloseTo(1, 5);
+    expect(c00[1]).toBeCloseTo(0, 5);
+    expect(c00[2]).toBeCloseTo(0, 5);
+  });
+
+  it('bilinearly interpolates between 2 pixels', () => {
+    const w = 2, h = 1;
+    const buf = new Float32Array([
+      0, 0, 0, 1, // (0,0) black
+      1, 1, 1, 1, // (1,0) white
+    ]);
+    // UV (0.5, 0) → halfway between black and white → 0.5
+    const c = dofSampleColor(buf, w, h, 0.5, 0);
+    expect(c[0]).toBeCloseTo(0.5, 5);
+    expect(c[1]).toBeCloseTo(0.5, 5);
+    expect(c[2]).toBeCloseTo(0.5, 5);
+  });
+
+  it('clamps UV to [0,1]', () => {
+    const buf = new Float32Array([1, 0, 0, 1]);
+    const c = dofSampleColor(buf, 1, 1, -1, 5);
+    expect(c[0]).toBeCloseTo(1, 5);
+  });
+
+  it('supports RGB stride (3)', () => {
+    const w = 2, h = 1;
+    const buf = new Float32Array([0, 0, 0, 1, 1, 1]); // RGB RGB
+    const c = dofSampleColor(buf, w, h, 1, 0, 3);
+    expect(c[0]).toBeCloseTo(1, 5);
+    expect(c[1]).toBeCloseTo(1, 5);
+    expect(c[2]).toBeCloseTo(1, 5);
+  });
+});
+
+// ── dofPixel ───────────────────────────────────────────────────────
+
+describe('dofPixel', () => {
+  it('passes through skybox pixels (depth >= 0.99999)', () => {
+    const w = 4, h = 4;
+    const color = makeSolidColor(w, h, 0.5, 0.5, 0.5);
+    const depth = makeFlatDepth(w, h, 1.0); // skybox
+    const result = dofPixel(color, depth, w, h, 0, 0, DEFAULT_DOF_PARAMS, makeIdentityCamera());
+    expect(result[0]).toBeCloseTo(0.5, 5);
+    expect(result[1]).toBeCloseTo(0.5, 5);
+    expect(result[2]).toBeCloseTo(0.5, 5);
+  });
+
+  it('passes through in-focus pixels (radius < 0.5)', () => {
+    // 用 identity 矩阵:depth=0 → ndc.z=-1 → viewPos.z=-1 → dist=1
+    // focusDistance=10 → coc = |1-10|/5 = 1.8 → clamp 1.0
+    // 但我们需要 coc=0 → 设 focusDistance=1
+    const w = 4, h = 4;
+    const color = makeSolidColor(w, h, 0.3, 0.6, 0.9);
+    const depth = makeFlatDepth(w, h, 0.0); // viewPos.z = -1, dist = 1
+    const params: DOFParams = { ...DEFAULT_DOF_PARAMS, focusDistance: 1.0 };
+    const result = dofPixel(color, depth, w, h, 1, 1, params, makeIdentityCamera());
+    // In focus → passes through original color
+    expect(result[0]).toBeCloseTo(0.3, 5);
+    expect(result[1]).toBeCloseTo(0.6, 5);
+    expect(result[2]).toBeCloseTo(0.9, 5);
+  });
+
+  it('blurs out-of-focus pixels (solid color stays same)', () => {
+    // 纯色缓冲:即散景模糊后还是同一颜色
+    const w = 8, h = 8;
+    const color = makeSolidColor(w, h, 0.7, 0.2, 0.4);
+    // depth=0.5 → ndc.z=0 → viewPos.z=0 → dist=0
+    // focusDistance=10 → coc=1 → radius=16(但 maxRadius=32, bokehSize=16)
+    const depth = makeFlatDepth(w, h, 0.5);
+    const result = dofPixel(color, depth, w, h, 4, 4, DEFAULT_DOF_PARAMS, makeIdentityCamera());
+    // 纯色 → 模糊后仍为纯色
+    expect(result[0]).toBeCloseTo(0.7, 5);
+    expect(result[1]).toBeCloseTo(0.2, 5);
+    expect(result[2]).toBeCloseTo(0.4, 5);
+  });
+
+  it('produces blurred color for non-uniform buffer', () => {
+    // 8×8 buffer: left half red, right half blue
+    const w = 8, h = 8;
+    const color = new Float32Array(w * h * 4);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = (y * w + x) * 4;
+        if (x < w / 2) {
+          color[i] = 1; color[i + 1] = 0; color[i + 2] = 0; color[i + 3] = 1;
+        } else {
+          color[i] = 0; color[i + 1] = 0; color[i + 2] = 1; color[i + 3] = 1;
+        }
+      }
+    }
+    // 中心像素 (4,4) 在边界,模糊后应为红蓝混合
+    const depth = makeFlatDepth(w, h, 0.5); // dist=0, focusDistance=10 → coc=1
+    const result = dofPixel(color, depth, w, h, 4, 4, DEFAULT_DOF_PARAMS, makeIdentityCamera());
+    // 应该有红和蓝的成分(不是纯红或纯蓝)
+    expect(result[0]).toBeGreaterThan(0);
+    expect(result[2]).toBeGreaterThan(0);
+    // 红蓝之和应接近(因为对称采样)
+    expect(result[0] + result[2]).toBeCloseTo(1, 1);
+  });
+
+  it('clamps bokehShape to valid range', () => {
+    const w = 4, h = 4;
+    const color = makeSolidColor(w, h, 0.5, 0.5, 0.5);
+    const depth = makeFlatDepth(w, h, 0.5);
+    const params: DOFParams = { ...DEFAULT_DOF_PARAMS, bokehShape: 99 };
+    // Should not throw
+    expect(() => dofPixel(color, depth, w, h, 0, 0, params, makeIdentityCamera())).not.toThrow();
+  });
+});
+
+// ── computeDOF ─────────────────────────────────────────────────────
+
+describe('computeDOF', () => {
+  it('returns the same buffer reference (in-place)', () => {
+    const w = 4, h = 4;
+    const color = makeSolidColor(w, h, 0.5, 0.5, 0.5);
+    const depth = makeFlatDepth(w, h, 1.0); // skybox
+    const result = computeDOF(color, depth, w, h, DEFAULT_DOF_PARAMS, makeIdentityCamera());
+    expect(result).toBe(color);
+  });
+
+  it('passes through all-skybox buffer unchanged', () => {
+    const w = 4, h = 4;
+    const color = makeSolidColor(w, h, 0.3, 0.4, 0.5);
+    const depth = makeFlatDepth(w, h, 1.0);
+    const original = new Float32Array(color);
+    computeDOF(color, depth, w, h, DEFAULT_DOF_PARAMS, makeIdentityCamera());
+    for (let i = 0; i < color.length; i++) {
+      expect(color[i]).toBeCloseTo(original[i], 5);
+    }
+  });
+
+  it('passes through all-in-focus buffer unchanged', () => {
+    const w = 4, h = 4;
+    const color = makeSolidColor(w, h, 0.3, 0.4, 0.5);
+    const depth = makeFlatDepth(w, h, 0.0); // dist=1
+    const params: DOFParams = { ...DEFAULT_DOF_PARAMS, focusDistance: 1.0 };
+    const original = new Float32Array(color);
+    computeDOF(color, depth, w, h, params, makeIdentityCamera());
+    for (let i = 0; i < color.length; i++) {
+      expect(color[i]).toBeCloseTo(original[i], 5);
+    }
+  });
+
+  it('preserves alpha channel (stride=4)', () => {
+    const w = 4, h = 4;
+    const color = makeSolidColor(w, h, 0.5, 0.5, 0.5);
+    // Set unique alpha values
+    for (let i = 0; i < w * h; i++) color[i * 4 + 3] = 0.7;
+    const depth = makeFlatDepth(w, h, 1.0); // skybox passthrough
+    computeDOF(color, depth, w, h, DEFAULT_DOF_PARAMS, makeIdentityCamera());
+    for (let i = 0; i < w * h; i++) {
+      expect(color[i * 4 + 3]).toBeCloseTo(0.7, 5);
+    }
+  });
+
+  it('processes every pixel (no exceptions)', () => {
+    const w = 8, h = 8;
+    const color = makeSolidColor(w, h, 0.5, 0.5, 0.5);
+    const depth = makeFlatDepth(w, h, 0.5);
+    expect(() => computeDOF(color, depth, w, h, DEFAULT_DOF_PARAMS, makeIdentityCamera())).not.toThrow();
+  });
+
+  it('handles non-square buffers', () => {
+    const w = 16, h = 4;
+    const color = makeSolidColor(w, h, 0.5, 0.5, 0.5);
+    const depth = makeFlatDepth(w, h, 0.5);
+    expect(() => computeDOF(color, depth, w, h, DEFAULT_DOF_PARAMS, makeIdentityCamera())).not.toThrow();
   });
 });

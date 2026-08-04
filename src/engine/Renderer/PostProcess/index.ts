@@ -80,7 +80,22 @@ export { MotionBlurPass, type MotionBlurPassOptions } from './MotionBlurPass';
 export { AutoExposurePass, type AutoExposurePassOptions } from './AutoExposurePass';
 export { GTAOPass, type GTAOPassOptions } from './GTAOPass';
 export { SSSSPass, type SSSSPassOptions } from './SSSSPass';
-export { DOFEnhancedPass, type DOFEnhancedPassOptions } from './DOFEnhancedPass';
+export {
+  DOFEnhancedPass,
+  dofReconstructViewPos,
+  dofBokehWeight,
+  computeCoC,
+  dofBokehRadius,
+  dofSampleColor,
+  dofPixel,
+  computeDOF,
+  DEFAULT_DOF_PARAMS,
+  DOF_SAMPLES,
+  type DOFEnhancedPassOptions,
+  type DOFParams,
+  type DOFCameraParams,
+  type DOFColor,
+} from './DOFEnhancedPass';
 export { GlitchPass, type GlitchPassOptions } from './GlitchPass';
 export { SMAAPass, type SMAAPassOptions } from './SMAAPass';
 export {

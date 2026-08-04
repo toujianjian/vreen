@@ -3490,23 +3490,30 @@ prevents bleeding across depth discontinuities.
 
 ### DOFEnhancedPass
 
-Enhanced depth-of-field with circle-of-confusion and configurable
-bokeh shape (circle / hexagon / octagon).
+Production-grade depth-of-field with Circle of Confusion (CoC) and
+configurable bokeh shape (circle / hexagon / octagon). Adapted from
+Potmesil & Chakravarty 1981 "A Lens and Aperture Camera Model for
+Synthetic Image Generation", GPU Gems 1 Ch.23 "Depth of Field: A Survey
+of Techniques", three.js `BokehShader`, and o3de Atom
+`DepthOfFieldBokehBlurPass`.
 
-**Class**: `DOFEnhancedPass` (independent)
-**Shader**: `DOF_ENHANCED`
+**Class**: `DOFEnhancedPass` (independent — manages own FBO/program)
+**Shader**: `DOF_ENHANCED_FRAG` (GLSL ES 3.0, RGBA16F output)
+**CPU Reference**: 1:1 pure functions (`dofReconstructViewPos` /
+`dofBokehWeight` / `computeCoC` / `dofBokehRadius` / `dofSampleColor` /
+`dofPixel` / `computeDOF`) for headless testing and offline rendering.
 
 #### Options
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `focusDistance` | `number` | `10` | Focus distance in world units |
-| `focusRange` | `number` | `5` | Focus range (DoF near/far) |
-| `bokehSize` | `number` | `1.0` | Bokeh size multiplier |
+| `focusDistance` | `number` | `10` | Focus distance (view-space Z, positive, world units) |
+| `focusRange` | `number` | `5` | Focus range (objects within this range from focusDistance are sharp) |
 | `bokehShape` | `number` | `0` | 0=circle, 1=hexagon, 2=octagon |
-| `resolution` | `[number, number]` | `[1, 1]` | Resolution scale |
+| `bokehSize` | `number` | `16` | Bokeh size (pixels, scales CoC to sampling radius) |
+| `maxRadius` | `number` | `32` | Maximum bokeh radius (pixels, clamps GPU cost) |
 
-#### API
+#### GPU API
 
 ```ts
 apply(
@@ -3517,11 +3524,59 @@ apply(
 ): WebGLTexture
 ```
 
-#### Algorithm
+- `inputTexture`: current frame color (any format, sampled as LINEAR)
+- `depthTexture`: NDC depth [0,1] (0=near, 1=far)
+- `camera`: reads `projectionMatrixInverse.elements` for view-space reconstruction
+- Returns: RGBA16F output texture (owned by the pass, HDR for bokeh highlights > 1.0)
 
-1. Compute circle-of-confusion (CoC) from depth and focus parameters.
-2. Scatter-gather bokeh samples in the chosen shape pattern.
-3. Blend near and far DoF based on CoC.
+#### CPU Reference API
+
+```ts
+// Pure functions (no WebGL dependency, testable in Node/headless):
+dofReconstructViewPos(uv, depth, inverseProjectionMatrix): [x, y, z]
+dofBokehWeight(offset, shape): number  // 1.0 = inside shape, 0.0 = outside
+computeCoC(dist, focusDistance, focusRange): number  // [0, 1]
+dofBokehRadius(coc, bokehSize, maxRadius): number  // pixels
+dofSampleColor(buffer, w, h, u, v, stride?): [r, g, b]  // bilinear
+dofPixel(color, depth, w, h, x, y, params, camera, stride?): [r, g, b]
+computeDOF(color, depth, w, h, params, camera, stride?): Float32Array  // in-place
+```
+
+#### Algorithm (Potmesil & Chakravarty 1981 + GPU Gems 1 Ch.23)
+
+| Stage | Function | Description |
+|-------|----------|-------------|
+| 1. View-Space Reconstruction | `dofReconstructViewPos(uv, depth, invProj)` | Transforms UV + NDC depth → clip space (uv*2-1, depth*2-1, 1) → view space via inverse projection matrix. `dist = -viewPos.z` (positive = forward). |
+| 2. Circle of Confusion | `computeCoC(dist, focus, range)` | `CoC = clamp(|dist - focusDistance| / max(focusRange, 1e-4), 0, 1)`. 0 = sharp (in focus), 1 = fully blurred. Clamped to prevent div-by-zero when focusRange ≈ 0. |
+| 3. Bokeh Radius | `dofBokehRadius(coc, bokehSize, maxRadius)` | `radius = min(coc * bokehSize, maxRadius)`. `maxRadius` bounds GPU sampling cost. If radius < 0.5px → pixel is sharp, skip sampling (early-out). |
+| 4. Skybox Passthrough | `if (depth >= 0.99999) return centerColor` | Skybox pixels (depth = 1.0) bypass DOF entirely — no wasted sampling on sky. |
+| 5. 16-Direction Bokeh Sampling | `for i in 0..15: angle = 2π*(i+0.5)/16` | Samples 16 directions evenly spaced around the pixel. Each direction computes `dir = (cos, sin)`, then `weight = dofBokehWeight(dir, shape)`. Offset = `dir * radius * texelSize`. Bilinear-samples the color buffer at `uv + offset`. Accumulates `color += sampleColor * weight` and `totalWeight += weight`. |
+| 6. Bokeh Shape Kernels | `dofBokehWeight(offset, shape)` | **Circle** (shape=0): `r = length(offset); return r <= 1.0 ? 1.0 : 0.0`. **Hexagon** (shape=1): `a = atan(offset.y, offset.x); d = 0.8660254*|cos(a)| + 0.5*|sin(a)|; return r*d <= 0.8660254 ? 1.0 : 0.0` (6-edge diamond approximation, radius 0.866 at cardinals). **Octagon** (shape=2): `d = max(|cos(a)|, |sin(a)|); return r*d <= 0.9238795 ? 1.0 : 0.0` (radius 0.924 at cardinals). |
+| 7. Normalize & Blend | `blurred = accum / max(totalWeight, 1e-6)` | Normalizes accumulated color by total weight. Final result = `mix(centerColor, blurred, coc)` — smoothly blends between original (sharp) and blurred based on CoC. |
+
+#### Design Notes
+
+- **RGBA16F output**: Bokeh highlights can exceed 1.0 in HDR scenes;
+  RGBA8 would clip. The internal FBO uses `gl.RGBA16F` + `gl.HALF_FLOAT`.
+- **Conservative sampling**: 16 samples (vs. o3de's 60-point radial) —
+  VREEN prioritizes GPU performance for real-time rendering. Quality can
+  be increased by chaining with `FastDepthAwareBlurPass` for a second
+  smoothing pass.
+- **No multi-pass CoC blur**: Unlike three.js `DepthOfFieldNode` (5-pass:
+  CoC → CoC blur → blur64 → blur16 → composite), VREEN uses a single-pass
+  gather for simplicity and predictability. The CoC is computed per-pixel
+  from depth without spatial smoothing, which can cause slight CoC
+  discontinuities at depth edges — acceptable for real-time use.
+- **Depth convention**: Expects NDC depth [0,1] (WebGL convention:
+  0=near plane, 1=far plane). `reconstructViewPos` maps depth to NDC z
+  via `ndc.z = depth * 2 - 1`, then multiplies by inverse projection.
+
+#### Comparison with soup3D
+
+soup3D has **no depth-of-field implementation**. All objects render at
+full sharpness regardless of distance. VREEN's DOFEnhancedPass provides
+cinematic focus pulls, smooth background blur, and three bokeh shape
+kernels — matching capabilities found in UE5, o3de, and Unity HDRP.
 
 ---
 

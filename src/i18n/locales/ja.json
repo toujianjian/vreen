@@ -1010,8 +1010,8 @@
         "advantage": "soup3D に自動露出なし"
       },
       "dof": {
-        "title": "被写界深度",
-        "desc": "拡張 DoF:サークルオブコンフュージョン計算 + 円形/六角形/八角形ボケ形状。シネマティックなフォーカスプルとスムーズな背景ぼかし。",
+        "title": "被写界深度 (CoC + ボケ)",
+        "desc": "Potmesil & Chakravarty 1981、GPU Gems 1 Ch.23、three.js BokehShader、o3de Atom DepthOfFieldBokehBlurPass から適応したプロダクション級 DoF。逆投影行列でビュー空間深度から混乱円を計算:CoC = clamp(|dist - focusDistance| / focusRange, 0, 1)。16 方向ボケサンプリング、3 種の形状カーネル対応:円形(デフォルト)、六角形(6 辺菱形、r=0.866)、八角形(max(|cos|,|sin|)、r=0.924)。設定可能:focusDistance、focusRange、bokehShape(0/1/2)、bokehSize(px)、maxRadius(px、GPU コスト制限)。スカイボックス直通(depth >= 0.99999)。サブピクセル半径スキップ(< 0.5px = シャープ)。1:1 CPU/GPU 参照実装(dofReconstructViewPos / dofBokehWeight / computeCoC / dofBokehRadius / dofSampleColor / dofPixel / computeDOF)、ヘッドレステストとオフラインレンダリング対応。54 単体テスト。RGBA16F 出力で HDR ボケハイライト対応。",
         "advantage": "soup3D に被写界深度なし"
       },
       "contactShadows": {

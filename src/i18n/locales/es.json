@@ -1010,8 +1010,8 @@
         "advantage": "soup3D sin exposición automática"
       },
       "dof": {
-        "title": "Profundidad de campo",
-        "desc": "DoF mejorado:cálculo de círculo de confusión + formas de bokeh circular/hexagonal/octogonal. Transiciones de enfoque cinematográficas con desenfoque suave de fondo.",
+        "title": "Profundidad de campo (CoC + Bokeh)",
+        "desc": "DoF de nivel producción adaptado de Potmesil & Chakravarty 1981, GPU Gems 1 Cap.23, three.js BokehShader y o3de Atom DepthOfFieldBokehBlurPass. Calcula el círculo de confusión (CoC) desde la profundidad del espacio de vista vía proyección inversa:CoC = clamp(|dist - focusDistance| / focusRange, 0, 1). Muestreo bokeh de 16 direcciones con tres núcleos de forma:circular (predeterminado), hexagonal (rombo de 6 lados, r=0.866), octagonal (max(|cos|,|sin|), r=0.924). Configurable:focusDistance, focusRange, bokehShape (0/1/2), bokehSize (px), maxRadius (px, limita coste GPU). Pase directo de skybox (depth >= 0.99999). Salto de radio subpíxel (< 0.5px = nítido). Referencia 1:1 CPU/GPU (dofReconstructViewPos / dofBokehWeight / computeCoC / dofBokehRadius / dofSampleColor / dofPixel / computeDOF) para testing headless y renderizado offline. 54 pruebas unitarias. Salida RGBA16F para resaltados bokeh HDR.",
         "advantage": "soup3D sin profundidad de campo"
       },
       "contactShadows": {

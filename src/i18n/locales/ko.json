@@ -1010,8 +1010,8 @@
         "advantage": "soup3D 자동 노출 없음"
       },
       "dof": {
-        "title": "피사계 심도",
-        "desc": "확장 DoF:혼동원 계산 + 원형/육각형/팔각형 보케 형상. 시네마틱 포커스 풀과 부드러운 배경 블러.",
+        "title": "피사계 심도 (CoC + 보케)",
+        "desc": "Potmesil & Chakravarty 1981, GPU Gems 1 Ch.23, three.js BokehShader, o3de Atom DepthOfFieldBokehBlurPass에서 적응한 프로덕션급 DoF. 역투영 행렬로 뷰 공간 깊이에서 혼동원 계산:CoC = clamp(|dist - focusDistance| / focusRange, 0, 1). 16방향 보케 샘플링, 3종 형상 커널 지원:원형(기본), 육각형(6변 마름모, r=0.866), 팔각형(max(|cos|,|sin|), r=0.924). 설정 가능:focusDistance, focusRange, bokehShape(0/1/2), bokehSize(px), maxRadius(px, GPU 비용 제한). 스카이박스 통과(depth >= 0.99999). 서브픽셀 반경 건너뜀(< 0.5px = 선명). 1:1 CPU/GPU 참조 구현(dofReconstructViewPos / dofBokehWeight / computeCoC / dofBokehRadius / dofSampleColor / dofPixel / computeDOF), 헤드리스 테스트 및 오프라인 렌더링 지원. 54단위 테스트. RGBA16F 출력으로 HDR 보케 하이라이트 지원.",
         "advantage": "soup3D 피사계 심도 없음"
       },
       "contactShadows": {
