@@ -1038,6 +1038,21 @@
         "title": "Voxel World",
         "desc": "Chunked voxel world with palette-based block types, raycaster for block selection/placement, greedy meshing, Minecraft-style building mechanics.",
         "advantage": "soup3D has no voxels"
+      },
+      "physics": {
+        "title": "Physics Engine",
+        "desc": "Rigid body + cloth + soft body + fluid + rope + ragdoll + vehicle + flight + buoyancy + Voronoi fracture + destruction. Constraint solver, collision detection, physics materials.",
+        "advantage": "soup3D has no physics"
+      },
+      "ai": {
+        "title": "AI System",
+        "desc": "NavMesh + pathfinding + GOAP planner + utility AI + perception (sight/hearing) + crowd steering + blackboard + ML interface. Complete game AI toolkit.",
+        "advantage": "soup3D has no AI"
+      },
+      "ik": {
+        "title": "Inverse Kinematics",
+        "desc": "CCD + FABRIK solvers, IK chain/bone hierarchy, constraint-aware joint limits. Procedural foot placement, hand reaching, look-at targeting.",
+        "advantage": "soup3D has no IK"
       }
     }
   }

@@ -1038,6 +1038,21 @@
         "title": "体素世界",
         "desc": "分块体素世界:调色板方块类型、射线投射选块/放置、贪婪网格合并、Minecraft 风格建造机制。",
         "advantage": "soup3D 无体素"
+      },
+      "physics": {
+        "title": "物理引擎",
+        "desc": "刚体 + 布料 + 软体 + 流体 + 绳索 + 布娃娃 + 载具 + 飞行 + 浮力 + Voronoi 破碎 + 毁坏系统。约束求解器、碰撞检测、物理材质。",
+        "advantage": "soup3D 无物理"
+      },
+      "ai": {
+        "title": "AI 系统",
+        "desc": "导航网格 + 寻路 + GOAP 规划器 + 效用 AI + 感知(视觉/听觉)+ 人群转向 + 黑板 + ML 接口。完整游戏 AI 工具包。",
+        "advantage": "soup3D 无 AI"
+      },
+      "ik": {
+        "title": "逆向运动学",
+        "desc": "CCD + FABRIK 求解器、IK 链/骨骼层级、约束感知关节限制。程序化脚步放置、手部触达、注视朝向。",
+        "advantage": "soup3D 无 IK"
       }
     }
   }

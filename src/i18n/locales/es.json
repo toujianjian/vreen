@@ -1038,6 +1038,21 @@
         "title": "Mundo de voxeles",
         "desc": "Mundo de voxeles por chunks:tipos de bloque por paleta, raycaster para selección/colocación, meshing voraz, mecánicas de construcción estilo Minecraft.",
         "advantage": "soup3D sin voxeles"
+      },
+      "physics": {
+        "title": "Motor de físicas",
+        "desc": "Cuerpo rígido + tela + cuerpo blando + fluido + cuerda + ragdoll + vehículo + vuelo + flotabilidad + fractura Voronoi + destrucción. Solver de restricciones, detección de colisiones, materiales físicos.",
+        "advantage": "soup3D sin físicas"
+      },
+      "ai": {
+        "title": "Sistema de IA",
+        "desc": "NavMesh + pathfinding + planificador GOAP + IA por utilidad + percepción (vista/oído) + steering de multitudes + blackboard + interfaz ML. Kit completo de IA para juegos.",
+        "advantage": "soup3D sin IA"
+      },
+      "ik": {
+        "title": "Cinemática Inversa",
+        "desc": "Solvers CCD + FABRIK, jerarquía cadena/hueso IK, límites de articulación con restricciones. Placement procedural de pies, alcance de manos, orientación look-at.",
+        "advantage": "soup3D sin IK"
       }
     }
   }

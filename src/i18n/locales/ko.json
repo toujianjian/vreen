@@ -1038,6 +1038,21 @@
         "title": "복셀 월드",
         "desc": "청크 복셀 월드:팔레트 블록 타입, 레이캐스트 선택/배치, 탐욕 메시 병합, Minecraft 스타일 건축 메커닉.",
         "advantage": "soup3D 복셀 없음"
+      },
+      "physics": {
+        "title": "물리 엔진",
+        "desc": "강체 + 천 + 소프트바디 + 유체 + 로프 + 래그돌 + 차량 + 비행 + 부력 + Voronoi 파편 + 파괴. 제약 솔버, 충돌 감지, 물리 머티리얼.",
+        "advantage": "soup3D 물리 없음"
+      },
+      "ai": {
+        "title": "AI 시스템",
+        "desc": "내비메시 + 경로 탐색 + GOAP 플래너 + 유틸리티 AI + 지각(시각/청각)+ 군중 스티어링 + 블랙보드 + ML 인터페이스. 완전 게임 AI 툴킷.",
+        "advantage": "soup3D AI 없음"
+      },
+      "ik": {
+        "title": "역운동학",
+        "desc": "CCD + FABRIK 솔버, IK 체인/본 계층, 제약 인식 관절 한계. 절차적 발 배치, 손 도달, 주시 방향.",
+        "advantage": "soup3D IK 없음"
       }
     }
   }
