@@ -1948,6 +1948,78 @@ frame();
 
 ## Design Notes
 
+### Lighting Channels (`LightingChannelMask.ts`)
+
+**Lighting channels** (adapted from o3de Atom `LightingChannelConfiguration`)
+let you assign each light and each renderable to one or more of **32
+bitmask channels**. At render time a light only contributes to a
+fragment if `(lightMask & objectMask) != 0`. The default mask is
+`ALL_LIGHTING_CHANNELS` (`0xFFFFFFFF`) so the out-of-the-box behaviour
+is "every light lights every object" — fully backward-compatible.
+
+This is a production-grade feature that o3de (5 channels), Unreal
+(32 channels), and Unity (per-light layer masks) all ship. soup3D has
+no such concept — every light illuminates every object — so complex
+scenes (flashlights, muzzle flash, UI glow, indoor/outdoor separation)
+cannot be lit correctly in soup3D.
+
+**Use cases:**
+
+| Scenario | Light channel(s) | Object channel(s) | Effect |
+|----------|------------------|--------------------|--------|
+| Player flashlight | 1 | player=1, env=0 | flashlight lights player only |
+| Muzzle flash | 1, 2 | enemies=1, props=2, sky=0 | lights enemies + nearby props, not sky |
+| UI / emissive panel | 3 | UI meshes=3, world=0 | panel glow doesn't pollute characters |
+| Indoor light | 4 | interior=4, exterior=0 | no light leak outdoors |
+| Trigger zone light | 5 | trigger occupants=5 | only lit inside the trigger |
+
+**API surface:**
+
+```typescript
+import {
+  LightingChannelConfiguration,
+  channelMask, channelsMask, affects,
+  ALL_LIGHTING_CHANNELS, NO_LIGHTING_CHANNELS,
+} from '@vreen/engine';
+
+// Light side: flashlight only on channel 1
+flashlight.lightingChannelMask = channelMask(1);          // = 2
+
+// Object side: player on channel 1, environment on channel 0
+playerMesh.lightingChannelMask = channelMask(1);
+envMesh.lightingChannelMask    = channelMask(0);
+
+affects(flashlight.lightingChannelMask, playerMesh.lightingChannelMask); // true
+affects(flashlight.lightingChannelMask, envMesh.lightingChannelMask);    // false
+```
+
+The `LightingChannelConfiguration` class wraps the mask with a fluent,
+serializable API (`setChannel` / `enableChannel` / `disableChannel` /
+`setSingleChannel` / `reset` / `clear` / `affects` / `toJSON` /
+`fromJSON` / `clone`). Pure helper functions (`channelMask`,
+`channelsMask`, `getChannel`, `setChannel`, `affects`, `hasAnyChannel`,
+`countChannels`, `listChannels`) operate directly on `number` masks for
+zero-allocation hot paths.
+
+**Shader integration** — a GLSL chunk (`LIGHTING_CHANNEL_GLSL`) provides
+`lightingChannelAffects(uint lightMask, uint objectMask)` for use inside
+forward/deferred lighting loops; the renderer passes light masks as a
+`u_lightChannels[]` uniform array and the object mask as a draw-call
+uniform or instance attribute.
+
+**Design choices:**
+- **32 channels (not o3de's 5)** — aligns with Unreal and leaves room
+  for future expansion; the bitmask is a single `uint32` either way.
+- **Default = all channels on** — preserves existing scenes that don't
+  opt into channel filtering.
+- **`NO_LIGHTING_CHANNELS` (0)** — lets a mesh be purely emissive
+  (unlit by any light), useful for holograms / UI / neon signs.
+- **Unsigned `>>> 0`** — all bitwise helpers return unsigned 32-bit
+  ints so channel 31 (`0x80000000`) is positive, matching WebGL2
+  `uint` uniforms.
+
+---
+
 **Why MRT + GBuffer?** Forward rendering (the current main path) shades
 each fragment once with all lights. For scenes with many lights,
 forward rendering becomes fill-rate-bound. Deferred rendering shades

@@ -722,3 +722,27 @@ export {
   type BloomEnhancedOptions,
 } from './PostProcess';
 
+// LightingChannelMask — 灯光通道掩码(适配自 o3de Atom LightingChannelConfiguration)。
+// 每盏灯与每个物体各持一个 32 位通道掩码;渲染时 (lightMask & objectMask) != 0 才照亮。
+// 用途:角色专属灯(手电筒只照玩家)、枪口闪光(只照敌人/近物,不照整张地图)、
+// UI 灯(发光面板不污染角色)、分区灯(室内不漏到室外)、触发器灯。
+// o3de 用 5 通道,VREEN 扩展为 32 通道(与 Unreal 对齐)。默认全开(向后兼容)。
+// soup3D 无通道概念,所有灯照亮所有物体。
+export {
+  LightingChannelConfiguration,
+  channelMask,
+  channelsMask,
+  getChannel,
+  setChannel,
+  affects as lightingChannelAffects,
+  hasAnyChannel,
+  countChannels,
+  listChannels,
+  MAX_LIGHTING_CHANNELS,
+  ALL_LIGHTING_CHANNELS,
+  NO_LIGHTING_CHANNELS,
+  DEFAULT_LIGHTING_CHANNEL,
+  LIGHTING_CHANNEL_GLSL,
+  type LightingChannelMask,
+} from './LightingChannelMask';
+

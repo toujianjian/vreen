@@ -1118,6 +1118,11 @@
         "title": "增强 Bloom(深度感知保边)",
         "desc": "深度感知保边 Bloom,复用 FastDepthAwareBlur 算法(H+V 可分离,深度斜率边缘停止),把 bloom 限制在同一深度层内,防止经典高斯/盒式模糊 bloom 跨越轮廓产生的前景/背景颜色渗色(halo)。管线:Bright pass(soft knee,Rec.709 亮度阈值)→ FastDepthAwareBlur H → FastDepthAwareBlur V → Composite(加法 + lens dirt + RGB tint)。每次 apply 4 次 GPU dispatch,HDR RGBA16F。可配置 strength、threshold、smoothWidth、blurRadius(1..32)、depthFalloffStrength、每通道 tint、可选 lens dirt 纹理 + dirtStrength。CPU/GPU 1:1 参考实现(luminance / brightPassPixel / bloomCompositePixel)。与 UnrealBloomPass(多级 mip 大面积辉光)互补 —— 两者可叠加获取辉光 + 干净边缘。适合 neon/赛博朋克高对比场景。",
         "advantage": "soup3D 仅有单级盒式模糊 Bloom"
+      },
+      "lightingChannel": {
+        "title": "灯光通道(32 位掩码,o3de/Unreal)",
+        "desc": "灯光通道,适配自 o3de Atom LightingChannelConfiguration。每盏灯与每个可渲染物体各持一个 32 位通道掩码;渲染时仅当 (lightMask & objectMask) != 0 时该灯才照亮该物体。默认 = 全通道(向后兼容,所有灯照亮所有物体)。用途:玩家手电筒只照玩家不照环境、枪口闪光只照敌人与近物不照整张地图、UI/自发光面板不污染角色光照、室内灯不漏到室外、触发器灯。o3de 提供 5 通道,VREEN 扩展为 32 通道(与 Unreal 对齐)。LightingChannelConfiguration 类提供流畅 API(setChannel/enableChannel/disableChannel/setSingleChannel/reset/clear/affects/toJSON/fromJSON/clone)+ 纯函数助手(channelMask/channelsMask/getChannel/setChannel/affects/countChannels/listChannels)+ GLSL chunk(lightingChannelAffects)。68 个单元测试。",
+        "advantage": "soup3D 无灯光通道概念"
       }
     }
   }

@@ -1118,6 +1118,11 @@
         "title": "強化 Bloom(深度対応エッジ保持)",
         "desc": "深度対応エッジ保持 Bloom、FastDepthAwareBlur アルゴリズム(H+V 分離可能、深度勾配エッジ停止)を再利用し、bloom を同じ深度レイヤー内に制限。古典的ガウシアン/ボックスブラー bloom がシルエット越しに生成する前景/背景の色滲み(halo)を防止。パイプライン:Bright pass(ソフトニー、Rec.709 輝度閾値)→ FastDepthAwareBlur H → FastDepthAwareBlur V → Composite(加算 + lens dirt + RGB tint)。apply ごとに 4 回 GPU ディスパッチ、HDR RGBA16F。設定可能な strength、threshold、smoothWidth、blurRadius(1..32)、depthFalloffStrength、チャネル毎 tint、オプション lens dirt テクスチャ + dirtStrength。CPU/GPU 1:1 参照実装(luminance / brightPassPixel / bloomCompositePixel)。UnrealBloomPass(マルチ mip 大面積グロー)と相補——両者をスタックしてグロー + クリーンなエッジを得る。ネオン/サイバーパンク高コントラストシーンに最適。",
         "advantage": "soup3D は単一ボックスブラー Bloom のみ"
+      },
+      "lightingChannel": {
+        "title": "ライティングチャネル(32 ビットマスク、o3de/Unreal)",
+        "desc": "o3de Atom LightingChannelConfiguration から適応したライティングチャネル。各ライトと各レンダリング対象オブジェクトは 32 ビットチャネルマスクを保持し、レンダー時に (lightMask & objectMask) != 0 の場合のみライトが寄与する。デフォルト = 全チャネル(後方互換、全ライトが全オブジェクトを照らす)。用途:プレイヤー懐中電灯がプレイヤーのみを照らす(環境を除く)、マズルフラッシュが敵 + 近接オブジェクトのみを照らす(マップ全体を除く)、UI/発光パネルがキャラクター照明を汚染しない、屋内ライトが屋外に漏れない、トリガーゾーンライト。o3de は 5 チャネル、VREEN は 32 チャネルに拡張(Unreal 準拠)。LightingChannelConfiguration クラスは流暢な API(setChannel/enableChannel/disableChannel/setSingleChannel/reset/clear/affects/toJSON/fromJSON/clone)+ 純粋ヘルパー(channelMask/channelsMask/getChannel/setChannel/affects/countChannels/listChannels)+ GLSL チャンク(lightingChannelAffects)を提供。68 個のユニットテスト。",
+        "advantage": "soup3D はライティングチャネル概念なし"
       }
     }
   }
