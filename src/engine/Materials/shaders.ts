@@ -4921,6 +4921,137 @@ void main() {
 }
 `;
 
+// ── Cloud Shadow (地面云影) ───────────────────────────────────────
+// 屏幕空间云阴影:对每个场景像素,从其世界位置朝太阳方向射线,
+// 与云层 [cloudHeight, cloudHeight+thickness] 求交,沿交线步进采样
+// 3D 噪声(与 VolumetricClouds 同一密度场)累积光学深度,
+// Beer-Lambert 透射率 → 压暗场景色。复用 VolumetricClouds 的 uniform 包。
+//
+// 算法(对标 UE5 Volumetric Clouds shadows / o3de Atom CloudShadowPass):
+//   1. 深度重建世界坐标;天空像素(depth>=1)跳过(云已在天空合成)
+//   2. 太阳在水平线下(sunDir.y<=0)→ 无云影,直接输出
+//   3. tEnter/tExit = 像素→云层底/顶的世界距离(沿 sunDir)
+//   4. 步进 u_shadowSteps 次,采样 sampleCloudDensity(同云 pass),
+//      累积 opticalDepth += density * stepLen
+//   5. transmittance = exp(-opticalDepth)
+//   6. shadowFactor = mix(1, transmittance, shadowIntensity)
+//   7. outColor = sceneColor * shadowFactor
+export const CLOUD_SHADOW_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_colorMap;        // 场景颜色(被压暗)
+uniform sampler2D u_depthMap;        // NDC 深度(0..1)
+uniform sampler3D u_noiseMap;        // 3D 云噪声(与 VolumetricClouds 共享)
+uniform mat4  u_inverseViewProjection;
+uniform vec3  u_sunDirection;        // 指向太阳(归一化)
+uniform float u_cloudHeight;
+uniform float u_cloudThickness;
+uniform float u_cloudCoverage;
+uniform float u_cloudDensity;
+uniform vec3  u_windOffset;
+uniform float u_worldScale;
+uniform float u_heightDensityBottom;
+uniform float u_heightDensityTop;
+uniform int   u_shadowSteps;         // 穿越云层步数(默认 16)
+uniform float u_shadowIntensity;     // 阴影强度 [0,1](默认 0.7)
+uniform float u_densityCutoff;       // 密度跳过阈值
+uniform int   u_enabled;             // 0=禁用,1=启用
+
+float clamp01(float x) { return clamp(x, 0.0, 1.0); }
+
+float smoothstep01(float e0, float e1, float x) {
+  float t = clamp01((x - e0) / (e1 - e0));
+  return t * t * (3.0 - 2.0 * t);
+}
+
+// 云密度(与 VOLUMETRIC_CLOUDS_FRAG.sampleCloudDensity 一致)
+float sampleCloudDensity(vec3 worldPos) {
+  float yBottom = u_cloudHeight;
+  float yTop = u_cloudHeight + u_cloudThickness;
+  if (worldPos.y < yBottom || worldPos.y > yTop) return 0.0;
+
+  vec3 uvw;
+  uvw.x = (worldPos.x + u_windOffset.x) / u_worldScale;
+  uvw.y = (worldPos.y - yBottom) / u_cloudThickness;
+  uvw.z = (worldPos.z + u_windOffset.z) / u_worldScale;
+
+  float noise = texture(u_noiseMap, uvw).r;
+  float coverageFactor = 1.0 - (1.0 - u_cloudCoverage) * (1.0 - u_cloudCoverage);
+
+  float heightT = clamp01((worldPos.y - yBottom) / u_cloudThickness);
+  float bottomAtten = 1.0 - u_heightDensityBottom * (1.0 - smoothstep01(0.0, 0.2, heightT));
+  float topAtten    = 1.0 - u_heightDensityTop    * smoothstep01(0.6, 1.0, heightT);
+
+  return clamp01(noise * coverageFactor * bottomAtten * topAtten);
+}
+
+void main() {
+  vec3 sceneColor = texture(u_colorMap, v_uv).rgb;
+
+  if (u_enabled == 0) {
+    outColor = vec4(sceneColor, 1.0);
+    return;
+  }
+
+  float depth = texture(u_depthMap, v_uv).r;
+  // 天空像素(depth==1):云已在天空合成,不在地面投云影
+  if (depth >= 1.0) {
+    outColor = vec4(sceneColor, 1.0);
+    return;
+  }
+
+  // 重建世界坐标
+  vec2 ndc = v_uv * 2.0 - 1.0;
+  vec4 worldPosH = u_inverseViewProjection * vec4(ndc, depth * 2.0 - 1.0, 1.0);
+  vec3 worldPos = worldPosH.xyz / worldPosH.w;
+
+  vec3 sunDir = normalize(u_sunDirection);
+  // 太阳在水平线下 → 无云影
+  if (sunDir.y <= 0.0) {
+    outColor = vec4(sceneColor, 1.0);
+    return;
+  }
+
+  // 像素沿 sunDir 到云层底/顶的距离
+  float tEnter = (u_cloudHeight - worldPos.y) / sunDir.y;
+  float tExit  = (u_cloudHeight + u_cloudThickness - worldPos.y) / sunDir.y;
+  if (tExit <= 0.0) {
+    outColor = vec4(sceneColor, 1.0);   // 云层在像素下方
+    return;
+  }
+  tEnter = max(tEnter, 0.0);
+  if (tExit <= tEnter) {
+    outColor = vec4(sceneColor, 1.0);
+    return;
+  }
+
+  // 沿云层步进累积光学深度
+  int steps = max(1, u_shadowSteps);
+  float stepLen = (tExit - tEnter) / float(steps);
+  vec3 samplePos = worldPos + sunDir * (tEnter + stepLen * 0.5);
+  vec3 stepVec = sunDir * stepLen;
+
+  float opticalDepth = 0.0;
+  for (int i = 0; i < 64; i++) {
+    if (i >= steps) break;
+    float density = sampleCloudDensity(samplePos) * u_cloudDensity;
+    if (density > u_densityCutoff) {
+      opticalDepth += density * stepLen;
+    }
+    samplePos += stepVec;
+  }
+
+  // Beer-Lambert 透射率 → 阴影因子
+  float transmittance = exp(-opticalDepth);
+  float shadowFactor = mix(1.0, transmittance, u_shadowIntensity);
+
+  outColor = vec4(sceneColor * shadowFactor, 1.0);
+}
+`;
+
 export const SCREEN_SPACE_REFRACTION_FRAG = /* glsl */ `#version 300 es
 precision highp float;
 

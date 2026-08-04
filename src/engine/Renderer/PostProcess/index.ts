@@ -34,6 +34,7 @@
 //   - LocalExposurePass : 局部曝光(对数空间局部-全局亮度差异驱动的曝光补偿)
 //   - LensDistortionPass: 镜头畸变(Brown-Conrady 径向畸变 + RGB 色差,模拟广角/长焦镜头)
 //   - ScreenSpaceRefractionPass : 屏幕空间折射(任意透明表面 + IOR + 色散 + Beer-Lambert 吸收)
+//   - CloudShadowPass : 体积云阴影(沿太阳方向 ray-march 3D 噪声场,Beer-Lambert 透射率压暗场景)
 //
 // 注意:
 //   - 前 7 个 Pass 都实现 RenderPass 接口,可直接加入 PostProcessingPipeline。
@@ -98,3 +99,11 @@ export {
   type ScreenSpaceRefractionOptions,
   type AbsorptionColor,
 } from './ScreenSpaceRefractionPass';
+export {
+  CloudShadowPass,
+  type CloudShadowOptions,
+  type CloudShadowParams,
+  type SunDirection,
+  type WindOffset,
+  type HeightDensity,
+} from './CloudShadowPass';

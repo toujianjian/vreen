@@ -884,6 +884,11 @@
         "desc": "Nubes volumétricas GPU ray-march con ruido 3D Perlin+Worley, transmitancia Beer-Powder, fase HG de doble lóbulo (plateado) y multi-dispersión.",
         "advantage": "soup3D sin nubes volumétricas"
       },
+      "cloudShadow": {
+        "title": "Sombras de Nubes",
+        "desc": "Sombras de nubes volumétricas ray-marched a lo largo de la dirección del sol a través del mismo campo de ruido 3D que las nubes del cielo, aplicando transmitancia Beer-Lambert para oscurecer la escena. Las siluetas se sincronizan con la deriva de nubes y el ángulo solar.",
+        "advantage": "soup3D sin sombras de nubes"
+      },
       "caustics": {
         "title": "Causticas Submarinas",
         "desc": "Causticas submarinas en espacio de pantalla con reconstrucción de profundidad, patrón procedural de tres ondas, dispersión cromática RGB y atenuación Beer-Lambert.",

@@ -884,6 +884,11 @@
         "desc": "GPU 光线步进体积云,3D Perlin+Worley 噪声 + Beer-Powder 透射 + 双叶 HG 相位(银边)+ 多散射近似。",
         "advantage": "soup3D 无体积云"
       },
+      "cloudShadow": {
+        "title": "云阴影",
+        "desc": "沿太阳方向光线步进同一 3D 噪声场计算体积云阴影,Beer-Lambert 透射率压暗场景。阴影轮廓与天空云漂移、太阳高度角实时同步。",
+        "advantage": "soup3D 无云阴影"
+      },
       "caustics": {
         "title": "水下焦散",
         "desc": "屏幕空间水下焦散,深度重建 + 三波程序化图案 + RGB 色散 + Beer-Lambert 深度衰减。",

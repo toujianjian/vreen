@@ -884,6 +884,11 @@
         "desc": "GPU 레이마치 볼륨 클라우드, 3D Perlin+Worley 노이즈 + Beer-Powder 투과 + 듀얼 로브 HG 위상(은가장자리)+ 다중 산란.",
         "advantage": "soup3D에 볼륨 클라우드 없음"
       },
+      "cloudShadow": {
+        "title": "구름 그림자",
+        "desc": "태양 방향을 따라 하늘 구름과 동일한 3D 노이즈 필드를 레이마치하여 Beer-Lambert 투과율로 씬을 어둡게 하는 볼륨 구름 그림자. 그림자 윤곽은 표류하는 구름 및 태양 각도와 실시간 동기화됩니다.",
+        "advantage": "soup3D에 구름 그림자 없음"
+      },
       "caustics": {
         "title": "수중 코스틱스",
         "desc": "스크린 공간 수중 코스틱스, 깊이 재구성 + 3파 프로시저럴 패턴 + RGB 색산란 + Beer-Lambert 깊이 감쇠.",

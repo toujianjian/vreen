@@ -50,7 +50,8 @@ PostProcess/
   │     ├── SMAAPass         ← needs color (3-pass AA)
   │     ├── FSRUpscalePass   ← needs color (low→high res, independent FBO)
   │     ├── LensDistortionPass ← needs color (Brown-Conrady radial distortion + RGB CA)
-  │     └── ScreenSpaceRefractionPass ← needs color + refraction normal/mask (IOR + dispersion + Beer-Lambert)
+  │     ├── ScreenSpaceRefractionPass ← needs color + refraction normal/mask (IOR + dispersion + Beer-Lambert)
+  │     └── CloudShadowPass   ← needs color + depth + 3D noise (Beer-Lambert cloud shadow on scene)
   │
   └── index.ts               ← barrel exports
 ```
@@ -3885,6 +3886,316 @@ scene-wide glass/gem/hologram rendering.
 
 ---
 
+## CloudShadowPass (`CloudShadowPass.ts`)
+
+> Path: `src/engine/Renderer/PostProcess/CloudShadowPass.ts`
+> Shader: `CLOUD_SHADOW_FRAG` (`src/engine/Materials/shaders.ts`)
+> Test: `CloudShadowPass.test.ts` (42 tests, all passing)
+
+Casts volumetric cloud shadows onto the scene by ray-marching the **same 3D
+noise field** used by `VolumetricCloudsPass` along the sun direction. This
+keeps ground shadows perfectly synchronized with the rendered sky clouds —
+when a cumulus drifts overhead, its silhouette darkens the terrain below;
+when the sun sinks below the horizon, shadows vanish.
+
+### Why this Pass exists
+
+`VolumetricCloudsPass` renders the clouds themselves (sky composition). It
+does **not** darken the scene geometry beneath the clouds — a cloud could
+fly over a character and the character would remain fully lit. `CloudShadowPass`
+closes that gap: it treats the cloud volume as a light-blocking occluder and
+applies a Beer-Lambert transmittance factor to every non-sky pixel.
+
+### Architecture
+
+```
+┌─────────────────┐  color   ┌──────────────────┐  color   ┌──────────────┐
+│ VolumetricClouds│ ───────► │ CloudShadowPass  │ ───────► │ Tonemapping  │
+│ Pass (sky)      │          │                  │          │ / Bloom / …  │
+└─────────────────┘          │  ┌────────────┐  │          └──────────────┘
+                             │  │ depth tex  │  │
+                             │  ├────────────┤  │
+                             │  │ 3D noise   │  │ ← shared with VolumetricCloudsPass
+                             │  ├────────────┤  │
+                             │  │ inv VP     │  │
+                             │  ├────────────┤  │
+                             │  │ sun dir    │  │
+                             │  ├────────────┤  │
+                             │  │ cloud pack │  │ ← height/thickness/coverage/density/wind
+                             │  └────────────┘  │
+                             └──────────────────┘
+```
+
+The pass owns an independent FBO + RGBA8 color texture + fullscreen quad VAO
++ `ShaderProgram`. It does **not** allocate its own 3D noise texture — the
+caller passes the same `WebGLTexture` returned by
+`VolumetricCloudsPass.uploadNoise()`. This guarantees:
+
+1. **Memory efficiency** — one 3D texture, two consumers.
+2. **Visual consistency** — the density field sampled for shadows is the
+   exact same field sampled for cloud rendering, including wind offset and
+   coverage.
+3. **Single source of truth** — regenerating noise in `VolumetricClouds`
+   automatically updates both passes.
+
+### Algorithm (per pixel, mirrors `CLOUD_SHADOW_FRAG` 1:1)
+
+1. **Sky early-exit.** Sample `u_depthMap`; if `depth >= 1.0` the pixel is
+   sky — clouds are already composited there, so write the input color
+   unchanged and return.
+
+2. **World reconstruction.** Rebuild world position from NDC depth + the
+   caller-supplied inverse view-projection matrix:
+   ```glsl
+   vec2 ndc = v_uv * 2.0 - 1.0;
+   vec4 worldPosH = u_inverseViewProjection * vec4(ndc, depth * 2.0 - 1.0, 1.0);
+   vec3 worldPos = worldPosH.xyz / worldPosH.w;
+   ```
+
+3. **Sun-below-horizon early-exit.** If `sunDir.y <= 0.0` the sun is below
+   the horizon — no cloud shadow can be cast. Write input color and return.
+
+4. **Cloud layer entry/exit.** Solve for the ray parameters where the
+   pixel→sun ray enters and exits the cloud slab
+   `[cloudHeight, cloudHeight + cloudThickness]`:
+   ```glsl
+   float tEnter = (u_cloudHeight          - worldPos.y) / sunDir.y;
+   float tExit  = (u_cloudHeight + u_cloudThickness - worldPos.y) / sunDir.y;
+   ```
+   Early-exit if the slab is behind the pixel (`tExit <= 0`) or the
+   interval is empty (`tExit <= tEnter`).
+
+5. **Ray-march optical depth.** Step `u_shadowSteps` (default 16, max 64)
+   times along `[tEnter, tExit]`, sampling `sampleCloudDensity()` (the same
+   function used by `VOLUMETRIC_CLOUDS_FRAG`) and accumulating:
+   ```glsl
+   float opticalDepth = 0.0;
+   for (int i = 0; i < 64; i++) {
+     if (i >= steps) break;
+     float density = sampleCloudDensity(samplePos) * u_cloudDensity;
+     if (density > u_densityCutoff) {
+       opticalDepth += density * stepLen;
+     }
+     samplePos += stepVec;
+   }
+   ```
+
+6. **Beer-Lambert transmittance.** Convert optical depth to a shadow
+   factor:
+   ```glsl
+   float transmittance = exp(-opticalDepth);
+   float shadowFactor = mix(1.0, transmittance, u_shadowIntensity);
+   ```
+
+7. **Output.** Multiply scene color by the shadow factor:
+   ```glsl
+   outColor = vec4(sceneColor * shadowFactor, 1.0);
+   ```
+
+### Density function (shared with `VolumetricCloudsPass`)
+
+The `sampleCloudDensity(vec3 worldPos)` body is duplicated verbatim from
+`VOLUMETRIC_CLOUDS_FRAG` so the shadow matches the rendered cloud. It
+combines:
+
+- **3D Perlin+Worley noise** sampled from `u_noiseMap` (TEXTURE_3D,
+  uploaded by `VolumetricCloudsPass.uploadNoise()`).
+- **Coverage gate** — `1 - (1 - coverage)²` sharpens the cloud edge.
+- **Height density attenuation** — bottom attenuation fades the lower 20%
+  of the slab; top attenuation fades the upper 40%.
+- **Wind offset** — `u_windOffset.x/z` shift the UVW so clouds drift.
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `shadowSteps` | `number` | `16` | Ray-march steps across the cloud slab. Range `[1, 64]`. More steps = sharper shadow silhouette, cost scales linearly. |
+| `shadowIntensity` | `number` | `0.7` | Shadow strength `[0, 1]`. `0` = no darkening, `1` = full Beer-Lambert transmittance. |
+| `densityCutoff` | `number` | `0.01` | Voxels with density ≤ this are skipped during accumulation. Matches `VolumetricCloudsPass.densityCutoff`. |
+| `enabled` | `boolean` | `true` | Master toggle. When `false`, `apply()` returns the input texture unchanged (zero draw calls). |
+
+### API
+
+```typescript
+export class CloudShadowPass {
+  readonly name = 'cloudshadow';
+
+  shadowSteps: number;        // [1, 64]
+  shadowIntensity: number;    // [0, 1]
+  densityCutoff: number;
+  enabled: boolean;
+
+  constructor(opts?: CloudShadowOptions);
+
+  apply(
+    gl: WebGL2RenderingContext,
+    colorTexture: WebGLTexture,
+    depthTexture: WebGLTexture,
+    params: CloudShadowParams,
+  ): WebGLTexture;
+
+  setDirty(): void;   // force re-allocate on next apply (resolution/context loss)
+  dispose(gl?: WebGL2RenderingContext): void;
+}
+
+export interface CloudShadowParams {
+  noiseTexture: WebGLTexture;              // shared with VolumetricCloudsPass
+  inverseViewProjection: Float32Array;     // world ← NDC (column-major, len 16)
+  sunDirection: [x, y, z];                 // normalized, points toward sun
+  cloudHeight: number;                     // matches VolumetricClouds.u_cloudHeight
+  cloudThickness: number;                  // matches VolumetricClouds.u_cloudThickness
+  cloudCoverage: number;                   // [0, 1]
+  cloudDensity: number;
+  windOffset: [x, y, z];                   // accumulated by VolumetricClouds.update
+  worldScale: number;                      // matches VolumetricCloudsPass.worldScale
+  heightDensityBottom: number;             // matches VolumetricClouds.u_heightDensityBottom
+  heightDensityTop: number;                // matches VolumetricClouds.u_heightDensityTop
+}
+```
+
+### Texture unit bindings
+
+| Unit | Target | Uniform | Source |
+|------|--------|---------|--------|
+| 0 | `TEXTURE_2D` | `u_colorMap` | Scene color (input) |
+| 1 | `TEXTURE_2D` | `u_depthMap` | NDC depth buffer (0..1) |
+| 2 | `TEXTURE_3D` | `u_noiseMap` | 3D cloud noise (shared with `VolumetricCloudsPass`) |
+
+### Resource layout
+
+| Resource | Count | Lifetime |
+|----------|-------|----------|
+| Output color texture (RGBA8) | 1 | Reallocated on resolution change / `setDirty()` |
+| FBO | 1 | Same as output texture |
+| Fullscreen quad VAO + buffer | 1 | Created once, reused across resizes |
+| `ShaderProgram` | 1 | Created once, disposed with the pass |
+| 3D noise texture | 0 (caller-owned) | Managed by `VolumetricCloudsPass` |
+
+### Usage — paired with `VolumetricCloudsPass`
+
+```typescript
+import { VolumetricClouds } from '@vreen/engine/environment';
+import { VolumetricCloudsPass, CloudShadowPass } from '@vreen/engine/renderer/postprocess';
+
+// ── setup ──
+const clouds = new VolumetricClouds();
+clouds.generateNoise(42);
+clouds.setCloudType('cumulonimbus');
+clouds.setCoverage(0.6);
+
+const cloudPass = new VolumetricCloudsPass();
+cloudPass.uploadNoise(gl, clouds.noiseData!, clouds.noiseResolution);
+
+const shadowPass = new CloudShadowPass({
+  shadowSteps: 24,        // higher quality silhouette
+  shadowIntensity: 0.8,   // strong shadow
+});
+
+// ── per frame ──
+clouds.update(dt);
+
+// 1. Render scene → sceneColorTex + depthTex
+// 2. Composite clouds onto sky
+const skyColorTex = cloudPass.apply(gl, sceneColorTex, depthTex, camera, clouds);
+// 3. Cast cloud shadows onto the composited scene
+const u = clouds.getShaderUniforms();
+const finalTex = shadowPass.apply(gl, skyColorTex, depthTex, {
+  noiseTexture:        cloudPass['_noiseTexture'],   // reuse the same 3D texture
+  inverseViewProjection,
+  sunDirection:        u.u_sunDirection,
+  cloudHeight:         u.u_cloudHeight,
+  cloudThickness:      u.u_cloudThickness,
+  cloudCoverage:       u.u_cloudCoverage,
+  cloudDensity:        u.u_cloudDensity,
+  windOffset:          u.u_windOffset,
+  worldScale:          cloudPass.worldScale,
+  heightDensityBottom: u.u_heightDensityBottom,
+  heightDensityTop:    u.u_heightDensityTop,
+});
+// 4. Tonemapping / Bloom / …
+```
+
+> **Note on `cloudPass['_noiseTexture']`.** The 3D noise texture is a
+> private field on `VolumetricCloudsPass`. If you want clean encapsulation,
+> expose a getter on `VolumetricCloudsPass` (e.g. `get noiseTexture()`)
+> before shipping. For engine-internal wiring the direct access is fine.
+
+### Usage — toggle off at night
+
+```typescript
+// When the sun dips below the horizon, cloud shadows naturally vanish
+// (the shader early-exits when sunDir.y <= 0). You can also disable the
+// pass explicitly to skip the draw call entirely:
+shadowPass.enabled = clouds.getShaderUniforms().u_sunDirection[1] > 0;
+```
+
+### Comparison with soup3D
+
+| Feature | VREEN `CloudShadowPass` | soup3D |
+|---------|-------------------------|--------|
+| Volumetric cloud rendering | `VolumetricCloudsPass` (ray-march + Beer-Powder + dual HG + multi-scatter) | None |
+| Cloud shadow on scene | `CloudShadowPass` (ray-march along sun dir, Beer-Lambert) | None |
+| Shared density field | Yes — one 3D texture, two consumers | N/A |
+| Sky/scene synchronization | Guaranteed (same uniforms + noise) | N/A |
+| Sun-angle awareness | Yes (early-exit when sun below horizon) | N/A |
+| Wind drift sync | Yes (`u_windOffset` shared) | N/A |
+| Performance | Single fullscreen pass, 16..64 steps, sky early-exit | N/A |
+
+soup3D has **no volumetric clouds** and therefore **no cloud shadows**.
+VREEN's `CloudShadowPass` brings the engine to parity with UE5 Volumetric
+Clouds shadows and o3de Atom SkyAtmosphere shadow pass — the same density
+field that renders the sky cloud also darkens the ground beneath it.
+
+### Design Notes
+
+1. **Why duplicate `sampleCloudDensity()` in the shader?** GLSL cannot
+   share functions across separate programs at runtime. The function body
+   is intentionally kept 1:1 with `VOLUMETRIC_CLOUDS_FRAG` so any change
+   to the density model must be applied in both places. A unit test
+   (`CloudShadowPass.test.ts` → "CLOUD_SHADOW_FRAG implements
+   sampleCloudDensity()") guards the existence of the function.
+
+2. **Why RGBA8 and not RGBA16F?** Cloud shadow is a multiplicative factor
+   in `[0, 1]` applied to the scene color. If the input is HDR, swap the
+   internal format to `RGBA16F` (one-line change in `_initResources`).
+   The default LDR pipeline uses `RGBA8` to save bandwidth.
+
+3. **Why a separate pass and not inline in `VolumetricCloudsPass`?**
+   `VolumetricCloudsPass` runs *before* the scene is composited (it
+   composites clouds onto the sky). Cloud shadows must be applied *after*
+   the scene is rendered. Decoupling them lets the caller order the
+   passes correctly and reuse the noise texture without coupling the
+   shaders.
+
+4. **Step count vs. quality.** `shadowSteps=16` is the sweet spot for
+   1080p. For 4K, consider `shadowSteps=24` to keep silhouette sharpness.
+   The shader caps the loop at 64 to stay within WebGL2's constant loop
+   bound — values above 64 silently clamp.
+
+5. **Sky early-exit.** The `depth >= 1.0` check ensures cloud shadows
+   never double-darken sky pixels (the cloud body is already composited
+   there by `VolumetricCloudsPass`). This is a free optimization that also
+   prevents visual artifacts.
+
+6. **Complementary passes.** Pair with `GodRaysPass` (crepuscular rays
+   through clouds), `VolumetricFogPass` (atmospheric fog that also
+   responds to cloud shadows via the sun direction), and
+   `AutoExposurePass` (eye adaptation that compensates for the overall
+   darkening caused by heavy cloud cover).
+
+### Test coverage (`CloudShadowPass.test.ts`, 42 tests)
+
+| Suite | Tests | Coverage |
+|-------|-------|----------|
+| construction | 10 | defaults, all options, field updatability (shadowSteps/shadowIntensity/densityCutoff/enabled), zero/full intensity edge cases, 1..64 step range |
+| apply | 11 | no-throw + draw call, first-apply resource alloc (4 textures + 1 FBO + 1 VAO + 1 buffer), no re-alloc on same size, disabled passthrough (zero draws), resize rebuild, setDirty rebuild, returns output ≠ input, shadowSteps=1/64 paths, shadowIntensity=0 path, multi-apply draw count, typical VolumetricClouds uniform pack |
+| dispose | 4 | with gl, without gl, idempotent, re-apply after dispose |
+| shader source | 17 | version/precision, all 17 uniforms, sampler3D, sampleCloudDensity, Beer-Lambert exp, ray-march loop, mix(1, T, intensity), world reconstruction, sky early-exit, sun-below-horizon early-exit, tEnter/tExit, densityCutoff skip, u_enabled passthrough, darkened output, height density attenuation, wind offset |
+
+---
+
+
+
 ## References
 
 | Technique | Paper / Source |
@@ -3902,3 +4213,4 @@ scene-wide glass/gem/hologram rendering.
 | Multi-scattering | Wenzel, "Real-time GI with Photon Mapping" — 2019 |
 | Brown-Conrady distortion | Brown (1966) / OpenCV `calib3d` / o3de Atom `LensDistortionPass` |
 | Local Exposure | Reinhard (2005), "Dynamic Range Reduction Inspired by Photographic Exposure"; o3de Atom LocalExposurePass |
+| Cloud Shadows | Schneider & Vosin (SIGGRAPH 2015) — same density field drives sky rendering and ground shadows; UE5 Volumetric Clouds shadow / o3de Atom SkyAtmosphere shadow pass |

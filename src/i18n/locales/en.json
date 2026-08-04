@@ -884,6 +884,11 @@
         "desc": "GPU ray-marched volumetric clouds with 3D Perlin+Worley noise, Beer-Powder transmittance, dual-lobed HG phase (silver-lining), and multi-scattering.",
         "advantage": "soup3D has no volumetric clouds"
       },
+      "cloudShadow": {
+        "title": "Cloud Shadows",
+        "desc": "Volumetric cloud shadows ray-marched along the sun direction through the same 3D noise field as the sky clouds, applying Beer-Lambert transmittance to darken the scene. Silhouettes stay in sync with drifting clouds and the sun angle.",
+        "advantage": "soup3D has no cloud shadows"
+      },
       "caustics": {
         "title": "Underwater Caustics",
         "desc": "Screen-space underwater caustics with depth reconstruction, three-wave procedural pattern, RGB chromatic dispersion, and Beer-Lambert depth attenuation.",
