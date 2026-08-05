@@ -8,6 +8,8 @@
 //   - InputAction    — 输入动作 (物理输入 → 逻辑动作映射)
 //   - InputMap       — 输入映射表 (多动作管理 + JSON 往返)
 //   - InputManager   — 输入管理器 (统一 attach DOM + 推进各 state)
+//   - InputBuffer    — 输入缓冲 (游戏感核心:按早了的输入不丢失)
+//   - Cooldown       — 动作冷却 (防止同一动作短时间内重复触发)
 
 export { KeyboardState } from './KeyboardState';
 export { MouseState } from './MouseState';
@@ -25,3 +27,14 @@ export {
 } from './InputAction';
 export { InputMap, type InputMapJSON } from './InputMap';
 export { InputManager, type InputManagerOptions } from './InputManager';
+export {
+  InputBuffer,
+  InputBufferPresets,
+  Cooldown,
+  CooldownPresets,
+  type BufferedInput,
+  type InputBufferJSON,
+  type InputBufferStats,
+  type CooldownEntry,
+  type CooldownJSON,
+} from './InputBuffer';

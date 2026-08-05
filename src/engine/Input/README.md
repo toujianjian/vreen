@@ -7,8 +7,12 @@
 > `pressed` / `released` edge detection, a DOM-attaching
 > `InputManager` that drives all four state objects from native events,
 > a logical action mapping layer (`InputAction` + `InputMap`) that
-> aggregates physical inputs into named gameplay actions, and JSON
-> round-trip for binding configurations.
+> aggregates physical inputs into named gameplay actions, an
+> `InputBuffer` that stores player inputs for a configurable time
+> window so "pressed-too-early" inputs are not lost (game feel
+> essential), a `Cooldown` manager that prevents the same action from
+> being triggered too frequently, and JSON round-trip for binding
+> configurations and buffer state.
 
 ---
 
@@ -42,6 +46,13 @@
 separately and calls `map.update(inputManager)` each frame. The two are
 decoupled through the `InputStateProvider` interface to avoid circular
 references and to make `InputMap` testable with a stub provider.
+
+`InputBuffer` and `Cooldown` sit downstream of `InputMap` — the game
+loop reads `action.isPressed()` from the map, pushes it into the
+buffer, and later checks `buffer.consume()` + `cooldown.canTrigger()`
+when the gameplay state allows the action to execute. They are
+fully decoupled from the input hardware layer and can be used with
+any input source (not just `InputManager`).
 
 ---
 
@@ -277,6 +288,168 @@ Aggregation rules per `InputAction.evaluate`:
   raw axis reading (post-deadzone). For gamepad triggers, value is the
   analog `0..1` reading.
 
+### `InputBuffer` (`InputBuffer.ts`)
+
+Stores player inputs for a configurable time window so that
+"pressed-too-early" inputs are not lost. Adapted from UE Motion
+Warping / Anim Montage Buffering, Unity Input System Interaction
+Settings, and o3de AzFramework InputSystemEventSerializers.
+
+**Problem solved**: the player presses "jump" during the landing
+animation (frame 3 of 10). The jump can only execute after the
+animation ends (frame 10). Without a buffer: the input is lost, the
+player feels "I pressed jump but nothing happened". With a buffer:
+the input is stored for 150ms; when the animation ends, the game
+checks the buffer and executes the jump immediately.
+
+| Export | Role |
+|--------|------|
+| `InputBuffer` | Buffer store. Owns `entries`, `bufferWindow`, `maxEntries`. |
+| `BufferedInput` | Entry shape: `action`, `timestamp`, `priority`, `consumed`. |
+| `InputBufferJSON` | Serialization shape (for save / replay). |
+| `InputBufferStats` | Debug stats: `totalEntries`, `activeEntries`, `totalPushed`, `totalConsumed`, `totalExpired`. |
+| `InputBufferPresets` | Factory: `actionGame()`, `fighting()`, `precisionPlatformer()`, `casual()`. |
+
+```ts
+export class InputBuffer {
+  bufferWindow: number;       // seconds, default 0.15 (150ms)
+  maxEntries: number;         // default 16
+
+  push(action: string, timestamp: number, priority?: number): this;
+  has(action: string, currentTime: number): boolean;
+  consume(action: string, currentTime: number): boolean;
+  peek(action: string, currentTime: number): BufferedInput | null;
+  consumeHighestPriority(currentTime: number): string | null;
+  update(currentTime: number): this;    // remove expired + consumed
+  clear(): this;
+  getEntries(): readonly BufferedInput[];
+  getStats(): InputBufferStats;
+  exportJSON(): InputBufferJSON;
+  importJSON(data: InputBufferJSON): this;
+  resetStats(): this;
+}
+```
+
+**`push(action, timestamp, priority?)`** — records an input. If the
+same action is already buffered (unconsumed), refreshes its timestamp
+and priority instead of creating a duplicate. This matches real game
+behavior: pressing "jump" twice within 150ms keeps the latest press.
+
+**`has(action, currentTime)`** — returns `true` if the action has an
+unconsumed, unexpired entry. Does not modify the buffer.
+
+**`consume(action, currentTime)`** — marks the action's entry as
+consumed and returns `true`. Returns `false` if not found, already
+consumed, or expired. The consumed entry is not removed immediately;
+it is cleaned up on the next `update()`.
+
+**`peek(action, currentTime)`** — returns a shallow copy of the
+matching entry without consuming it. Useful for UI feedback ("buffered
+input indicator") or for checking priority before committing to a
+consume.
+
+**`consumeHighestPriority(currentTime)`** — consumes and returns the
+action name of the highest-priority unconsumed, unexpired entry.
+Ties are broken by recency (newer timestamp wins). Returns `null` if
+the buffer is empty or all entries are consumed/expired. Use this for
+"input queue" mode where each frame executes at most one action,
+selected by priority.
+
+**`update(currentTime)`** — removes all consumed and expired entries.
+Call this once per frame. The `bufferWindow` check is
+`currentTime - entry.timestamp > bufferWindow`.
+
+**Timestamp contract** — all methods take `currentTime` (in seconds)
+as a parameter rather than using `performance.now()` internally. This
+allows deterministic testing, pause/resume (stop passing time), and
+slow-motion (pass scaled time).
+
+**`maxEntries`** — prevents unbounded growth. When exceeded, the
+oldest entry is dropped (FIFO eviction). Default 16 is sufficient for
+most games; fighting games with long combo sequences may need 32.
+
+**Presets**:
+- `actionGame()` — 150ms window, 16 entries. Standard action game.
+- `fighting()` — 200ms window, 32 entries. Longer window for combo
+  chains; more entries for multi-button sequences.
+- `precisionPlatformer()` — 100ms window, 8 entries. Tighter window
+  for precise platforming (complements coyote time).
+- `casual()` — 250ms window, 8 entries. More forgiving timing for
+  casual / mobile games.
+
+### `Cooldown` (`InputBuffer.ts`)
+
+Prevents the same action from being triggered too frequently.
+Complementary to `InputBuffer`: the buffer solves "pressed too early"
+(input remembered for later); the cooldown solves "pressed too fast"
+(action rejected if on cooldown).
+
+| Export | Role |
+|--------|------|
+| `Cooldown` | Cooldown manager. `set()`, `canTrigger()`, `trigger()`, `getRemaining()`, `getProgress()`. |
+| `CooldownEntry` | Internal entry: `duration` (seconds), `lastTrigger` (seconds). |
+| `CooldownJSON` | Serialization shape. |
+| `CooldownPresets` | Factory: `actionGame()`, `fps()`, `rpg()`. |
+
+```ts
+export class Cooldown {
+  set(action: string, duration: number): this;
+  canTrigger(action: string, currentTime: number): boolean;
+  trigger(action: string, currentTime: number): this;
+  getRemaining(action: string, currentTime: number): number;
+  getDuration(action: string): number;
+  getProgress(action: string, currentTime: number): number;  // 0..1
+  reset(action?: string): this;
+  exportJSON(): CooldownJSON;
+  importJSON(data: CooldownJSON): this;
+}
+```
+
+**`canTrigger(action, currentTime)`** — returns `true` if the action
+has no cooldown configured or if the cooldown has elapsed. Returns
+`false` if the action is on cooldown.
+
+**`trigger(action, currentTime)`** — records the trigger time,
+starting the cooldown. No-op if the action has no configured cooldown.
+
+**`getRemaining(action, currentTime)`** — returns seconds until the
+cooldown ends (0 if complete or unconfigured). Use for UI cooldown
+indicators.
+
+**`getProgress(action, currentTime)`** — returns `[0, 1]` where 0 =
+just triggered, 1 = cooldown complete. Returns 1 if unconfigured.
+
+**`reset(action?)`** — clears cooldown for one action (pass name) or
+all actions (omit argument). The action can immediately trigger again.
+
+**Presets**:
+- `actionGame()` — jump 200ms, dash 1s, attack 400ms, block 800ms.
+- `fps()` — shoot 100ms, reload 2s, melee 500ms.
+- `rpg()` — attack 600ms, cast 1.5s, dodge 800ms, item 300ms.
+
+**InputBuffer + Cooldown pipeline** — the standard game feel pattern
+is: push to buffer when pressed → check cooldown when the gameplay
+state allows → consume from buffer + trigger cooldown:
+
+```ts
+// 1. Push inputs (every frame, when action.isPressed())
+if (inputMap.getAction('jump').isPressed()) {
+  buffer.push('jump', currentTime);
+}
+
+// 2. Update buffer (every frame)
+buffer.update(currentTime);
+
+// 3. Consume when gameplay state allows
+if (isGrounded &&
+    buffer.has('jump', currentTime) &&
+    cooldown.canTrigger('jump', currentTime)) {
+  player.jump();
+  buffer.consume('jump', currentTime);
+  cooldown.trigger('jump', currentTime);
+}
+```
+
 ---
 
 ## Usage
@@ -397,6 +570,75 @@ input.setEnabled(false);
 input.setEnabled(true);    // state was reset, no stale "pressed" flags
 ```
 
+### Input buffering + cooldown (game feel)
+
+```ts
+import {
+  InputManager, InputMap,
+  InputBuffer, InputBufferPresets,
+  Cooldown, CooldownPresets,
+} from '@vreen/engine/input';
+
+const input = new InputManager();
+input.attach(canvas);
+const map = new InputMap();
+map.loadFromJSON(config);
+
+const buffer = InputBufferPresets.actionGame();
+const cooldown = CooldownPresets.actionGame();
+
+let currentTime = 0;
+
+function frame(dt: number) {
+  currentTime += dt;
+  input.update();
+  map.update(input);
+
+  // 1. Push pressed inputs into the buffer
+  if (map.getAction('jump').isPressed())  buffer.push('jump', currentTime);
+  if (map.getAction('dash').isPressed())  buffer.push('dash', currentTime, 5);
+  if (map.getAction('attack').isPressed())buffer.push('attack', currentTime, 3);
+
+  // 2. Update buffer (remove expired + consumed entries)
+  buffer.update(currentTime);
+
+  // 3. Execute highest-priority buffered action when gameplay allows
+  if (isGrounded) {
+    const action = buffer.consumeHighestPriority(currentTime);
+    if (action && cooldown.canTrigger(action, currentTime)) {
+      executeAction(action);
+      cooldown.trigger(action, currentTime);
+    }
+  }
+
+  // 4. UI: show cooldown progress
+  const jumpProgress = cooldown.getProgress('jump', currentTime);
+  hud.setCooldownBar('jump', jumpProgress);
+}
+```
+
+For save / replay, serialize the buffer state:
+
+```ts
+// Save
+const saveData = {
+  buffer: buffer.exportJSON(),
+  cooldown: cooldown.exportJSON(),
+};
+
+// Load
+buffer.importJSON(saveData.buffer);
+cooldown.importJSON(saveData.cooldown);
+```
+
+For debugging, inspect the buffer stats:
+
+```ts
+const stats = buffer.getStats();
+console.log(`Buffer: ${stats.activeEntries} active / ${stats.totalEntries} total`);
+console.log(`Pushed: ${stats.totalPushed}, Consumed: ${stats.totalConsumed}, Expired: ${stats.totalExpired}`);
+```
+
 ---
 
 ## Invariants
@@ -436,6 +678,40 @@ input.setEnabled(true);    // state was reset, no stale "pressed" flags
 - `InputStateProvider` is a structural interface: `InputManager`
   satisfies it, but tests can substitute a stub object with
   `keyboard` / `mouse` / `touch` / `gamepad` mocks.
+- `InputBuffer.push` for an already-buffered (unconsumed) action
+  **refreshes** the timestamp and priority rather than creating a
+  duplicate. This means pressing "jump" twice within the buffer
+  window keeps only the latest press — the buffer never contains two
+  entries for the same action simultaneously.
+- `InputBuffer.has` / `consume` / `peek` skip consumed entries
+  (return false/null) but do **not** remove them. Consumed entries
+  are removed only on the next `update()` call. This allows
+  `getStats()` to report accurate `totalEntries` including
+  recently-consumed inputs.
+- `InputBuffer.consumeHighestPriority` skips both consumed and
+  expired entries. When all entries are consumed or expired, it
+  returns `null` (no action to execute this frame).
+- `InputBuffer` timestamps are in **seconds** (not milliseconds),
+  passed by the caller. The buffer never calls `performance.now()`
+  internally — this allows deterministic testing, pause/resume, and
+  slow-motion.
+- `InputBuffer.exportJSON()` serializes `entries` including consumed
+  ones (for accurate replay). `importJSON()` does **not** reset
+  stats counters — call `resetStats()` separately if needed.
+- `Cooldown.canTrigger` returns `true` for actions with no
+  configured cooldown — unconfigured actions have no restriction.
+- `Cooldown.trigger` for an unconfigured action is a no-op (does
+  not throw, does not create an entry).
+- `Cooldown.getProgress` returns `1` for unconfigured actions (no
+  cooldown = always complete).
+- `Cooldown.reset()` with no argument clears **all** cooldowns;
+  with an action name, clears only that action. Cleared actions
+  can trigger immediately on the next `canTrigger` check.
+- `InputBuffer` and `Cooldown` are **independent** — they can be
+  used separately or together. The standard game feel pipeline is
+  push → `canTrigger` → `consume` + `trigger`, but either can be
+  omitted (e.g., buffer-only for non-cooldown actions, or
+  cooldown-only for simple rate-limiting).
 
 ---
 
@@ -503,9 +779,17 @@ buffer to clear (unlike keyboard/mouse pressed sets).
 - `src/engine/Input/GamepadState.ts` — Gamepad API wrapper.
 - `src/engine/Input/InputAction.ts` — action mapping + aggregation.
 - `src/engine/Input/InputMap.ts` — action collection + JSON round-trip.
+- `src/engine/Input/InputBuffer.ts` — input buffer + cooldown manager.
 - `src/engine/Controls/OrbitControls.ts` — direct DOM consumer of
   pointer events (does not go through `InputManager`).
 - `src/engine/Controls/PointerLockControls.ts` — first-person camera,
   also bypasses `InputManager` for pointer-lock-specific behavior.
+- UE Motion Warping / Anim Montage Buffering — input buffering design
+  inspiring `InputBuffer`.
+- Unity Input System Interaction Settings — interaction buffer pattern
+  inspiring `InputBuffer`.
+- o3de AzFramework InputSystemEventSerializers — input event
+  serialization inspiring `InputBuffer.exportJSON`.
+- GDC 2016 "Game Feel in Smash Bros" — buffer window design rationale.
 - MDN Web Docs: *KeyboardEvent.code*, *Gamepad API*, *Touch events* —
   browser API references.
