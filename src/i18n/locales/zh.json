@@ -1183,6 +1183,11 @@
         "title": "光传播体全局光照(Kaplanyan 2009)",
         "desc": "光传播体(LPV)CPU 参考实现,适配自 Kaplanyan 2009《CryEngine 3 中的光传播体》与 Kaplanyan & Dachsbacher 2010《辐照度传播》。把直接光照(点光、方向光、自发光表面)注入到 3D 球谐函数(SH2)网格(9 基 × 3 RGB = 27 floats/cell),通过 6 个轴向面方向迭代传播辐照度到邻居 cell,采用双缓冲(每次迭代 = 一次 bounce,默认 4 次),采样时三线性插值 8 个邻近 cell 的 SH 系数 + evaluateSH 评估表面法线方向。SH2 捕获低频漫反射间接光照(对 diffuse 足够,specular 请用 ReflectionProbe/SSR)。可选几何遮挡体积(Uint8Array)阻止光穿过实体几何,防止室内漏光(通过 buildGeometryVolume 从三角网格构建)。网格空间 GI,与现有 GI 族互补:SSGI(屏幕空间,仅可见表面)、DDGI(探针,需布局)、VXGI(体素空间,需体素化)、LPV(网格空间,最快多 bounce,无需探针,无需体素化)、PathTracer(离线,最高质量)。LPV 覆盖离屏表面(优于 SSGI),无需探针布局(优于 DDGI),无需昂贵体素化(优于 VXGI)——光传播是每 cell 面的简单 SH 评估,极快 O(N³ × 迭代 × 6),适合低端硬件实时多 bounce GI。61 单元测试,纯 CPU 参考实现,无 WebGL 依赖。GLSL chunks(LPV_GLSL、LPV_INJECTION_GLSL、LPV_PROPAGATION_GLSL)用于 GPU 集成(3D 纹理 + 计算着色器)。VREEN 现有 5 种 GI 方案(SSGI + DDGI + VXGI + LPV + PathTracer)——web 引擎中最完整的 GI 栈。",
         "advantage": "soup3D 完全没有全局光照系统;VREEN 有 5 种 GI 方案(SSGI + DDGI + VXGI + LPV + PathTracer)覆盖屏幕空间、探针、体素空间、网格空间与离线路径追踪,LPV 提供无需探针或体素化的最快实时多 bounce GI——理想于低端硬件"
+      },
+      "layeredPBRMaterial": {
+        "title": "层叠 PBR 材质(o3de Material Layering)",
+        "desc": "层叠 PBR 材质 CPU 参考实现,适配自 o3de 的 Material Layering 系统。允许在单一 mesh 上叠加最多 8 层 PBR 材质,每层有独立的 albedo / metallic / roughness / normal / emissive / AO / 高度,以及一个灰度遮罩(Float32Array)控制该层在表面各处的混合权重。4 种混合模式:normal(lerp)、add(累加,湿润/发光)、multiply(变暗,阴影)、overlay(Photoshop 风格对比,风化)。双线性遮罩采样 + WRAP UV 寻址(平铺),每层独立 UV 缩放/偏移。可选顶点颜色 alpha 调制遮罩(顶面草地、朝上表面雪)。法线混合带独立 normalBlend 因子 [0,1] + 重新归一化。自发光在层间始终加性累加(发光符文覆盖在油漆表面 + 发光裂缝)。静态遮罩工厂方法:createFullMask(均匀)、createRadialMask(冲击贴花、飞溅)、createNoiseMask(划痕、锈迹、污渍,种子确定)。典型用途:车漆(金属+油漆+划痕+锈迹+污渍)、地形(岩石+草地+泥土+雪)、角色(皮肤+污渍+血迹+磨损)、武器(金属+涂装+磨损+锈迹)、墙壁(灰泥+裂缝+霉菌+涂鸦)。56 单元测试,纯 CPU 参考实现,无 WebGL 依赖。GLSL chunks(LAYERED_PBR_GLSL、LAYERED_PBR_VERTEX_GLSL、LAYERED_PBR_FRAGMENT_GLSL)用于 GPU 集成(MaterialLayer[MAX_LAYERS] uniform 数组 + 遮罩采样器)。soup3D 每 mesh 仅单一材质;VREEN 支持专业材质层叠,游戏与影视制作必备。",
+        "advantage": "soup3D 每 mesh 仅支持单一材质无层叠;VREEN 支持最多 8 层 PBR 材质 + 每层遮罩 + 4 种混合模式 + 顶点色调制 + 遮罩工厂方法——专业游戏与影视制作必备(车漆、地形、角色、武器、墙壁层叠)"
       }
     }
   }

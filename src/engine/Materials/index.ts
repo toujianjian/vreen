@@ -262,3 +262,40 @@ export {
   type PixelDepthOffset,
 } from './ParallaxOcclusionMapping';
 
+// LayeredPBRMaterial — 层叠 PBR 材质(多层 PBR 通过遮罩混合)。
+// 适配自 o3de 的 Material Layering 系统。允许在单一 mesh 上叠加最多 8 层
+// PBR 材质,每层有独立的 albedo / metallic / roughness / normal / emissive / AO /
+// 高度,以及一个遮罩(mask)控制该层在表面各处的混合权重。
+// 4 种混合模式(normal / add / multiply / overlay),双线性遮罩采样,
+// 顶点颜色遮罩调制,独立 UV 缩放/偏移。遮罩工厂方法(全 1 / 径向 / 噪声)。
+// 典型用途:车漆(金属+油漆+划痕+锈迹)、地形(岩石+草地+泥土+雪)、
+// 角色(皮肤+污渍+血迹)、武器(金属+涂装+磨损)。
+// 纯 CPU 参考实现,无 WebGL 依赖。GLSL chunks(LAYERED_PBR_GLSL、
+// LAYERED_PBR_VERTEX_GLSL、LAYERED_PBR_FRAGMENT_GLSL)用于 GPU 集成。
+// soup3D 仅有单一材质;VREEN 支持层叠 PBR,适合专业游戏/影视渲染。
+export {
+  // 常量
+  MAX_LAYERS as LAYERED_MAX_LAYERS,
+  // 类型
+  type LayerBlendMode,
+  type MaterialLayer,
+  type LayeredMaterialEval,
+  // 工厂
+  createDefaultBaseLayer,
+  // 工具函数
+  lerp as layerLerp,
+  lerpRGB,
+  addRGB,
+  multiplyRGB,
+  scaleRGB,
+  overlayRGB,
+  normalizeNormalRGB,
+  sampleMaskBilinear,
+  // 类
+  LayeredPBRMaterial,
+  // GLSL
+  LAYERED_PBR_GLSL,
+  LAYERED_PBR_VERTEX_GLSL,
+  LAYERED_PBR_FRAGMENT_GLSL,
+} from './LayeredPBRMaterial';
+

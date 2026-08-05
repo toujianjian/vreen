@@ -1149,6 +1149,256 @@ UE5's `ParallaxOcclusionMapping` material node.
 - McGuire & McGuire (2005) — relief mapping
 - Andrea Riccardi (2018) — Contact refinement technique
 
+### `LayeredPBRMaterial` (`LayeredPBRMaterial.ts`)
+
+**Layered PBR Material** — multi-layer PBR material blending via per-layer
+masks. Adapted from o3de's Material Layering system. Allows stacking up
+to 8 PBR material layers on a single mesh, each with independent
+albedo / metallic / roughness / normal / emissive / AO / height, plus
+a grayscale mask controlling the layer's blend weight across the
+surface.
+
+**Why material layering?** Game and film production routinely need
+composite surface appearances that no single PBR material can express:
+
+| Scenario | Layers |
+|----------|--------|
+| Car paint | metal base + paint + scratches + rust + dirt |
+| Terrain | rock + grass + dirt + snow |
+| Character | skin + grime + blood + clothing wear |
+| Weapon | metal + coating + wear + rust |
+| Wall | plaster + cracks + mold + graffiti |
+
+Without layering, artists must bake these into a single texture set,
+losing the ability to tweak individual layers at runtime (e.g., dynamic
+weather, damage states, time-of-day wetness).
+
+**Architecture:**
+
+```
+              ┌──────────────────────────────────────────┐
+              │       LayeredPBRMaterial                 │
+              │  layers: MaterialLayer[] (1..8)          │
+              │  vertexColorMaskStrength: number         │
+              │  opacity / alphaMode / doubleSided       │
+              └──────────────────────────────────────────┘
+                                 │
+              ┌──────────────────┼──────────────────┐
+              ▼                  ▼                  ▼
+         ┌─────────┐       ┌─────────┐       ┌─────────┐
+         │ Layer 0 │       │ Layer 1 │       │ Layer N │
+         │ (base)  │       │ (paint) │       │ (dirt)  │
+         └─────────┘       └─────────┘       └─────────┘
+         baseColor         baseColor         baseColor
+         metallic          metallic          metallic
+         roughness         roughness         roughness
+         normal            normal            normal
+         emissive          emissive          emissive
+         ao                ao                ao
+         height            height            height
+         mask: null        mask: Float32     mask: Float32
+         (always 1)        maskUVScale       maskUVScale
+         blendMode         maskUVOffset      maskUVOffset
+         'normal'          opacity           opacity
+                           maskStrength      maskStrength
+                           blendMode         blendMode
+                           normalBlend       normalBlend
+                                 │
+                                 ▼
+                    ┌────────────────────────┐
+                    │  evaluate(uv, vertColor)│
+                    │  → LayeredMaterialEval  │
+                    │   .baseColor            │
+                    │   .metallic             │
+                    │   .roughness            │
+                    │   .normal (normalized)  │
+                    │   .emissive (additive)  │
+                    │   .ao                   │
+                    │   .height               │
+                    │   .layerWeights[]       │
+                    └────────────────────────┘
+```
+
+**Blending pipeline (per-pixel, bottom-up):**
+
+1. Start with `layers[0]` (base layer, mask ignored, weight = 1).
+2. For each subsequent layer `i` (1 to N-1):
+   - Sample mask via bilinear interpolation with WRAP UV addressing:
+     `maskVal = sampleMaskBilinear(layer.mask, maskU, maskV)`
+   - Apply UV transform: `maskU = uv.u * scale.u + offset.u`
+   - Optional vertex color modulation:
+     `maskVal = mix(maskVal, vertColor.a, vertexColorMaskStrength)`
+   - Compute final weight: `w = maskVal * opacity * maskStrength`
+   - Skip if `w < 1e-6`.
+   - Apply blend mode:
+     - **normal**: `result = lerp(result, layer, w)`
+     - **add**: `result += layer * w` (emissive always additive)
+     - **multiply**: `result *= (1 - w) + layer * w`
+     - **overlay**: `result = overlay(result, layer, w)` (Photoshop-style)
+   - Emissive is always additive regardless of blend mode.
+   - Normal is blended via `normalBlend` factor, then re-normalized.
+
+**Blend modes:**
+
+| Mode | Use Case | albedo | metallic/roughness |
+|------|----------|--------|--------------------|
+| `normal` | Default layering (paint over metal) | lerp | lerp |
+| `add` | Glow accumulation, wetness | add | metallic +, roughness - |
+| `multiply` | Darkening, shadowing | multiply | multiply |
+| `overlay` | Contrast enhancement, weathering | overlay blend | lerp |
+
+**Mask sampling:**
+
+Masks are `Float32Array` (grayscale 0..1) with explicit `maskWidth` and
+`maskHeight`. Sampling uses bilinear interpolation with WRAP UV
+addressing (tiling). Each layer can have independent UV scale and
+offset, allowing masks to tile at different rates than the base
+texture.
+
+```typescript
+// Sample mask with custom tiling
+const maskU = uv.u * layer.maskUVScale.u + layer.maskUVOffset.u;
+const maskV = uv.v * layer.maskUVScale.v + layer.maskUVOffset.v;
+const maskVal = sampleMaskBilinear(layer.mask, layer.maskWidth, layer.maskHeight, maskU, maskV);
+```
+
+**Vertex color mask:**
+
+Optional vertex color alpha channel modulates the mask, enabling
+per-vertex layer visibility (e.g., grass only on top faces, snow only
+on upward-facing surfaces). Controlled by `vertexColorMaskStrength`
+(0 = ignore vertex color, 1 = fully use vertex color alpha).
+
+**Normal blending:**
+
+Each layer's `normalBlend` [0,1] controls how much its tangent-space
+normal contributes. 0 = keep base normal, 1 = fully replace. After
+blending, the normal is re-normalized to ensure unit length.
+
+**Mask factory methods:**
+
+Static helpers for common mask patterns:
+
+- `createFullMask(w, h, value)` — uniform mask (all `value`).
+- `createRadialMask(w, h, cx, cy, radius)` — radial gradient (1 at
+  center, 0 at `radius` distance). Useful for impact decals, splatter.
+- `createNoiseMask(w, h, seed, threshold)` — binary noise mask via LCG.
+  Deterministic with seed. Useful for scratches, rust, dirt patterns.
+
+**Usage example:**
+
+```typescript
+import { LayeredPBRMaterial, createDefaultBaseLayer } from './LayeredPBRMaterial';
+
+// Car paint: metal + paint + scratches + dirt
+const mat = new LayeredPBRMaterial(
+  createDefaultBaseLayer('metal'),  // base layer
+);
+mat.layers[0].baseColor = { r: 0.7, g: 0.7, b: 0.75 };
+mat.layers[0].metallic = 1.0;
+mat.layers[0].roughness = 0.6;
+
+// Layer 1: red paint (fully covers base)
+mat.addLayer({
+  ...createDefaultBaseLayer('paint'),
+  baseColor: { r: 0.8, g: 0.1, b: 0.05 },
+  metallic: 0.5,
+  roughness: 0.3,
+  mask: LayeredPBRMaterial.createFullMask(8, 8, 1.0),
+  maskWidth: 8,
+  maskHeight: 8,
+});
+
+// Layer 2: scratches (noise mask, partial opacity)
+mat.addLayer({
+  ...createDefaultBaseLayer('scratches'),
+  baseColor: { r: 0.4, g: 0.4, b: 0.4 },
+  metallic: 0.9,
+  roughness: 0.8,
+  mask: LayeredPBRMaterial.createNoiseMask(8, 8, 42, 0.7),
+  maskWidth: 8,
+  maskHeight: 8,
+  opacity: 0.5,
+});
+
+// Layer 3: dirt (radial mask, localized)
+mat.addLayer({
+  ...createDefaultBaseLayer('dirt'),
+  baseColor: { r: 0.2, g: 0.15, b: 0.05 },
+  metallic: 0.0,
+  roughness: 0.9,
+  mask: LayeredPBRMaterial.createRadialMask(8, 8, 0.3, 0.3, 0.3),
+  maskWidth: 8,
+  maskHeight: 8,
+  opacity: 0.7,
+});
+
+// Evaluate at render time (per-pixel)
+const result = mat.evaluate({ u: 0.5, v: 0.5 });
+// result.baseColor, result.metallic, result.roughness, result.normal, ...
+```
+
+**GLSL integration:**
+
+Three GLSL chunks for GPU integration:
+
+- `LAYERED_PBR_GLSL` — core evaluation function with `MaterialLayer`
+  struct, `evaluateLayeredMaterial()`, all 4 blend modes, mask sampling,
+  normal normalization. Designed to be `#include`d in a fragment
+  shader.
+- `LAYERED_PBR_VERTEX_GLSL` — vertex shader with position/normal/uv/
+  tangent/vertColor inputs, outputs `v_uv`, `v_vertColor`,
+  `v_worldNormal`.
+- `LAYERED_PBR_FRAGMENT_GLSL` — fragment shader that calls
+  `evaluateLayeredMaterial()` and applies simplified PBR lighting.
+
+The GPU version uploads layer data as a `MaterialLayer[MAX_LAYERS]`
+uniform array with bound mask samplers. For WebGL2, this requires
+`MAX_DRAW_BUFFERS`-compliant uniform buffer or direct uniform uploads.
+
+**Design choices:**
+
+- **CPU reference first** — like `ParallaxOcclusionMapping`,
+  `MeshDistanceField`, and `LPV`, this is a pure CPU reference
+  implementation. Validates algorithm correctness and provides a
+  reference for GPU shader integration. The GPU version uses the same
+  blending math in GLSL.
+- **Up to 8 layers** — balances expressiveness against uniform buffer
+  limits and shader complexity. o3de supports similar layer counts.
+  For more layers, bake to a single texture set.
+- **Float32Array masks** — avoids WebGL texture creation in the CPU
+  reference. The GPU version would use sampler2D for masks.
+- **Emissive always additive** — emissive represents light emission,
+  not surface color. Multiple emissive layers should accumulate
+  (e.g., glowing runes over painted surface + glowing cracks).
+- **WRAP UV addressing** — masks tile seamlessly, matching the
+  behavior of GL_REPEAT. Other addressing modes (clamp/mirror) can be
+  added if needed.
+- **`normalBlend` factor** — separate from mask weight, allowing a
+  layer to contribute color without affecting normals (e.g., dirt
+  that follows the underlying surface curvature).
+
+**Comparison to soup3D:**
+
+| Feature | soup3D | VREEN |
+|---------|--------|-------|
+| Material layering | ✗ | ✓ (up to 8 layers) |
+| Per-layer PBR properties | ✗ | ✓ |
+| Per-layer masks | ✗ | ✓ (bilinear + WRAP) |
+| Blend modes | ✗ | ✓ (4 modes) |
+| Vertex color mask | ✗ | ✓ |
+| Mask factory methods | ✗ | ✓ (full/radial/noise) |
+| Normal blending | ✗ | ✓ (with re-normalization) |
+| GPU GLSL chunks | ✗ | ✓ |
+
+**References:**
+- o3de Atom "Material Layering" documentation
+- UE5 "Material Layer Blending"
+- Substance Painter "Layer Stack"
+- Burley 2012 "Physically Based Shading at Disney"
+- Karis 2013 "Real Shading in Unreal Engine 4"
+- Photoshop "Overlay blend mode" — overlay blending math
+
 ### `ShaderChunks/` Subdirectory
 
 10 GLSL fragment string constants + `ShaderChunkRegistry`:
