@@ -30,13 +30,7 @@ export type {
   SweptCharacterControllerOptions,
 } from './SweptCharacterController';
 
-// VRController — WebXR VR/XR 支持 (手柄追踪 + 双眼渲染位姿提取)。
-export { VRController } from './VRController';
-export type {
-  XRReferenceSpaceType,
-  VREyeParams,
-  VRHandController,
-  VRControllerStats,
-  VRSessionOptions,
-  VRHeadsetPose,
-} from './VRController';
+// VR/XR 支持已迁移到独立的 WebXR 模块 (src/engine/WebXR),
+// 提供完整的会话管理器 + 控制器 (手部25关节+捏合) + AR 子系统
+// (光照估计/平面检测/深度感知) + DOM 按钮 + Provider 抽象 (可测试)。
+// 原 VRController 已被 WebXRManager/WebXRController 取代。

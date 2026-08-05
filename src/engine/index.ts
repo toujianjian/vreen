@@ -288,3 +288,8 @@ export {
 // Tween 动画 (fade/scale/slide/color + 12 缓动函数 + 序列)。
 // 纯 CPU 布局/命中/动画逻辑,渲染层消费 UIDrawCommand 绘制。
 export * from './UI';
+// WebXR — VR/AR/MR 会话管理 (WebXR Device API)。
+// 适配 three.js WebXR (WebXRManager/Controller + VRButton/ARButton) + o3de Atom XR pass。
+// 会话生命周期 / 参考空间 / 帧循环 / 控制器 (目标射线+握持+手部25关节+捏合检测) /
+// AR 子系统 (光照估计+平面检测+深度感知遮挡)。纯逻辑可测试 (Provider 抽象注入)。
+export * from './WebXR';
