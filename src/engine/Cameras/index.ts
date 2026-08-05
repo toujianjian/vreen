@@ -56,4 +56,14 @@ export {
   type CubeFace,
   type CubeRenderTarget,
 } from './CubeCamera';
+// 碰撞感知弹簧摇臂 (SpringArm) — 第三人称相机防穿墙,支持射线/球面探针、
+// 指数平滑(帧率无关,无超调)、lookAt 平滑、目标位置平滑、预设。
+// 适配 UE SpringArmComponent / Unity Cinemachine Collider / o3de AtomCamera。
+export {
+  SpringArm,
+  SpringArmPresets,
+  type ProbeFn,
+  type ProbeType,
+  type SpringArmJSON,
+} from './SpringArm';
 

@@ -14,8 +14,11 @@
 > / easing / auto-look / handheld noise, a `PerlinShake` that produces
 > trauma²-decayed multi-octave Perlin noise camera shake (6 independent
 > translation/rotation channels), a `StereoCamera` for off-axis dual-eye
-> VR / 3D rendering, and a `CubeCamera` that captures 6-face environment
-> maps for real-time IBL / reflections / refractions.
+> VR / 3D rendering, a `CubeCamera` that captures 6-face environment
+> maps for real-time IBL / reflections / refractions, and a `SpringArm`
+> that drives a third-person camera with collision-aware boom retraction
+> (ray or sphere probe) and frame-rate-independent exponential smoothing
+> of arm length / target position / look-at point.
 
 ---
 
@@ -70,21 +73,40 @@ CubeCamera                     ── 6-face 90° environment map capture
    ├── renderTarget: CubeRenderTarget  (resolution / format / mipmap / colorSpace)
    ├── update(renderer, scene)         (delegates GL work to renderer.updateCubeCamera)
    └── autoUpdate / version            (matrixWorld sync + dirty tracking)
+
+SpringArm                      ── collision-aware third-person boom
+   ├── target: Object3D | null         (player / vehicle to follow)
+   ├── armOffset: Vector3              (default (0, 2, -5); length → maxDistance)
+   ├── targetOffset: Vector3           (lookAt point relative to target, default (0, 1.5, 0))
+   ├── probeType: 'ray' | 'sphere'     (default 'sphere'; sphere avoids thin-wall clipping)
+   ├── probeRadius: number             (default 0.3; >0 → sphere probe approximation)
+   ├── collisionMargin: number         (default 0.2; camera stops hitDist - margin - probeRadius)
+   ├── probe: ProbeFn | null           (custom collision probe; falls back to Raycaster)
+   ├── collisionObjects: Object3D[]    (used by default Raycaster probe)
+   ├── exponential smoothing           (alpha = 1 - exp(-rate * dt * 60); no overshoot)
+   │   ├── springStiffness / springDamping       (arm length smoothing, 0.35 / 0.65)
+   │   ├── lookAtStiffness / lookAtDamping       (lookAt point smoothing, 0.4 / 0.6)
+   │   └── positionStiffness / positionDamping   (target position smoothing, 0.5 / 0.5)
+   └── presets: thirdPerson / overShoulder / farFollow / firstPerson
 ```
 
-`CinematicCamera`, `CameraRig`, and `CameraPath` are complementary:
-`CinematicCamera` plays a *scripted* shot sequence (predetermined
-discrete poses with transitions between them), `CameraPath` plays a
-*continuous* keyframed spline (smooth motion through control points
-with no shot boundaries), and `CameraRig` *reactively* follows a live
-`Object3D` (player / vehicle). They compose — a rig can follow the
-player while a cinematic camera cuts between rigs, or a `CameraPath`
-can drive a flythrough while `PerlinShake` overlays explosion shake.
-`PerlinShake` is independent of all three: it produces a per-frame
-`ShakeOffset` (translation + rotation) that the caller adds to any
-camera's pose. `CubeCamera` is orthogonal: it captures the scene into
-a cube map rather than rendering a single view, and its output feeds
-the material system's `envMap` / IBL pipeline.
+`CinematicCamera`, `CameraRig`, `CameraPath`, and `SpringArm` are
+complementary: `CinematicCamera` plays a *scripted* shot sequence
+(predetermined discrete poses with transitions between them),
+`CameraPath` plays a *continuous* keyframed spline (smooth motion
+through control points with no shot boundaries), `CameraRig`
+*reactively* follows a live `Object3D` (player / vehicle) with a
+choice of motion modes, and `SpringArm` *reactively* follows a target
+while preventing the camera from clipping through geometry. They
+compose — a `CameraRig` can drive a `SpringArm.target` (rig decides
+where the camera should orbit, arm retracts it from walls); a
+`CinematicCamera` can cut between rigs; a `CameraPath` can drive a
+flythrough while `PerlinShake` overlays explosion shake. `PerlinShake`
+is independent of all four: it produces a per-frame `ShakeOffset`
+(translation + rotation) that the caller adds to any camera's pose.
+`CubeCamera` is orthogonal: it captures the scene into a cube map
+rather than rendering a single view, and its output feeds the material
+system's `envMap` / IBL pipeline.
 
 ---
 
@@ -574,6 +596,161 @@ parallel to (0,1,0).
 - `update()` does not skip rendering when `version` is unchanged —
   callers decide cadence (every frame, on-demand, or throttled).
 
+### `SpringArm` (`SpringArm.ts`)
+
+Collision-aware camera boom with frame-rate-independent exponential
+smoothing. Prevents third-person cameras from clipping through geometry
+by retracting the boom when obstructed, using ray or sphere probes.
+Adapted from Unreal `SpringArmComponent`, Unity Cinemachine Collider,
+and o3de AtomCamera collision probe conventions.
+
+| Export | Role |
+|--------|------|
+| `SpringArm` | Boom driver. Owns `target`, `armOffset`, `probeType`, smoothing parameters, and runtime collision state. |
+| `ProbeFn` | Custom collision probe function type: `(origin, direction, maxDist) => hitDist \| null`. |
+| `ProbeType` | `'ray' \| 'sphere'` — probe shape. |
+| `SpringArmJSON` | Serialization shape (excludes `target` / `camera` references). |
+| `SpringArmPresets` | Factory object with `thirdPerson()`, `overShoulder()`, `farFollow()`, `firstPerson()`. |
+
+```ts
+export class SpringArm {
+  camera: Camera | null;             // driven camera (null = internal-only)
+  target: Object3D | null;           // follow target (null → update is no-op)
+  armOffset: Vector3;                // default (0, 2, -5)
+  targetOffset: Vector3;             // lookAt offset relative to target, default (0, 1.5, 0)
+  maxDistance: number;               // derived from armOffset.length(), overridable
+  probeRadius: number;               // default 0.3 (sphere radius; 0 = ray)
+  collisionMargin: number;           // default 0.2 (retract buffer)
+  probeType: ProbeType;              // default 'sphere'
+  springStiffness: number;           // default 0.35 (arm length smoothing rate)
+  springDamping: number;             // default 0.65 (arm length smoothing lag)
+  lookAtStiffness: number;           // default 0.4
+  lookAtDamping: number;             // default 0.6
+  positionStiffness: number;         // default 0.5 (target position smoothing)
+  positionDamping: number;           // default 0.5
+  currentLength: number;             // smoothed arm length (readable)
+  probe: ProbeFn | null;             // custom probe; null → Raycaster
+  collisionObjects: Object3D[];      // Raycaster collision list
+
+  constructor(camera?: Camera | null);
+  follow(target: Object3D): this;              // snap-align smoothing state
+  setArmOffset(offset: Vector3): this;         // recompute maxDistance
+  setCollisionObjects(objects: Object3D[]): this;
+  setProbe(probe: ProbeFn | null): this;
+  update(dt: number): this;                    // probe + smooth + write camera
+  exportJSON(): SpringArmJSON;
+  importJSON(data: SpringArmJSON): this;
+}
+```
+
+**`update(dt)` flow** (per frame):
+1. Smooth `target.position` → `smoothedTargetPos` (exponential, frame-rate-independent).
+2. Compute arm direction = normalized `armOffset`.
+3. Probe origin = `smoothedTargetPos + targetOffset`.
+4. Run collision probe along arm direction up to `maxDistance`.
+5. If hit: `targetLength = hitDist - collisionMargin - probeRadius`
+   (clamped to `[0, maxDistance]`). If miss: `targetLength = maxDistance`.
+6. Smooth `currentLength` toward `targetLength` using exponential smoothing.
+7. Final camera position = `probeOrigin + armDir * currentLength`.
+8. Smooth lookAt point = `smoothedTargetPos + targetOffset` → write `camera.lookAt`.
+
+**Probe types**:
+- `ray` — single ray cast. Fast, but can clip through thin geometry
+  (e.g. monoleaf walls) when the camera center misses the wall but
+  the camera frustum intersects it.
+- `sphere` — approximates a sphere sweep by reserving `probeRadius`
+  behind the hit point. This is a conservative approximation: it does
+  not perform a true swept-sphere test, but in practice eliminates
+  the most common thin-wall clipping artifacts. For a true sphere
+  sweep, inject a custom `probe` function backed by a swept-sphere
+  physics engine.
+
+**Exponential smoothing** — all three smoothing channels (arm length,
+lookAt, target position) use the same formula:
+
+```
+alpha = 1 - exp(-rate * dt * 60)
+rate  = stiffness * (1 - damping * 0.5)
+value += (target - value) * alpha
+```
+
+This is frame-rate independent (the `* 60` factor normalizes to a
+60 Hz reference) and monotonic — it never overshoots, which is
+critical for camera distance smoothing (overshoot would cause the
+camera to dip past a wall before settling). At 60 fps with
+`stiffness=0.35`, `damping=0.65`, `alpha ≈ 0.21`, converging to 95%
+in ~0.5 seconds. This matches Unreal's `bEnableCameraLag` +
+`CameraLagSpeed` behavior and is more stable than a velocity-based
+spring (which can oscillate).
+
+**`follow(target)`** — immediately copies `target.position` into
+`smoothedTargetPos` and resets `currentLength = maxDistance`. This
+avoids a large initial jump from the origin (0, 0, 0) to the target.
+Subsequent `update(dt)` calls apply smoothing.
+
+**`setArmOffset(offset)`** — copies the offset and recomputes
+`maxDistance = offset.length()`. Does not resize `currentLength`
+(the next `update()` will smooth toward the new `maxDistance`).
+
+**Custom probe injection** — the default probe uses `Raycaster`
+against `collisionObjects`. For engines with bespoke collision
+(VREEN Voxel DDA, physics engine swept tests, NavMesh boundaries),
+inject `probe`:
+
+```ts
+arm.setProbe((origin, dir, max) => voxelWorld.raycast(origin, dir, max));
+```
+
+When `probe` is non-null, `collisionObjects` and `probeType` are
+ignored. The probe contract is `(origin, normalizedDir, maxDist) =>
+hitDist | null` — returning `null` (miss) lets the arm extend to
+`maxDistance`.
+
+**Presets**:
+- `thirdPerson()` — `(0, 2.5, -6)` arm, sphere probe radius 0.35,
+  margin 0.25, stiffness 0.4 / damping 0.6. The default for action /
+  adventure third-person games.
+- `overShoulder()` — `(1.2, 1.8, -3.5)` offset (right shoulder),
+  shorter arm, stiffer spring (0.5 / 0.5) for tighter aim-camera feel.
+- `farFollow()` — `(0, 5, -12)` arm, larger probe radius 0.5, softer
+  spring (0.25 / 0.75) for vehicle / mount following.
+- `firstPerson()` — zero arm length, `probeType = 'ray'`, stiffness
+  1.0 / damping 0.0 (instant). Only the lookAt smoothing is active;
+  the camera sits at the target position.
+
+**Composition with `CameraRig`** — `CameraRig` provides orbit / crane
+motion; `SpringArm` provides collision retraction. To combine, drive
+`SpringArm.target` from `CameraRig.position`:
+
+```ts
+const rig = new CameraRig(/* camera= */ null);
+rig.follow(playerEntity).setType('orbit');
+rig.radius = 6;
+
+const arm = new SpringArm(mainCamera);
+arm.setCollisionObjects(levelGeometry);
+
+// frame loop:
+rig.update(dt);              // compute rig.position (orbit around player)
+arm.target.position.copy(rig.position);  // feed rig output to arm
+arm.update(dt);              // arm retracts from walls, writes mainCamera
+```
+
+This is preferable to running `CameraRig.update(dt)` directly on the
+camera when the rig's orbit path can clip through walls.
+
+**Composition with `PerlinShake`** — `PerlinShake` should be applied
+*after* `SpringArm.update()` so the shake offset is in camera-local
+space:
+
+```ts
+arm.update(dt);
+shake.update(dt);
+const offset = shake.getOffset();
+arm.camera!.position.add(offset.translation);
+// apply rotation offset to camera quaternion (caller responsibility)
+```
+
 ---
 
 ## Usage
@@ -742,6 +919,58 @@ Common patterns:
   when the scene changes (door opens, light moves), checking `version`
   to invalidate downstream caches.
 
+### SpringArm for third-person collision-aware camera
+
+```ts
+import { SpringArm, SpringArmPresets, PerspectiveCamera } from '@vreen/engine';
+
+// 1. Create with a preset (or new SpringArm(camera) + manual config)
+const mainCamera = new PerspectiveCamera(60, 16 / 9, 0.1, 200);
+const arm = SpringArmPresets.thirdPerson();
+arm.camera = mainCamera;
+
+// 2. Bind to the player + level geometry
+arm.follow(playerEntity);
+arm.setCollisionObjects([levelGeometry, props, staticMeshes]);
+
+// 3. Optional: inject a custom probe (e.g. VREEN Voxel DDA)
+// arm.setProbe((origin, dir, max) => voxelWorld.raycast(origin, dir, max));
+
+// 4. Frame loop
+arm.update(dt);
+renderer.render(scene, arm.camera);
+```
+
+For an over-shoulder aim camera, swap the preset and tighten the spring:
+
+```ts
+const aimArm = SpringArmPresets.overShoulder();
+aimArm.camera = mainCamera;
+aimArm.follow(playerEntity);
+aimArm.setCollisionObjects(levelGeometry);
+// aimArm.springStiffness = 0.6;  // tighter
+```
+
+To detect that the camera is currently retracted (e.g. for UI fade or
+crosshair state), compare `currentLength` against `maxDistance`:
+
+```ts
+arm.update(dt);
+const retracted = arm.currentLength < arm.maxDistance - 0.05;
+if (retracted) hud.fadeOutCrosshair();
+```
+
+To combine with `PerlinShake`, apply the shake offset *after* the arm
+has written the camera pose:
+
+```ts
+arm.update(dt);
+shake.update(dt);
+const offset = shake.getOffset();
+mainCamera.position.add(offset.translation);
+// apply rotation offset to camera quaternion (caller responsibility)
+```
+
 ---
 
 ## Invariants
@@ -818,6 +1047,36 @@ Common patterns:
   `up=(0,-1,0)`. `Object3D.lookAt` (which hard-codes `up=(0,1,0)`) is
   **not** used — `_updateCameras()` builds the rotation directly from
   `Matrix4.makeLookAt` to support the per-face up vectors.
+- `SpringArm.update(dt)` is a no-op when `target === null`; if
+  `camera === null` it still updates internal state (`currentLength`,
+  `smoothedTargetPos`, `smoothedLookAt`) for external consumption.
+- `SpringArm.follow(target)` immediately copies `target.position` into
+  `smoothedTargetPos` and resets `currentLength = maxDistance` to
+  avoid a large initial jump from the origin; subsequent `update(dt)`
+  calls apply smoothing.
+- `SpringArm.maxDistance` is derived from `armOffset.length()` in the
+  constructor and `setArmOffset()`; it can be manually overridden but
+  must remain `>= 0`. `currentLength` is always clamped to
+  `[0, maxDistance]` after each `update()`.
+- Collision retraction formula: `targetLength = max(0, min(maxDistance,
+  hitDist - collisionMargin - probeRadius))`. The `probeRadius` term
+  is **always** subtracted regardless of `probeType`. When switching
+  to `probeType = 'ray'`, callers should set `probeRadius = 0` to
+  avoid over-retraction (the presets' `firstPerson()` does this).
+- Exponential smoothing uses `alpha = 1 - exp(-rate * dt * 60)` where
+  `rate = stiffness * (1 - damping * 0.5)`. At `dt = 0`, `alpha = 0`
+  (no integration); as `dt → ∞`, `alpha → 1` (instant snap). The
+  smoothing is monotonic — it never overshoots.
+- When `probe` is non-null, `collisionObjects` and `probeType` are
+  ignored — the custom probe is the sole source of collision truth.
+- When `probe` is null and `collisionObjects.length === 0`, the probe
+  returns `null` (no collision) and the arm extends to `maxDistance`.
+- `SpringArm.exportJSON()` does **not** serialize `target` or `camera`
+  references (they are object identities, not data); callers re-bind
+  them after `importJSON()`.
+- `SpringArmPresets` factories do **not** bind a camera — the caller
+  must set `arm.camera` or pass it via `new SpringArm(camera)` after
+  cloning the preset's config.
 
 ---
 
