@@ -1168,6 +1168,11 @@
         "title": "网格距离场(UE5 / Hart 1996)",
         "desc": "网格距离场(MDF)+ 距离场软阴影(DFSS)+ 距离场环境光遮蔽(DFAO)CPU 参考实现,适配自 UE5 Mesh Distance Fields + Distance Field Shadowing + Distance Field Ambient Occlusion、Hart 1996 球面追踪、Crassin 等 2011 体素锥追踪与 Ericson 2005《实时碰撞检测》§5.1.5(点-三角形距离)。把网格表面编码为 3D 均匀网格有符号距离场(外部为正,表面为零,内部为负)。球面追踪沿光线每步前进当前 SDF 值,保证不穿透表面:无 aliasing,无 acne,无需 bias 调参,锥追踪产生自然软阴影。同一 SDF 可复用于阴影(DFSS 锥追踪,penumbra = d / (t * lightSize))、环境光遮蔽(DFAO Fibonacci 半球采样)、碰撞、GI 与粒子碰撞。世界空间方案,与光空间阴影族(basic / PCF / PCSS / ESM / VSM / CSM)互补:光空间贴图受限于纹理分辨率与投影几何,SDF 仅受体素分辨率约束,独立于视角/光源。黄金比例方向 (1, φ⁻¹, φ⁻²) 用于内外判定奇偶计数,避免轴对齐边/顶点退化。最小偏置 = 2× 体素尺寸(由分辨率推导,非场景调参)。三线性采样与 GLSL texture(sampler3D, LINEAR) 一致。射线-AABB 入口计算支持网格 AABB 外点的阴影。68 个单元测试,纯函数,无 WebGL 依赖,可在 Node/无头环境运行。GLSL chunks(SDF_SAMPLE_GLSL、DFSS_SHADOW_GLSL、DFAO_GLSL)用于未来 GPU 集成。VREEN 现有 6 种阴影方案(basic / PCF / PCSS / ESM / VSM / DFSS)覆盖全精度-性能谱,DFSS 是唯一世界空间方案。",
         "advantage": "soup3D 仅 basic 硬阴影且存在 bias 调参伪影;无符号距离场,无世界空间阴影方案,无距离场环境光遮蔽,阴影贴图仅单一用途"
+      },
+      "virtualTexturing": {
+        "title": "稀疏虚拟纹理(o3de / UE5)",
+        "desc": "稀疏虚拟纹理(SVT)系统,适配自 o3de Atom Virtual Texture(Gems/Atom/Asset/ImageStreaming)、UE5 Virtual Texturing(TexturePageTable + FeedbackBuffer)、Mellor 2004 Virtual Texture Mapping 与 Niesner 2009 Practical Virtual Texture Rendering。把超大虚拟纹理(如 16384×16384)分页为固定大小 128×128 瓦片,仅把 GPU 实际采样到的页面加载到共享物理纹理图集(默认 8192×8192 = 4096 槽位)。使用与 VirtualShadowMap(阴影虚拟纹理)同构的 PageTable(mip + pageX + pageY → physicalIndex)+ PhysicalAtlas 模式。GPU 通过 MRT 写入反馈(被采样的页面);CPU 处理反馈,去重,按 mip(低 mip = 高分辨率 = 高优先级)与 sampleCount 排序,然后以 maxPagesPerFrame(默认 8)为上限加载页面,防止帧率抖动。LRU 驱逐带优先级权重(评分 = lastUsed - priority × 1000),防止抖动。preloadLowMips 预加载 1×1 与 2×2 降级页面。与 TextureStreaming(Mip 级别流式,适合多张中等纹理)互补:SVT 处理单张超大纹理(地形 mega-texture、卫星图、8K+ 角色纹理),突破 GPU 显存上限。virtualUVToPhysicalUV 通过页面表重映射 shader UV。50+ 单元测试,纯 CPU 参考实现,无 WebGL 依赖。GLSL chunks(VIRTUAL_TEXTURE_GLSL、VT_FEEDBACK_GLSL、VT_PAGE_TABLE_GLSL)用于 GPU 集成。",
+        "advantage": "soup3D 完全没有纹理流式系统,无虚拟纹理,无分页加载,无法处理超过 GPU 显存上限的纹理;VREEN 有 TextureStreaming(Mip 流式)与 VirtualTexturing(分页 SVT)双方案覆盖所有纹理流式场景"
       }
     }
   }

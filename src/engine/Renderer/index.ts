@@ -1133,3 +1133,55 @@ export {
   type DFAOOptions,
 } from './MeshDistanceField';
 
+// VirtualTexturing — 稀疏虚拟纹理(Sparse Virtual Texture, SVT)系统。
+// 适配自 o3de Atom "Virtual Texture" (Gems/Atom/Asset/ImageStreaming) +
+// UE5 "Virtual Texturing" (TexturePageTable + FeedbackBuffer) +
+// Mellor 2004 "Virtual Texture Mapping" + Niesner 2009
+// "Practical Virtual Texture Rendering"。
+// 把超大虚拟纹理(如 16384×16384)分页化,按需把被采样到的页面加载到有限的
+// 物理纹理图集中,突破 GPU 显存上限。与 VirtualShadowMap(阴影虚拟纹理)同构:
+// 两者都使用 PageTable(mip + pageX + pageY → physicalPage)+ PhysicalAtlas 模式。
+// 与 TextureStreaming(Mip 级别流式)互补:TextureStreaming 按距离决定加载到
+// 第几层 mip,整张纹理一次性加载某层完整 mip,适合"中等分辨率纹理 × N 张";
+// VirtualTexturing 把单张超大纹理分页,只加载被采样的页面,
+// 适合"单张超大纹理(地形 mega-texture、卫星图、8K+ 角色)"。
+// 工作流程:GPU 渲染时写 FeedbackBuffer → CPU 分析反馈 → 分配物理槽位
+// (无空闲时 LRU 驱逐)→ 异步加载页面数据 → 上传物理图集 → 更新 PageTable
+// → shader 通过 PageTable 重映射 UV 采样物理图集。
+// 纯 CPU 参考实现,无 WebGL 依赖,可在 Node/无头环境测试。
+// soup3D 无虚拟纹理/纹理流式系统;VREEN 有 TextureStreaming + SVT 双方案。
+export {
+  // 工具函数
+  ceilLog2 as vtCeilLog2,
+  computeMipCount as vtComputeMipCount,
+  pagesAtMip as vtPagesAtMip,
+  pageByteSize as vtPageByteSize,
+  physicalPagesPerSide as vtPhysicalPagesPerSide,
+  physicalSlotCount as vtPhysicalSlotCount,
+  physicalIndexToOffset as vtPhysicalIndexToOffset,
+  virtualUVToPageCoord as vtVirtualUVToPageCoord,
+  pageCoordToLinearIndex as vtPageCoordToLinearIndex,
+  desiredMipForScreenSize as vtDesiredMipForScreenSize,
+  // 类
+  PageTable as VTPageTable,
+  PhysicalTextureAtlas as VTPhysicalTextureAtlas,
+  VirtualTexture as VTVirtualTexture,
+  VirtualTexturingSystem,
+  // 常量
+  DEFAULT_VT_CONFIG,
+  // GLSL 着色器块
+  VIRTUAL_TEXTURE_GLSL,
+  VT_FEEDBACK_GLSL,
+  VT_PAGE_TABLE_GLSL,
+  // 类型
+  type VirtualTextureDescriptor,
+  type PageStatus,
+  type VirtualPageCoord as VTVirtualPageCoord,
+  type PageTableEntry as VTPageTableEntry,
+  type FeedbackEntry as VTFeedbackEntry,
+  type PhysicalPageSlot as VTPhysicalPageSlot,
+  type PageProvider as VTPageProvider,
+  type VirtualTexturingConfig,
+  type VirtualTexturingStats,
+} from './VirtualTexturing';
+

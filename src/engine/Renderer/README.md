@@ -3353,6 +3353,280 @@ float ao = dfao(uSDF, uSDFMin, uSDFMax, worldPos, normal,
 
 ---
 
+### Virtual Texturing (`VirtualTexturing.ts`)
+
+**Sparse Virtual Texture (SVT)** system — a page-based texture streaming
+architecture that allows textures larger than GPU memory to be
+rendered by loading only the pages (tiles) that are actually sampled.
+Adapted from o3de Atom "Virtual Texture"
+(`Gems/Atom/Asset/ImageStreaming`), UE5 "Virtual Texturing"
+(`TexturePageTable` + `FeedbackBuffer`), Mellor 2004 "Virtual Texture
+Mapping" (original SVT paper), and Niesner 2009 "Practical Virtual
+Texture Rendering".
+
+This is the **texture-space** counterpart to `VirtualShadowMap`'s
+**shadow-space** paging: both divide a large virtual texture into
+fixed-size pages, maintain a `PageTable` mapping virtual pages
+(`mip + pageX + pageY`) to physical atlas slots, and use an LRU cache
+to evict cold pages when the physical atlas is full.
+
+**Why SVT vs `TextureStreaming`?**
+
+| Aspect | `TextureStreaming` (Mip streaming) | `VirtualTexturing` (SVT) |
+|--------|-------------------------------------|--------------------------|
+| Granularity | Per-mip (whole mip level) | Per-page (128×128 tile within a mip) |
+| Use case | Many medium textures | Single huge texture (16K+) |
+| Memory control | Evicts whole texture | Evicts individual pages |
+| GPU feedback | Distance / screen-size heuristic | Actual UV sampling feedback |
+| Texture size limit | GPU max texture size | Unlimited (virtual) |
+| Typical | 100 × 2K textures | 1 × 16K terrain mega-texture |
+
+**Architecture:**
+
+```
+                    ┌──────────────────────────────────────────┐
+                    │          Virtual Textures (N)             │
+                    │  VirtualTextureDescriptor + PageTable     │
+                    │  (mip + pageX + pageY → physicalIndex)    │
+                    └──────────────────┬───────────────────────┘
+                                       │ shares
+                                       ▼
+                    ┌──────────────────────────────────────────┐
+                    │     PhysicalTextureAtlas (shared)         │
+                    │  atlasSize × atlasSize (e.g., 8192²)     │
+                    │  divided into pagesPerSide² slots        │
+                    │  (e.g., 64² = 4096 slots of 128×128)     │
+                    └──────────────────┬───────────────────────┘
+                                       │
+              ┌────────────────────────┼────────────────────────┐
+              ▼                        ▼                        ▼
+    ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+    │  FeedbackBuffer │    │   PageCache     │    │  PageProvider   │
+    │  (GPU writes    │    │  (LRU tracking  │    │  (async load    │
+    │   sampled pages)│    │   lastUsed +    │    │   page data via │
+    │                 │    │   priority)     │    │   callback)     │
+    └─────────────────┘    └─────────────────┘    └─────────────────┘
+```
+
+**Per-frame pipeline:**
+
+1. **GPU renders** → Fragment shader samples virtual UV, writes
+   `(vtId, mip, pageX, pageY)` to `FeedbackBuffer` via MRT or
+   `imageStore`.
+2. **`processFeedback(feedback, timestamp)`** → deduplicates feedback
+   entries, sorts by mip (lower = higher resolution = higher priority)
+   then by `sampleCount`.
+3. **Load loop** (capped at `maxPagesPerFrame`):
+   a. `allocateFreeSlot()` → find free physical slot.
+   b. If full → `evictLRU()` → evict the page with lowest
+      `lastUsed - priority × 1000` score.
+   c. `pageProvider(vtId, coord)` → async load page pixel data.
+   d. `uploadPageData(physicalIndex, pageData)` → write to atlas.
+   e. `PageTable.set({coord, physicalIndex, status: 'resident'})`.
+4. **Shader path** → `virtualUVToPhysicalUV(vtId, u, v, mip)` →
+   returns physical atlas UV; if page not resident → return `null`
+   (shader falls back to lower mip).
+
+**Page layout:**
+
+For a virtual texture of `virtualWidth × virtualHeight` with
+`pageSize = 128`:
+
+- Pages at mip 0: `(virtualWidth / 128) × (virtualHeight / 128)`
+- Pages at mip m: `max(1, basePages >> m)`
+- Total mip levels: `ceilLog2(maxPages) + 1` (down to 1×1 page)
+- Example: 16384² texture → 128×128 pages at mip 0 → 8 mip levels
+  → mip 7 = 1×1 page (whole texture in one 128×128 tile)
+
+**Physical atlas layout:**
+
+For `atlasSize = 8192`, `pageSize = 128`:
+- Pages per side: `8192 / 128 = 64`
+- Total slots: `64 × 64 = 4096`
+- Each slot: 128×128 texels
+- Physical index → offset: `slotX = index % 64`, `slotY = index / 64`
+  → `offsetX = slotX × 128`, `offsetY = slotY × 128`
+
+**API surface:**
+
+```ts
+import {
+  // Utility functions
+  vtCeilLog2,                  // integer log2 (ceiling)
+  vtComputeMipCount,           // virtualWidth/Height + pageSize → mip count
+  vtPagesAtMip,                // pages per side at a given mip
+  vtPageByteSize,              // pageSize × channels × bytesPerChannel
+  vtPhysicalPagesPerSide,      // atlasSize / pageSize
+  vtPhysicalSlotCount,         // (atlasSize / pageSize)²
+  vtPhysicalIndexToOffset,     // slot index → pixel offset
+  vtVirtualUVToPageCoord,      // UV → (pageX, pageY, localU, localV)
+  vtPageCoordToLinearIndex,    // (mip, pageX, pageY) → linear index
+  vtDesiredMipForScreenSize,   // screen-space size → desired mip
+  // Classes
+  VTPageTable,                 // virtual page → physical slot mapping
+  VTPhysicalTextureAtlas,      // shared GPU texture atlas
+  VTVirtualTexture,            // single virtual texture instance
+  VirtualTexturingSystem,      // system manager (multi-VT + shared atlas)
+  // Constants
+  DEFAULT_VT_CONFIG,           // {atlasSize: 8192, pageSize: 128, ...}
+  // GLSL chunks
+  VIRTUAL_TEXTURE_GLSL,        // vtSample() + vtLookupPageTable()
+  VT_FEEDBACK_GLSL,            // vtWriteFeedback()
+  VT_PAGE_TABLE_GLSL,          // page table texture sampling
+  // Types
+  type VirtualTextureDescriptor,
+  type VTVirtualPageCoord, type VTPageTableEntry,
+  type VTFeedbackEntry, type VTPhysicalPageSlot,
+  type VTPageProvider, type VirtualTexturingConfig,
+  type VirtualTexturingStats,
+} from '@vreen/engine/renderer';
+```
+
+**Usage (CPU reference):**
+
+```ts
+import {
+  VirtualTexturingSystem,
+  type VirtualTextureDescriptor,
+  type VTFeedbackEntry,
+} from '@vreen/engine/renderer';
+
+// 1. Create system with small atlas for testing
+const sys = new VirtualTexturingSystem({
+  atlasSize: 4096,  // 32×32 = 1024 slots
+  pageSize: 128,
+  maxPagesPerFrame: 8,
+});
+
+// 2. Register a 16K virtual texture
+const desc: VirtualTextureDescriptor = {
+  id: 'terrain-albedo',
+  virtualWidth: 16384,
+  virtualHeight: 16384,
+  format: 'bc7',
+  channels: 4,
+  bytesPerChannel: 1,
+};
+sys.registerTexture(desc);
+
+// 3. Set page provider (async load from disk/network)
+sys.setPageProvider(async (vtId, coord) => {
+  const url = `/textures/${vtId}/${coord.mip}/${coord.pageX}_${coord.pageY}.bin`;
+  const res = await fetch(url);
+  return new Uint8Array(await res.arrayBuffer());
+});
+
+// 4. Preload low mips (fallback when high-res pages not yet loaded)
+await sys.preloadLowMips('terrain-albedo', performance.now(), 2);
+
+// 5. Each frame: process GPU feedback
+const feedback: VTFeedbackEntry[] = gpuFeedbackBuffer.read();
+const loadedCount = await sys.processFeedback(feedback, performance.now());
+
+// 6. Query page table for shader UV remapping
+const entry = sys.getPageTableEntry('terrain-albedo', { mip: 0, pageX: 5, pageY: 3 });
+if (entry && entry.status === 'resident') {
+  // Upload physicalIndex to shader uniform / page table texture
+}
+
+// 7. Or directly get physical UV
+const physUV = sys.virtualUVToPhysicalUV('terrain-albedo', uv.x, uv.y, mip);
+if (physUV) {
+  // Sample physical atlas at physUV.physicalU, physUV.physicalV
+}
+
+// Stats
+const stats = sys.getStats();
+console.log(`Atlas: ${stats.occupiedSlots}/${stats.totalSlots} slots, ${stats.residentMB.toFixed(1)} MB`);
+```
+
+**Usage (GPU path, GLSL chunks):**
+
+```glsl
+// Fragment shader
+uniform sampler2DArray u_pageTableArray;  // [mip] = page table for that mip
+uniform sampler2D u_physicalAtlas;        // shared physical texture atlas
+uniform vec2 u_atlasScale;                // pageSize / atlasSize
+uniform float u_invPagesPerSide;          // 1.0 / pagesPerSide (current mip)
+
+// inject VIRTUAL_TEXTURE_GLSL
+vec4 color = vtSample(u_pageTableArray, u_physicalAtlas,
+                      virtualUV, mip,
+                      u_invPagesPerSide, u_atlasScale);
+
+// inject VT_FEEDBACK_GLSL (write to MRT target)
+vtWriteFeedback(virtualUV, mip, invVirtualSize);
+```
+
+**Design choices:**
+
+- **Shared physical atlas** — all virtual textures share one
+  `PhysicalTextureAtlas`. This avoids fragmenting GPU memory across
+  multiple small atlases and simplifies slot management. The LRU
+  eviction considers pages across all VTs, so a frequently-sampled VT
+  naturally gets more atlas space.
+- **Feedback-driven loading** — rather than predicting which pages
+  are needed from camera distance (like `TextureStreaming`), SVT
+  loads pages that the GPU *actually sampled* last frame. This is
+  more accurate but introduces one frame of latency (the page is
+  missing on first sighting, then loaded on the next frame).
+  `preloadLowMips` mitigates this by pre-loading 1×1 and 2×2 pages
+  as fallbacks.
+- **LRU with priority weighting** — eviction score =
+  `lastUsed - priority × 1000`. Pages with high `sampleCount` (high
+  priority) survive longer than purely-LRU would allow. This prevents
+  thrashing when the camera moves between two regions that together
+  exceed atlas capacity.
+- **`maxPagesPerFrame` throttle** — prevents frame-rate spikes when
+  the camera teleports to a new area (which would trigger hundreds of
+  page loads at once). Default 8 pages/frame keeps I/O spread across
+  frames.
+- **Page size = 128** — balances granularity (smaller = more precise
+  loading, but more page table overhead) vs. upload efficiency (larger
+  = fewer `texSubImage2D` calls, but more wasted bandwidth on
+  partially-visible pages). 128 matches o3de/UE5 defaults.
+- **Mip-level feedback** — the shader selects the mip level based on
+  screen-space derivatives (`dFdx`/`dFdy`), so distant fragments
+  request low-resolution pages (1×1 at the highest mip). This
+  automatically reduces the number of pages needed for far-away
+  surfaces.
+- **`pageCoordToLinearIndex` wrapping** — negative coordinates wrap
+  via modulo, so UVs slightly outside `[0, 1)` (common with
+  `REPEAT`/`MIRRORED_REPEAT` wrap modes) don't cause out-of-bounds
+  access.
+- **GLSL chunks** — `VIRTUAL_TEXTURE_GLSL`, `VT_FEEDBACK_GLSL`,
+  `VT_PAGE_TABLE_GLSL` are provided for GPU integration. They mirror
+  the CPU functions 1:1.
+- **Complements `TextureStreaming`** — SVT handles single huge
+  textures (terrain mega-textures, satellite imagery, 8K+ character
+  textures); `TextureStreaming` handles many medium textures (100 ×
+  2K material textures). A production scene uses both: SVT for the
+  terrain albedo, `TextureStreaming` for object materials.
+
+**Comparison to soup3D:**
+
+| Feature | soup3D | VREEN |
+|---------|--------|-------|
+| Mip streaming | ✗ | ✓ (`TextureStreaming`) |
+| Virtual texturing (SVT) | ✗ | ✓ (`VirtualTexturing`) |
+| Page-based texture streaming | ✗ | ✓ (128×128 pages) |
+| Shared physical atlas | ✗ | ✓ (multi-VT, LRU) |
+| GPU feedback-driven loading | ✗ | ✓ (`FeedbackBuffer`) |
+| Texture size beyond GPU limit | ✗ | ✓ (virtual, 16K+) |
+| Preload fallback mips | ✗ | ✓ (`preloadLowMips`) |
+| Frame-rate throttle | ✗ | ✓ (`maxPagesPerFrame`) |
+
+**References:**
+- o3de Atom `Gems/Atom/Asset/ImageStreaming` — Virtual Texture system
+- UE5 `Engine/Source/Runtime/Engine/Private/VirtualTexture.cpp` — VT allocation + feedback
+- Mellor 2004 "Virtual Texture Mapping" — original SVT paper
+- Niesner 2009 "Practical Virtual Texture Rendering" — practical implementation
+- Barrett 2008 "Virtual Texture" (GDC) — feedback buffer design
+- van Waveren 2004 "Megatexture" (id Software) — mega-texture streaming
+- `VirtualShadowMap.ts` — same PageTable + PhysicalAtlas pattern (shadow space)
+
+---
+
 **Why MRT + GBuffer?** Forward rendering (the current main path) shades
 each fragment once with all lights. For scenes with many lights,
 forward rendering becomes fill-rate-bound. Deferred rendering shades
