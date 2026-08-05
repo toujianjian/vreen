@@ -11,6 +11,31 @@ export {
   type ShotInfo,
 } from './CinematicCamera';
 export { CameraRig, type CameraRigType } from './CameraRig';
+// 相机路径动画 (CameraPath) — Catmull-Rom 样条关键帧路径,支持 uniform / centripetal
+// 参数化、once/loop/pingpong 循环、自动朝向、手持噪声扰动、JSON 序列化。
+// 适配 o3de Track View / Unity Timeline Cinemachine Path / three.js CatmullRomCurve3。
+export {
+  CameraPath,
+  type CameraPathKeyframe,
+  type CameraPose,
+  type PathLoopMode,
+  type SplineParametrization,
+  type CameraPathJSON,
+  smoothstepEasing,
+  easeInOutCubic,
+  // 注:EasingFn 类型不从此 barrel 导出 —— SceneManager/SceneTransition.ts
+  // 已有同名类型导出,在 engine/index.ts 中会产生冲突。
+  // 调用方如需该类型,直接从 './CameraPath' 导入,或使用内联类型 (t: number) => number。
+} from './CameraPath';
+// PerlinShake — 高品质相机震动(trauma² 模型 + 多倍频 Perlin 噪声)。
+// 适配 NVIDIA GDC 2016 "Mission Improbable" 模型 / o3de AzFramework Camera Shake。
+// 6 路独立噪声通道(平移 xyz + 旋转 xyz),每轴独立频率,种子可复现。
+export {
+  PerlinShake,
+  PerlinShakePresets,
+  type ShakeOffset,
+  type PerlinShakeJSON,
+} from './PerlinShake';
 // 双目立体相机 (Stereoscopic Camera) — VR/3D 电影/红蓝立体/偏振立体渲染基础。
 // 适配 three.js StereoCamera.js + off-axis 非对称投影 (Kooima 2008)。
 // 提供左右眼 PerspectiveCamera + 瞳距偏移 + 非对称视锥 + 视口计算。
