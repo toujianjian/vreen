@@ -1173,6 +1173,11 @@
         "title": "稀疏虚拟纹理(o3de / UE5)",
         "desc": "稀疏虚拟纹理(SVT)系统,适配自 o3de Atom Virtual Texture(Gems/Atom/Asset/ImageStreaming)、UE5 Virtual Texturing(TexturePageTable + FeedbackBuffer)、Mellor 2004 Virtual Texture Mapping 与 Niesner 2009 Practical Virtual Texture Rendering。把超大虚拟纹理(如 16384×16384)分页为固定大小 128×128 瓦片,仅把 GPU 实际采样到的页面加载到共享物理纹理图集(默认 8192×8192 = 4096 槽位)。使用与 VirtualShadowMap(阴影虚拟纹理)同构的 PageTable(mip + pageX + pageY → physicalIndex)+ PhysicalAtlas 模式。GPU 通过 MRT 写入反馈(被采样的页面);CPU 处理反馈,去重,按 mip(低 mip = 高分辨率 = 高优先级)与 sampleCount 排序,然后以 maxPagesPerFrame(默认 8)为上限加载页面,防止帧率抖动。LRU 驱逐带优先级权重(评分 = lastUsed - priority × 1000),防止抖动。preloadLowMips 预加载 1×1 与 2×2 降级页面。与 TextureStreaming(Mip 级别流式,适合多张中等纹理)互补:SVT 处理单张超大纹理(地形 mega-texture、卫星图、8K+ 角色纹理),突破 GPU 显存上限。virtualUVToPhysicalUV 通过页面表重映射 shader UV。50+ 单元测试,纯 CPU 参考实现,无 WebGL 依赖。GLSL chunks(VIRTUAL_TEXTURE_GLSL、VT_FEEDBACK_GLSL、VT_PAGE_TABLE_GLSL)用于 GPU 集成。",
         "advantage": "soup3D 完全没有纹理流式系统,无虚拟纹理,无分页加载,无法处理超过 GPU 显存上限的纹理;VREEN 有 TextureStreaming(Mip 流式)与 VirtualTexturing(分页 SVT)双方案覆盖所有纹理流式场景"
+      },
+      "voxelConeTracing": {
+        "title": "体素锥追踪全局光照(Crassin 2011)",
+        "desc": "体素锥追踪全局光照(VXGI)CPU 参考实现,适配自 Crassin 等 2011《基于体素锥追踪的交互式间接光照》与 El Garawany 2013 SIGGRAPH 课程。把场景体素化为 3D 网格(占据率 + 颜色 + 法线),构建 mip 链用于多分辨率各向异性采样,然后沿锥形方向追踪体素体积,同时计算 diffuse GI(N 个宽锥 Fibonacci 半球采样,默认 6 个 30°)和 specular GI(反射方向单窄锥,半角 = roughness × π/4,Schlick Fresnel)。锥半径随距离线性增长(t × tan(halfAngle)),mip 层级选择为 log2(coneRadius / voxelSize),使远距离采样使用更粗的 mip(各向异性过滤,类似纹理 mipmap)。预乘 α 混合 + 提前终止(occlusion < 0.99)从前到后累积颜色与遮挡率。同一次体素化即可提供 diffuse GI、specular GI 和环境光遮蔽。体素空间 GI,与现有 GI 族互补:SSGI(屏幕空间,仅可见表面)、DDGI(探针,需布局)、VXGI(体素空间,离屏,无需探针)、PathTracer(离线,最高质量)。覆盖离屏表面(优于 SSGI)且无需探针布局(优于 DDGI)。40+ 单元测试,纯 CPU 参考实现,无 WebGL 依赖。GLSL chunks(VOXEL_CONE_TRACING_GLSL、VOXELIZATION_GLSL、VOXEL_MIP_CHAIN_GLSL)用于 GPU 集成。VREEN 现有 4 种 GI 方案(SSGI + DDGI + VXGI + PathTracer)覆盖全质量-性能谱。",
+        "advantage": "soup3D 完全没有全局光照系统;VREEN 有 4 种 GI 方案(SSGI + DDGI + VXGI + PathTracer)覆盖屏幕空间、探针、体素空间与离线路径追踪,VXGI 提供无需探针布局的离屏间接光照"
       }
     }
   }

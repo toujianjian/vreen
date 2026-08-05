@@ -1185,3 +1185,62 @@ export {
   type VirtualTexturingStats,
 } from './VirtualTexturing';
 
+// VoxelConeTracing — 体素锥追踪全局光照(VXGI)。
+// 适配自 Crassin et al. 2011 "Interactive Indirect Illumination Using Voxel
+// Cone Tracing" + El Garawany 2013 SIGGRAPH course。
+// 把场景体素化为 3D 网格(颜色 + 占据率 + 法线),构建 mip 链用于多分辨率采样。
+// 沿锥形方向追踪,累积遮挡率与间接光照,同时产生 diffuse GI(宽锥,半球多锥)
+// 和 specular GI(窄锥,反射方向单锥)。为离屏表面提供间接光照,无需探针布局。
+// 与 SSGI(屏幕空间,仅可见表面)、DDGI(探针,需布局)、PathTracer(离线)互补:
+// VXGI 是体素空间方案,覆盖离屏表面,无需探针,比 SSGI 精确(不受屏幕边界限制),
+// 比 DDGI 灵活(无需手动放置探针),比 PathTracer 快(锥追踪 ≈ 10-30 步)。
+// 纯 CPU 参考实现,无 WebGL 依赖,可在 Node/无头环境测试。
+// soup3D 无任何 GI 系统;VREEN 现有 4 种 GI 方案(SSGI + DDGI + VXGI + PathTracer)。
+export {
+  // 向量工具
+  vctVadd as vxgiVadd,
+  vctVsub as vxgiVsub,
+  vctVscale as vxgiVscale,
+  vctVdot as vxgiVdot,
+  vctVcross as vxgiVcross,
+  vctVlength as vxgiVlength,
+  vctVnormalize as vxgiVnormalize,
+  vctVreflect as vxgiVreflect,
+  // 颜色工具
+  vctColorLerp as vxgiColorLerp,
+  // 体素场景构建
+  vctIdx3 as vxgiIdx3,
+  worldToVoxelF as vxgiWorldToVoxelF,
+  worldToVoxelI as vxgiWorldToVoxelI,
+  voxelToWorld as vxgiVoxelToWorld,
+  isVoxelInside as vxgiIsVoxelInside,
+  collectTriangles as vxgiCollectTriangles,
+  computeMeshAABB as vxgiComputeMeshAABB,
+  voxelizeScene,
+  // 采样
+  sampleOccupancyTrilinear as vxgiSampleOccupancy,
+  sampleColorTrilinear as vxgiSampleColor,
+  // 锥追踪
+  traceCone as vxgiTraceCone,
+  fibonacciHemisphere as vxgiFibonacciHemisphere,
+  traceDiffuseGI as vxgiTraceDiffuseGI,
+  traceSpecularGI as vxgiTraceSpecularGI,
+  traceIndirectLighting as vxgiTraceIndirectLighting,
+  // 统计
+  getVoxelSceneStats as vxgiGetStats,
+  // GLSL 着色器块
+  VOXEL_CONE_TRACING_GLSL,
+  VOXELIZATION_GLSL,
+  VOXEL_MIP_CHAIN_GLSL,
+  // 类型
+  type VCTColor as VXGIColor,
+  type VCTVec3 as VXGIVec3,
+  type VCTMeshData as VXGIMeshData,
+  type VoxelMipLevel,
+  type VoxelScene,
+  type Cone as VXGICone,
+  type ConeTraceResult,
+  type DiffuseGIOptions,
+  type SpecularGIOptions,
+} from './VoxelConeTracing';
+

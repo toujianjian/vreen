@@ -3627,6 +3627,237 @@ vtWriteFeedback(virtualUV, mip, invVirtualSize);
 
 ---
 
+### Voxel Cone Tracing GI (`VoxelConeTracing.ts`)
+
+**Voxel Cone Tracing Global Illumination (VXGI)** — a voxel-space GI
+technique that builds a 3D voxel representation of the scene and
+traces cones through it to compute both diffuse and specular indirect
+lighting. Adapted from Crassin et al. 2011 "Interactive Indirect
+Illumination Using Voxel Cone Tracing" and El Garawany 2013 (SIGGRAPH
+course).
+
+This is the **voxel-space** GI counterpart, complementing the existing
+GI family:
+
+| GI Method | Working Space | Off-screen? | Probe Placement? | Speed | Quality |
+|-----------|--------------|-------------|------------------|-------|---------|
+| `SSGI` | Screen-space | No (visible only) | No | Fast | Medium |
+| `DDGIVolume` | Probe-space | Yes | Yes (manual) | Medium | Medium-High |
+| `VoxelConeTracing` (VXGI) | Voxel-space | Yes | No (automatic) | Medium | Medium-High |
+| `PathTracer` | Ray-space | Yes | No | Slow | Highest |
+
+**Key advantage:** VXGI covers off-screen surfaces (unlike SSGI) without
+requiring probe placement (unlike DDGI), making it ideal for dynamic
+scenes where probe placement is impractical.
+
+**Architecture:**
+
+```
+              ┌────────────────────────────────────────────────┐
+              │              Voxel Scene                        │
+              │  boundsMin/Max + baseDim + voxelSize            │
+              │                                                │
+              │  ┌──────────────────────────────────────────┐  │
+              │  │  mip[0]: dim×dim×dim                    │  │
+              │  │  occupancy + color + normal             │  │
+              │  └───────────────┬──────────────────────────┘  │
+              │                  │ 8:1 downsample               │
+              │  ┌───────────────▼──────────────────────────┐  │
+              │  │  mip[1]: (dim/2)³                       │  │
+              │  └───────────────┬──────────────────────────┘  │
+              │                  │ ...                          │
+              │  ┌───────────────▼──────────────────────────┐  │
+              │  │  mip[N-1]: 1×1×1                        │  │
+              │  └──────────────────────────────────────────┘  │
+              └────────────────────────────────────────────────┘
+                                 │
+              ┌──────────────────┼──────────────────────────┐
+              ▼                  ▼                          ▼
+    ┌─────────────────┐ ┌─────────────────┐  ┌─────────────────────┐
+    │  Diffuse GI     │ │  Specular GI    │  │  Ambient Occlusion  │
+    │  (N wide cones  │ │  (1 narrow cone │  │  (from diffuse      │
+    │   on hemisphere)│ │   on reflect)   │  │   cone occlusion)   │
+    └─────────────────┘ └─────────────────┘  └─────────────────────┘
+```
+
+**Pipeline:**
+
+1. **Voxelization** (`voxelizeScene`): Rasterize triangle meshes into
+   a 3D grid. For each voxel near a triangle, store occupancy (1.0),
+   color (from vertex colors or normal-based shading), and surface
+   normal.
+2. **Mip chain build**: Each level downsamples 2×2×2 = 8 child voxels
+   into one parent. Occupancy is averaged; color is occupancy-weighted;
+   normal is occupancy-weighted and renormalized. Higher mips = coarser
+   representation covering larger area.
+3. **Cone tracing** (`traceCone`): March along a cone direction. At
+   each step, the cone radius grows (`t × tan(halfAngle)`). The mip
+   level is selected as `log2(coneRadius / voxelSize)`, so distant
+   samples use coarser mips (anisotropic filtering). Alpha blending
+   accumulates color and occlusion:
+   ```
+   α = color.a × occupancy
+   color += sampleColor × α × (1 - occlusion)
+   occlusion += α × (1 - occlusion)
+   t += max(coneRadius × stepScale, voxelSize × 0.5)
+   ```
+4. **Diffuse GI** (`traceDiffuseGI`): Emit N cones (default 6) over the
+   hemisphere using Fibonacci sampling. Each cone has a wide half-angle
+   (30°). Results are averaged and cosine-weighted.
+5. **Specular GI** (`traceSpecularGI`): Emit 1 cone along the reflect
+   direction. Half-angle = `roughness × π/4` (smooth = narrow cone,
+   rough = wide cone). Fresnel (Schlick) modulates the result.
+6. **Combined** (`traceIndirectLighting`): `diffuse × albedo × AO +
+   specular × Fresnel`.
+
+**Mip level selection:**
+
+The key insight of VXGI is that the cone radius grows linearly with
+distance (`coneRadius = t × tan(halfAngle)`). At each step, the
+appropriate mip level is:
+
+```
+mipLevel = log2(coneRadius / voxelSize)
+```
+
+This means:
+- Near the origin (small t): small cone radius → low mip (high
+  resolution) → precise local geometry.
+- Far from the origin (large t): large cone radius → high mip (low
+  resolution) → coarse distant geometry.
+
+This is analogous to mipmapping in texture filtering, but applied to
+the voxel scene for anisotropic cone tracing.
+
+**Diffuse GI cone distribution (Fibonacci hemisphere):**
+
+```
+golden = (1 + √5) / 2 ≈ 1.618
+for i in 0..N:
+    φ = 2π × i / golden       // azimuthal angle
+    cos(θ) = 1 - (2i+1)/(2N)  // polar angle (hemisphere)
+    sin(θ) = √(1 - cos²(θ))
+    dir = TBN × (cos(φ)sin(θ), sin(φ)sin(θ), cos(θ))
+```
+
+Fibonacci sampling provides quasi-uniform distribution on the
+hemisphere without precomputation, and works for any N ≥ 1.
+
+**API surface:**
+
+```ts
+import {
+  // Voxelization
+  voxelizeScene,                // mesh[] → VoxelScene with mip chain
+  vxgiComputeMeshAABB,          // mesh → {min, max}
+  vxgiCollectTriangles,         // mesh → triangle[]
+  // Sampling
+  vxgiSampleOccupancy,          // (scene, point, mip) → occupancy
+  vxgiSampleColor,              // (scene, point, mip) → RGBA
+  // Cone tracing
+  vxgiTraceCone,                // (scene, cone) → {occlusion, color, hit}
+  vxgiFibonacciHemisphere,      // (N, normal) → direction[]
+  vxgiTraceDiffuseGI,           // (scene, point, normal) → {color, occlusion}
+  vxgiTraceSpecularGI,          // (scene, point, normal, viewDir, roughness) → color
+  vxgiTraceIndirectLighting,    // (scene, point, normal, viewDir, albedo, roughness) → {diffuse, specular, ao, combined}
+  // Stats
+  vxgiGetStats,                 // scene → {baseDim, mipCount, memoryMB, ...}
+  // GLSL
+  VOXEL_CONE_TRACING_GLSL,      // traceCone() + traceDiffuseGI() + traceSpecularGI()
+  VOXELIZATION_GLSL,            // GPU voxelization (geometry shader)
+  VOXEL_MIP_CHAIN_GLSL,         // mip chain build (compute shader)
+  // Types
+  type VoxelScene, type VoxelMipLevel,
+  type VXGICone, type ConeTraceResult,
+  type DiffuseGIOptions, type SpecularGIOptions,
+} from '@vreen/engine/renderer';
+```
+
+**Usage:**
+
+```ts
+import {
+  voxelizeScene,
+  vxgiTraceIndirectLighting,
+  type VXGIMeshData,
+} from '@vreen/engine/renderer';
+
+// 1. Voxelize scene
+const meshes: VXGIMeshData[] = [terrainMesh, buildingMesh, treeMesh];
+const scene = voxelizeScene(meshes, boundsMin, boundsMax, 128);
+
+// 2. For each shaded pixel
+const indirect = vxgiTraceIndirectLighting(
+  scene,
+  worldPos,           // pixel world position
+  normal,             // surface normal
+  viewDir,            // camera-to-pixel direction
+  albedo,             // surface albedo
+  roughness,          // surface roughness (0-1)
+  { coneCount: 6, maxDistance: 10 },
+);
+
+// 3. Combine with direct lighting
+finalColor = directLight + indirect.combined;
+// Or separately:
+finalColor = directLight + indirect.diffuse * indirect.ao + indirect.specular;
+```
+
+**Design choices:**
+
+- **CPU reference implementation** — like `MeshDistanceField` and
+  `SSGI`, this is a pure CPU reference with no WebGL dependency.
+  Validates algorithm correctness and provides a reference for GPU
+  implementation.
+- **Mip chain for anisotropic tracing** — the mip chain is the key
+  data structure. Without it, cone tracing would need to sample many
+  individual voxels per step (expensive). With mip levels, each step
+  is a single trilinear sample at the appropriate resolution.
+- **Fibonacci hemisphere** — quasi-uniform sampling that works for any
+  cone count without precomputation. 6 cones is the default (good
+  balance of quality and speed); 9-16 cones for higher quality.
+- **Pre-multiplied alpha blending** — the cone tracing accumulation
+  uses front-to-back alpha blending with early termination
+  (`occlusion < 0.99`), which is mathematically correct and efficient.
+- **Shared voxelization for GI + AO + reflections** — the same
+  `VoxelScene` provides diffuse GI, specular GI, and ambient occlusion
+  from a single voxelization pass. This amortizes the voxelization
+  cost across multiple effects.
+- **Normal bias** — the cone origin is offset along the surface normal
+  by 1 voxel to prevent self-intersection (similar to shadow map bias).
+- **`stepScale` parameter** — controls the trade-off between quality
+  and speed. `stepScale = 1.0` (default) steps by exactly the cone
+  radius. `stepScale > 1` takes larger steps (faster but may miss thin
+  geometry). `stepScale < 1` takes smaller steps (higher quality but
+  slower).
+
+**Comparison to soup3D:**
+
+| Feature | soup3D | VREEN |
+|---------|--------|-------|
+| Any GI | ✗ | ✓ (4 methods) |
+| Screen-space GI (SSGI) | ✗ | ✓ |
+| Probe-based GI (DDGI) | ✗ | ✓ |
+| Voxel cone tracing (VXGI) | ✗ | ✓ |
+| Path tracing | ✗ | ✓ |
+| Voxelization | ✗ | ✓ (GPU + CPU) |
+| Mip chain for multi-res | ✗ | ✓ |
+| Diffuse + specular GI | ✗ | ✓ |
+| Voxel-based AO | ✗ | ✓ |
+
+**References:**
+- Crassin et al. 2011 "Interactive Indirect Illumination Using Voxel Cone Tracing" — VXGI original paper
+- El Garawany 2013 "Voxel Cone Tracing" (SIGGRAPH course) — practical implementation
+- Crassin et al. 2011 "Gigavoxels" — voxel mip chain design
+- Engel 2013 "Voxel Cone Tracing and Sparse Voxel Octrees" — survey
+- o3de Atom "Diffuse Global Illumination" — DDGI (complementary approach)
+- UE5 "Lumen" — GI fusion (VXGI + SSGI + DDGI)
+- `SSGI.ts` — screen-space GI (complementary)
+- `DDGIVolume.ts` — probe-based GI (complementary)
+- `MeshDistanceField.ts` — SDF grid architecture (similar 3D grid pattern)
+
+---
+
 **Why MRT + GBuffer?** Forward rendering (the current main path) shades
 each fragment once with all lights. For scenes with many lights,
 forward rendering becomes fill-rate-bound. Deferred rendering shades
