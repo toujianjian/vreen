@@ -1244,3 +1244,64 @@ export {
   type SpecularGIOptions,
 } from './VoxelConeTracing';
 
+// LightPropagationVolume — 光传播体(LPV)全局光照。
+// 适配自 Kaplanyan 2009 "Light Propagation Volumes in CryEngine 3" +
+// Kaplanyan & Dachsbacher 2010 "Propagation of Radiance"。
+// 把直接光照注入到 3D SH2 网格,迭代传播产生多 bounce 间接光照,
+// 采样时三线性插值 8 个邻近 cell 的 SH 系数 + evaluateSH 得到漫反射间接光。
+// 与 SSGI(屏幕空间,仅可见表面)、DDGI(探针,需布局)、VXGI(体素,需体素化)、
+// PathTracer(离线)互补:LPV 是网格传播方案,无需探针布局/体素化,
+// 覆盖离屏表面,支持多 bounce,实时性能好(SH 传播 O(N³ × iterations × 6))。
+// VREEN 现有 5 种 GI 方案(SSGI + DDGI + VXGI + LPV + PathTracer)。
+// 纯 CPU 参考实现,无 WebGL 依赖,可在 Node/无头环境测试。
+// soup3D 无任何 GI 系统;VREEN 在 GI 完整性上具有压倒性优势。
+export {
+  // 常量
+  SH2_COEFFS_PER_CELL as LPV_SH2_COEFFS_PER_CELL,
+  // 向量工具
+  lpvNormalize,
+  lpvDot,
+  // SH2 工具
+  shBasis as lpvShBasis,
+  computeSHRGB as lpvComputeSHRGB,
+  evaluateSHRGB as lpvEvaluateSHRGB,
+  // 网格索引
+  cellIndex as lpvCellIndex,
+  worldToCellF as lpvWorldToCellF,
+  worldToCellI as lpvWorldToCellI,
+  isCellInside as lpvIsCellInside,
+  isCellBlocked as lpvIsCellBlocked,
+  // 网格创建与管理
+  createLPV,
+  resetLPV,
+  getCellSH as lpvGetCellSH,
+  addToCellSH as lpvAddToCellSH,
+  // 光注入
+  injectPointLight as lpvInjectPointLight,
+  injectDirectionalLight as lpvInjectDirectionalLight,
+  injectEmissiveSurface as lpvInjectEmissiveSurface,
+  injectEmissiveSurfaces as lpvInjectEmissiveSurfaces,
+  // 光传播
+  propagateStep as lpvPropagateStep,
+  propagateLight as lpvPropagateLight,
+  // 采样
+  sampleLPV,
+  sampleDiffuseGI as lpvSampleDiffuseGI,
+  // 几何体
+  buildGeometryVolume as lpvBuildGeometryVolume,
+  // 统计
+  getLPVStats,
+  // GLSL 着色器块
+  LPV_GLSL,
+  LPV_INJECTION_GLSL,
+  LPV_PROPAGATION_GLSL,
+  // 类型
+  type LPVVec3,
+  type LPVColor,
+  type LPVPointLight,
+  type LPVDirectionalLight,
+  type LPVEmissiveSurface,
+  type LPVConfig,
+  type LPVGrid,
+} from './LightPropagationVolume';
+

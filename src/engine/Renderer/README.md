@@ -3644,6 +3644,7 @@ GI family:
 | `SSGI` | Screen-space | No (visible only) | No | Fast | Medium |
 | `DDGIVolume` | Probe-space | Yes | Yes (manual) | Medium | Medium-High |
 | `VoxelConeTracing` (VXGI) | Voxel-space | Yes | No (automatic) | Medium | Medium-High |
+| `LightPropagationVolume` (LPV) | Grid-space (SH2) | Yes | No (automatic) | Fast | Medium |
 | `PathTracer` | Ray-space | Yes | No | Slow | Highest |
 
 **Key advantage:** VXGI covers off-screen surfaces (unlike SSGI) without
@@ -3835,10 +3836,11 @@ finalColor = directLight + indirect.diffuse * indirect.ao + indirect.specular;
 
 | Feature | soup3D | VREEN |
 |---------|--------|-------|
-| Any GI | ✗ | ✓ (4 methods) |
+| Any GI | ✗ | ✓ (5 methods) |
 | Screen-space GI (SSGI) | ✗ | ✓ |
 | Probe-based GI (DDGI) | ✗ | ✓ |
 | Voxel cone tracing (VXGI) | ✗ | ✓ |
+| Light propagation volumes (LPV) | ✗ | ✓ |
 | Path tracing | ✗ | ✓ |
 | Voxelization | ✗ | ✓ (GPU + CPU) |
 | Mip chain for multi-res | ✗ | ✓ |
@@ -3855,6 +3857,303 @@ finalColor = directLight + indirect.diffuse * indirect.ao + indirect.specular;
 - `SSGI.ts` — screen-space GI (complementary)
 - `DDGIVolume.ts` — probe-based GI (complementary)
 - `MeshDistanceField.ts` — SDF grid architecture (similar 3D grid pattern)
+
+---
+
+### Light Propagation Volumes GI (`LightPropagationVolume.ts`)
+
+**Light Propagation Volumes (LPV)** — a grid-space global illumination
+technique that injects direct lighting into a 3D Spherical Harmonics
+(SH2) grid, iteratively propagates radiance through neighboring cells
+to compute multi-bounce indirect lighting, and samples via trilinear
+interpolation + SH evaluation. Adapted from Kaplanyan 2009 "Light
+Propagation Volumes in CryEngine 3" and Kaplanyan & Dachsbacher 2010
+"Propagation of Radiance".
+
+This is the **grid-space** GI counterpart — the 5th GI method in
+VREEN's comprehensive GI stack:
+
+| GI Method | Working Space | Off-screen? | Probe Placement? | Voxelization? | Multi-bounce? | Speed | Quality |
+|-----------|--------------|-------------|------------------|----------------|---------------|-------|---------|
+| `SSGI` | Screen-space | No (visible only) | No | No | No (1 bounce) | Fast | Medium |
+| `DDGIVolume` | Probe-space | Yes | Yes (manual) | No | Yes (EMA) | Medium | Medium-High |
+| `VoxelConeTracing` (VXGI) | Voxel-space | Yes | No (automatic) | Yes | Yes (mips) | Medium | Medium-High |
+| `LightPropagationVolume` (LPV) | Grid-space (SH2) | Yes | No (automatic) | No | Yes (iterative) | Fast | Medium |
+| `PathTracer` | Ray-space | Yes | No | No | Yes (paths) | Slow | Highest |
+
+**Key advantage:** LPV covers off-screen surfaces (unlike SSGI) without
+requiring probe placement (unlike DDGI) or expensive voxelization
+(unlike VXGI). Light propagation is a simple SH evaluation per cell
+face — extremely fast (O(N³ × iterations × 6)) — making it ideal for
+real-time multi-bounce GI on low-end hardware.
+
+**Architecture:**
+
+```
+              ┌──────────────────────────────────────────────────┐
+              │              LPV Grid                            │
+              │  origin + cellSize + dimX × dimY × dimZ          │
+              │                                                  │
+              │  ┌──────────────────────────────────────────┐    │
+              │  │  SH2 coefficients (Float32Array)         │    │
+              │  │  per cell: 9 basis × 3 RGB = 27 floats   │    │
+              │  │                                          │    │
+              │  │  sh[      ]  ← current state (read)      │    │
+              │  │  shBuffer[]  ← propagation buffer (write)│    │
+              │  └──────────────────────────────────────────┘    │
+              │                                                  │
+              │  geometryVolume: Uint8Array (optional)           │
+              │  1 = cell occupied by geometry (blocks light)    │
+              └──────────────────────────────────────────────────┘
+                                 │
+        ┌────────────────────────┼────────────────────────┐
+        ▼                        ▼                        ▼
+   ┌──────────┐           ┌──────────┐           ┌──────────────┐
+   │ Inject   │           │Propagate │           │ Sample       │
+   │ (1-pass) │──────────▶│ (N-pass) │──────────▶│ (per-pixel)  │
+   └──────────┘           └──────────┘           └──────────────┘
+   • Point lights         • 6-face transfer       • Trilinear SH
+   • Directional lights   • Double-buffered       • evaluateSH
+   • Emissive surfaces    • Iterative bounces     • Albedo mod.
+```
+
+**Pipeline:**
+
+1. **Light injection** (single pass):
+   - **Point lights** (`injectPointLight`): For each cell within the
+     light's range, compute the direction and distance from the light
+     to the cell center. Apply 1/r² attenuation with a smoothstep
+     boundary falloff (`1 - (d/range)⁴`). Project the irradiance
+     (`color × attenuation`) into SH2 via `computeSHRGB(lightDir,
+     irradiance)` and accumulate into the cell's coefficients.
+   - **Directional lights** (`injectDirectionalLight`): All
+     unblocked cells receive the same directional irradiance
+     (`color × intensity`). Project once into SH2 and add to every
+     cell — no per-cell distance attenuation.
+   - **Emissive surfaces** (`injectEmissiveSurface`): Find the cell
+     containing the surface position. Project the emissive color
+     along the surface normal into SH2 and accumulate. This enables
+     glowing geometry to act as area light sources.
+
+2. **Light propagation** (iterative, N bounces):
+   - **Double-buffered** (`shBuffer` is a copy of `sh` at step start,
+     so reads from `sh` don't see in-progress writes).
+   - For each non-blocked cell `(x, y, z)`:
+     - For each of 6 face directions `d ∈ {±X, ±Y, ±Z}`:
+       - Evaluate the cell's SH at direction `d` to get the radiance
+         leaving through that face: `radiance = evaluateSHRGB(cellSH, d)`.
+       - Re-project this radiance as incoming light from direction
+         `-d` for the neighbor cell: `propagated = computeSHRGB(-d,
+         radiance)`.
+       - Accumulate `propagated × (strength / 6)` into the neighbor's
+         `shBuffer`.
+   - After all cells are processed, copy `shBuffer → sh`.
+   - Each iteration represents one light bounce. Default: 4 iterations
+     (configurable via `config.propagationIterations`).
+
+3. **Sampling** (per-pixel at render time):
+   - Convert world position to floating-point cell coordinates.
+   - Clamp to grid bounds; return black if outside.
+   - Trilinearly interpolate the 8 nearest cells' SH coefficients
+     (27 floats each, weighted by corner positions).
+   - Evaluate the interpolated SH at the surface normal:
+     `result = evaluateSHRGB(interpolatedSH, normal)`.
+   - For diffuse GI: multiply by surface albedo.
+
+**SH2 basis functions:**
+
+The grid stores 2nd-order Spherical Harmonics (9 basis functions per
+color channel = 27 floats per cell). The basis for direction `(x, y, z)`:
+
+```
+Y₀⁰  = 0.282095                          (constant term, isotropic)
+Y₁₋₁ = 0.488603 × y                      (linear Y)
+Y₁₀  = 0.488603 × z                      (linear Z)
+Y₁₁  = 0.488603 × x                      (linear X)
+Y₂₋₂ = 1.092548 × x × y                  (quadratic XY)
+Y₂₋₁ = 1.092548 × y × z                  (quadratic YZ)
+Y₂₀  = 0.315392 × (3z² − 1)              (quadratic ZZ)
+Y₂₁  = 1.092548 × x × z                  (quadratic XZ)
+Y₂₂  = 0.546274 × (x² − y²)              (quadratic XX-YY)
+```
+
+SH2 captures directional lighting up to 2nd-order moments — enough for
+smooth diffuse indirect lighting (low-frequency), but cannot represent
+sharp specular highlights (use `ReflectionProbe` or `SSRPass` for
+specular). The Y₀⁰ constant term represents the isotropic (ambient)
+component; the Y₁ terms capture the dominant light direction; the Y₂
+terms capture directional spread.
+
+**Why SH2 and not SH3?**
+
+- **Memory**: SH2 = 27 floats/cell, SH3 = 48 floats/cell (78% more).
+  For a 32³ grid: SH2 = 3.4MB, SH3 = 6.0MB.
+- **Quality**: SH2 is sufficient for diffuse indirect (low-frequency).
+  SH3 adds detail that's mostly invisible after albedo modulation.
+- **Speed**: SH projection/evaluation is O(9) for SH2 vs O(16) for
+  SH3. Propagation is 6 face evaluations per cell, so the difference
+  compounds.
+
+**Geometry occlusion volume:**
+
+The optional `geometryVolume` (Uint8Array, 1 = occupied) blocks light
+propagation through solid geometry. Without it, light would flow
+freely through walls — useful for outdoor scenes but causes light
+leaking in indoor scenes. Build it via `buildGeometryVolume(config,
+meshes)`, which rasterizes triangle meshes into the cell grid:
+
+```
+For each triangle:
+  Compute triangle AABB → cell range
+  For each cell in range:
+    Compute distance from cell center to triangle plane
+    If distance ≤ halfCellSize: mark cell as occupied
+```
+
+This is a conservative rasterization — cells whose center is within
+half a cell size of the triangle plane are marked. This may over-mark
+thin geometry (1-cell-thick walls) but is sufficient for LPV's
+low-frequency nature.
+
+**Memory layout:**
+
+```
+LPVGrid {
+  config: LPVConfig        // ~80 bytes (origin, dims, etc.)
+  sh: Float32Array         // dimX × dimY × dimZ × 27 × 4 bytes
+  shBuffer: Float32Array   // same size (double buffering)
+}
+
+Total memory = 2 × dimX × dimY × dimZ × 27 × 4 bytes
+
+Example grids:
+  16³ grid:  2 × 4096 × 27 × 4 = 884 KB     (low quality, fast)
+  32³ grid:  2 × 32768 × 27 × 4 = 6.75 MB   (medium quality)
+  64³ grid:  2 × 262144 × 27 × 4 = 54 MB    (high quality, slow)
+```
+
+**Performance characteristics:**
+
+| Operation | Complexity | 32³ grid time (estimate) |
+|-----------|------------|--------------------------|
+| Injection (1 point light, range=4) | O(range³ × 27) | ~5μs |
+| Injection (directional) | O(N³ × 27) | ~1ms |
+| Propagation (1 iteration) | O(N³ × 6 × 27) | ~6ms |
+| Propagation (4 iterations) | O(N³ × 24 × 27) | ~24ms |
+| Sampling (1 pixel) | O(8 × 27) | ~1μs |
+
+For real-time (60 FPS, 16ms budget), 32³ grid with 4 bounces uses
+~25ms — too slow for 60Hz but acceptable for 30Hz. For 60Hz, reduce
+to 2 bounces (~12ms) or use a 24³ grid.
+
+**Usage example:**
+
+```typescript
+import { createLPV, injectPointLight, propagateLight, sampleLPV } from './LightPropagationVolume';
+
+// 1. Create LPV grid covering the scene
+const grid = createLPV({
+  origin: { x: -20, y: 0, z: -20 },
+  cellSize: 1.0,
+  dimX: 40, dimY: 10, dimZ: 40,
+  propagationIterations: 4,
+  propagationStrength: 0.85,
+});
+
+// 2. (Optional) Build geometry occlusion from scene meshes
+grid.config.geometryVolume = buildGeometryVolume(grid.config, sceneMeshes);
+
+// 3. Inject lights (per frame, or only when lights move)
+resetLPV(grid);
+injectPointLight(grid, {
+  position: { x: 0, y: 5, z: 0 },
+  color: { r: 5, g: 4, b: 3 },     // warm HDR
+  intensity: 50,
+  range: 15,
+});
+injectDirectionalLight(grid, {
+  direction: { x: 0.5, y: -1, z: 0.3 },
+  color: { r: 0.8, g: 0.9, b: 1.0 }, // cool sky light
+  intensity: 2,
+});
+
+// 4. Propagate (N bounces)
+propagateLight(grid);
+
+// 5. Sample at render time (per pixel)
+for (const pixel of visiblePixels) {
+  const indirect = sampleLPV(grid, pixel.worldPos, pixel.normal);
+  finalColor = directLight + indirect * pixel.albedo;
+}
+```
+
+**Design choices:**
+
+- **CPU reference implementation** — like `MeshDistanceField`, `SSGI`,
+  `VXGI`, and `PathTracer`, this is a pure CPU reference with no WebGL
+  dependency. Validates algorithm correctness and provides a reference
+  for GPU implementation. The GPU version would use 3D textures +
+  compute shaders (see `LPV_INJECTION_GLSL` and `LPV_PROPAGATION_GLSL`
+  shader chunks).
+- **SH2 over SH3** — 2nd-order SH is sufficient for diffuse indirect
+  lighting. SH3 would add 78% more memory and computation for marginal
+  quality gain (mostly invisible after albedo modulation).
+- **6-face propagation** — the 6 axis-aligned face directions (`±X, ±Y,
+  ±Z`) are the minimal set that covers all 3D directions. Diagonal
+  propagation (26 neighbors) would be more accurate but 4.3× slower
+  for marginal quality gain.
+- **Double-buffering** — without double buffering, propagation would
+  read partially-updated state (light from cell A reaches cell B in
+  iteration 1, then cell B's new light reaches cell C in the same
+  iteration — incorrect for single-bounce semantics). Double buffering
+  ensures each iteration is a clean single-bounce step.
+- **Geometry volume as Uint8Array** — minimal memory (1 byte/cell),
+  fast lookup. Build once at scene load or when geometry changes
+  (dynamic geometry requires rebuild — for fully dynamic scenes,
+  consider DDGI which adapts via ray tracing).
+- **`propagationStrength` (0-1)** — controls energy retention per
+  bounce. 0.85 (default) means each bounce retains 85% of incoming
+  energy. Lower values = faster falloff (darker distant areas); higher
+  values = brighter but may over-saturate.
+
+**When to use LPV vs other GI methods:**
+
+| Scenario | Recommended GI | Why |
+|----------|---------------|-----|
+| Static scene, highest quality | `PathTracer` | Reference quality, no real-time constraint |
+| Dynamic scene, probe-friendly | `DDGIVolume` | Adaptive probe relocation, high quality |
+| Dynamic scene, no probes wanted | `VXGI` | Automatic voxelization, off-screen coverage |
+| Real-time, low-end hardware | `LPV` | Fastest multi-bounce, no voxelization |
+| Screen-only, fastest | `SSGI` | Screen-space, no grid/probe/voxel setup |
+| Hybrid (best quality) | All combined | UE5 Lumen-style fusion |
+
+**Comparison to soup3D:**
+
+| Feature | soup3D | VREEN |
+|---------|--------|-------|
+| Any GI | ✗ | ✓ (5 methods) |
+| Screen-space GI (SSGI) | ✗ | ✓ |
+| Probe-based GI (DDGI) | ✗ | ✓ |
+| Voxel cone tracing (VXGI) | ✗ | ✓ |
+| Light propagation volumes (LPV) | ✗ | ✓ |
+| Path tracing | ✗ | ✓ |
+| SH2 spherical harmonics | ✗ | ✓ (LPV + DDGI + LightProbes) |
+| Multi-bounce iterative GI | ✗ | ✓ (LPV) |
+| Geometry occlusion volume | ✗ | ✓ |
+| GPU injection + propagation shaders | ✗ | ✓ (GLSL chunks) |
+
+**References:**
+- Kaplanyan 2009 "Light Propagation Volumes in CryEngine 3" — LPV original paper
+- Kaplanyan & Dachsbacher 2010 "Propagation of Radiance" — SH propagation theory
+- Crytek CryEngine 3 LPV implementation
+- UE5 "Light Propagation Volume" plugin
+- Ramamoorthi & Hanrahan 2001 "Irradiance Volume" — SH2 for irradiance
+- Sloan et al. 2002 "Precomputed Radiance Transfer" — SH projection
+- o3de Atom "Diffuse Global Illumination" — DDGI (complementary approach)
+- `DDGIVolume.ts` — probe-based GI with SH2 (similar math, different data structure)
+- `GlobalIllumination.ts` — static SH2 light probes (baked, not propagated)
+- `VoxelConeTracing.ts` — voxel-space GI (complementary, higher quality but slower)
+- `SSGI.ts` — screen-space GI (complementary, no off-screen coverage)
 
 ---
 

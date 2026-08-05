@@ -1176,8 +1176,13 @@
       },
       "voxelConeTracing": {
         "title": "体素锥追踪全局光照(Crassin 2011)",
-        "desc": "体素锥追踪全局光照(VXGI)CPU 参考实现,适配自 Crassin 等 2011《基于体素锥追踪的交互式间接光照》与 El Garawany 2013 SIGGRAPH 课程。把场景体素化为 3D 网格(占据率 + 颜色 + 法线),构建 mip 链用于多分辨率各向异性采样,然后沿锥形方向追踪体素体积,同时计算 diffuse GI(N 个宽锥 Fibonacci 半球采样,默认 6 个 30°)和 specular GI(反射方向单窄锥,半角 = roughness × π/4,Schlick Fresnel)。锥半径随距离线性增长(t × tan(halfAngle)),mip 层级选择为 log2(coneRadius / voxelSize),使远距离采样使用更粗的 mip(各向异性过滤,类似纹理 mipmap)。预乘 α 混合 + 提前终止(occlusion < 0.99)从前到后累积颜色与遮挡率。同一次体素化即可提供 diffuse GI、specular GI 和环境光遮蔽。体素空间 GI,与现有 GI 族互补:SSGI(屏幕空间,仅可见表面)、DDGI(探针,需布局)、VXGI(体素空间,离屏,无需探针)、PathTracer(离线,最高质量)。覆盖离屏表面(优于 SSGI)且无需探针布局(优于 DDGI)。40+ 单元测试,纯 CPU 参考实现,无 WebGL 依赖。GLSL chunks(VOXEL_CONE_TRACING_GLSL、VOXELIZATION_GLSL、VOXEL_MIP_CHAIN_GLSL)用于 GPU 集成。VREEN 现有 4 种 GI 方案(SSGI + DDGI + VXGI + PathTracer)覆盖全质量-性能谱。",
-        "advantage": "soup3D 完全没有全局光照系统;VREEN 有 4 种 GI 方案(SSGI + DDGI + VXGI + PathTracer)覆盖屏幕空间、探针、体素空间与离线路径追踪,VXGI 提供无需探针布局的离屏间接光照"
+        "desc": "体素锥追踪全局光照(VXGI)CPU 参考实现,适配自 Crassin 等 2011《基于体素锥追踪的交互式间接光照》与 El Garawany 2013 SIGGRAPH 课程。把场景体素化为 3D 网格(占据率 + 颜色 + 法线),构建 mip 链用于多分辨率各向异性采样,然后沿锥形方向追踪体素体积,同时计算 diffuse GI(N 个宽锥 Fibonacci 半球采样,默认 6 个 30°)和 specular GI(反射方向单窄锥,半角 = roughness × π/4,Schlick Fresnel)。锥半径随距离线性增长(t × tan(halfAngle)),mip 层级选择为 log2(coneRadius / voxelSize),使远距离采样使用更粗的 mip(各向异性过滤,类似纹理 mipmap)。预乘 α 混合 + 提前终止(occlusion < 0.99)从前到后累积颜色与遮挡率。同一次体素化即可提供 diffuse GI、specular GI 和环境光遮蔽。体素空间 GI,与现有 GI 族互补:SSGI(屏幕空间,仅可见表面)、DDGI(探针,需布局)、VXGI(体素空间,离屏,无需探针)、LPV(网格空间,最快多 bounce)、PathTracer(离线,最高质量)。覆盖离屏表面(优于 SSGI)且无需探针布局(优于 DDGI)。40+ 单元测试,纯 CPU 参考实现,无 WebGL 依赖。GLSL chunks(VOXEL_CONE_TRACING_GLSL、VOXELIZATION_GLSL、VOXEL_MIP_CHAIN_GLSL)用于 GPU 集成。VREEN 现有 5 种 GI 方案(SSGI + DDGI + VXGI + LPV + PathTracer)覆盖全质量-性能谱。",
+        "advantage": "soup3D 完全没有全局光照系统;VREEN 有 5 种 GI 方案(SSGI + DDGI + VXGI + LPV + PathTracer)覆盖屏幕空间、探针、体素空间、网格空间与离线路径追踪,VXGI 提供无需探针布局的离屏间接光照"
+      },
+      "lightPropagationVolume": {
+        "title": "光传播体全局光照(Kaplanyan 2009)",
+        "desc": "光传播体(LPV)CPU 参考实现,适配自 Kaplanyan 2009《CryEngine 3 中的光传播体》与 Kaplanyan & Dachsbacher 2010《辐照度传播》。把直接光照(点光、方向光、自发光表面)注入到 3D 球谐函数(SH2)网格(9 基 × 3 RGB = 27 floats/cell),通过 6 个轴向面方向迭代传播辐照度到邻居 cell,采用双缓冲(每次迭代 = 一次 bounce,默认 4 次),采样时三线性插值 8 个邻近 cell 的 SH 系数 + evaluateSH 评估表面法线方向。SH2 捕获低频漫反射间接光照(对 diffuse 足够,specular 请用 ReflectionProbe/SSR)。可选几何遮挡体积(Uint8Array)阻止光穿过实体几何,防止室内漏光(通过 buildGeometryVolume 从三角网格构建)。网格空间 GI,与现有 GI 族互补:SSGI(屏幕空间,仅可见表面)、DDGI(探针,需布局)、VXGI(体素空间,需体素化)、LPV(网格空间,最快多 bounce,无需探针,无需体素化)、PathTracer(离线,最高质量)。LPV 覆盖离屏表面(优于 SSGI),无需探针布局(优于 DDGI),无需昂贵体素化(优于 VXGI)——光传播是每 cell 面的简单 SH 评估,极快 O(N³ × 迭代 × 6),适合低端硬件实时多 bounce GI。61 单元测试,纯 CPU 参考实现,无 WebGL 依赖。GLSL chunks(LPV_GLSL、LPV_INJECTION_GLSL、LPV_PROPAGATION_GLSL)用于 GPU 集成(3D 纹理 + 计算着色器)。VREEN 现有 5 种 GI 方案(SSGI + DDGI + VXGI + LPV + PathTracer)——web 引擎中最完整的 GI 栈。",
+        "advantage": "soup3D 完全没有全局光照系统;VREEN 有 5 种 GI 方案(SSGI + DDGI + VXGI + LPV + PathTracer)覆盖屏幕空间、探针、体素空间、网格空间与离线路径追踪,LPV 提供无需探针或体素化的最快实时多 bounce GI——理想于低端硬件"
       }
     }
   }
