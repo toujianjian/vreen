@@ -86,3 +86,15 @@ export {
   type BoneAttachmentOptions,
   type FollowMode,
 } from './BoneAttachment';
+// FootPlacementIK — 足部放置 IK:防止滑步 + 适配地形 + 法线对齐。
+// 射线检测地面 → 计算目标位置 → TwoBoneIKSolver 弯曲腿 → 对齐脚朝向到地面法线。
+// 适配来源:UE AnimSetFootIKDriver / Unity Animation Rigging / o3de EMotionFX FootIKLayerPass。
+export {
+  FootPlacementIK,
+  FootPlacementIKPresets,
+  type IKRayHit,
+  type IKRaycastFn,
+  type FootConfig,
+  type FootState,
+  type FootPlacementIKJSON,
+} from './FootPlacementIK';
