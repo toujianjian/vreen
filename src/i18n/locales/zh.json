@@ -1193,6 +1193,11 @@
         "title": "可变速率着色 (o3de Atom / UE5)",
         "desc": "可变速率着色 (VRS) 瓦片分类系统,适配自 o3de Atom AZ::RHI::ShadingRate + RasterPass::FragmentShadingRate、UE5 VariableRateShading 插件、VK_KHR_fragment_shading_rate / D3D12 VRS。将屏幕划分为瓦片(8x8 / 16x16 / 32x32 像素),每个瓦片指定一个着色速率(1x1 全速率 / 1x2 / 2x1 / 2x2 四分之一 / 2x4 / 4x2 八分之一 / 4x4 十六分之一),GPU 在低敏感区域减少像素着色器调用。4 种可组合分类策略:MotionVRS(快速运动像素→低速率,运动模糊掩盖细节)、DepthVRS(平坦表面→低速率,深度梯度分析)、FoveatedVRS(外围视觉→低速率,基于注视点,VR 必备)、LuminanceVRS(低对比度区域→低速率,亮度方差分析)。VRSTileClassifier 组合所有策略,每瓦片取最保守(最高)速率。MultiResolutionCompositor 提供 WebGL2 软件降级方案(低速率瓦片以低分辨率渲染后合成)。4 种预设:performance / balanced / quality / vr。GLSL chunks(VRS_GLSL、VRS_FEEDBACK_GLSL)供未来 WebGPU / 硬件 VRS 集成。与 TAA/TSR 协同(VRS 提供性能,TAA/TSR 重建细节),与 HZB 正交(HZB 剔除不可见物体,VRS 减少可见区域着色)。50 个单元测试,纯 CPU,不依赖 WebGL。",
         "advantage": "soup3D 无可变速率着色、无注视点渲染、无瓦片级着色速率分类;VREEN 提供 4 种分类策略 + 软件降级 + 硬件 VRS 就绪——对 VR 和高分辨率性能至关重要"
+      },
+      "motionMatching": {
+        "title": "动作匹配 (UE5 Pose Search / o3de EMotionFX)",
+        "desc": "动作匹配 —— 下一代数据驱动动画选择系统,适配自 Kovar 2002 Motion Graphs(SIGGRAPH)、Clavet 2016 Motion Matching(GDC,Ubisoft For Honor)、UE5 Pose Search 插件、o3de EMotionFX MotionMatching。用手动构建动画状态图的搜索问题替代:(1) 离线构建 —— 以固定间隔采样动捕 clip,为每帧提取特征向量(轨迹 = 过去 N + 当前 + 未来 M 点,每点含 posX/posZ/facing/speed;姿态 = 关键关节位置 + 速度,双脚/双手/重心);(2) 运行时搜索 —— 从玩家输入构建期望轨迹,线性扫描数据库找到代价最低的帧(代价 = 轨迹位置 + 朝向 + 速度差异 + 姿态差异的加权和,未来点通过 futureMultiplier 加权更高)。若最佳代价 < maxSwitchCost,带 blendTime 混合切换到该帧。4 种预设:precise(每帧搜索,总是切换,格斗/动作)、balanced(0.1s 搜索,cost<1.0,RPG/冒险)、performance(0.2s 搜索,cost<0.5,开放世界/MMO)、cinematic(永不搜索,过场)。代价权重遵循 Clavet 2016 GDC 推荐值(pos=1.0, facing=1.0, speed=0.5, pose=0.8, futureMult=1.5)。与 AnimationMixer 组合(决策层 vs 执行层),与 FootPlacementIK 配合(后处理姿态防止滑步)。45 个单元测试,纯 CPU,不依赖 WebGL。",
+        "advantage": "soup3D 仅有传统动画状态机,需手动构建状态图;VREEN 提供数据驱动动作匹配,自动搜索数据库找到最佳过渡帧——自然过渡、响应玩家输入、无需手动状态图(UE5 Pose Search / o3de EMotionFX 级技术)"
       }
     }
   }

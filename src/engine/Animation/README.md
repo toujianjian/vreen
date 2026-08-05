@@ -4,9 +4,12 @@
 >
 > The animation subsystem of the `@vreen/engine` kernel. Provides clip
 > playback, GPU skinning via `AnimationMixer`, an `AnimationStateMachine`
-> with auto Idle/Walk/Run transitions, `BlendSpace1D` for speed-driven
-> blending, layered animation with masks, additive blend, IK solvers
-> (FABRIK / CCD / biped rig), and a `Humanoid` rig definition.
+> with auto Idle/Walk/Run transitions, `BlendSpace1D` / `BlendSpace2D` for
+> speed-driven blending, layered animation with masks, additive blend, IK
+> solvers (FABRIK / CCD / biped rig / two-bone analytic / foot placement),
+> secondary spring physics, root motion extraction, prop attachment, and
+> `MotionMatcher` — a next-generation data-driven animation selection
+> system (UE5 Pose Search / o3de EMotionFX MotionMatching style).
 
 ---
 
@@ -46,6 +49,11 @@ Complementary systems:
   (FABRIK), `CCDSolver`, `IKHumanoid` (self-contained, no scene-graph dep).
 - `BoneAttachment` / `BoneAttachmentManager` — attach props/weapons/VFX
   to bones (Godot `BoneAttachment` / UE `AttachToComponent` analogue).
+- `FootPlacementIK` — terrain-adaptive foot IK (prevents sliding, aligns to
+  surface normals, UE `AnimSetFootIKDriver` / o3de `FootIKLayerPass` style).
+- `MotionMatcher` — data-driven animation selection via trajectory + pose
+  search (UE5 Pose Search / o3de EMotionFX MotionMatching / Kovar 2002
+  Motion Graphs). Replaces hand-built state graphs with a search problem.
 
 ---
 
@@ -336,6 +344,155 @@ const att = new BoneAttachment({
 att.update(dt);
 ```
 
+### `FootPlacementIK` (`FootPlacementIK.ts`)
+
+Terrain-adaptive foot IK — prevents foot sliding, adapts to ground height, and
+aligns feet to surface normals. Adapted from UE `AnimSetFootIKDriver` /
+Unity Animation Rigging / o3de EMotionFX `FootIKLayerPass`. Complements
+`TwoBoneIKSolver` (used internally for leg bending) and `CameraBob` (which
+moves the camera while feet stay planted).
+
+Pipeline per foot: (1) raycast down from the current foot position to find
+ground hit + normal; (2) compute target position = hit point + foot offset;
+(3) exponential-smoothly blend `blendWeight` toward 1 (avoid pops when
+entering/leaving ground); (4) when grounded + weighted, solve two-bone IK
+(hip → knee → foot) toward the target, then rotate the foot to align its
+up-axis with the surface normal.
+
+| `FootConfig` field | Default | Description |
+|--------------------|---------|-------------|
+| `footOffsetY` | 0.0 | Vertical offset above hit point (foot thickness) |
+| `raycastDownLength` | 1.0 | How far down to ray (must reach ground from hip) |
+| `raycastUpLength` | 0.1 | Optional up-ray for ledge detection |
+| `normalAlign` | 1.0 | 0 = no normal alignment, 1 = full alignment |
+| `maxNormalAngle` | π/3 | Max angle (rad) beyond which normal alignment clamps |
+| `minBlendWeight` | 0.0 | Below this weight, IK returns identity (no jitter) |
+
+```ts
+const footIK = new FootPlacementIK();
+// Wire to your terrain / collider raycaster
+footIK.raycast = (origin, dir, max) => terrain.raycast(origin, dir, max);
+
+// Per frame, after animation update but before TwoBoneIK solve:
+footIK.update(dt, leftFootPos, rightFootPos);
+
+// Solve left leg
+const l = footIK.solveLeft(hipPos, kneePos, leftFootPos, polePos);
+//   l.rootQuat → hip rotation, l.midQuat → knee rotation,
+//   l.footQuat  → extra foot rotation (normal alignment)
+
+// FootPlacementIKPresets provide tuned configs:
+//   .humanoid() — standard biped (offset 0.05, normal align 1.0)
+//   .quadruped() — 4 legs (set leftFoot/rightFoot + add hind pair via second IK)
+//   .vrHands()   — hand placement (IK for VR hand-on-surface)
+```
+
+`FootPlacementIKPresets`:
+| Preset | footOffsetY | normalAlign | Use case |
+|--------|-------------|-------------|----------|
+| `humanoid()` | 0.05 | 1.0 | Standard biped character on terrain |
+| `quadruped()` | 0.04 | 0.8 | 4-legged animal (lower normal align for stability) |
+| `vrHands()` | 0.02 | 1.0 | VR hand-on-surface placement |
+| `rootMotionDisabled()` | 0.0 | 1.0 | When root motion handles slide prevention |
+
+### `MotionMatcher` (`MotionMatching.ts`)
+
+Data-driven animation selection — replaces hand-built animation state graphs
+with a search problem. Adapted from Kovar 2002 "Motion Graphs" (SIGGRAPH),
+Clavet 2016 "Motion Matching" (GDC, Ubisoft For Honor), UE5 Pose Search
+plugin, and o3de EMotionFX `MotionMatching` experimental module. A
+next-generation technique that surpasses soup3D's traditional
+`AnimationStateMachine` — no manual state graph, natural transitions,
+responsive to player input.
+
+**Two phases:**
+1. **Offline build** — sample motion-capture clips at fixed intervals,
+   extract per-frame feature vectors:
+   - **Trajectory** = past N points + current + future M points, each with
+     `(posX, posZ, facing, speed)` — captures where the character came from
+     and where it's going.
+   - **Pose** = key joint positions + velocities (feet, hands, root),
+     flattened to `Float32Array` — captures the current body configuration.
+2. **Runtime search** — from player input, build a desired trajectory
+   (where the player wants to go), then linear-scan the database to find
+   the frame with minimum cost:
+   ```
+   cost = w_pos · Σ|traj_desired[i] − traj_db[i]|²
+        + w_facing · Σ angle_diff²
+        + w_speed · Σ speed_diff²
+        + w_pose · Σ|pose_current − pose_db|²
+   ```
+   Future points weighted `futureMultiplier`× (player intent matters more
+   than history). If best cost < `maxSwitchCost`, switch to that frame with
+   `blendTime` crossfade.
+
+```ts
+import {
+  buildMotionDatabase, MotionMatcher, buildDesiredTrajectory,
+  MotionMatchingPresets,
+} from '@vreen/engine/animation';
+
+// 1. Offline: build database from clips (each clip = frames[])
+const db = buildMotionDatabase([
+  { clipId: 0, frames: walkFrames },  // walkFrames: [{ trajectory, pose, clipTime }]
+  { clipId: 1, frames: runFrames },
+  { clipId: 2, frames: jumpFrames },
+]);
+
+// 2. Runtime: create matcher with preset
+const matcher = new MotionMatcher(db, MotionMatchingPresets.balanced());
+matcher.setCurrentClip(0, 0);  // start playing walk from t=0
+
+// 3. Per frame: feed desired trajectory + current sampled pose
+const desiredTraj = buildDesiredTrajectory(
+  { x: char.x, z: char.z }, char.facing,
+  input.moveDirX, input.moveDirZ, input.moveSpeed,
+);
+matcher.update(dt, desiredTraj, currentPose);
+
+// 4. Read state → drive AnimationMixer
+const s = matcher.getState();
+//   s.clipId, s.clipTime  → mixer.clipAction(clips[s.clipId]).seek(s.clipTime)
+//   s.isBlending          → if true, crossfade from prevClipId → clipId
+//   s.blendWeight         → 0 = fully prev, 1 = fully current
+```
+
+**`MotionMatchCostWeights` (defaults from Clavet 2016 GDC):**
+
+| Weight | Default | Controls |
+|--------|---------|----------|
+| `trajectoryPosition` | 1.0 | Per-point position match |
+| `trajectoryFacing` | 1.0 | Per-point facing angle match |
+| `trajectorySpeed` | 0.5 | Per-point speed match |
+| `pose` | 0.8 | Joint position/velocity match |
+| `futureMultiplier` | 1.5 | Future points weighted higher (player intent) |
+
+**`MotionMatchingPresets`:**
+
+| Preset | searchInterval | maxSwitchCost | blendTime | Use case |
+|--------|----------------|---------------|-----------|----------|
+| `precise()` | 0.016s (per-frame) | ∞ (always switch) | 0.1s | Fighting / action (precise response) |
+| `balanced()` | 0.1s | 1.0 | 0.2s | RPG / adventure (response + perf) |
+| `performance()` | 0.2s | 0.5 | 0.3s | Open world / MMO (reduce search cost) |
+| `cinematic()` | ∞ (never) | 0 (never) | 0.3s | Cutscenes (play clip linearly) |
+
+**`MotionMatcherState`:**
+
+| Field | Description |
+|-------|-------------|
+| `clipId` | Currently playing clip ID |
+| `clipTime` | Current playback time within clip (seconds) |
+| `isBlending` | True during crossfade after a switch |
+| `blendWeight` | `[0,1]` — 0 = fully prevClip, 1 = fully currentClip |
+| `prevClipId` / `prevClipTime` | Source of the current blend |
+| `lastCost` | Cost of the most recent search (lower = better match) |
+| `searchCount` / `switchCount` | Runtime stats (search frequency, switch frequency) |
+
+> **Note** — `MotionMatcher` is the *decision layer* (which clip + time to
+> play). The actual skeletal playback is driven by `AnimationMixer` — the
+> two are designed to compose. `FootPlacementIK` then post-processes the
+> resulting pose to prevent foot sliding on terrain.
+
 ### Subsystem Map
 
 | Subsystem | File | Layer | o3de / industry analogue |
@@ -353,6 +510,8 @@ att.update(dt);
 | `IKSystem` | `IKSystem.ts` | scene-graph IK | EMotionFX `IKSolver` (Object3D) |
 | `IK/` (`IKBone`/`IKChain`/`IKSolver`/`CCDSolver`/`IKHumanoid`) | `IK/` subdirectory | self-contained IK | — |
 | `BoneAttachment` / `BoneAttachmentManager` | `BoneAttachment.ts` | prop attach | Godot `BoneAttachment` / UE `AttachToComponent` |
+| `FootPlacementIK` / `FootPlacementIKPresets` | `FootPlacementIK.ts` | terrain foot IK | UE `AnimSetFootIKDriver` / o3de `FootIKLayerPass` |
+| `MotionMatcher` / `MotionMatchingPresets` | `MotionMatching.ts` | data-driven anim selection | UE5 Pose Search / o3de EMotionFX `MotionMatching` / Kovar 2002 Motion Graphs |
 
 ---
 

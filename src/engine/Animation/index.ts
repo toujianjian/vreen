@@ -98,3 +98,31 @@ export {
   type FootState,
   type FootPlacementIKJSON,
 } from './FootPlacementIK';
+// Motion Matching — 数据驱动动画选择系统(Kovar 2002 Motion Graphs + Clavet 2016 GDC +
+// UE5 Pose Search + o3de EMotionFX MotionMatching)。
+// 离线构建「轨迹 + 姿态」特征数据库,运行时从玩家输入计算期望轨迹,搜索最佳匹配帧,
+// 带混合切换。无需手动构建状态图,自然过渡,响应快。与 AnimationMixer 配合:
+// MotionMatcher 是决策层(选 clip + time),Mixer 是执行层(驱动骨骼)。
+export {
+  makeTrajectoryPoint,
+  buildPoseVector,
+  getJointFromPose,
+  poseVectorJointCount,
+  buildMotionDatabase,
+  computeMotionCost,
+  computeFullCost,
+  searchBestMatch,
+  MotionMatcher,
+  buildDesiredTrajectory,
+  MotionMatchingPresets,
+  DEFAULT_COST_WEIGHTS,
+  type TrajectoryPoint,
+  type Trajectory,
+  type PoseVector,
+  type MotionDBEntry,
+  type MotionDatabase,
+  type MotionMatchCostWeights,
+  type MotionMatchResult,
+  type MotionMatcherState,
+  type MotionMatcherOptions,
+} from './MotionMatching';

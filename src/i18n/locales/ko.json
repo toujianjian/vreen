@@ -1193,6 +1193,11 @@
         "title": "가변 레이트 셰이딩 (o3de Atom / UE5)",
         "desc": "가변 레이트 셰이딩 (VRS) 타일 분류 시스템. o3de Atom AZ::RHI::ShadingRate + RasterPass::FragmentShadingRate, UE5 VariableRateShading 플러그인, VK_KHR_fragment_shading_rate / D3D12 VRS에서 적응. 화면을 타일(8x8 / 16x16 / 32x32 픽셀)로 분할하고 각 타일에 셰이딩 레이트(1x1 풀 / 1x2 / 2x1 / 2x2 1/4 / 2x4 / 4x2 1/8 / 4x4 1/16)를 할당하여 저감도 영역에서 픽셀 셰이더 호출을 감소시킵니다. 4가지 조합 가능한 분류 전략: MotionVRS(빠른 이동 픽셀→저레이트, 모션 블러가 디테일을 숨김), DepthVFS(평평한 표면→저레이트, 깊이 기울기 분석), FoveatedVRS(주변 시야→저레이트, 응시점 기반, VR 필수), LuminanceVRS(저대비 영역→저레이트, 휘도 분산 분석). VRSTileClassifier는 모든 전략을 결합하여 타일별로 가장 보수적인(최고) 레이트를 채택. MultiResolutionCompositor는 WebGL2 소프트웨어 폴백 제공(저레이트 타일을 저해상도로 렌더링 후 합성). 4가지 프리셋: performance / balanced / quality / vr. GLSL 청크(VRS_GLSL, VRS_FEEDBACK_GLSL)로 향후 WebGPU / 하드웨어 VRS 통합 지원. TAA/TSR과 협력(VRS는 성능 제공, TAA/TSR은 디테일 재구성), HZB와 직교(HZB는 보이지 않는 객체를 컬링, VRS는 가시 영역 셰이딩 감소). 50개 유닛 테스트, 순수 CPU, WebGL 비의존.",
         "advantage": "soup3D에는 가변 레이트 셰이딩, 포베이티드 렌더링, 타일 기반 셰이딩 레이트 분류가 전혀 없음; VREEN은 4가지 분류 전략 + 소프트웨어 폴백 + 하드웨어 VRS 준비를 제공 — VR 및 고해상도 성능에 필수적"
+      },
+      "motionMatching": {
+        "title": "모션 매칭 (UE5 Pose Search / o3de EMotionFX)",
+        "desc": "모션 매칭 —— 차세대 데이터 기반 애니메이션 선택 시스템. Kovar 2002 Motion Graphs(SIGGRAPH), Clavet 2016 Motion Matching(GDC, Ubisoft For Honor), UE5 Pose Search 플러그인, o3de EMotionFX MotionMatching에서 적응. 수작업 상태 그래프를 검색 문제로 대체:(1) 오프라인 빌드 —— 모션 캡처 클립을 고정 간격으로 샘플링, 프레임별 특징 벡터 추출(궤적 = 과거 N + 현재 + 미래 M 점, 각 점에 posX/posZ/facing/speed; 포즈 = 주요 관절 위치 + 속도, 발/손/루트);(2) 런타임 검색 —— 플레이어 입력에서 희망 궤적 구축, 데이터베이스를 선형 스캔하여 최소 비용 프레임 발견(비용 = 궤적 위치 + 방향 + 속도 차이 + 포즈 차이의 가중 합, 미래 점은 futureMultiplier로 더 높게 가중). 최적 비용 < maxSwitchCost이면 blendTime 크로스페이드로 해당 프레임에 전환. 4가지 프리셋: precise(매 프레임 검색, 항상 전환, 격투/액션), balanced(0.1s 검색, cost<1.0, RPG/어드벤처), performance(0.2s 검색, cost<0.5, 오픈 월드/MMO), cinematic(검색 안 함, 컷신). 비용 가중치는 Clavet 2016 GDC 권장값을 따름(pos=1.0, facing=1.0, speed=0.5, pose=0.8, futureMult=1.5). AnimationMixer와 조합(의사결정 계층 vs 실행 계층), FootPlacementIK과 연동(포즈를 후처리하여 발 미끄러짐 방지). 45개 유닛 테스트, 순수 CPU, WebGL 비의존.",
+        "advantage": "soup3D는 수작업 상태 그래프 구축이 필요한 전통적 애니메이션 상태 머신만 보유; VREEN은 데이터 기반 모션 매칭을 제공하여 데이터베이스를 검색해 최적의 전환 프레임을 자동 발견 — 자연스러운 전환, 플레이어 입력에 대한 빠른 응답, 수작업 상태 그래프 불필요(UE5 Pose Search / o3de EMotionFX 급 기술)"
       }
     }
   }
