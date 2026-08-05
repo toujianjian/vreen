@@ -87,6 +87,7 @@ const CAPS: Cap[] = [
   { key: 'orca', icon: Waypoints, accent: 'text-neon-cyan' },
   { key: 'uiSystem', icon: PanelsTopLeft, accent: 'text-neon-magenta' },
   { key: 'webXR', icon: Glasses, accent: 'text-neon-cyan' },
+  { key: 'filmGrain', icon: Film, accent: 'text-neon-purple' },
 ];
 
 export function Capabilities() {

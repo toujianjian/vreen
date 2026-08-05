@@ -1213,6 +1213,11 @@
         "title": "WebXR VR/AR/MR(WebXR Device API / three.js / o3de Atom XR)",
         "desc": "WebXR VR/AR/MR 会话管理系统,适配自 W3C WebXR Device API、three.js WebXRManager/Controller + VRButton/ARButton、o3de Atom XR pass。完整会话生命周期(requestSession → setSession → end),支持 immersive-vr / immersive-ar / inline 三种模式,参考空间管理(local-floor / bounded-floor / local / viewer)+ 自定义偏移空间(传送用)。帧循环协调提取观察者姿态并以纯数据派发给渲染层(数据驱动、与 WebGL 解耦——核心状态机可在无 XR 设备下测试)。控制器注册表,每控制器三空间:目标射线(指向/拾取/UI)、握持(手柄模型挂载点)、手部(W3C Hand Input 25 关节 + 滞后防抖捏合检测)。输入源同步(inputsourceschange → connect/disconnect)+ 按钮边沿检测(select/squeeze start/end/click)。AR 子系统:XRLightEstimation(归一化方向光 + 27 系数球谐 IBL)、XRPlaneTracker(水平/垂直平面生命周期 + AABB 边界框 + 最近水平面放置查询)、WebXRDepthSensing(深度纹理 + rawValueToMeters 转换 + 遮挡测试)。WebXRProvider 抽象(生产用 BrowserWebXRProvider,测试用 MockWebXRProvider)实现无 XR 设备/无 WebGL 的纯逻辑测试。DOM 会话按钮(createVRButton/createARButton)带特性检测 + 赛博朋克霓虹样式 + sessiongranted 自动进入。43 个单元测试。",
         "advantage": "soup3D 完全没有 VR/AR/XR 支持——无 WebXR、无沉浸式会话、无控制器追踪、无手部输入、无 AR 光照估计/平面检测/深度感知;VREEN 提供完整的 WebXR 技术栈(VR + AR + MR),含控制器 + 手部 25 关节追踪 + 捏合手势 + AR 环境理解(o3de Atom XR / three.js WebXR 级技术)"
+      },
+      "filmGrain": {
+        "title": "胶片颗粒 Film Grain(o3de Atom FilmGrain / three.js FilmShader)",
+        "desc": "电影感胶片颗粒后处理 Pass,适配自 o3de Atom FilmGrain.azsl + FilmGrainSettings + FilmGrainConstants。完整 o3de 算法:(1) grain UV 通过 tilingScale * pixelCoord / grainTextureSize + 24fps 动画偏移计算(trunc(time * 24) 模拟 24fps 胶片帧率,float2(0.6379, 1.7358) 随机跳转);(2) grain 从预计算噪声纹理采样(Mirror 地址模式)或程序化 hash21 噪声(双路径);(3) 亮度阻尼 4x(1-x) 公式(Rec.601 luma 0.21/0.72/0.07)——纯黑(lum=0)/纯白(lum=1)处颗粒消失,中间调(lum=0.5)峰值,模拟真实胶片颗粒物理特性;(4) 替换式 lerp(rgb = lerp(rgb, grain, intensity))遵循 o3de,非叠加式。参数:intensity(o3de 默认 0.2)、luminanceDampening(默认 0.0)、tilingScale(默认 1.0)、size、noiseType(hash/texture)、animated(24fps)。1:1 CPU/GPU 参考:filmGrainPixel() 纯函数 + hash21() 与 GLSL 位精确一致,无 WebGL 可测试。27 个单元测试。",
+        "advantage": "soup3D 完全没有后处理——无 bloom、无 tonemapping、无胶片颗粒,仅有一张全屏图覆盖做 HUD;VREEN 提供 o3de Atom 级胶片颗粒,含亮度阻尼(4x(1-x) 中间调峰值)、24fps 动画、grain 纹理 + 程序化 hash 双路径、1:1 CPU/GPU 参考无头测试(o3de Atom FilmGrain 级技术)"
       }
     }
   }

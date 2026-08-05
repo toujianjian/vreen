@@ -68,7 +68,16 @@ export {
   type ChromaticAberrationEnhancedOptions,
 } from './ChromaticAberrationPass';
 export { VignettePass, type VignetteEnhancedOptions } from './VignettePass';
-export { FilmGrainPass, type FilmGrainOptions } from './FilmGrainPass';
+export {
+  FilmGrainPass,
+  type FilmGrainOptions,
+  type FilmGrainParams,
+  type FGColor,
+  type GrainNoiseType,
+  filmGrainPixel,
+  hash21,
+  DEFAULT_FILM_GRAIN_PARAMS,
+} from './FilmGrainPass';
 export { AfterimagePass, type AfterimageOptions } from './AfterimagePass';
 export { PixelationPass, type PixelationOptions } from './PixelationPass';
 export { SSRPass, type SSRPassOptions } from './SSRPass';

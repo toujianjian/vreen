@@ -1835,17 +1835,26 @@ void main() {
 //   u_time     : 时间种子(秒)
 //   u_screenSize: 屏幕尺寸
 export const FILM_GRAIN_FRAG = /* glsl */ `#version 300 es
+// FilmGrain — 适配 o3de Atom FilmGrain.azsl MainCS。
+// 算法:grain UV (tilingScale + 24fps) → 采样 → 亮度阻尼 4x(1-x) → lerp。
 precision highp float;
 
 in vec2 v_uv;
 out vec4 outColor;
 
 uniform sampler2D u_colorMap;
-uniform float u_intensity;
-uniform float u_size;
-uniform int u_animated;
-uniform float u_time;
-uniform vec2 u_screenSize;
+uniform float u_intensity;          // 0..1 (o3de default 0.2)
+uniform float u_size;               // 程序化噪声 texel 倍数
+uniform int u_animated;             // 1=24fps 动画
+uniform float u_time;               // 秒
+uniform vec2 u_screenSize;          // 屏幕尺寸
+
+// o3de 扩展参数。
+uniform float u_luminanceDampening; // 0=均匀, 1=4x(1-x) 中间调峰值
+uniform float u_tilingScale;        // grain 纹理 UV 缩放
+uniform sampler2D u_grainTexture;   // 可选预计算 grain 纹理
+uniform int u_useGrainTexture;      // 0=程序化, 1=纹理
+uniform float u_grainTextureSize;   // grain 纹理尺寸
 
 float hash21(vec2 p) {
   vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -1853,18 +1862,47 @@ float hash21(vec2 p) {
   return fract((p3.x + p3.y) * p3.z);
 }
 
+// Mirror 地址模式 (o3de AddressU/V = Mirror)。
+vec2 mirrorWrap(vec2 uv) {
+  vec2 m = mod(uv, 2.0);
+  m = m < 0.0 ? m + 2.0 : m;
+  return vec2(m.x > 1.0 ? 2.0 - m.x : m.x, m.y > 1.0 ? 2.0 - m.y : m.y);
+}
+
 void main() {
   vec3 color = texture(u_colorMap, v_uv).rgb;
-  vec2 px = v_uv * u_screenSize / max(u_size, 1.0);
+  vec2 pixelCoord = v_uv * u_screenSize;
+
+  // 1. grain UV (o3de: tilingScale * pixelCoord / grainSize + 24fps)。
+  vec2 grainUV = u_tilingScale * pixelCoord / max(u_grainTextureSize, 1.0);
   if (u_animated == 1) {
-    px += fract(u_time) * 79.0;
+    float frame = trunc(u_time * 24.0);
+    grainUV += vec2(0.6379, 1.7358) * frame;
   }
-  float grain = hash21(floor(px)) - 0.5;
-  // 颗粒在亮度上叠加,避免过度染色
-  float lum = dot(color, vec3(0.2126, 0.7152, 0.0722));
-  float amount = u_intensity * (0.5 + 0.5 * (1.0 - lum));
-  color += grain * amount;
-  outColor = vec4(clamp(color, 0.0, 1.0), 1.0);
+
+  // 2. 采样 grain (纹理 or 程序化 hash)。
+  float grain;
+  if (u_useGrainTexture == 1) {
+    grain = texture(u_grainTexture, mirrorWrap(grainUV)).r;
+  } else {
+    vec2 noisePx = pixelCoord / max(u_size, 1.0);
+    if (u_animated == 1) {
+      // 24fps 动画 (与 o3de texture 路径一致:trunc(time * 24))。
+      float frame = trunc(u_time * 24.0);
+      noisePx += vec2(0.6379, 1.7358) * frame;
+    }
+    grain = hash21(floor(noisePx));
+  }
+
+  // 3. 亮度阻尼 (o3de: 4x(1-x), 峰值在 lum=0.5)。
+  // Rec.601 luma (o3de 用 0.21/0.72/0.07)。
+  float lum = dot(color, vec3(0.21, 0.72, 0.07));
+  float dampening = (lum - lum * lum) * 4.0; // 4x(1-x)
+  grain *= mix(1.0, dampening, u_luminanceDampening);
+
+  // 4. 替换式 lerp (o3de: rgb = lerp(rgb, grain, intensity))。
+  vec3 result = mix(color, vec3(grain), u_intensity);
+  outColor = vec4(clamp(result, 0.0, 1.0), 1.0);
 }
 `;
 
