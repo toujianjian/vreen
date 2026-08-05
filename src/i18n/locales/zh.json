@@ -1188,6 +1188,11 @@
         "title": "层叠 PBR 材质(o3de Material Layering)",
         "desc": "层叠 PBR 材质 CPU 参考实现,适配自 o3de 的 Material Layering 系统。允许在单一 mesh 上叠加最多 8 层 PBR 材质,每层有独立的 albedo / metallic / roughness / normal / emissive / AO / 高度,以及一个灰度遮罩(Float32Array)控制该层在表面各处的混合权重。4 种混合模式:normal(lerp)、add(累加,湿润/发光)、multiply(变暗,阴影)、overlay(Photoshop 风格对比,风化)。双线性遮罩采样 + WRAP UV 寻址(平铺),每层独立 UV 缩放/偏移。可选顶点颜色 alpha 调制遮罩(顶面草地、朝上表面雪)。法线混合带独立 normalBlend 因子 [0,1] + 重新归一化。自发光在层间始终加性累加(发光符文覆盖在油漆表面 + 发光裂缝)。静态遮罩工厂方法:createFullMask(均匀)、createRadialMask(冲击贴花、飞溅)、createNoiseMask(划痕、锈迹、污渍,种子确定)。典型用途:车漆(金属+油漆+划痕+锈迹+污渍)、地形(岩石+草地+泥土+雪)、角色(皮肤+污渍+血迹+磨损)、武器(金属+涂装+磨损+锈迹)、墙壁(灰泥+裂缝+霉菌+涂鸦)。56 单元测试,纯 CPU 参考实现,无 WebGL 依赖。GLSL chunks(LAYERED_PBR_GLSL、LAYERED_PBR_VERTEX_GLSL、LAYERED_PBR_FRAGMENT_GLSL)用于 GPU 集成(MaterialLayer[MAX_LAYERS] uniform 数组 + 遮罩采样器)。soup3D 每 mesh 仅单一材质;VREEN 支持专业材质层叠,游戏与影视制作必备。",
         "advantage": "soup3D 每 mesh 仅支持单一材质无层叠;VREEN 支持最多 8 层 PBR 材质 + 每层遮罩 + 4 种混合模式 + 顶点色调制 + 遮罩工厂方法——专业游戏与影视制作必备(车漆、地形、角色、武器、墙壁层叠)"
+      },
+      "vrs": {
+        "title": "可变速率着色 (o3de Atom / UE5)",
+        "desc": "可变速率着色 (VRS) 瓦片分类系统,适配自 o3de Atom AZ::RHI::ShadingRate + RasterPass::FragmentShadingRate、UE5 VariableRateShading 插件、VK_KHR_fragment_shading_rate / D3D12 VRS。将屏幕划分为瓦片(8x8 / 16x16 / 32x32 像素),每个瓦片指定一个着色速率(1x1 全速率 / 1x2 / 2x1 / 2x2 四分之一 / 2x4 / 4x2 八分之一 / 4x4 十六分之一),GPU 在低敏感区域减少像素着色器调用。4 种可组合分类策略:MotionVRS(快速运动像素→低速率,运动模糊掩盖细节)、DepthVRS(平坦表面→低速率,深度梯度分析)、FoveatedVRS(外围视觉→低速率,基于注视点,VR 必备)、LuminanceVRS(低对比度区域→低速率,亮度方差分析)。VRSTileClassifier 组合所有策略,每瓦片取最保守(最高)速率。MultiResolutionCompositor 提供 WebGL2 软件降级方案(低速率瓦片以低分辨率渲染后合成)。4 种预设:performance / balanced / quality / vr。GLSL chunks(VRS_GLSL、VRS_FEEDBACK_GLSL)供未来 WebGPU / 硬件 VRS 集成。与 TAA/TSR 协同(VRS 提供性能,TAA/TSR 重建细节),与 HZB 正交(HZB 剔除不可见物体,VRS 减少可见区域着色)。50 个单元测试,纯 CPU,不依赖 WebGL。",
+        "advantage": "soup3D 无可变速率着色、无注视点渲染、无瓦片级着色速率分类;VREEN 提供 4 种分类策略 + 软件降级 + 硬件 VRS 就绪——对 VR 和高分辨率性能至关重要"
       }
     }
   }
