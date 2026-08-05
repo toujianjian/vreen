@@ -1143,6 +1143,11 @@
         "title": "可见性缓冲(UE5 Nanite / o3de Atom)",
         "desc": "可见性缓冲延迟渲染,适配自 o3de Atom VisibilityBuffer.azsli + DeferredMaterial 与 UE5 Nanite。每像素存储几何 ID(meshInfoIndex + triangleId + 重心坐标 + isFrontFace)而非完整 GBuffer 属性,带宽减半,材质类型与几何 pass 解耦。o3de Atom 兼容位打包:每像素 2 个 RGBA32F texel(flagsAndMeshInfoIndex:bit 31=无效,bit 30=正面,bits 29..0=meshInfoIndex;triangleId;重心坐标 xy,z=1-x-y 重建;重心导数 Dx/Dy xy,z=-x-y 重建)。空像素标记:-0.0f(0x80000000),与有效 +0.0f(meshInfoIndex=0)区分。CPU 软件光栅化(edge function 重心坐标 + 深度测试 + visbuf 写入)。完整管线:pack → rasterize → build → getMeshInfoIndex(快速路径)→ unpack → decompressPixel → fetchTriangleVertices → interpolateAttributes → 着色。GLSL chunks(VISIBILITY_BUFFER_PACK_VERT/FRAG 配合 GL_EXT_fragment_shader_barycentric,VISIBILITY_BUFFER_UNPACK_UTILITY 用于延迟着色)。与 MeshletRenderer 天然配套,构成 UE5 Nanite GPU 驱动渲染闭环。纯 CPU,无 WebGL 依赖,可在 Node/无头环境测试。75 个单元测试。",
         "advantage": "soup3D 无可见性缓冲或延迟材质系统"
+      },
+      "esm": {
+        "title": "指数阴影贴图(o3de Atom)",
+        "desc": "指数阴影贴图(ESM)CPU 参考实现,适配自 o3de Atom EsmShadowmapsPass + DepthExponentiationPass、Salvi 2008《Fast Shadow Maps on a 1K Budget》与 Annen et al. 2008《Exponential Shadow Maps》。把阴影贴图深度转换到 exp(c·d) 域,使线性 / 高斯滤波在数学上合法(无 PCF 混叠),从而允许对预滤波阴影贴图做硬件 bilinear 采样。可见度公式与 o3de ESM.azsli SampleESM 1:1 对应:visibility = clamp(exp(-c·d_receiver) · ESM[u,v], 0, 1)。管线:expDepthMap(深度指数化)→ filterESM(可分离 Gaussian 或 box H+V 模糊)→ sampleESM(对预滤波纹理 1-tap bilinear)或 sampleESMFiltered(内联 N×N box)。软阴影只需 1-9 tap,PCSS 需 16-41 tap。可配置指数 c(16-bit 纹理 ≤11,32-bit ≤80)、bias、wrap 模式、核(gaussian/box)、半径、sigma、可分离标志。含 sampleESMPCF 用于交叉验证。GLSL chunk ESM_SAMPLE_GLSL 提供匹配的 GPU 函数(sampleESM、sampleESMBox、expDepth)。与 ShadowMapManager(basic/PCF/PCSS)互补,VREEN 现有 4 种阴影方案覆盖全精度-性能谱。纯 CPU Float32Array,无 WebGL 依赖。51 个单元测试。",
+        "advantage": "soup3D 仅有基础硬阴影,无 ESM / 软阴影 / PCSS"
       }
     }
   }

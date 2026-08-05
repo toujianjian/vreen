@@ -1143,6 +1143,11 @@
         "title": "ビジビリティバッファ(UE5 Nanite / o3de Atom)",
         "desc": "ビジビリティバッファディファードレンダリング、o3de Atom VisibilityBuffer.azsli + DeferredMaterial と UE5 Nanite から適応。完全 GBuffer 属性の代わりにピクセル単位のジオメトリ ID(meshInfoIndex + triangleId + 重心座標 + isFrontFace)を格納、帯域幅を半減し、マテリアルタイプをジオメトリパスから切り離す。o3de Atom 互換ビットパッキング:ピクセルあたり 2 RGBA32F texel(flagsAndMeshInfoIndex:bit 31=無効、bit 30=前面、bits 29..0=meshInfoIndex;triangleId;重心座標 xy、z=1-x-y で再構築;重心導関数 Dx/Dy xy、z=-x-y で再構築)。空ピクセルマーカー:-0.0f(0x80000000)、有効な +0.0f(meshInfoIndex=0)と区別。CPU ソフトウェアラスタライザ(edge function 重心座標 + 深度テスト + visbuf 書き込み)。完全パイプライン:pack → rasterize → build → getMeshInfoIndex(高速パス)→ unpack → decompressPixel → fetchTriangleVertices → interpolateAttributes → シェーディング。GLSL chunks(VISIBILITY_BUFFER_PACK_VERT/FRAG + GL_EXT_fragment_shader_barycentric、VISIBILITY_BUFFER_UNPACK_UTILITY でディファードシェーディング)。MeshletRenderer の自然なコンパニオン、UE5 Nanite GPU 駆動ループを構成。純粋 CPU、WebGL 非依存、Node/ヘッドレス環境でテスト可能。75 個のユニットテスト。",
         "advantage": "soup3D はビジビリティバッファやディファードマテリアルシステムなし"
+      },
+      "esm": {
+        "title": "エクスポネンシャルシャドウマップ(o3de Atom)",
+        "desc": "エクスポネンシャルシャドウマップ(ESM)CPU リファレンス実装、o3de Atom EsmShadowmapsPass + DepthExponentiationPass、Salvi 2008『Fast Shadow Maps on a 1K Budget』および Annen et al. 2008『Exponential Shadow Maps』から適応。シャドウマップ深度を exp(c·d) ドメインに変換し、線形 / ガウシアンフィルタリングが数学的に合法化(PCF エイリアシングなし)、プレフィルタ済みシャドウマップのハードウェア bilinear サンプリングが可能に。可視度公式は o3de ESM.azsli SampleESM と 1:1 対応:visibility = clamp(exp(-c·d_receiver) · ESM[u,v], 0, 1)。パイプライン:expDepthMap(深度指数化)→ filterESM(分離型 Gaussian または box H+V ブラー)→ sampleESM(プレフィルタ済みテクスチャに 1-tap bilinear)または sampleESMFiltered(インライン N×N box)。ソフトシャドウは 1-9 tap、PCSS は 16-41 tap。設定可能な指数 c(16-bit テクスチャ ≤11、32-bit ≤80)、bias、wrap モード、カーネル(gaussian/box)、半径、sigma、分離フラグ。クロス検証用 sampleESMPCF を含む。GLSL chunk ESM_SAMPLE_GLSL が一致する GPU 関数(sampleESM、sampleESMBox、expDepth)を提供。ShadowMapManager(basic/PCF/PCSS)と補完し、VREEN は全精度-性能スペクトラムをカバーする 4 つのシャドウソリューションを提供。純粋 CPU Float32Array、WebGL 非依存。51 個のユニットテスト。",
+        "advantage": "soup3D は基礎的なハードシャドウのみ、ESM / ソフトシャドウ / PCSS なし"
       }
     }
   }

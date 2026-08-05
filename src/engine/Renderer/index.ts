@@ -913,4 +913,29 @@ export {
   type VisibilityBufferStats,
   type DecompressedPixel,
 } from './VisibilityBuffer';
+// ExponentialShadowMap — 指数阴影贴图 (ESM) CPU 参考实现。
+// 适配自 o3de Atom `EsmShadowmapsPass` + `DepthExponentiationPass` +
+// Salvi 2008 "Fast Shadow Maps on a 1K Budget" + Annen et al. 2008 "Exponential Shadow Maps"。
+// 把阴影贴图深度 d 通过 exp(c·d) 变换存储,利用 exp 的可加性使线性 / Gaussian 滤波合法,
+// 从而避免 PCF 的 N×N 深度比较 + aliasing。滤波后 ESM 纹理可硬件 bilinear 采样,
+// 软阴影只需 1-9 tap(PCSS 需 16-41 tap)。
+// 与 ShadowMapManager(type='basic'|'pcf'|'pcss') 互补:VREEN 现有 4 种阴影方案。
+// 与 o3de `ESM.azsli` SampleESM 函数 1:1 对应,纯 CPU Float32Array,无 WebGL 依赖。
+// soup3D 仅 basic 硬阴影,无 ESM / 软阴影 / PCSS。
+export {
+  expDepthMap,
+  filterESM,
+  gaussianWeights,
+  sampleESM,
+  sampleESMFiltered,
+  sampleESMPCF,
+  makeBlockerShadowMapESM,
+  makeFlatShadowMapESM,
+  getESMStats,
+  ESM_SAMPLE_GLSL,
+  type ESMTexture,
+  type ESMOptions,
+  type ESMFilterOptions,
+  type ESMStats,
+} from './ExponentialShadowMap';
 

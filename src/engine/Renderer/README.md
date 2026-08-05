@@ -354,6 +354,126 @@ for (const cascade of csm.cascades) {
 }
 ```
 
+### `ExponentialShadowMap` (`ExponentialShadowMap.ts`)
+
+**Exponential Shadow Maps (ESM)** — a soft-shadow technique that converts
+the depth buffer to the exponential domain `exp(c·d)` so that linear /
+Gaussian filtering becomes mathematically valid. This eliminates the
+N×N depth comparisons required by PCF (and the resulting aliasing) and
+allows hardware bilinear sampling of the filtered shadow map. A single
+bilinear tap on a pre-filtered ESM texture produces a smooth soft shadow.
+
+Adapted from o3de Atom `EsmShadowmapsPass` + `DepthExponentiationPass`,
+Salvi 2008 "Fast Shadow Maps on a 1K Budget", and Annen et al. 2008
+"Exponential Shadow Maps". The visibility formula matches o3de's
+`ESM.azsli` `SampleESM` 1:1:
+
+```
+visibility = clamp(exp(-c · d_receiver) · ESM[u,v], 0, 1)
+           = clamp(exp(c · (d_occluder - d_receiver)), 0, 1)
+```
+
+where `ESM[u,v] = exp(c · d_occluder)` is the pre-exp-onentiated depth
+stored in the ESM texture (produced by `expDepthMap`, equivalent to o3de
+`DepthExponentiation.azsl`). When `d_receiver ≤ d_occluder` (receiver is
+closer to the light, no occlusion) the exponent is ≥ 0 so `visibility = 1`
+(fully lit). When `d_receiver > d_occluder` (receiver is behind the
+occluder) the exponent goes negative and `visibility → 0` (fully shadowed).
+The transition sharpness is controlled by `c`: larger `c` → sharper
+shadows but higher floating-point precision requirements
+(RGBA16F safe up to c≈11, RGBA32F safe up to c≈80).
+
+| Stage | Function | Description |
+|-------|----------|-------------|
+| 1. Depth exponentiation | `expDepthMap(shadowMap, w, h, c)` | Per-pixel `exp(c · clamp(d, 0, 1))` → Float32Array. Mirrors o3de `DepthExponentiationPass`. |
+| 2. Filter (optional) | `filterESM(esm, { kernel, radius, sigma, separable })` | Gaussian or box blur on the exp-domain texture. Separable H+V (cost = 2·radius·w·h) or non-separable 2D (cost = (2r+1)²·w·h). Mirrors o3de `EsmBlurPass`. |
+| 3a. Single sample | `sampleESM(esm, u, v, receiverDepth, opts)` | 4-tap hardware bilinear on the (optionally pre-filtered) ESM texture + visibility reconstruction. 1 tap after filter, no aliasing. |
+| 3b. Filtered sample | `sampleESMFiltered(esm, u, v, receiverDepth, radius, opts)` | Inline N×N box filter + reconstruction (single-pixel query, no pre-filter pass needed; for testing / offline baking). |
+| 3c. PCF reference | `sampleESMPCF(shadowMap, w, h, u, v, receiverDepth, radius, bias)` | Standard N×N PCF on raw depth — for cross-validating ESM correctness. |
+| Stats | `getESMStats(esm, filterRadius, kernel)` | Returns dimensions, c, filter config, and `[min, max]` of the exp-domain data. |
+
+```ts
+import {
+  expDepthMap, filterESM, sampleESM, sampleESMFiltered,
+} from '@vreen/engine/renderer';
+
+// 1. Build ESM texture from a directional light's depth pass
+const esm = expDepthMap(rawDepthFloat32, 2048, 2048, /* c = */ 50.0);
+
+// 2. Pre-filter once per frame (separable Gaussian, radius 4)
+const filtered = filterESM(esm, {
+  kernel: 'gaussian',
+  radius: 4,
+  sigma: 2.0,
+  separable: true,
+});
+
+// 3. Per-pixel visibility (in consumer fragment shader, or CPU test)
+const visibility = sampleESM(
+  filtered,
+  u, v, receiverDepth,
+  { c: 50.0, bias: 0.001, wrap: 'clamp' },
+);
+// visibility ∈ [0, 1] — multiply direct lighting by this factor
+```
+
+GLSL chunk `ESM_SAMPLE_GLSL` provides matching GPU functions
+(`sampleESM`, `sampleESMBox`, `expDepth`) that mirror the CPU reference
+1:1 — drop into the shadow fragment shader and bind the pre-filtered ESM
+texture as `sampler2D`.
+
+| Property | Value | Notes |
+|----------|-------|-------|
+| `c` (exponent) | 50.0 (default) | 16-bit textures: ≤ 11; 32-bit: ≤ 80. Larger → sharper. |
+| `bias` | 0.001 | Receiver-depth bias to mitigate self-shadowing acne. |
+| `wrap` | `'clamp'` | UV wrap mode for edge taps (`'repeat'` available). |
+| `kernel` | `'gaussian'` | Filter kernel (`'box'` is faster, slightly rougher). |
+| `radius` | 3 | Filter radius in texels. Larger → softer / wider penumbra. |
+| `sigma` | `radius / 2` | Gaussian σ. Defaults to half the radius. |
+| `separable` | `true` | H+V two-pass (recommended); `false` = single 2D pass. |
+
+| Feature | VREEN (ESM) | soup3D |
+|---------|-------------|--------|
+| Hard shadows | ✓ (radius=0) | ✓ |
+| Pre-filtered soft shadows | ✓ (Gaussian / box) | ✗ |
+| Hardware bilinear on shadow map | ✓ (ESM linearly filterable) | ✗ (PCF only) |
+| 1-tap soft shadow after filter | ✓ | ✗ (N×N taps per pixel) |
+| No aliasing on filter | ✓ (exp domain is linear-combinable) | ✗ (PCF aliases) |
+| CPU reference + headless tests | ✓ (51 unit tests) | ✗ |
+| Cost vs PCSS | 1–9 taps | 16–41 taps |
+
+**Why ESM over VSM?** Variance Shadow Maps store `d` and `d²` and use
+Chebyshev's inequality for the upper bound on visibility. VSM is
+filterable too but suffers from *light leaking* when depth variance is
+high (e.g. overlapping occluders at very different depths) and can
+explode numerically (`d²` grows fast). ESM stores a single exp value,
+is monotonic in depth, and is bounded by `exp(c)` for `d ∈ [0, 1]` —
+no light leaking, no precision explosion (with appropriate `c`).
+
+**Compared to PCSS** (`PCSSSampler.ts`): PCSS produces physically-based
+variable penumbra (sharp at contact, soft at distance) at the cost of
+25-tap blocker search + 16-tap PCF = 41 taps per pixel. ESM produces a
+*uniform* penumbra (width controlled by `filterRadius` / `sigma`) at
+1–9 taps per pixel after a single pre-filter pass. Use PCSS when
+physical accuracy matters (hero shots, cinematics), ESM when performance
+matters (VR, mobile, large scenes). The two are complementary — VREEN
+ships both, plus basic and PCF, giving four shadow solutions covering
+the full quality-performance spectrum.
+
+```ts
+// Decision matrix
+//   Hero / cinematic shot        → PCSS (physical variable penumbra)
+//   Wide outdoor scene           → CSM + ESM (per-cascade soft shadows)
+//   VR / mobile / 60 FPS target  → ESM (1-tap after filter)
+//   Debug / pixel-accurate       → PCF (deterministic N×N)
+```
+
+- o3de Atom `EsmShadowmapsPass.cpp` — original GPU ESM pipeline
+- o3de Atom `DepthExponentiationPass.cpp` — `exp(c·d)` conversion pass
+- o3de `ESM.azsli` — `SampleESM` reference (formula matched 1:1)
+- Salvi 2008 "Fast Shadow Maps on a 1K Budget" — ESM theory
+- Annen et al. 2008 "Exponential Shadow Maps" — filtering derivation
+
 ### `LensFlare` (`LensFlare.ts`)
 
 CPU-side lens flare compositor (no WebGL dependency; runs headless in

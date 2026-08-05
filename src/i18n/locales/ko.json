@@ -1143,6 +1143,11 @@
         "title": "가시성 버퍼(UE5 Nanite / o3de Atom)",
         "desc": "가시성 버퍼 디퍼드 렌더링, o3de Atom VisibilityBuffer.azsli + DeferredMaterial 및 UE5 Nanite에서 적응. 완전 GBuffer 속성 대신 픽셀 단위 지오메트리 ID(meshInfoIndex + triangleId + 무게중심 좌표 + isFrontFace)를 저장하여 대역폭을 절반으로 줄이고 머티리얼 타입을 지오메트리 패스에서 분리. o3de Atom 호환 비트 패킹: 픽셀당 2 RGBA32F texel(flagsAndMeshInfoIndex: bit 31=무효, bit 30=앞면, bits 29..0=meshInfoIndex; triangleId; 무게중심 좌표 xy, z=1-x-y로 재구성; 무게중심 도함수 Dx/Dy xy, z=-x-y로 재구성). 빈 픽셀 마커: -0.0f(0x80000000), 유효한 +0.0f(meshInfoIndex=0)와 구별. CPU 소프트웨어 래스터라이저(edge function 무게중심 좌표 + 깊이 테스트 + visbuf 쓰기). 완전 파이프라인: pack → rasterize → build → getMeshInfoIndex(빠른 경로) → unpack → decompressPixel → fetchTriangleVertices → interpolateAttributes → 셰이딩. GLSL chunks(VISIBILITY_BUFFER_PACK_VERT/FRAG + GL_EXT_fragment_shader_barycentric, VISIBILITY_BUFFER_UNPACK_UTILITY로 디퍼드 셰이딩). MeshletRenderer의 자연스러운 컴패니언, UE5 Nanite GPU 구동 루프 구성. 순수 CPU, WebGL 비의존, Node/헤드리스 환경에서 테스트 가능. 75개 유닛 테스트.",
         "advantage": "soup3D는 가시성 버퍼나 디퍼드 머티리얼 시스템 없음"
+      },
+      "esm": {
+        "title": "지수 섀도 맵(o3de Atom)",
+        "desc": "지수 섀도 맵(ESM) CPU 참조 구현, o3de Atom EsmShadowmapsPass + DepthExponentiationPass, Salvi 2008『Fast Shadow Maps on a 1K Budget』및 Annen et al. 2008『Exponential Shadow Maps』에서 적응. 섀도 맵 깊이를 exp(c·d) 도메인으로 변환하여 선형 / 가우시안 필터링이 수학적으로 합법화(PCF 앨리어싱 없음), 사전 필터된 섀도 맵의 하드웨어 bilinear 샘플링을 가능하게 함. 가시도 공식은 o3de ESM.azsli SampleESM과 1:1 대응: visibility = clamp(exp(-c·d_receiver) · ESM[u,v], 0, 1). 파이프라인: expDepthMap(깊이 지수화) → filterESM(분리형 Gaussian 또는 box H+V 블러) → sampleESM(사전 필터 텍스처에 1-tap bilinear) 또는 sampleESMFiltered(인라인 N×N box). 소프트 섀도는 1-9 tap, PCSS는 16-41 tap. 구성 가능한 지수 c(16-bit 텍스처 ≤11, 32-bit ≤80), bias, wrap 모드, 커널(gaussian/box), 반경, sigma, 분리 플래그. 교차 검증용 sampleESMPCF 포함. GLSL chunk ESM_SAMPLE_GLSL이 일치하는 GPU 함수(sampleESM, sampleESMBox, expDepth) 제공. ShadowMapManager(basic/PCF/PCSS)과 보완, VREEN은 전체 정밀도-성능 스펙트럼을 커버하는 4가지 섀도 솔루션 제공. 순수 CPU Float32Array, WebGL 비의존. 51개 유닛 테스트.",
+        "advantage": "soup3D는 기본 하드 섀도만 있음, ESM / 소프트 섀도 / PCSS 없음"
       }
     }
   }
