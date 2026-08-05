@@ -1158,6 +1158,11 @@
         "title": "仮想シャドウマップ(UE5 / o3de Atom)",
         "desc": "仮想シャドウマップ(VSM)CPU リファレンス実装。UE5 Virtual Shadow Maps(Engstrom & Persson, SIGGRAPH 2021)および o3de Atom VirtualShadowMapPassから適応。シャドウ視錐台を仮想テクスチャとして扱い、固定サイズ page(128×128 texel)に分割、物理 atlas(8192×8192、4096 page)にオンデマンド割り当て。カメラから遠い領域は画面空間 texel 密度比(texelRatio)に基づき低 mip レベルを使用、「ピクセル単位のシャドウ解像度適応」を実現——近くは高解像度 page、遠くは粗い mip page。固定解像度の制限なし、CSM 継ぎ目アーティファクトなし。PageTable クラスは LRU 駆逐 + gc() でフレームベースの page 回収。mip 選択: floor(log2(texelRatio / texelDensity))、[0, maxMipLevels-1] にクランプ。仮想解像度ピラミッド: 2048 → 1024 → 512 → 256 → 128 texel(5 mip レベル)。PCF 4-tap ソフトエッジ。GLSL chunk VSM_SAMPLE_GLSL は vsmSample()、vsmSamplePCF4()、vsmSelectMipLevel()、vsmPackPageUV() を WebGL2 向けに提供。ShadowMapManager(basic/PCF/PCSS)、CSM、ESM と補完——VREEN は全解像度/性能スペクトラムをカバーする 5 つのシャドウソリューションを提供。純粋 CPU Float32Array、WebGL 非依存。74 個のユニットテスト。",
         "advantage": "soup3D は固定解像度シャドウマップのみ(2048/4096);ピクセル単位の適応シャドウ解像度なし、仮想 page atlas なし"
+      },
+      "meshshader": {
+        "title": "Mesh Shader パイプライン(o3de Atom / NVIDIA Turing)",
+        "desc": "Mesh Shader パイプライン(Task Shader + Mesh Shader)CPU リファレンス実装。o3de Atom MeshShaderPass / MeshShaderDispatchItem、NVIDIA Turing Mesh Shaders(SIGGRAPH 2019)、Vulkan VK_EXT_mesh_shaderから適応。従来の IA → VS → HS → DS → GS → RS → PS パイプラインを Task Shader → Mesh Shader → RS → PS に置換。Task Shader は 32 meshlet ワークグループで GPU レベルの meshlet カリングを実行: LOD 距離 + 視錐台(球 vs 6 平面)+ 法線コーン背面 + HZB オクルージョン、可視 meshlet を TaskDispatchItem[] に圧縮。Mesh Shader は頂点をクリップ空間に変換し、三角形ごとの背面カリングを実行。WebGL2 は Mesh Shader をネイティブサポートしないため、本モジュールは CPU リファレンス(純粋関数、WebGL 非依存、Node/ヘッドレス環境で実行可能)+ GLSL chunks(TASK_SHADER_GLSL、MESH_SHADER_GLSL)を提供——将来の WebGL2 エミュレーションや WebGPU 統合向け。MeshletRenderer(CPU meshlet 構築)と補完——meshletBoundsToCullData() が両者を橋渡し。14 個の関数と型をエクスポート、74 個のユニットテスト、mat4Multiply は列優先。MeshletRenderer + VisibilityBuffer + HierarchicalZBuffer と組み合わせ、VREEN は UE5 Nanite および o3de Atom MeshletsModule に匹敵する完全な GPU 駆動レンダリングスタックを保有。",
+        "advantage": "soup3D は全ジオメトリに従来の IA + VS パイプラインのみを使用、メッシュ全体を一括提交、meshlet 単位のカリングなし、Task/Mesh Shader なし、GPU 駆動 dispatch なし"
       }
     }
   }

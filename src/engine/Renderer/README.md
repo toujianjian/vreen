@@ -600,6 +600,147 @@ both independently; combining them is left to the integration layer.
 - Karis "Real Shadows in Real Time with VSM" — UE blog (2020)
 - Myers & Bavoil "Stencil Routed K-Buffer" (2022) — K-buffer techniques
 
+### `MeshShaderPipeline` (`MeshShaderPipeline.ts`)
+
+**Mesh Shader Pipeline** — a two-stage (Task Shader + Mesh Shader) GPU-driven
+geometry pipeline adapted from o3de Atom `MeshShaderPass` /
+`MeshShaderDispatchItem`, NVIDIA Turing Mesh Shaders (SIGGRAPH 2019), and
+Vulkan `VK_EXT_mesh_shader`. It replaces the traditional
+`IA → VS → HS → DS → GS → RS → PS` pipeline with
+`Task Shader → Mesh Shader → RS → PS`:
+
+1. **Task Shader** runs in workgroups of `taskWorkgroupSize` (default 32)
+   meshlets each, performing per-meshlet culling on the GPU:
+   - LOD distance culling (skip meshlets beyond `lodDistance`)
+   - Frustum culling (sphere vs. 6 planes)
+   - Normal-cone backface culling (cone axis vs. view direction)
+   - HZB occlusion culling (sphere projected to screen, depth compared
+     against hierarchical Z-buffer mip)
+   - Surviving meshlets are compacted into `TaskDispatchItem[]`
+     (meshletId + meshWorkgroupCount + LOD level + task workgroup index).
+
+2. **Mesh Shader** runs one workgroup per visible meshlet, transforming
+   vertices to clip space and performing per-triangle backface culling:
+   - Computes `MVP = viewProjection × model` (column-major multiply)
+   - Transforms each vertex to world + clip space
+   - For each triangle: computes geometric normal (cross product of
+     edges), checks `dot(viewDir, normal) <= 0` → backface
+   - Outputs `MeshShaderVertex[]` (clip + world + localIndex) and
+     `MeshShaderTriangle[]` (v0/v1/v2 + visible flag).
+
+WebGL2 does not natively support Mesh Shaders (requires
+Vulkan / D3D12 / Metal). This module provides:
+
+- **CPU reference implementation** (pure functions, no WebGL dependency,
+  runnable in Node / headless environments — same pattern as
+  `MeshletRenderer`, `PCSSSampler`, `VirtualShadowMap`).
+- **GLSL chunks** (`TASK_SHADER_GLSL`, `MESH_SHADER_GLSL`) for future
+  WebGL2 emulation (Task stage via compute-like 1D vertex dispatch
+  writing to SSBO; Mesh stage via instanced rendering reading meshlet
+  data) or WebGPU backend integration.
+
+#### Data Flow
+
+```
+MeshletBuildResult (from MeshletRenderer)
+        │
+        ▼
+meshletBoundsToCullData()  ──→  MeshletCullData[]  (SoA-friendly)
+        │
+        ▼
+executeTaskShader()        ──→  TaskDispatchItem[]  (visible meshlets)
+        │
+        ▼
+executeMeshShader()        ──→  MeshShaderOutput[]  (vertices + triangles)
+        │
+        ▼
+flattenMeshShaderOutput()  ──→  { positions, indices }  (for fallback
+                                                       traditional drawElements)
+```
+
+#### Key Functions
+
+| Function | Purpose |
+|----------|---------|
+| `sphereInFrustum(center, radius, planes)` | Sphere vs. 6-plane frustum test |
+| `coneBackfaceCulled(apex, axis, cutoff, view)` | Normal-cone backface test (matches `MeshletRenderer.meshletIsFrontFacing`) |
+| `isMeshletOccluded(center, radius, vp, hzb, ...)` | HZB occlusion test with mip selection |
+| `computeMeshletLOD(center, radius, view, screen)` | Screen-space size → LOD level (0-4) |
+| `executeTaskShader(input, options)` | Task stage: cull + compact → dispatch items |
+| `executeMeshShader(input, options)` | Mesh stage: transform + cull → vertices + triangles |
+| `executeMeshShaderPipeline(...)` | Full pipeline: Task → Mesh → outputs + stats |
+| `meshletBoundsToCullData(bounds)` | Convert `MeshletRenderer.MeshletBounds[]` → `MeshletCullData[]` |
+| `flattenMeshShaderOutput(outputs)` | Flatten to traditional `{ positions, indices }` for fallback |
+| `mat4Multiply(a, b)` | Column-major 4×4 matrix multiply |
+
+#### Configuration
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `taskWorkgroupSize` | 32 | Meshlets per task workgroup |
+| `frustumCulling` | true | Enable frustum culling in task shader |
+| `backfaceCulling` | true | Enable normal-cone backface culling in task shader |
+| `occlusionCulling` | false | Enable HZB occlusion culling |
+| `lodCulling` | true | Enable LOD distance culling |
+| `lodDistance` | 1000 | Max view distance before LOD cull |
+| `conservativeBias` | 0.005 | HZB depth bias (reduce false culls) |
+| `meshWorkgroupSize` | 32 | Threads per mesh workgroup |
+| `perTriangleBackfaceCulling` | true | Per-triangle backface cull in mesh shader |
+
+#### Culling Pipeline (Task Shader)
+
+```
+meshlet ──→ LOD distance ──→ Frustum ──→ Normal cone ──→ HZB ──→ visible
+                │                │             │            │
+                ▼                ▼             ▼            ▼
+           lodCulled      frustumCulled  backfaceCulled  occlusionCulled
+```
+
+#### Comparison with soup3D
+
+| Feature | VREEN (Mesh Shader) | soup3D |
+|---------|---------------------|--------|
+| Task Shader (GPU meshlet culling) | ✓ (CPU ref + GLSL) | ✗ |
+| Mesh Shader (workgroup vertex output) | ✓ (CPU ref + GLSL) | ✗ |
+| Per-meshlet frustum culling | ✓ | ✗ |
+| Per-meshlet normal-cone backface culling | ✓ | ✗ |
+| Per-meshlet HZB occlusion culling | ✓ | ✗ |
+| Per-meshlet LOD distance culling | ✓ | ✗ |
+| Per-triangle backface culling in mesh shader | ✓ | ✗ |
+| LOD level computation (screen-space) | ✓ | ✗ |
+| GLSL chunks for WebGL2 emulation | ✓ | ✗ |
+| CPU reference + headless tests | ✓ (74 unit tests) | ✗ |
+| Traditional IA + VS pipeline only | — (superseded) | ✓ |
+
+soup3D uses only the traditional `IA → VS` pipeline for all geometry,
+submitting each mesh as a whole without per-meshlet culling. VREEN's
+Mesh Shader pipeline (combined with `MeshletRenderer` for meshlet
+construction, `VisibilityBuffer` for deferred shading, and
+`HierarchicalZBuffer` for occlusion) provides a complete GPU-driven
+rendering stack matching UE5 Nanite and o3de Atom MeshletsModule.
+
+#### Relationship with MeshletRenderer
+
+| Aspect | MeshletRenderer | MeshShaderPipeline |
+|--------|-----------------|-------------------|
+| Stage | CPU meshlet construction + culling | GPU meshlet dispatch (Task + Mesh) |
+| Input | Raw positions + indices | MeshletCullData[] + meshlet vertex/index data |
+| Output | Indirect draw commands | Mesh shader outputs (vertices + triangles) |
+| Culling | CPU frustum/backface/HZB | GPU frustum/backface/HZB/LOD |
+| Use case | Offline / headless / fallback | Real-time GPU-driven rendering |
+
+`meshletBoundsToCullData()` bridges the two: convert `MeshletRenderer`'s
+`MeshletBounds[]` to `MeshletCullData[]`, then feed into
+`executeMeshShaderPipeline()`.
+
+#### References
+
+- o3de Atom `MeshShaderPass` / `MeshShaderDispatchItem` — GPU mesh shader pipeline
+- NVIDIA "Mesh Shaders" — Turing architecture, SIGGRAPH 2019
+- Vulkan `VK_EXT_mesh_shader` / `GL_NV_mesh_shader` — API specification
+- AMD RDNA2 Mesh Shader Programming Guide — hardware best practices
+- UE5 Nanite — meshlet-based virtualized geometry system
+
 ### `LensFlare` (`LensFlare.ts`)
 
 CPU-side lens flare compositor (no WebGL dependency; runs headless in

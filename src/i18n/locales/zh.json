@@ -1158,6 +1158,11 @@
         "title": "虚拟阴影贴图(UE5 / o3de Atom)",
         "desc": "虚拟阴影贴图(VSM)CPU 参考实现,适配自 UE5 Virtual Shadow Maps(Engstrom & Persson, SIGGRAPH 2021)与 o3de Atom VirtualShadowMapPass。把阴影视锥体视为虚拟纹理,划分为固定大小 page(128×128 texel),按需分配到物理 atlas(8192×8192,4096 个 page)。远离相机的区域根据屏幕空间 texel 密度比率(texelRatio)使用更低 mip 级别,实现「每像素阴影分辨率自适应」——近处高精度 page,远处粗 mip page。无固定分辨率限制,无 CSM 级间接缝。PageTable 类带 LRU 淘汰 + gc() 按帧回收 page。mip 选择:floor(log2(texelRatio / texelDensity)),clamp 到 [0, maxMipLevels-1]。虚拟分辨率金字塔:2048 → 1024 → 512 → 256 → 128 texel(5 级 mip)。PCF 4-tap 软边缘。GLSL chunk VSM_SAMPLE_GLSL 含 vsmSample()、vsmSamplePCF4()、vsmSelectMipLevel()、vsmPackPageUV() 用于 WebGL2。与 ShadowMapManager(basic/PCF/PCSS)、CSM、ESM 互补——VREEN 现有 5 种阴影方案覆盖全分辨率/性能谱。纯 CPU Float32Array,无 WebGL 依赖。74 个单元测试。",
         "advantage": "soup3D 仅固定分辨率阴影贴图(2048/4096);无自适应每像素阴影分辨率,无虚拟 page atlas"
+      },
+      "meshshader": {
+        "title": "Mesh Shader 管线(o3de Atom / NVIDIA Turing)",
+        "desc": "Mesh Shader 管线(Task Shader + Mesh Shader)CPU 参考实现,适配自 o3de Atom MeshShaderPass / MeshShaderDispatchItem、NVIDIA Turing Mesh Shaders(SIGGRAPH 2019)与 Vulkan VK_EXT_mesh_shader。把传统 IA → VS → HS → DS → GS → RS → PS 管线替换为 Task Shader → Mesh Shader → RS → PS。Task Shader 在 32 meshlet 工作组中做 GPU 级 meshlet 剔除:LOD 距离 + 视锥(球 vs 6 平面)+ 法线锥背面 + HZB 遮挡,把可见 meshlet 压缩成 TaskDispatchItem[]。Mesh Shader 把顶点变换到裁剪空间并做每三角形背面剔除。WebGL2 不原生支持 Mesh Shader,本模块提供 CPU 参考实现(纯函数,无 WebGL 依赖,可在 Node/无头环境运行)+ GLSL chunks(TASK_SHADER_GLSL、MESH_SHADER_GLSL)用于未来 WebGL2 模拟或 WebGPU 集成。与 MeshletRenderer(CPU meshlet 构建)互补——meshletBoundsToCullData() 连接两者。导出 14 个函数与类型,74 个单元测试,mat4Multiply 列主序。与 MeshletRenderer + VisibilityBuffer + HierarchicalZBuffer 组合,VREEN 具备完整 GPU 驱动渲染栈,对标 UE5 Nanite 与 o3de Atom MeshletsModule。",
+        "advantage": "soup3D 仅使用传统 IA + VS 管线处理所有几何,整网格提交,无 meshlet 级剔除,无 Task/Mesh Shader,无 GPU 驱动 dispatch"
       }
     }
   }

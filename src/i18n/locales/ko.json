@@ -1158,6 +1158,11 @@
         "title": "가상 섀도 맵(UE5 / o3de Atom)",
         "desc": "가상 섀도 맵(VSM) CPU 레퍼런스 구현. UE5 Virtual Shadow Maps(Engstrom & Persson, SIGGRAPH 2021) 및 o3de Atom VirtualShadowMapPass에서 적용. 섀도 시야 절두체를 가상 텍스처로 취급하여 고정 크기 page(128×128 texel)로 분할, 물리 atlas(8192×8192, 4096 page)에 온디맨드 할당. 카메라에서 먼 영역은 화면 공간 texel 밀도 비율(texelRatio)에 기반해 더 낮은 mip 레벨을 사용, '픽셀 단위 섀도 해상도 적응'을 구현——가까운 곳은 고해상도 page, 먼 곳은 거친 mip page. 고정 해상도 제한 없음, CSM 이음 아티팩트 없음. PageTable 클래스는 LRU 제거 + gc()로 프레임 기반 page 회수. mip 선택: floor(log2(texelRatio / texelDensity)), [0, maxMipLevels-1]로 클램프. 가상 해상도 피라미드: 2048 → 1024 → 512 → 256 → 128 texel(5 mip 레벨). PCF 4-tap 소프트 엣지. GLSL chunk VSM_SAMPLE_GLSL은 vsmSample(), vsmSamplePCF4(), vsmSelectMipLevel(), vsmPackPageUV()를 WebGL2용으로 제공. ShadowMapManager(basic/PCF/PCSS), CSM, ESM과 보완——VREEN은 전체 해상도/성능 스펙트럼을 커버하는 5가지 섀도 솔루션 제공. 순수 CPU Float32Array, WebGL 비의존. 74개 유닛 테스트.",
         "advantage": "soup3D는 고정 해상도 섀도 맵만 지원(2048/4096); 픽셀 단위 적응 섀도 해상도 없음, 가상 page atlas 없음"
+      },
+      "meshshader": {
+        "title": "Mesh Shader 파이프라인(o3de Atom / NVIDIA Turing)",
+        "desc": "Mesh Shader 파이프라인(Task Shader + Mesh Shader) CPU 레퍼런스 구현. o3de Atom MeshShaderPass / MeshShaderDispatchItem, NVIDIA Turing Mesh Shaders(SIGGRAPH 2019), Vulkan VK_EXT_mesh_shader에서 적용. 전통적 IA → VS → HS → DS → GS → RS → PS 파이프라인을 Task Shader → Mesh Shader → RS → PS로 대체. Task Shader는 32 meshlet 워크그룹에서 GPU 수준 meshlet 컬링 수행: LOD 거리 + 시야 절두체(구 vs 6 평면)+ 법선 콘 백페이스 + HZB 오클루전, 가시 meshlet을 TaskDispatchItem[]로 압축. Mesh Shader는 정점을 클립 공간으로 변환하고 삼각형별 백페이스 컬링 수행. WebGL2는 Mesh Shader를 네이티브 지원하지 않으므로, 본 모듈은 CPU 레퍼런스(순수 함수, WebGL 비의존, Node/헤드리스 환경 실행 가능)+ GLSL chunks(TASK_SHADER_GLSL, MESH_SHADER_GLSL)를 제공——향후 WebGL2 에뮬레이션 또는 WebGPU 통합용. MeshletRenderer(CPU meshlet 구축)과 보완——meshletBoundsToCullData()가 두 모듈을 연결. 14개 함수와 타입을 익스포트, 74개 유닛 테스트, mat4Multiply 열 우선. MeshletRenderer + VisibilityBuffer + HierarchicalZBuffer와 결합하여 VREEN은 UE5 Nanite 및 o3de Atom MeshletsModule에 필적하는 완전한 GPU 구동 렌더링 스택을 보유.",
+        "advantage": "soup3D는 모든 지오메트리에 전통적 IA + VS 파이프라인만 사용, 메시 전체를 일괄 제출, meshlet 단위 컬링 없음, Task/Mesh Shader 없음, GPU 구동 dispatch 없음"
       }
     }
   }

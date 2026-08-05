@@ -972,4 +972,48 @@ export {
   type PhysicalPage,
   type VSMSampleResult,
 } from './VirtualShadowMap';
+// MeshShaderPipeline — Mesh Shader 管线(Task + Mesh 两阶段,CPU 参考 + GLSL 模拟)。
+// 适配自 o3de Atom MeshShaderPass / MeshShaderDispatchItem +
+// NVIDIA Turing Mesh Shaders (SIGGRAPH 2019) + Vulkan VK_EXT_mesh_shader。
+// 把传统 IA → VS → HS → DS → GS → RS → PS 管线替换为 Task Shader → Mesh Shader → RS → PS:
+//   - Task Shader 在 GPU 上做 meshlet 级剔除(视锥/法线锥/HZB/LOD),只发射可见 meshlet;
+//   - Mesh Shader 在 workgroup 内直接发射顶点和三角形,无需 IA、无 vertex buffer fetch。
+// WebGL2 不原生支持 Mesh Shader,本模块提供 CPU 参考实现(可在 Node/无头环境运行)+
+// GLSL chunks(用于未来 WebGL2 模拟 / WebGPU 集成)。
+// 与 MeshletRenderer 互补:前者在 CPU 上做 meshlet 构建 + culling + indirect draw 打包;
+// 本模块在 GPU 上做 meshlet culling + dispatch(更高效,避免 GPU→CPU readback)。
+// 74 个单元测试,纯函数,不依赖 WebGL。
+export {
+  sphereInFrustum,
+  coneBackfaceCulled,
+  isMeshletOccluded,
+  computeMeshletLOD,
+  executeTaskShader,
+  executeMeshShader,
+  executeMeshShaderPipeline,
+  mat4Multiply,
+  meshletBoundsToCullData,
+  flattenMeshShaderOutput,
+  applyTaskShaderDefaults,
+  applyMeshShaderDefaults,
+  applyMeshShaderPipelineDefaults,
+  DEFAULT_TASK_SHADER_OPTIONS,
+  DEFAULT_MESH_SHADER_OPTIONS,
+  DEFAULT_MESH_SHADER_PIPELINE_OPTIONS,
+  TASK_SHADER_GLSL,
+  MESH_SHADER_GLSL,
+  type MSVec3,
+  type MSMatrix4,
+  type MeshletCullData,
+  type TaskDispatchItem,
+  type MeshShaderVertex,
+  type MeshShaderTriangle,
+  type MeshShaderOutput,
+  type MeshShaderPipelineStats,
+  type TaskShaderOptions,
+  type MeshShaderOptions,
+  type MeshShaderPipelineOptions,
+  type TaskShaderInput,
+  type MeshShaderInput,
+} from './MeshShaderPipeline';
 
