@@ -16,6 +16,9 @@
 //   * SpatialGrid       — 2D XZ 空间网格 (邻域查询加速,供 CrowdSystem 使用)
 //   * PerceptionSystem  — AI 感知系统 (视觉/听觉/触觉/嗅觉 + 记忆)
 //   * MLInterface       — 机器学习接口 (神经网络/决策树/SVM/KNN + 训练/推理)
+//   * GOAPPlanner       — 目标导向行动规划 (A* 搜索动作空间,生成最低代价动作序列)
+//   * UtilityAI         — 效用理论驱动决策 (考虑因素 + 响应曲线 + 合成策略 + 冷却/惯性)
+//   * ORCA              — Optimal Reciprocal Collision Avoidance (RVO2 速度空间避障)
 
 export { NavMesh, type NavTriangle, type NavEdge, type NavMeshJSON } from './NavMesh';
 // NavMeshBuilder — Recast 风格导航网格构建器 (体素化 → 可走标记 → 侵蚀 → 区域 → 轮廓 → 多边形网格)。
@@ -112,3 +115,15 @@ export {
   type CompositeStrategy,
   type UtilityDecision,
 } from './UtilityAI';
+// ORCA — Optimal Reciprocal Collision Avoidance (Van den Berg 2011 SIGGRAPH / RVO2)。
+// 与 CrowdSystem 互补:CrowdSystem 默认用 Reynolds separation 力,ORCA 提供速度空间
+// 求解的避障,在密集人群/窄通道场景下表现更稳定(无抖动、排队通过)。
+export {
+  ORCASolver,
+  ORCAPresets,
+  createORCASolver,
+  type ORCAAgent,
+  type ORCALine,
+  type ORCAStats,
+  type ORCASolverOptions,
+} from './ORCA';

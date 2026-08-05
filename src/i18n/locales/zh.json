@@ -1198,6 +1198,11 @@
         "title": "动作匹配 (UE5 Pose Search / o3de EMotionFX)",
         "desc": "动作匹配 —— 下一代数据驱动动画选择系统,适配自 Kovar 2002 Motion Graphs(SIGGRAPH)、Clavet 2016 Motion Matching(GDC,Ubisoft For Honor)、UE5 Pose Search 插件、o3de EMotionFX MotionMatching。用手动构建动画状态图的搜索问题替代:(1) 离线构建 —— 以固定间隔采样动捕 clip,为每帧提取特征向量(轨迹 = 过去 N + 当前 + 未来 M 点,每点含 posX/posZ/facing/speed;姿态 = 关键关节位置 + 速度,双脚/双手/重心);(2) 运行时搜索 —— 从玩家输入构建期望轨迹,线性扫描数据库找到代价最低的帧(代价 = 轨迹位置 + 朝向 + 速度差异 + 姿态差异的加权和,未来点通过 futureMultiplier 加权更高)。若最佳代价 < maxSwitchCost,带 blendTime 混合切换到该帧。4 种预设:precise(每帧搜索,总是切换,格斗/动作)、balanced(0.1s 搜索,cost<1.0,RPG/冒险)、performance(0.2s 搜索,cost<0.5,开放世界/MMO)、cinematic(永不搜索,过场)。代价权重遵循 Clavet 2016 GDC 推荐值(pos=1.0, facing=1.0, speed=0.5, pose=0.8, futureMult=1.5)。与 AnimationMixer 组合(决策层 vs 执行层),与 FootPlacementIK 配合(后处理姿态防止滑步)。45 个单元测试,纯 CPU,不依赖 WebGL。",
         "advantage": "soup3D 仅有传统动画状态机,需手动构建状态图;VREEN 提供数据驱动动作匹配,自动搜索数据库找到最佳过渡帧——自然过渡、响应玩家输入、无需手动状态图(UE5 Pose Search / o3de EMotionFX 级技术)"
+      },
+      "orca": {
+        "title": "ORCA 避障 (RVO2 / Van den Berg 2011 SIGGRAPH)",
+        "desc": "ORCA —— Optimal Reciprocal Collision Avoidance,速度空间人群避障求解器,适配自 Van den Berg 等 2011(SIGGRAPH)与 RVO2 参考库,集成参考 UE5 MassAI DetourCrowd、o3de RecastNavigation DetourCrowd。替代 Reynolds 分离力(CrowdSystem 使用),后者存在力叠加抖动、无未来预测、窄通道堆积等问题。算法(每帧每代理):(1) 按距离排序收集邻居,上限 maxNeighbors;(2) 为每个邻居计算 ORCA 半平面线 {direction, point}——未碰撞时构建截断速度障碍(相对速度投影在圆锥外用截止圆,圆锥内用切线腿,左右由 2D 行列式符号决定);已碰撞时投影到 timeStep 截止圆强制立即分离;责任各 50%,故 line.point = agent.velocity + 0.5*u;(3) 三阶段线性规划(LP1 在 ORCA 线与 maxSpeed 圆交区间 [tLeft, tRight] 内找最接近期望速度的点;LP2 从 optVelocity 逐线检查,首次违反调 LP1;LP3 是 3D LP 兜底,逐约束投影,即使过约束也保证有解)。4 种预设:denseCrowd(小半径短视野低速——地铁/商场/战斗)、openBattlefield(大半径长视野高速——RTS/载具)、cityTraffic(中等偏稳定——交通/行人)、highPrecision(长视野多邻居——过场/关键 NPC)。2D XZ 平面求解,与 CrowdSystem 一致(Y 忽略)。39 个单元测试。与 CrowdSystem 组合为可插拔避障层(CrowdSystem 默认 Reynolds,ORCA 在密集人群时可选启用)。",
+        "advantage": "soup3D 仅有 Reynolds 转向分离力(反应式、密集人群抖动、无未来碰撞预测、窄通道堆积);VREEN 提供 RVO2 ORCA 速度空间求解——timeHorizon 内主动未来碰撞避让、对称 50/50 责任分担、密集人群无抖动、窄通道排队通过、已碰撞时立即分离(UE5 DetourCrowd / o3de RecastNavigation 级技术)"
       }
     }
   }

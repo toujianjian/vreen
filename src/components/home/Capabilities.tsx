@@ -84,6 +84,7 @@ const CAPS: Cap[] = [
   { key: 'layeredPBRMaterial', icon: PaintBucket, accent: 'text-neon-pink' },
   { key: 'vrs', icon: Gauge, accent: 'text-neon-cyan' },
   { key: 'motionMatching', icon: PersonStanding, accent: 'text-neon-amber' },
+  { key: 'orca', icon: Waypoints, accent: 'text-neon-cyan' },
 ];
 
 export function Capabilities() {

@@ -7,8 +7,10 @@
 > with string-pulled smoothing, Reynolds steering behaviors, single-agent
 > and crowd simulation, a perception system covering vision / hearing /
 > touch / smell with memory, a behavior tree engine (composites /
-> decorators / actions / conditions) backed by a typed `Blackboard`, and a
-> small machine-learning interface for learned decision making.
+> decorators / actions / conditions) backed by a typed `Blackboard`, a
+> small machine-learning interface for learned decision making, and ORCA
+> (Optimal Reciprocal Collision Avoidance) for velocity-space crowd
+> avoidance in dense scenes.
 
 ---
 
@@ -40,6 +42,7 @@
                      │   SteeringBehavior (seek/flee/arrive/        │
                      │     pursue/evade/wander/flocking/avoidance)  │
                      │   Agent (single) / CrowdSystem (many + grid) │
+                     │   ORCA (RVO2 velocity-space avoidance)        │
                      └─────────────────────────────────────────────┘
                                          ▲
                                          │ optional learned policy
@@ -252,6 +255,70 @@ implementations that still consume the same training/inference API).
 Models can be saved to / loaded from an in-memory store (`saveModel` /
 `loadModel`) and exported to / imported from JSON.
 
+### Collision Avoidance (ORCA)
+
+| Export | Role |
+|--------|------|
+| `ORCASolver` | Manages `ORCAAgent`s, computes new velocities per frame, applies them to advance positions. |
+| `ORCAAgent` | Lightweight agent record aligned with `CrowdAgent` fields (`position`, `velocity`, `preferredVelocity`, `radius`, `maxSpeed`, `neighborDist`, `timeHorizon`, `newVelocity`). |
+| `ORCALine` | Half-plane constraint `{ direction, point }`. A velocity `v` is on the safe side when `det2D(direction, v - point) >= 0`. |
+| `ORCAStats` | Per-frame diagnostics: `agentCount`, `averageSpeed`, `maxSpeed`, `collidingPairs` (ideal `0`). |
+| `ORCAPresets` | Four tuned profiles — `denseCrowd`, `openBattlefield`, `cityTraffic`, `highPrecision`. |
+| `createORCASolver(preset?)` | Factory that applies a preset to a fresh `ORCASolver`. |
+
+```ts
+export interface ORCAAgent {
+  id: number;
+  position: Vector3;        // world, Y ignored
+  velocity: Vector3;        // current velocity, Y ignored
+  preferredVelocity: Vector3; // steering-driven desired velocity
+  radius: number;
+  maxSpeed: number;
+  neighborDist: number;     // neighbor query cutoff
+  timeHorizon: number;      // collision prediction window (seconds)
+  newVelocity: Vector3;     // written by computeNewVelocities
+}
+```
+
+**Algorithm (per agent `A`, per frame):**
+
+1. Collect neighbors `B` (capped at `maxNeighbors`).
+2. For each neighbor compute an ORCA half-plane line:
+   - `relativePosition = B.pos - A.pos`, `relativeVelocity = A.vel - B.vel`,
+     `combinedRadius = A.r + B.r`.
+   - If `|relativePosition| > combinedRadius` (not yet colliding): build a
+     truncated velocity obstacle. When `relativeVelocity` projects outside
+     the cone the line direction is the right-perpendicular of `w`; when
+     inside it follows the tangent "leg" (left/right chosen by the 2D
+     determinant sign).
+   - If `|relativePosition| ≤ combinedRadius` (already overlapping): the
+     line direction is the perpendicular of `relativePosition` to force
+     immediate separation.
+   - Responsibility is split 50/50 — `point` includes `0.5 * relativeVelocity`.
+3. Linear program over all half-planes (RVO2 three-stage solver):
+   - **LP1** finds the closest-to-preferred velocity on line `lineNo`
+     intersected with the `maxSpeed` circle, clipped to `[tLeft, tRight]`.
+   - **LP2** walks constraints from `optVelocity`; on the first violation
+     it invokes LP1, falling back to LP3 if LP1 reports infeasibility.
+   - **LP3** is the 3D LP fallback that projects onto each subsequent
+     line, guaranteeing a feasible velocity even in over-constrained
+     situations (e.g. agent boxed in by neighbors).
+
+The math is 2D (XZ plane) to match `CrowdSystem`; the Y component is
+ignored throughout. The implementation mirrors RVO2 numerically so the
+same scene fed to both produces equivalent velocities.
+
+**Advantages over Reynolds separation (used by `CrowdSystem`):**
+
+- Velocity-space solve instead of force summation → no jitter / oscillation.
+- Accounts for future collisions within `timeHorizon` → proactive, not reactive.
+- Symmetric 50/50 responsibility → two agents each yield half, naturally.
+- Strong narrow-passage behavior → agents queue through gaps instead of pile-up.
+- Stable in dense crowds → already-colliding agents separate immediately.
+
+`CrowdSystem` keeps its Reynolds separation as the default; ORCA is an
+independent module that callers can use as a drop-in avoidance layer.
+
 ---
 
 ## Usage
@@ -317,6 +384,41 @@ function frame(dt: number) {
   const { activeCount, arrivedCount, avgSpeed } = crowd.getStats();
 }
 ```
+
+### ORCA avoidance for a dense crowd
+
+```ts
+import { ORCASolver, ORCAPresets, createORCASolver } from '@vreen/engine/ai';
+
+// Pick a preset, then add agents with a preferred velocity (e.g. seek target).
+const solver = createORCASolver(ORCAPresets.denseCrowd());
+
+for (let i = 0; i < 200; i++) {
+  solver.addAgent({
+    position: randomPoint(),
+    preferredVelocity: seekVelocity(randomPoint(), target, 1.2),
+    velocity: new Vector3(),
+    radius: 0.4,
+    maxSpeed: 1.2,
+    neighborDist: 8,
+    timeHorizon: 3,
+  });
+}
+
+function frame(dt: number) {
+  // 1. Refresh preferred velocities from your steering layer (seek/arrive/...).
+  for (const a of solver.agents) a.preferredVelocity.copy(seekVelocity(a.position, target, 1.2));
+  // 2. Solve ORCA half-planes → write newVelocity.
+  solver.computeNewVelocities(dt);
+  // 3. Integrate position.
+  solver.applyVelocities(dt);
+  const { collidingPairs, averageSpeed } = solver.getStats();
+}
+```
+
+`computeNewVelocities(dt)` is the per-frame solve; `applyVelocities(dt)`
+advances `position += newVelocity * dt`. Swap `CrowdSystem` for ORCA when
+you need jitter-free dense crowds or reliable narrow-passage traversal.
 
 ### Behavior tree with blackboard
 
@@ -427,6 +529,13 @@ const [attackP, fleeP, flankP] = ml.predict('aim', [dist, angle, hp, ammo]);
   (returns the forward pass of randomly initialized weights).
 - All steering methods on `SteeringBehavior` are side-effect-free — they
   return a fresh `Vector3` and never mutate the agent.
+- `ORCASolver.computeNewVelocities(dt)` always writes a feasible
+  `newVelocity` per agent — LP3 guarantees a solution even when the
+  half-plane intersection is empty (over-constrained crowd). The result
+  is clamped to `maxSpeed` and the Y component is always `0`.
+- `ORCASolver.applyVelocities(dt)` does `position += newVelocity * dt`;
+  it must be called *after* `computeNewVelocities`. Skipping the solve
+  step leaves `newVelocity` at its previous frame value.
 
 ---
 
@@ -446,11 +555,13 @@ per voxel column — sufficient for typical terrain and single-floor
 levels. Multi-overlap structures (bridges, multi-level platforms) are
 not yet supported.
 
-**Why FABRIK-style crowd avoidance instead of RVO/ORCA?** RVO/ORCA is
-planned for the future `CrowdSystem` (Roadmap Phase 4). The current
-Reynolds separation force is simple, deterministic, and adequate for the
-small-to-mid crowds (≤ 1000 agents) the engine targets. `SpatialGrid`
-keeps the neighbor query `O(k)` instead of `O(n²)`.
+**Why FABRIK-style crowd avoidance instead of RVO/ORCA?** `CrowdSystem`
+ships with Reynolds separation as the default because it is simple,
+deterministic, and adequate for small-to-mid crowds (≤ 1000 agents).
+`SpatialGrid` keeps the neighbor query `O(k)` instead of `O(n²)`. For
+dense crowds and narrow passages the `ORCA` module provides a
+velocity-space solve (RVO2 three-stage LP) that callers can opt into as
+a drop-in avoidance layer — see *Collision Avoidance (ORCA)* above.
 
 **Why behavior trees AND scripting?** Behavior trees are declarative
 data-driven decision structures — easy to author in a visual editor and
@@ -488,6 +599,9 @@ perception and could be split out if it grows.
   `BTAction.ts`, `BTCondition.ts` — node hierarchy.
 - `src/engine/AI/Blackboard.ts` — shared key/value store.
 - `src/engine/AI/MLInterface.ts` — neural network / KNN / decision tree / SVM.
+- `src/engine/AI/ORCA.ts` — RVO2-style optimal reciprocal collision avoidance.
 - Reynolds, C. *Steering Behaviors For Autonomous Characters* (1999).
+- Van den Berg, J. et al. *Reciprocal n-body Collision Avoidance* (SIGGRAPH 2011) — ORCA.
+- RVO2 Library — https://gamma.cs.unc.edu/RVO2/ — reference implementation.
 - Recast & Detour navigation mesh toolkit — pipeline reference.
 - Millington, I. *AI for Games* (3rd ed.) — behavior tree patterns.
