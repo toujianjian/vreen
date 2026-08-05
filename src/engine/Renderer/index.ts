@@ -1305,3 +1305,49 @@ export {
   type LPVGrid,
 } from './LightPropagationVolume';
 
+// VariableRateShading — 可变速率着色 (VRS) 瓦片分类系统。
+// 适配自 o3de Atom `AZ::RHI::ShadingRate` + `RasterPass::FragmentShadingRate` +
+// UE5 VariableRateShading 插件 + VK_KHR_fragment_shading_rate / D3D12 VRS。
+// 把屏幕划分为瓦片(8×8 / 16×16 / 32×32),每瓦片指定一个着色速率
+// (1x1 / 1x2 / 2x1 / 2x2 / 2x4 / 4x2 / 4x4),GPU 在低速率瓦片内减少像素着色器调用。
+// 4 种分类策略可组合:Motion(速度大→降低)、Depth(平坦→降低)、
+// Foveated(外围→降低,VR 用)、Luminance(低对比度→降低)。
+// VRSTileClassifier 取多策略中最保守(最高)速率,确保不丢关键细节。
+// WebGL2 无硬件 VRS,提供 multi-resolution 合成器作为软件降级方案 +
+// GLSL chunks 供未来 WebGPU / 硬件 VRS 集成。
+// 与 TAA/TSR 协同:VRS 提供性能,TAA/TSR 重建细节。
+// 与 HZB 正交:HZB 减少顶点处理(剔除不可见物体),VRS 减少像素处理(降低低敏感区域)。
+// soup3D 无 VRS / 注视点渲染;VREEN 在性能优化维度领先。
+// 50 个单元测试,纯函数,不依赖 WebGL。
+export {
+  ShadingRate,
+  ALL_SHADING_RATES,
+  shadingRateCoverage,
+  shadingRateHStep,
+  shadingRateVStep,
+  shadingRateName,
+  createVRSImage,
+  getTileRate,
+  setTileRate,
+  pixelToTile,
+  getPixelRate,
+  computeVRSStats,
+  classifyMotionVRS,
+  classifyDepthVRS,
+  classifyFoveatedVRS,
+  classifyLuminanceVRS,
+  VRSTileClassifier,
+  compositeMultiResolution,
+  VRS_PRESETS,
+  VRS_GLSL,
+  VRS_FEEDBACK_GLSL,
+  type VRSImage,
+  type VRSStats,
+  type MotionVRSOptions,
+  type DepthVRSOptions,
+  type FoveatedVRSOptions,
+  type LuminanceVRSOptions,
+  type VRSStrategy,
+  type VRSPreset,
+} from './VariableRateShading';
+
