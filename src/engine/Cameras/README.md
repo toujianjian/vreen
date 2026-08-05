@@ -15,10 +15,13 @@
 > trauma²-decayed multi-octave Perlin noise camera shake (6 independent
 > translation/rotation channels), a `StereoCamera` for off-axis dual-eye
 > VR / 3D rendering, a `CubeCamera` that captures 6-face environment
-> maps for real-time IBL / reflections / refractions, and a `SpringArm`
+> maps for real-time IBL / reflections / refractions, a `SpringArm`
 > that drives a third-person camera with collision-aware boom retraction
 > (ray or sphere probe) and frame-rate-independent exponential smoothing
-> of arm length / target position / look-at point.
+> of arm length / target position / look-at point, and a `CameraBob`
+> that produces speed-driven periodic head bob (sine-based vertical bob
+> + half-frequency lateral sway + sin⁶ footstep impulse) for
+> first-person / third-person walking game feel.
 
 ---
 
@@ -88,6 +91,20 @@ SpringArm                      ── collision-aware third-person boom
    │   ├── lookAtStiffness / lookAtDamping       (lookAt point smoothing, 0.4 / 0.6)
    │   └── positionStiffness / positionDamping   (target position smoothing, 0.5 / 0.5)
    └── presets: thirdPerson / overShoulder / farFollow / firstPerson
+
+CameraBob                      ── speed-driven periodic head bob
+   ├── phase: number                    (accumulates: dt * speed * freq * 2π)
+   ├── bobFrequency: number             (Hz, default 0.5 = 1 step/sec)
+   ├── bobAmount / swayAmount           (meters, 0.05 / 0.03)
+   ├── footstepAmount: number           (meters, 0.02; sin⁶ peaked impulse)
+   ├── rotationAmount: number           (radians roll, 0.01)
+   ├── maxSpeed: number                 (m/s normalization, default 5)
+   ├── crouchScale: number              (0..1 amplitude multiplier, default 0.4)
+   ├── smoothedSpeedFactor              (exponential smoothing, no instant jump)
+   ├── bobY = sin(phase) * bobAmount    (vertical bob, full freq)
+   ├── swayX = cos(phase*0.5) * sway    (lateral sway, half freq — 2 steps per cycle)
+   ├── footstep = sin⁺(phase)⁶ * amount (sharp impact spike at each step peak)
+   └── presets: fpsWalk / fpsRun / fpsCrouch / tpsWalk / spectator
 ```
 
 `CinematicCamera`, `CameraRig`, `CameraPath`, and `SpringArm` are
@@ -101,12 +118,17 @@ while preventing the camera from clipping through geometry. They
 compose — a `CameraRig` can drive a `SpringArm.target` (rig decides
 where the camera should orbit, arm retracts it from walls); a
 `CinematicCamera` can cut between rigs; a `CameraPath` can drive a
-flythrough while `PerlinShake` overlays explosion shake. `PerlinShake`
-is independent of all four: it produces a per-frame `ShakeOffset`
-(translation + rotation) that the caller adds to any camera's pose.
-`CubeCamera` is orthogonal: it captures the scene into a cube map
-rather than rendering a single view, and its output feeds the material
-system's `envMap` / IBL pipeline.
+flythrough while `PerlinShake` overlays explosion shake. `PerlinShake` is independent of all four: it produces a per-frame
+`ShakeOffset` (translation + rotation) that the caller adds to any
+camera's pose. `CameraBob` is similarly independent: it produces a
+per-frame `CameraBobOffset` (translation + rotation + speed factor)
+that the caller adds to any camera's pose. `PerlinShake` and
+`CameraBob` compose — `CameraBob` provides the periodic walking
+rhythm while `PerlinShake` overlays random impact feedback (the
+two are additive and do not interfere). `CubeCamera` is orthogonal:
+it captures the scene into a cube map rather than rendering a single
+view, and its output feeds the material system's `envMap` / IBL
+pipeline.
 
 ---
 
@@ -751,6 +773,165 @@ arm.camera!.position.add(offset.translation);
 // apply rotation offset to camera quaternion (caller responsibility)
 ```
 
+### `CameraBob` (`CameraBob.ts`)
+
+Speed-driven periodic camera head bob for first-person / third-person
+walking game feel. Produces a per-frame `CameraBobOffset` (translation
++ rotation) that the caller adds to the camera's local-space pose.
+Adapted from UE `PlayerCameraManager::ApplyCameraBob`, Unity community
+Head Bob scripts, and o3de AzFramework Camera Bob Component.
+
+The core insight from GDC 2020 "Game Feel in Half-Life: Alyx": bob
+amplitude should map **non-linearly** to speed (not just linearly),
+and the footstep impulse should be a sharp spike (sin⁶), not a smooth
+sine — this is what makes walking feel "weighty" rather than
+"floaty".
+
+| Export | Role |
+|--------|------|
+| `CameraBob` | Bob generator. Owns `phase`, config, internal smoothed speed factor. |
+| `CameraBobOffset` | Output: `translation: Vector3`, `rotation: Vector3` (radians), `speedFactor: number`, `isFootstep: boolean`. |
+| `CameraBobJSON` | Serialization shape. |
+| `CameraBobPresets` | Factory object with `fpsWalk()`, `fpsRun()`, `fpsCrouch()`, `tpsWalk()`, `spectator()`. |
+
+```ts
+export class CameraBob {
+  bobFrequency: number;       // Hz, default 0.5 (1 step/sec)
+  bobAmount: number;          // meters, default 0.05
+  swayAmount: number;         // meters, default 0.03
+  footstepAmount: number;     // meters, default 0.02
+  rotationAmount: number;     // radians (roll), default 0.01
+  maxSpeed: number;           // m/s normalization, default 5
+  crouchScale: number;        // 0..1, default 0.4
+  phase: number;              // accumulated phase (radians)
+  footstepThreshold: number;  // default 0.5
+
+  update(dt: number, speed: number, crouching?: boolean): this;
+  getOffset(out?: CameraBobOffset): CameraBobOffset;
+  reset(): this;
+  exportJSON(): CameraBobJSON;
+  importJSON(data: CameraBobJSON): this;
+}
+```
+
+**Waveform math** — the offset is computed from a single accumulated
+`phase` value, producing four correlated signals:
+
+| Signal | Formula | Frequency | Purpose |
+|--------|---------|-----------|---------|
+| `bobY` (vertical) | `sin(phase) × bobAmount × sf` | full | camera moves up/down with each step |
+| `swayX` (lateral) | `cos(phase × 0.5) × swayAmount × sf` | half | camera sways left/right; one full sway per two steps (simulates left-right-left-right alternation) |
+| `roll` | `cos(phase × 0.5) × rotationAmount × sf` | half | camera tilts in sync with sway |
+| `footstep` | `sin⁺(phase)⁶ × footstepAmount × sf` | full (spike) | sharp downward impulse at each step peak |
+
+Where `sf` = `smoothedSpeedFactor ∈ [0, 1]` (speed / maxSpeed,
+crouch-scaled, exponentially smoothed).
+
+**Frequency ratio (2:1)** — `bobY` uses `sin(phase)` (full frequency)
+while `swayX` uses `cos(phase × 0.5)` (half frequency). This means
+two `bobY` peaks occur per one `swayX` cycle, simulating the
+left-foot / right-foot alternation: each step produces a bob peak,
+and the sway completes a full left-right-left cycle over two steps.
+
+**Footstep impulse (sin⁶)** — `max(0, sin(phase))⁶` produces a very
+sharp spike at `phase = π/2 + 2πn` (the top of each bob peak) and is
+near-zero everywhere else. At `sin = 0.707`, `sin⁶ ≈ 0.125`; at
+`sin = 0.5`, `sin⁶ ≈ 0.016`. This creates a brief, weighty "thud"
+at each step landing — far more convincing than a smooth sine, which
+feels "floaty". The impulse is applied as a downward translation
+(subtracted from `translation.y`) and a small pitch-down rotation.
+
+**Speed-dependent phase** — the phase advances at
+`dt × speed × bobFrequency × 2π`, so higher speed = faster steps
+(running has a higher step frequency than walking). At speed = 0,
+the phase does not advance, so the bob freezes at its current
+position (no phantom bobbing while standing still).
+
+**Smoothed speed factor** — the raw speed / maxSpeed ratio is
+exponentially smoothed (`alpha = 1 - exp(-8 × dt)`) before being
+applied to the amplitude. This prevents the bob amplitude from
+snapping instantly when the player starts/stops moving — instead it
+fades in/out over ~0.2 seconds, which feels natural.
+
+**Crouch mode** — when `crouching = true`, the amplitude is scaled by
+`crouchScale` (default 0.4). The frequency is unchanged (step
+frequency stays the same; only step amplitude decreases, matching
+real crouch-walking biomechanics).
+
+**`update(dt, speed, crouching)`** — advances the phase and updates
+the smoothed speed factor. `speed` is typically the player's
+horizontal velocity magnitude (`velocity.xz.length()`). Negative
+speeds are treated as zero (no reverse bobbing).
+
+**`getOffset(out?)`** — returns the current offset. When
+`smoothedSpeedFactor ≤ 0.0001`, returns all zeros (early-out, no
+trig evaluation). The `out` parameter enables zero-allocation hot
+loops. The `isFootstep` flag is true when the footstep impulse
+exceeds `footstepThreshold × footstepAmount × sf` — use it to
+trigger footstep sound effects.
+
+**`reset()`** — zeros the phase and smoothed speed factor. Call after
+teleportation / respawn to avoid the bob resuming mid-cycle from a
+stale phase.
+
+**Presets**:
+- `fpsWalk()` — 0.5 Hz, 5cm bob, 3cm sway, 2cm footstep. Standard
+  first-person walking.
+- `fpsRun()` — 0.7 Hz, 8cm bob, 5cm sway, 4cm footstep, maxSpeed 8.
+  Higher frequency + larger amplitude + stronger footstep for running.
+- `fpsCrouch()` — 0.4 Hz, 2cm bob, 1cm sway, 0.5cm footstep,
+  maxSpeed 2.5. Subtle, low-amplitude crouch-walking.
+- `tpsWalk()` — 0.5 Hz, 3cm bob, 2cm sway, 1cm footstep. Smaller
+  than FPS because the camera is farther away (large bob looks
+  unnatural at a distance).
+- `spectator()` — 0.3 Hz, 1cm bob, 0.5cm sway, 0 footstep, maxSpeed
+  10. Minimal bob for observer/free-fly modes; preserves speed sense
+  without footstep impact.
+
+**Composition with `PerlinShake`** — `CameraBob` (periodic, speed-driven)
+and `PerlinShake` (random, impulse-driven) are additive and do not
+interfere:
+
+```ts
+bob.update(dt, playerSpeed, isCrouching);
+shake.update(dt);
+const bobOffset = bob.getOffset();
+const shakeOffset = shake.getOffset();
+camera.position.add(bobOffset.translation);
+camera.position.add(shakeOffset.translation);
+// apply rotation offsets to camera quaternion (caller responsibility)
+```
+
+**Composition with `SpringArm`** — apply `CameraBob` *after*
+`SpringArm.update()` so the bob is in camera-local space:
+
+```ts
+arm.update(dt);
+bob.update(dt, speed, crouching);
+const bobOffset = bob.getOffset();
+arm.camera!.position.add(bobOffset.translation);
+```
+
+For first-person cameras (no SpringArm), apply directly:
+
+```ts
+bob.update(dt, speed, crouching);
+const offset = bob.getOffset();
+camera.position.add(offset.translation);
+// apply offset.rotation to camera quaternion
+```
+
+**Footstep sound trigger** — use `isFootstep` to drive audio:
+
+```ts
+bob.update(dt, speed, crouching);
+const offset = bob.getOffset();
+if (offset.isFootstep && !prevFootstep) {
+  audio.playFootstep(surfaceType);
+}
+prevFootstep = offset.isFootstep;
+```
+
 ---
 
 ## Usage
@@ -971,6 +1152,59 @@ mainCamera.position.add(offset.translation);
 // apply rotation offset to camera quaternion (caller responsibility)
 ```
 
+### CameraBob for walking head bob
+
+```ts
+import { CameraBob, CameraBobPresets, PerspectiveCamera } from '@vreen/engine';
+
+// 1. Create with a preset (or new CameraBob() + manual config)
+const bob = CameraBobPresets.fpsWalk();
+bob.maxSpeed = 5;  // match player's walk speed
+
+// 2. Frame loop
+const speed = playerVelocity.length();  // horizontal speed (m/s)
+bob.update(dt, speed, isCrouching);
+const offset = bob.getOffset();
+camera.position.add(offset.translation);
+// apply offset.rotation (pitch / yaw / roll) to camera quaternion
+
+// 3. Footstep audio trigger
+if (offset.isFootstep && !prevFootstep) {
+  audio.playFootstep(currentSurface);
+}
+prevFootstep = offset.isFootstep;
+```
+
+To stack all three camera effects (SpringArm + CameraBob + PerlinShake),
+apply them in order — arm first (writes base pose), then bob (walking
+rhythm), then shake (impact feedback):
+
+```ts
+arm.update(dt);
+bob.update(dt, speed, crouching);
+shake.update(dt);
+
+arm.camera!.position.add(bob.getOffset().translation);
+arm.camera!.position.add(shake.getOffset().translation);
+// apply rotation offsets to camera quaternion
+```
+
+For running, swap the preset (frequency + amplitude increase):
+
+```ts
+const runBob = CameraBobPresets.fpsRun();
+// or adjust dynamically:
+// bob.bobFrequency = isRunning ? 0.7 : 0.5;
+// bob.bobAmount = isRunning ? 0.08 : 0.05;
+```
+
+For spectator / free-fly modes, use the minimal preset:
+
+```ts
+const bob = CameraBobPresets.spectator();
+// no footstep impulse, very small amplitude — just speed sense
+```
+
 ---
 
 ## Invariants
@@ -1077,6 +1311,40 @@ mainCamera.position.add(offset.translation);
 - `SpringArmPresets` factories do **not** bind a camera — the caller
   must set `arm.camera` or pass it via `new SpringArm(camera)` after
   cloning the preset's config.
+- `CameraBob.update(dt, speed, crouching)` advances `phase` by
+  `dt × speed × bobFrequency × 2π`. At `speed = 0`, phase does not
+  advance (no phantom bobbing while standing still). At `dt = 0`,
+  phase and `smoothedSpeedFactor` are unchanged (no integration).
+- `CameraBob.getOffset()` returns all zeros when
+  `smoothedSpeedFactor ≤ 0.0001` (early-out, no trig evaluation).
+- `CameraBob.smoothedSpeedFactor` is always in `[0, 1]`; the raw
+  `speed / maxSpeed` ratio is clamped to `[0, 1]` before smoothing,
+  and negative speeds produce `rawFactor = 0` (no reverse bobbing).
+- The `bobY` / `swayX` frequency ratio is always 2:1 — `bobY` uses
+  `sin(phase)` (full frequency) while `swayX` uses
+  `cos(phase × 0.5)` (half frequency). This is hardcoded in the
+  waveform formulas and cannot be changed without subclassing.
+- The footstep impulse is `max(0, sin(phase))⁶ × footstepAmount × sf`
+  — the exponent 6 is hardcoded to produce a sharp spike. At
+  `sin = 0` (mid-stride), the impulse is 0; at `sin = 1` (step peak),
+  it reaches `footstepAmount × sf`.
+- `isFootstep` is `true` when `footstep > footstepThreshold ×
+  footstepAmount × sf` (default threshold 0.5). This simplifies to
+  `sin⁺(phase)⁶ > 0.5`, i.e., `sin(phase) > 0.5^(1/6) ≈ 0.891`.
+  The flag is true for ~15% of each step cycle (a brief spike around
+  the peak), suitable for triggering footstep sound effects.
+- `CameraBob.exportJSON()` serializes `phase` but **not**
+  `smoothedSpeedFactor` (it is derived from the speed history and
+  will re-converge after a few frames of `update()`). Call `reset()`
+  after `importJSON()` if you want a clean start.
+- `CameraBobPresets` factories do **not** bind to any camera —
+  `CameraBob` is stateless with respect to the camera object; it only
+  produces offsets that the caller applies.
+- `CameraBob` and `PerlinShake` are additive — their offsets can be
+  summed without interference. `CameraBob` provides periodic
+  speed-driven rhythm; `PerlinShake` provides random impulse-driven
+  feedback. The recommended application order is: base camera pose →
+  `CameraBob` → `PerlinShake`.
 
 ---
 
@@ -1103,6 +1371,14 @@ mainCamera.position.add(offset.translation);
   animation conventions inspiring `CameraPath`.
 - o3de AzFramework Camera Shake Component — trauma-based camera shake
   inspiring `PerlinShake`.
+- o3de AzFramework Camera Bob Component — speed-driven periodic camera
+  bob inspiring `CameraBob`.
+- Unreal `PlayerCameraManager::ApplyCameraBob` — the camera bob
+  framework convention inspiring `CameraBob`.
+- Unity community Head Bob scripts — common FPS head bob implementation
+  patterns inspiring `CameraBob`.
+- GDC 2020, "Game Feel in Half-Life: Alyx" — the non-linear
+  amplitude mapping and sin⁶ footstep impulse design rationale.
 - Unity Timeline Cinemachine Path / Cinemachine BasicDamping —
   keyframed spline path and shake-damping conventions.
 - NVIDIA GDC 2016, "Mission Improbable: A Gentle Introduction to

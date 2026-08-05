@@ -66,4 +66,14 @@ export {
   type ProbeType,
   type SpringArmJSON,
 } from './SpringArm';
+// 行走头部摆动 (CameraBob) — 第一/第三人称行走时的周期性相机摆动。
+// 速度驱动正弦曲线(bobY + swayX + roll + 着地冲击 sin^6),潜行模式,
+// 帧率无关相位推进,与 PerlinShake 可叠加(周期性 + 随机冲击)。
+// 适配 UE PlayerCameraManager::ApplyCameraBob / o3de AzFramework Camera Bob。
+export {
+  CameraBob,
+  CameraBobPresets,
+  type CameraBobOffset,
+  type CameraBobJSON,
+} from './CameraBob';
 
