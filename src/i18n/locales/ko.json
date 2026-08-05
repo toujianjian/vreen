@@ -1153,6 +1153,11 @@
         "title": "시차 오클루전 매핑(o3de Atom)",
         "desc": "시차 오클루전 매핑(POM) CPU 레퍼런스 + GLSL 청크. o3de Atom ParallaxMapping.azsli + RTR4 §6.7.1 + Tartachuk 2004 'Parallax Occlusion Mapping' + Riccardi 2018 'Contact Refinement Parallax Mapping'에서 적용. 접선 공간에서 하이트맵을 레이마치하여 평면 텍스처 표면(벽돌벽 / 자갈길 / 부조 타일)에 정점 추가 없이 사실적인 3D 기하 깊이를 부여. 5가지 알고리즘: basic(1탭 오프셋) / steep(다중 단계 레이마치) / pom(steep + 선형 보간, AAA 표준) / relief(steep + 이진 탐색 정밀화) / contact(Riccardi 2018 고정밀 소샘플). 선택적 자기 음영(교점에서 광원으로 마치하여 차폐 감지, 부드러운 틈새 그림자 생성). 선택적 픽셀 깊이 오프셋(PDO)——접선 공간 오프셋을 세계 공간으로 되돌리고 gl_FragDepth 재계산, 올바른 깊이 테스트와 섀도 수신 구현. 4단계 품질 프리셋은 o3de와 일치: Low=16 / Medium=32 / High=64 / Ultra=128 스텝. 깊이 범위 가드(stopDepth - startDepth < 0.0001에서 0 반환)는 o3de 경계 케이스 처리와 일치. 랩 모드: clamp / repeat. 순수 CPU Float32Array 레퍼런스 + 3개 GLSL 청크(PARALLAX_BASIC_CHUNK / PARALLAX_POM_CHUNK / PARALLAX_RELIEF_CHUNK)는 WebGL2 프래그먼트 셰이더에 직접 삽입 가능. 61개 유닛 테스트.",
         "advantage": "soup3D는 노멀 매핑만 지원(평면, 깊이 없음), POM / relief / contact refinement / 자기 음영 / PDO 없음"
+      },
+      "vsm": {
+        "title": "가상 섀도 맵(UE5 / o3de Atom)",
+        "desc": "가상 섀도 맵(VSM) CPU 레퍼런스 구현. UE5 Virtual Shadow Maps(Engstrom & Persson, SIGGRAPH 2021) 및 o3de Atom VirtualShadowMapPass에서 적용. 섀도 시야 절두체를 가상 텍스처로 취급하여 고정 크기 page(128×128 texel)로 분할, 물리 atlas(8192×8192, 4096 page)에 온디맨드 할당. 카메라에서 먼 영역은 화면 공간 texel 밀도 비율(texelRatio)에 기반해 더 낮은 mip 레벨을 사용, '픽셀 단위 섀도 해상도 적응'을 구현——가까운 곳은 고해상도 page, 먼 곳은 거친 mip page. 고정 해상도 제한 없음, CSM 이음 아티팩트 없음. PageTable 클래스는 LRU 제거 + gc()로 프레임 기반 page 회수. mip 선택: floor(log2(texelRatio / texelDensity)), [0, maxMipLevels-1]로 클램프. 가상 해상도 피라미드: 2048 → 1024 → 512 → 256 → 128 texel(5 mip 레벨). PCF 4-tap 소프트 엣지. GLSL chunk VSM_SAMPLE_GLSL은 vsmSample(), vsmSamplePCF4(), vsmSelectMipLevel(), vsmPackPageUV()를 WebGL2용으로 제공. ShadowMapManager(basic/PCF/PCSS), CSM, ESM과 보완——VREEN은 전체 해상도/성능 스펙트럼을 커버하는 5가지 섀도 솔루션 제공. 순수 CPU Float32Array, WebGL 비의존. 74개 유닛 테스트.",
+        "advantage": "soup3D는 고정 해상도 섀도 맵만 지원(2048/4096); 픽셀 단위 적응 섀도 해상도 없음, 가상 page atlas 없음"
       }
     }
   }

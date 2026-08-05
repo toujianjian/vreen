@@ -1153,6 +1153,11 @@
         "title": "视差遮挡贴图(o3de Atom)",
         "desc": "视差遮挡贴图(POM)CPU 参考实现 + GLSL chunk,适配自 o3de Atom ParallaxMapping.azsli + RTR4 §6.7.1 + Tartachuk 2004《Parallax Occlusion Mapping》+ Riccardi 2018《Contact Refinement Parallax Mapping》。在切线空间中沿高度图射线步进,让平坦纹理表面(砖墙 / 鹅卵石 / 浮雕地砖)在不增加顶点的情况下获得逼真的 3D 几何深度感。5 种算法:basic(单采样偏移)/ steep(多步射线步进)/ pom(steep + 线性插值,AAA 标准)/ relief(steep + 二分查找细化)/ contact(Riccardi 2018 高精度少样本)。可选自阴影(从交点向光源步进检测遮挡,产生柔和缝隙阴影)。可选像素深度偏移(PDO)——将切线空间偏移转回世界空间并重算 gl_FragDepth,以正确进行深度测试和接收阴影。4 档质量预设与 o3de 一致:Low=16 / Medium=32 / High=64 / Ultra=128 步。深度范围保护(stopDepth - startDepth < 0.0001 返回 0)匹配 o3de 边界处理。包裹模式:clamp / repeat。纯 CPU Float32Array 参考 + 3 个 GLSL chunk(PARALLAX_BASIC_CHUNK / PARALLAX_POM_CHUNK / PARALLAX_RELIEF_CHUNK)可直接嵌入 WebGL2 片段着色器。61 个单元测试。",
         "advantage": "soup3D 仅支持法线贴图(平坦,无深度),无 POM / relief / contact refinement / 自阴影 / PDO"
+      },
+      "vsm": {
+        "title": "虚拟阴影贴图(UE5 / o3de Atom)",
+        "desc": "虚拟阴影贴图(VSM)CPU 参考实现,适配自 UE5 Virtual Shadow Maps(Engstrom & Persson, SIGGRAPH 2021)与 o3de Atom VirtualShadowMapPass。把阴影视锥体视为虚拟纹理,划分为固定大小 page(128×128 texel),按需分配到物理 atlas(8192×8192,4096 个 page)。远离相机的区域根据屏幕空间 texel 密度比率(texelRatio)使用更低 mip 级别,实现「每像素阴影分辨率自适应」——近处高精度 page,远处粗 mip page。无固定分辨率限制,无 CSM 级间接缝。PageTable 类带 LRU 淘汰 + gc() 按帧回收 page。mip 选择:floor(log2(texelRatio / texelDensity)),clamp 到 [0, maxMipLevels-1]。虚拟分辨率金字塔:2048 → 1024 → 512 → 256 → 128 texel(5 级 mip)。PCF 4-tap 软边缘。GLSL chunk VSM_SAMPLE_GLSL 含 vsmSample()、vsmSamplePCF4()、vsmSelectMipLevel()、vsmPackPageUV() 用于 WebGL2。与 ShadowMapManager(basic/PCF/PCSS)、CSM、ESM 互补——VREEN 现有 5 种阴影方案覆盖全分辨率/性能谱。纯 CPU Float32Array,无 WebGL 依赖。74 个单元测试。",
+        "advantage": "soup3D 仅固定分辨率阴影贴图(2048/4096);无自适应每像素阴影分辨率,无虚拟 page atlas"
       }
     }
   }

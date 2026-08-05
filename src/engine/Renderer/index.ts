@@ -938,4 +938,38 @@ export {
   type ESMFilterOptions,
   type ESMStats,
 } from './ExponentialShadowMap';
+// VirtualShadowMap — 虚拟阴影贴图 (VSM) CPU 参考实现。
+// 适配自 UE5 Virtual Shadow Maps (Engstrom & Persson, SIGGRAPH 2021) +
+// o3de Atom VirtualShadowMapPass。把阴影贴图视为虚拟资源:将阴影视锥体
+// 划分为固定大小 page(128×128),按需分配到物理 atlas(8192×8192),
+// 对远离相机的区域使用更低 mip 级别,实现"每像素阴影分辨率自适应"。
+// 核心数据结构:PageTable(虚拟 page → 物理 page 映射,LRU 淘汰)、
+// PhysicalAtlas(大尺寸阴影纹理)。 mip 选择基于屏幕空间 texel 密度:
+// texelRatio ≤ texelDensity → mip 0(最高分辨率),每翻倍升 1 级 mip。
+// 与 ShadowMapManager(basic/PCF/PCSS)、CSMShadowMap、ESM 互补:
+// VREEN 现有 5 种阴影方案覆盖全精度-性能谱。纯 CPU Float32Array,无 WebGL 依赖。
+// soup3D 仅 basic 硬阴影,无虚拟阴影贴图。
+export {
+  computePagesPerSide,
+  computeVirtualResolution,
+  selectMipLevel,
+  computePageId,
+  packPageUV,
+  computeAtlasPagesPerSide,
+  computeAtlasCapacity,
+  applyVSMDefaults,
+  PageTable,
+  sampleVSM,
+  writePageToAtlas,
+  readPageFromAtlas,
+  vsmVisibility,
+  vsmVisibilityPCF4,
+  computeVisiblePages,
+  VSM_SAMPLE_GLSL,
+  DEFAULT_VSM_OPTIONS,
+  type VSMOptions,
+  type VirtualPageId,
+  type PhysicalPage,
+  type VSMSampleResult,
+} from './VirtualShadowMap';
 

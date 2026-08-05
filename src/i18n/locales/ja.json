@@ -1153,6 +1153,11 @@
         "title": "視差オクルージョンマッピング(o3de Atom)",
         "desc": "視差オクルージョンマッピング(POM)CPU リファレンス + GLSL チャンク。o3de Atom ParallaxMapping.azsli + RTR4 §6.7.1 + Tartachuk 2004『Parallax Occlusion Mapping』+ Riccardi 2018『Contact Refinement Parallax Mapping』から適応。接線空間でハイトマップをレイマーチし、平坦なテクスチャ面(レンガ壁 / 石畳 / 浮彫タイル)に頂点追加なしでリアルな 3D 幾何深度を与える。5 つのアルゴリズム:basic(1 タップ オフセット)/ steep(マルチステップ レイマーチ)/ pom(steep + 線形補間、AAA 標準)/ relief(steep + バイナリサーチ精密化)/ contact(Riccardi 2018 高精度少サンプル)。オプション自己遮蔽(交点から光源へマーチして遮蔽を検出、柔らかい隙間陰影を生成)。オプション ピクセル深度オフセット(PDO)——接線空間オフセットを世界空間へ戻し gl_FragDepth を再計算、正しい深度テストと影受信を実現。4 段階品質プリセットは o3de と一致:Low=16 / Medium=32 / High=64 / Ultra=128 ステップ。深度範囲ガード(stopDepth - startDepth < 0.0001 で 0 を返す)は o3de 境界ケース処理に一致。ラップモード:clamp / repeat。純粋 CPU Float32Array リファレンス + 3 つの GLSL チャンク(PARALLAX_BASIC_CHUNK / PARALLAX_POM_CHUNK / PARALLAX_RELIEF_CHUNK)は WebGL2 フラグメントシェーダーに直接埋め込み可能。61 個のユニットテスト。",
         "advantage": "soup3D は法線マッピングのみ(平坦、深度なし)、POM / relief / contact refinement / 自己遮蔽 / PDO なし"
+      },
+      "vsm": {
+        "title": "仮想シャドウマップ(UE5 / o3de Atom)",
+        "desc": "仮想シャドウマップ(VSM)CPU リファレンス実装。UE5 Virtual Shadow Maps(Engstrom & Persson, SIGGRAPH 2021)および o3de Atom VirtualShadowMapPassから適応。シャドウ視錐台を仮想テクスチャとして扱い、固定サイズ page(128×128 texel)に分割、物理 atlas(8192×8192、4096 page)にオンデマンド割り当て。カメラから遠い領域は画面空間 texel 密度比(texelRatio)に基づき低 mip レベルを使用、「ピクセル単位のシャドウ解像度適応」を実現——近くは高解像度 page、遠くは粗い mip page。固定解像度の制限なし、CSM 継ぎ目アーティファクトなし。PageTable クラスは LRU 駆逐 + gc() でフレームベースの page 回収。mip 選択: floor(log2(texelRatio / texelDensity))、[0, maxMipLevels-1] にクランプ。仮想解像度ピラミッド: 2048 → 1024 → 512 → 256 → 128 texel(5 mip レベル)。PCF 4-tap ソフトエッジ。GLSL chunk VSM_SAMPLE_GLSL は vsmSample()、vsmSamplePCF4()、vsmSelectMipLevel()、vsmPackPageUV() を WebGL2 向けに提供。ShadowMapManager(basic/PCF/PCSS)、CSM、ESM と補完——VREEN は全解像度/性能スペクトラムをカバーする 5 つのシャドウソリューションを提供。純粋 CPU Float32Array、WebGL 非依存。74 個のユニットテスト。",
+        "advantage": "soup3D は固定解像度シャドウマップのみ(2048/4096);ピクセル単位の適応シャドウ解像度なし、仮想 page atlas なし"
       }
     }
   }

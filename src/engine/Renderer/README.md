@@ -474,6 +474,132 @@ the full quality-performance spectrum.
 - Salvi 2008 "Fast Shadow Maps on a 1K Budget" — ESM theory
 - Annen et al. 2008 "Exponential Shadow Maps" — filtering derivation
 
+### `VirtualShadowMap` (`VirtualShadowMap.ts`)
+
+**Virtual Shadow Maps (VSM)** — adaptive-resolution shadow mapping that
+treats the shadow frustum as a *virtual* texture divided into fixed-size
+pages (128×128 texels). Pages are allocated on-demand into a physical
+atlas (8192×8192), and distant regions use lower mip levels — achieving
+"per-pixel shadow resolution adaptation" without the fixed-resolution
+limit of traditional shadow maps or the seam artifacts of cascaded
+shadow maps.
+
+Adapted from UE5 Virtual Shadow Maps (Engstrom & Persson, SIGGRAPH 2021)
+and o3de Atom `VirtualShadowMapPass`. The core insight: a screen-space
+texel near the camera maps to many shadow texels (needs high resolution),
+while a distant screen texel maps to few shadow texels (low resolution
+suffices). VSM allocates high-resolution pages only where they're needed,
+saving memory and bandwidth.
+
+**Mip-level selection** — based on the screen-space texel density ratio:
+
+```
+texelRatio = (screen-space derivative) / (shadow-space texel size)
+mipLevel   = floor(log2(texelRatio / texelDensity))  // clamped to [0, maxMipLevels-1]
+```
+
+When `texelRatio ≤ texelDensity` → mip 0 (highest resolution). Each
+doubling of `texelRatio` steps up one mip level. With `pageSize=128` and
+`maxMipLevels=5`, the virtual resolution pyramid is:
+`2048 → 1024 → 512 → 256 → 128` texels per side.
+
+**Page table** — `PageTable` class maps `(mipLevel, pageX, pageY)` →
+`(atlasPageX, atlasPageY)` with LRU eviction. When the physical atlas
+is full, the least-recently-used page is evicted. A `gc(minFrame)` method
+reclaims pages not used in recent frames.
+
+| Function | Description |
+|----------|-------------|
+| `computePagesPerSide(maxMipLevels)` | Returns array of pages-per-side per mip level. Root = `2^(maxMipLevels-1)`, halving each level. |
+| `computeVirtualResolution(pageSize, maxMipLevels)` | Returns virtual texel resolution per mip level. |
+| `selectMipLevel(texelRatio, maxMipLevels, texelDensity)` | Chooses mip based on screen-space derivative. `ratio ≤ density → 0`; each 2× → +1 level. |
+| `computePageId(u, v, mipLevel, maxMipLevels)` | Converts shadow UV + mip → `{mipLevel, pageX, pageY}`. UV clamped to `[0,1)`. |
+| `packPageUV(virtualU, virtualV, mip, ..., atlasPageX, atlasPageY, ...)` | Converts virtual UV to physical atlas UV using page table coordinates. |
+| `PageTable` class | Virtual→physical page mapping with LRU eviction, `allocate()`, `find()`, `invalidate()`, `gc()`, `clear()`. |
+| `sampleVSM(depthAtlas, atlasSize, pageTable, u, v, texelRatio, opts)` | Full VSM sample: mip select → page lookup → atlas UV pack → depth fetch. Returns `{depth, valid, mipLevel, atlasUV}`. |
+| `writePageToAtlas(...)` / `readPageFromAtlas(...)` | Write/read a page-sized depth block into/from the physical atlas. |
+| `vsmVisibility(receiverDepth, storedDepth, bias)` | Single-tap depth comparison → 0 or 1. |
+| `vsmVisibilityPCF4(...)` | 4-tap PCF (2×2 grid) for soft shadow edges. |
+| `computeVisiblePages(minUV, maxUV, texelRatio, opts)` | Returns list of visible page IDs for a screen region — for dirty-marking. |
+| `VSM_SAMPLE_GLSL` | GLSL chunk with `vsmSample()`, `vsmSamplePCF4()`, `vsmSelectMipLevel()`, `vsmPackPageUV()` for WebGL2 fragment shaders. |
+
+```ts
+import {
+  PageTable, sampleVSM, writePageToAtlas,
+  computePageId, selectMipLevel, applyVSMDefaults,
+  vsmVisibility,
+} from '@vreen/engine/renderer';
+
+const opts = applyVSMDefaults({ pageSize: 128, atlasSize: 8192, maxMipLevels: 5 });
+const atlas = new Float32Array(opts.atlasSize * opts.atlasSize);
+const pageTable = new PageTable(opts.atlasSize, opts.pageSize);
+
+// 1. For each visible screen region, allocate pages
+const pageId = computePageId(shadowUV.u, shadowUV.v, 0, opts.maxMipLevels);
+const physical = pageTable.allocate(pageId, frameNumber);
+
+// 2. Render shadow depth into page, then write to atlas
+writePageToAtlas(atlas, opts.atlasSize, opts.pageSize,
+  physical.atlasPageX, physical.atlasPageY, pageDepthData);
+
+// 3. Per-pixel shadow sampling in fragment shader (or CPU reference)
+const sample = sampleVSM(atlas, opts.atlasSize, pageTable,
+  shadowUV.u, shadowUV.v, texelRatio, opts);
+if (sample.valid) {
+  const visibility = vsmVisibility(receiverDepth, sample.depth, 0.001);
+  // visibility = 0 (shadowed) or 1 (lit)
+}
+```
+
+| Property | Default | Notes |
+|----------|---------|-------|
+| `pageSize` | 128 | Texels per page side. Larger = fewer pages but more waste per allocation. |
+| `atlasSize` | 8192 | Physical atlas texel size. Must be multiple of `pageSize`. 8192/128 = 64×64 = 4096 pages. |
+| `maxMipLevels` | 5 | Mip chain depth. 5 → root 2048 texels, coarsest 128 texels. |
+| `texelDensity` | 1.0 | Target shadow texels per screen pixel. 1.0 = 1:1; 0.5 = supersampled. |
+| `clampBorder` | true | Clamp UVs to `[0,1]` to prevent page-edge leaking. |
+
+| Feature | VREEN (VSM) | soup3D |
+|---------|-------------|--------|
+| Adaptive per-pixel shadow resolution | ✓ | ✗ |
+| Page-based virtual texture | ✓ (128×128 pages) | ✗ |
+| Physical atlas with LRU eviction | ✓ (8192², 4096 pages) | ✗ |
+| Screen-space texel density mip selection | ✓ | ✗ |
+| PCF 4-tap soft edges | ✓ | ✗ |
+| CPU reference + headless tests | ✓ (74 unit tests) | ✗ |
+| Fixed-resolution shadow map | — (superseded) | ✓ (2048² or 4096²) |
+| Cascaded Shadow Maps | ✓ (CSMShadowMap, separate) | ✗ |
+
+**Compared to CSM** (`CascadedShadowMap.ts` / `CSMShadowMap.ts`): CSM
+splits the view frustum into slices, each with its own shadow map.
+CSM has seam artifacts at slice boundaries and requires careful blend
+regions. VSM has no seams — each screen pixel gets its own mip level
+based on local texel density, producing continuous resolution without
+artificial boundaries. VSM also adapts to anisotropic density (e.g.
+grazing-angle surfaces get more texels), while CSM resolution is
+isotropic per slice.
+
+**Compared to ESM** (`ExponentialShadowMap.ts`): ESM solves the
+*filtering* problem (how to blur a shadow map without aliasing), while
+VSM solves the *resolution* problem (how to get enough texels where they
+matter). They are orthogonal and can be combined: render depth into VSM
+pages, then apply ESM exponentiation + filtering per page. VREEN ships
+both independently; combining them is left to the integration layer.
+
+```ts
+// Decision matrix
+//   Large open-world scene       → VSM (adaptive resolution, no seams)
+//   Wide outdoor with soft shadows → CSM + ESM (per-cascade exp filter)
+//   Hero / cinematic shot          → PCSS (physical variable penumbra)
+//   VR / mobile / 60 FPS target    → ESM (1-tap after filter)
+//   Debug / pixel-accurate         → PCF (deterministic N×N)
+```
+
+- UE5 Virtual Shadow Maps — Engstrom & Persson, SIGGRAPH 2021
+- o3de Atom `VirtualShadowMapPass` — page-based VSM pipeline
+- Karis "Real Shadows in Real Time with VSM" — UE blog (2020)
+- Myers & Bavoil "Stencil Routed K-Buffer" (2022) — K-buffer techniques
+
 ### `LensFlare` (`LensFlare.ts`)
 
 CPU-side lens flare compositor (no WebGL dependency; runs headless in
