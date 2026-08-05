@@ -281,3 +281,10 @@ export {
   type CsgOperation,
   csg,
 } from './WhiteBox';
+// UI — 游戏内 UI 系统 (Canvas / Widget / Layout / Input / Animation)。
+// 仿 o3de LyShine、UE5 UMG、Unity UI Toolkit。屏幕空间 + 世界空间画布,
+// RectTransform 锚点/枢轴/拉伸布局,Horizontal/Vertical/Grid 布局组,
+// Button/Slider/Toggle/Dropdown/ScrollRect 控件,指针/键盘/拖拽/焦点输入,
+// Tween 动画 (fade/scale/slide/color + 12 缓动函数 + 序列)。
+// 纯 CPU 布局/命中/动画逻辑,渲染层消费 UIDrawCommand 绘制。
+export * from './UI';
