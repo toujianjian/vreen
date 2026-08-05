@@ -940,9 +940,9 @@
         "advantage": "soup3D has no fog"
       },
       "ssgi": {
-        "title": "SSGI",
-        "desc": "Screen-space global illumination with 8-ray cosine hemisphere sampling.",
-        "advantage": "soup3D has no GI"
+        "title": "SSGI Screen-Space Global Illumination (o3de Atom / UE5 Lumen)",
+        "desc": "Screen-Space Global Illumination CPU reference implementation adapted from Crytek SSDO (Ritschel 2009), o3de Atom ScreenSpaceGlobalIllumination, UE5 Lumen Screen Space GI, and EA SEED Stable SSAO. Cosine-weighted hemisphere sampling (8 rays) with Interleaved Gradient Noise (IGN) jittering, TBN basis construction, view-space thickness hit test, adaptive step size (near-small far-large), edge fade + distance attenuation + cosine weight. Production-grade features beyond basic SSGI_FRAG: temporalAccumulate() with velocity-based reprojection + 3x3 neighborhood clamping (ghost suppression), denoiseSpatial() edge-preserving bilateral filter (normal+depth weights), varianceClip() SVGF-style statistical outlier clipping. Pure functions, no WebGL dependency, runnable in Node/headless. 91 unit tests. Complements SSR (specular) + GTAO (occlusion) + DDGI (world-space low-frequency).",
+        "advantage": "soup3D has no GI at all (no SSGI, no DDGI, no light probes); VREEN has full GI stack: SSGI + DDGIVolume + GlobalIllumination + PathTracer"
       },
       "ddgi": {
         "title": "DDGI",

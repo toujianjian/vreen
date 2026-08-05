@@ -940,9 +940,9 @@
         "advantage": "soup3D는 안개 없음"
       },
       "ssgi": {
-        "title": "SSGI",
-        "desc": "스크린 공간 글로벌 일루미네이션, 8레이 코사인 반구 샘플링.",
-        "advantage": "soup3D에 GI 없음"
+        "title": "SSGI 스크린 공간 글로벌 일루미네이션(o3de Atom / UE5 Lumen)",
+        "desc": "스크린 공간 글로벌 일루미네이션 CPU 레퍼런스 구현. Crytek SSDO(Ritschel 2009), o3de Atom ScreenSpaceGlobalIllumination, UE5 Lumen Screen Space GI, EA SEED Stable SSAO에서 적용. 코사인 가중 반구 샘플링(8 레이)+ Interleaved Gradient Noise(IGN) 지터 + TBN 직교 기저 + 시공간 두께 테스트 + 적응 스텝 사이즈(근소원대)+ 엣지 페이드 + 거리 감쇠 + 코사인 가중. 기본 SSGI_FRAG를 넘어선 프로덕션급 기능: temporalAccumulate() 시간 누적(속도 리프로젝션 + 3×3 이웃 클램프, 고스트 억제), denoiseSpatial() 엣지 보존 바이래터럴 필터(법선+깊이 가중), varianceClip() SVGF 스타일 통계 이상치 클리핑. 순수 함수, WebGL 비의존, Node/헤드리스 환경 실행 가능. 91개 유닛 테스트. SSR(경면)+ GTAO(오클루전)+ DDGI(세계 공간 저주파)와 보완.",
+        "advantage": "soup3D는 GI가 완전히 없음(SSGI, DDGI, 라이트 프로브 없음); VREEN은 완전 GI 스택: SSGI + DDGIVolume + GlobalIllumination + PathTracer"
       },
       "ddgi": {
         "title": "DDGI",

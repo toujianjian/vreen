@@ -741,6 +741,99 @@ rendering stack matching UE5 Nanite and o3de Atom MeshletsModule.
 - AMD RDNA2 Mesh Shader Programming Guide — hardware best practices
 - UE5 Nanite — meshlet-based virtualized geometry system
 
+### `SSGI` (`SSGI.ts`)
+
+**Screen-Space Global Illumination** CPU reference implementation, adapted from
+Crytek SSDO (Ritschel 2009), o3de Atom `ScreenSpaceGlobalIllumination` pass,
+UE5 Lumen Screen Space GI, and EA SEED "Stable SSAO" GDC talk.
+
+Complements the GPU `PostProcess/SSGIPass.ts` (which uses the `SSGI_FRAG` GLSL
+shader). This module provides pure CPU functions (no WebGL dependency, runnable
+in Node/headless) for shader validation, offline rendering, and unit testing.
+
+**Algorithm (1:1 with `SSGI_FRAG` GLSL):**
+
+1. **IGN jittering** — Interleaved Gradient Noise (Jimenez 2014) for per-pixel
+   low-discrepancy sampling, better than white noise (blue-noise-like).
+2. **TBN basis** — orthonormal basis constructed from surface normal (no
+   tangent attribute required): `up = |N.z| < 0.999 ? (0,0,1) : (1,0,0)`,
+   `T = normalize(cross(up, N))`, `B = cross(N, T)`.
+3. **Cosine-weighted hemisphere sampling** — importance sampling:
+   `θ = asin(√ξ₁)`, `φ = 2π·ξ₂ + frameRot` (golden angle ≈ 137.5° per frame).
+4. **View-space thickness hit test** — `depthDiff = rayDepth - sampledDepth`;
+   hit when `0 < depthDiff < thickness`.
+5. **Adaptive step size** — `baseStep * (1 + i*0.5)` (near-small, far-large).
+6. **Accumulation** — edge fade + distance attenuation (`1/(1+d²·2)`) +
+   cosine weight; normalized by total weight.
+7. **Backface culling** — `dot(viewDir, N) <= 0` → skip (no indirect light).
+
+**Production-grade features (beyond basic `SSGI_FRAG`):**
+
+| Function | Description |
+|----------|-------------|
+| `temporalAccumulate()` | Temporal accumulation with velocity-based reprojection + 3×3 neighborhood clamping (ghost suppression) |
+| `denoiseSpatial()` | Edge-preserving bilateral filter (normal + depth + spatial weights, cross-bilateral) |
+| `varianceClip()` | SVGF-style statistical outlier clipping (μ ± γ·σ from 3×3 neighborhood) |
+
+**Exported API:**
+
+| Export | Type | Description |
+|--------|------|-------------|
+| `ign(px, py)` | function | Interleaved Gradient Noise [0,1) |
+| `buildTBN(n)` | function | TBN orthonormal basis from normal |
+| `cosineSampleHemisphere(xi1, xi2, tbn, rot)` | function | Cosine-weighted hemisphere sample |
+| `projectToUV(worldPos, proj, view)` | function | World → screen UV |
+| `viewDepth(worldPos, view)` | function | View-space depth |
+| `sampleTextureClamp(tex, u, v)` | function | CLAMP_TO_EDGE + nearest sampling |
+| `hitTestVS(rayPos, u, v, posMap, view, thickness)` | function | View-space thickness hit test |
+| `marchRay(...)` | function | Single ray march (adaptive step) |
+| `computeSSGIPixel(px, py, input, opts)` | function | Per-pixel SSGI |
+| `executeSSGI(input, opts)` | function | Full-screen SSGI pass |
+| `temporalAccumulate(current, history, velocity, alpha)` | function | Temporal accumulation |
+| `denoiseSpatial(input, posMap, nrmMap, radius, strength)` | function | Spatial denoise |
+| `varianceClip(current, history, gamma)` | function | Variance-guided clipping |
+| `vadd/vsub/vscale/vdot/vcross/vlength/vnormalize` | function | Vec3 math |
+| `mat4TransformVec3/mat4ProjectVec3` | function | Mat4 × vec3 (column-major) |
+| `SSGI_TEMPORAL_FRAG` | GLSL | Temporal accumulation shader |
+| `SSGI_DENOISE_FRAG` | GLSL | Spatial denoise shader |
+
+**Comparison with soup3D:**
+
+| Feature | VREEN | soup3D |
+|---------|-------|--------|
+| Screen-Space GI (SSGI) | ✓ (CPU ref + GPU + temporal + denoise) | ✗ |
+| Cosine-weighted hemisphere sampling | ✓ (8 rays, IGN jitter) | ✗ |
+| View-space thickness hit test | ✓ | ✗ |
+| Adaptive step size | ✓ (near-small far-large) | ✗ |
+| Temporal accumulation | ✓ (reprojection + neighborhood clamp) | ✗ |
+| Spatial denoise (bilateral) | ✓ (normal + depth + spatial weights) | ✗ |
+| Variance clipping (SVGF) | ✓ (μ ± γ·σ) | ✗ |
+| DDGIVolume (world-space GI) | ✓ | ✗ |
+| GlobalIllumination (SH2 probes) | ✓ | ✗ |
+| PathTracer (reference) | ✓ | ✗ |
+| CPU reference (headless/testable) | ✓ (91 unit tests) | ✗ |
+
+**Relationship with other GI modules:**
+
+- `SSR` — specular reflection (metal/wet surfaces)
+- `SSGI` — diffuse indirect light (color bleed on rough surfaces)
+- `GTAO` — ambient occlusion (contact shadows)
+- `DDGIVolume` — world-space low-frequency GI base
+- `GlobalIllumination` — SH2 light probes
+- `PathTracer` — reference/offline ground truth
+
+Typical production setup: DDGI provides low-frequency base, SSGI adds
+high-frequency screen-space detail, GTAO adds contact occlusion.
+
+**References:**
+
+- Ritschel et al. 2009 "Approximating Dynamic Global Illumination in Image Space" (SSDO)
+- o3de Atom `ScreenSpaceGlobalIllumination` pass
+- UE5 Lumen "Screen Space GI"
+- EA SEED "Stable SSAO" GDC (IGN temporal jittering)
+- Jimenez 2014 "Interleaved Gradient Noise"
+- Schied et al. 2017 "Spatiotemporal Variance-Guided Filtering" (SVGF)
+
 ### `LensFlare` (`LensFlare.ts`)
 
 CPU-side lens flare compositor (no WebGL dependency; runs headless in

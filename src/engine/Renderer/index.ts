@@ -208,6 +208,57 @@ export {
   type SSRPassOptions,
   type SSRStats,
 } from './SSRPass';
+// SSGI — 屏幕空间全局光照 CPU 参考实现(纯函数,无 WebGL 依赖)。
+// 适配自 Crytek SSDO (Ritschel 2009) / o3de Atom ScreenSpaceGlobalIllumination /
+// UE5 Lumen Screen Space GI / EA SEED Stable SSAO。
+// 与 PostProcess/SSGIPass.ts(GPU 纹理版)互补:本模块在 CPU 侧维护
+// Float32Array 纹理,可在 Node/无头环境运行,用于验证 GPU shader 正确性
+// + 离线光照贴图烘焙。
+// 与 GLSL `SSGI_FRAG` chunk 1:1 对应:ign 抖动 / TBN 正交基 /
+// 余弦加权半球采样 / 视空间厚度检测 / 自适应步长 / 边缘衰减。
+// 额外提供生产级特性:temporalAccumulate() 时序累积(重投影+邻域夹稳) /
+// denoiseSpatial() 空间降噪(边保持模糊) / varianceClip() 方差裁剪(鬼影抑制)。
+// 与 SSR/GTAO 互补:SSR=镜面反射,SSGI=漫反射间接光,GTAO=环境遮蔽。
+// 与 GlobalIllumination/DDGIVolume 互补:DDGI=世界空间低频基底,SSGI=屏幕空间高频细节。
+// 91 个单元测试,纯函数,不依赖 WebGL。
+export {
+  ign,
+  buildTBN,
+  cosineSampleHemisphere,
+  projectToUV,
+  viewDepth,
+  sampleTextureClamp,
+  hitTestVS,
+  smoothstep,
+  marchRay,
+  computeSSGIPixel,
+  executeSSGI,
+  temporalAccumulate,
+  ssgiNeighborhoodMinMax,
+  denoiseSpatial,
+  varianceClip,
+  vadd,
+  vsub,
+  vscale,
+  vdot,
+  vcross,
+  vlength,
+  vnormalize,
+  mat4TransformVec3,
+  mat4ProjectVec3,
+  applySSGIDefaults,
+  DEFAULT_SSGI_OPTIONS,
+  SSGI_TEMPORAL_FRAG,
+  SSGI_DENOISE_FRAG,
+  type SSGIVec3,
+  type SSGITextureData,
+  type SSGIMat4,
+  type SSGICamera,
+  type SSGIInput,
+  type SSGIOptions,
+  type SSGIStats,
+  type SSGIRayHit,
+} from './SSGI';
 export {
   VolumetricFogPass,
   type VolumetricFogPassOptions,

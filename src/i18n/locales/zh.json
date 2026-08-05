@@ -940,9 +940,9 @@
         "advantage": "soup3D 无雾效"
       },
       "ssgi": {
-        "title": "SSGI",
-        "desc": "屏幕空间全局光照,8 射线余弦半球采样。",
-        "advantage": "soup3D 无 GI"
+        "title": "SSGI 屏幕空间全局光照(o3de Atom / UE5 Lumen)",
+        "desc": "屏幕空间全局光照 CPU 参考实现,适配自 Crytek SSDO(Ritschel 2009)、o3de Atom ScreenSpaceGlobalIllumination、UE5 Lumen Screen Space GI 与 EA SEED Stable SSAO。余弦加权半球采样(8 射线)+ Interleaved Gradient Noise(IGN)抖动 + TBN 正交基 + 视空间厚度检测 + 自适应步长(近小远大)+ 边缘衰减 + 距离衰减 + 余弦权重。超越基础 SSGI_FRAG 的生产级特性:temporalAccumulate() 时序累积(速度重投影 + 3×3 邻域夹紧,抑制鬼影)、denoiseSpatial() 边保持双边滤波(法线+深度权重)、varianceClip() SVGF 风格统计离群值裁剪。纯函数,无 WebGL 依赖,可在 Node/无头环境运行。91 个单元测试。与 SSR(镜面)+ GTAO(遮蔽)+ DDGI(世界空间低频)互补。",
+        "advantage": "soup3D 完全无 GI(无 SSGI、无 DDGI、无光探针);VREEN 具备完整 GI 栈:SSGI + DDGIVolume + GlobalIllumination + PathTracer"
       },
       "ddgi": {
         "title": "DDGI",

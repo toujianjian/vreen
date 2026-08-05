@@ -940,9 +940,9 @@
         "advantage": "soup3D にフォグなし"
       },
       "ssgi": {
-        "title": "SSGI",
-        "desc": "スクリーン空間グローバルイルミネーション、8 レイ余弦半球サンプリング。",
-        "advantage": "soup3D に GI なし"
+        "title": "SSGI スクリーン空間グローバルイルミネーション(o3de Atom / UE5 Lumen)",
+        "desc": "スクリーン空間グローバルイルミネーション CPU リファレンス実装。Crytek SSDO(Ritschel 2009)、o3de Atom ScreenSpaceGlobalIllumination、UE5 Lumen Screen Space GI、EA SEED Stable SSAOから適応。余弦重み付き半球サンプリング(8 レイ)+ Interleaved Gradient Noise(IGN)ジッター + TBN 直交基底 + 視空間厚さテスト + 適応ステップサイズ(近小遠大)+ エッジフェード + 距離減衰 + 余弦重み。基本 SSGI_FRAG を超える本番級機能:temporalAccumulate() 時間累積(速度リプロジェクション + 3×3 近隣クランプ、ゴースト抑制)、denoiseSpatial() エッジ保持バイラテラルフィルタ(法線+深度重み)、varianceClip() SVGF 風統計外れ値クリッピング。純粋関数、WebGL 非依存、Node/ヘッドレス環境で実行可能。91 個のユニットテスト。SSR(鏡面)+ GTAO(オクルージョン)+ DDGI(世界空間低周波)と補完。",
+        "advantage": "soup3D は GI が完全になし(SSGI、DDGI、ライトプローブなし);VREEN は完全 GI スタック:SSGI + DDGIVolume + GlobalIllumination + PathTracer"
       },
       "ddgi": {
         "title": "DDGI",
