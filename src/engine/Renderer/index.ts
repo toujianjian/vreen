@@ -122,6 +122,24 @@ export {
 // 多渲染目标(MRT)+ 几何缓冲(GBuffer,延迟渲染用)。
 export { MRTTarget, type MRTSetupOptions } from './MRTTarget';
 export { GBuffer, type GBufferOptions } from './GBuffer';
+// GPU Picking — O(1) 物体拾取(离屏 ID 渲染 + readPixels)。
+// 适配 three.js ColorPickMesh + o3de Atom EditorMeshPickPass。
+// 把每个可拾取物体编码为唯一 24-bit pickId,渲染到离屏 MRT FBO
+// (attachment 0 = 物体 id,attachment 1 = 实例 id),开启深度测试,
+// pick() 用 readPixels 单像素 O(1) 读取并解码。
+// 与 Core/Raycaster 互补:Raycaster 逐三角形求交得精确 faceIndex/uv,
+// O(三角形数);GPUPicking 只得 object+instanceId,O(1),适合海量物体
+// 的编辑器框选 / 悬停高亮。纯函数 encodeId24/decodeId24 与 GLSL 1:1,
+// 可在 Node/无头环境测试。44 个单元测试。
+export {
+  GPUPicking,
+  encodeId24,
+  decodeId24,
+  encodeId24Uniform,
+  MAX_PICK_ID,
+  type GPUPickResult,
+  type GPUPickingOptions,
+} from './GPUPicking';
 // 延迟渲染器(基于 GBuffer,geometry + lighting 双 pass)。
 export {
   DeferredRenderer,

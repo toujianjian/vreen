@@ -23,6 +23,7 @@ Renderer (interface)        ← pluggable backend contract
           │     └── PostProcess/  ← enhanced pass family
           ├── MRTTarget     ← multi-render-target FBO
           ├── GBuffer       ← deferred rendering geometry buffer
+          ├── GPUPicking    ← O(1) object picking (offscreen ID render + readPixels; see GPUPicking.README.md)
           ├── ShadowMapManager ← shadow-map FBO/texture lifecycle
           ├── PCSSSampler ← PCSS soft-shadow CPU reference (Ferrari 2005)
           ├── CascadedShadowMap ← CSM/PSSM for large outdoor scenes

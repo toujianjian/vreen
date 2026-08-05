@@ -1218,6 +1218,11 @@
         "title": "필름 그레인 Film Grain (o3de Atom FilmGrain / three.js FilmShader)",
         "desc": "o3de Atom FilmGrain.azsl + FilmGrainSettings + FilmGrainConstants에서 적응한 시네마틱 필름 그레인 포스트프로세스 Pass. 완전한 o3de 알고리즘:(1) grain UV를 tilingScale * pixelCoord / grainTextureSize + 24fps 애니메이션 오프셋으로 계산(trunc(time * 24)가 24fps 필름 프레임레이트 모방, float2(0.6379, 1.7358) 랜덤 스킵);(2) grain을 사전 계산 노이즈 텍스처에서 샘플링(Mirror 주소 모드) 또는 절차적 hash21 노이즈(듀얼 패스);(3) 휘도 감쇠 4x(1-x) 공식(Rec.601 luma 0.21/0.72/0.07)——순흑(lum=0)/순백(lum=1)에서 그레인 소멸, 중간조(lum=0.5)에서 피크, 리얼 필름 그레인 물리 특성 모방;(4) o3de 준수 치환형 lerp(rgb = lerp(rgb, grain, intensity)), 가산식 아님. 매개변수:intensity(o3de 기본 0.2), luminanceDampening(기본 0.0), tilingScale(기본 1.0), size, noiseType(hash/texture), animated(24fps). 1:1 CPU/GPU 레퍼런스:filmGrainPixel() 순수 함수 + hash21()이 GLSL과 비트 정확히 일치, WebGL 없이 테스트 가능. 27 유닛 테스트.",
         "advantage": "soup3D는 포스트프로세스가 전혀 없음 —— 블룸 없음, 톤매핑 없음, 필름 그레인 없음, HUD용 단일 풀스크린 이미지 오버레이만;VREEN은 휘도 감쇠(4x(1-x) 중간조 피크), 24fps 애니메이션, grain 텍스처 + 절차적 hash 듀얼 패스, 1:1 CPU/GPU 레퍼런스 헤드리스 테스트가 포함된 o3de Atom 급 필름 그레인 제공(o3de Atom FilmGrain 급 기술)"
+      },
+      "gpuPicking": {
+        "title": "GPU 피킹(o3de Atom EditorMeshPickPass / three.js ColorPick)",
+        "desc": "오프스크린 ID 렌더링 + readPixels 기반 O(1) 오브젝트 피킹. o3de Atom EditorMeshPickPass + three.js ColorPickMesh에서 적응. 피킹 가능한 각 오브젝트에 조밀한 24-bit pickId(최대 16M 오브젝트)를 할당하고 RGB로 인코딩하여 오프스크린 MRT FBO(attachment 0 = 오브젝트 id, attachment 1 = 인스턴스 id, InstancedMesh용)에 깊이 테스트와 함께 렌더링하여 가장 앞쪽 오브젝트만 남김. pick(x,y)는 readPixels로 1픽셀을 읽어 O(1)로 디코딩. pickAt(단일 클릭), pickRect(박스 선택 + 중복 제거), InstancedMesh 인스턴스별 id 해석 지원. CPU Raycaster와 보완적: GPU 피킹이 O(1)로 히트 오브젝트를 특정하고, Raycaster가 해당 단일 오브젝트의 faceIndex/uv/point를 정밀화. 순수 CPU encodeId24/decodeId24는 GLSL encodeId24()와 비트급 1:1, WebGL 없이 테스트 가능. 44개 유닛 테스트.",
+        "advantage": "soup3D는 기본 CPU 레이캐스트만 제공(삼각형별 O(삼각형 수), 인스턴스 id 해석 없음, 박스 선택 없음); VREEN은 O(1) readPixels, 24-bit pickId(16M 오브젝트), MRT 듀얼 어태치먼트(오브젝트 id + 인스턴스 id), InstancedMesh 인스턴스별 피킹, 박스 선택 중복 제거, performance용 resolutionScale, 1:1 CPU/GPU 인코드/디코드 레퍼런스가 포함된 o3de Atom 급 GPU 피킹 제공(o3de Atom EditorMeshPickPass 급 기술)"
       }
     }
   }

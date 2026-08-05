@@ -1218,6 +1218,11 @@
         "title": "胶片颗粒 Film Grain(o3de Atom FilmGrain / three.js FilmShader)",
         "desc": "电影感胶片颗粒后处理 Pass,适配自 o3de Atom FilmGrain.azsl + FilmGrainSettings + FilmGrainConstants。完整 o3de 算法:(1) grain UV 通过 tilingScale * pixelCoord / grainTextureSize + 24fps 动画偏移计算(trunc(time * 24) 模拟 24fps 胶片帧率,float2(0.6379, 1.7358) 随机跳转);(2) grain 从预计算噪声纹理采样(Mirror 地址模式)或程序化 hash21 噪声(双路径);(3) 亮度阻尼 4x(1-x) 公式(Rec.601 luma 0.21/0.72/0.07)——纯黑(lum=0)/纯白(lum=1)处颗粒消失,中间调(lum=0.5)峰值,模拟真实胶片颗粒物理特性;(4) 替换式 lerp(rgb = lerp(rgb, grain, intensity))遵循 o3de,非叠加式。参数:intensity(o3de 默认 0.2)、luminanceDampening(默认 0.0)、tilingScale(默认 1.0)、size、noiseType(hash/texture)、animated(24fps)。1:1 CPU/GPU 参考:filmGrainPixel() 纯函数 + hash21() 与 GLSL 位精确一致,无 WebGL 可测试。27 个单元测试。",
         "advantage": "soup3D 完全没有后处理——无 bloom、无 tonemapping、无胶片颗粒,仅有一张全屏图覆盖做 HUD;VREEN 提供 o3de Atom 级胶片颗粒,含亮度阻尼(4x(1-x) 中间调峰值)、24fps 动画、grain 纹理 + 程序化 hash 双路径、1:1 CPU/GPU 参考无头测试(o3de Atom FilmGrain 级技术)"
+      },
+      "gpuPicking": {
+        "title": "GPU 拾取(o3de Atom EditorMeshPickPass / three.js ColorPick)",
+        "desc": "O(1) 物体拾取(离屏 ID 渲染 + readPixels),适配 o3de Atom EditorMeshPickPass + three.js ColorPickMesh。每个可拾取物体分配稠密 24-bit pickId(最多 16M 物体),编码为 RGB 渲染到离屏 MRT FBO(attachment 0 = 物体 id,attachment 1 = 实例 id,用于 InstancedMesh),开启深度测试只保留最前面物体。pick(x,y) 用 readPixels 读单像素并 O(1) 解码。支持 pickAt(单点)、pickRect(框选去重)、InstancedMesh 逐实例 id 解析。与 CPU Raycaster 互补:GPU 拾取 O(1) 确定命中物体,Raycaster 再对该物体精修 faceIndex/uv/point。纯 CPU encodeId24/decodeId24 与 GLSL encodeId24() 位级 1:1,无 WebGL 也可测试。44 个单元测试。",
+        "advantage": "soup3D 仅有基础 CPU 射线投射(逐三角形 O(三角形数),无实例 id 解析,无框选);VREEN 提供 o3de Atom 级 GPU 拾取,O(1) readPixels、24-bit pickId(16M 物体)、MRT 双附件(物体 id + 实例 id)、InstancedMesh 逐实例拾取、框选去重、resolutionScale 性能调节、1:1 CPU/GPU 编解码参考(o3de Atom EditorMeshPickPass 级技术)"
       }
     }
   }

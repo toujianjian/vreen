@@ -603,6 +603,97 @@ void main() {
 }
 `;
 
+// ── GPU Picking shader ─────────────────────────────────────────────
+// 适配 three.js ColorPickMesh + o3de Atom EditorMeshPickPass。
+// 把每个可拾取物体编码为唯一 24-bit pickId,渲染到离屏 MRT FBO:
+//   attachment 0 (RGBA8): RGB = pickId 编码,A = 255(命中标记)
+//   attachment 1 (RGBA8): RGB = instanceId 编码,A = 255(非实例时全 0)
+// 深度测试开启,只保留最前面的物体 id。pick() 用 readPixels O(1) 读取。
+//
+// 与 CPU Raycaster 互补:Raycaster 逐三角形求交,得到精确 faceIndex/uv/point,
+// 但 O(三角形数);GPUPicking 只得到 object+instanceId,但 O(1) 读取像素,
+// 适合海量物体的编辑器框选 / 悬停高亮等高频拾取场景。
+
+// GPUPicking 顶点 shader(普通 Mesh):
+// 把 u_pickId(flat)透传给 fragment,位置走标准 MVP 变换。
+// v_instanceId = -1.0 标记"非实例化",fragment 据此把 attachment 1 写 0。
+export const PICK_VERT = /* glsl */ `#version 300 es
+precision highp float;
+
+layout(location = 0) in vec3 a_position;
+
+uniform mat4 u_model;
+uniform mat4 u_view;
+uniform mat4 u_projection;
+uniform vec3 u_pickId;   // 24-bit pickId 编码为 0..1 的 r,g,b
+
+flat out vec3 v_pickId;
+flat out float v_instanceId;
+
+void main() {
+  v_pickId = u_pickId;
+  v_instanceId = -1.0;
+  gl_Position = u_projection * u_view * u_model * vec4(a_position, 1.0);
+}
+`;
+
+// GPUPicking 顶点 shader(InstancedMesh):
+// 每实例有自己的 a_instanceMatrix(mat4) + a_instanceId(float,0..count-1)。
+// 不设 u_model(instancing 模式下 model 矩阵由 a_instanceMatrix 提供)。
+export const PICK_INSTANCED_VERT = /* glsl */ `#version 300 es
+precision highp float;
+
+layout(location = 0) in vec3 a_position;
+layout(location = 3) in mat4 a_instanceMatrix;
+layout(location = 7) in float a_instanceId;
+
+uniform mat4 u_view;
+uniform mat4 u_projection;
+uniform vec3 u_pickId;
+
+flat out vec3 v_pickId;
+flat out float v_instanceId;
+
+void main() {
+  v_pickId = u_pickId;
+  v_instanceId = a_instanceId;
+  vec4 worldPos = a_instanceMatrix * vec4(a_position, 1.0);
+  gl_Position = u_projection * u_view * worldPos;
+}
+`;
+
+// GPUPicking fragment shader(普通 / 实例共用):
+//   attachment 0: vec4(pickId.rgb, 1.0)
+//   attachment 1: v_instanceId >= 0 时编码 24-bit instanceId,否则 vec4(0)
+// 编码:uint id → r = (id & 0xFF)/255, g = ((id>>8) & 0xFF)/255, b = ((id>>16) & 0xFF)/255
+// 与 CPU encodeId24() 1:1 对应。
+export const PICK_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+
+flat in vec3 v_pickId;
+flat in float v_instanceId;
+
+layout(location = 0) out vec4 outObjectId;
+layout(location = 1) out vec4 outInstanceId;
+
+vec3 encodeId24(uint id) {
+  float r = float(id & 0xFFu) / 255.0;
+  float g = float((id >> 8) & 0xFFu) / 255.0;
+  float b = float((id >> 16) & 0xFFu) / 255.0;
+  return vec3(r, g, b);
+}
+
+void main() {
+  outObjectId = vec4(v_pickId, 1.0);
+  if (v_instanceId < 0.0) {
+    outInstanceId = vec4(0.0, 0.0, 0.0, 0.0);
+  } else {
+    uint id = uint(v_instanceId + 0.5);
+    outInstanceId = vec4(encodeId24(id), 1.0);
+  }
+}
+`;
+
 // ── 后处理管线扩展 shader ───────────────────────────────────────────
 // 注:已有 SSAO_FRAG 是 G-buffer(depth+normal)版本,供主渲染器使用。
 // 这里新增 SSAO_POST_FRAG 是 post-processing pipeline 兼容的简化版

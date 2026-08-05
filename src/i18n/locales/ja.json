@@ -1218,6 +1218,11 @@
         "title": "フィルムグレイン Film Grain (o3de Atom FilmGrain / three.js FilmShader)",
         "desc": "o3de Atom FilmGrain.azsl + FilmGrainSettings + FilmGrainConstants から適応したシネマティックフィルムグレインポストプロセス Pass。完全な o3de アルゴリズム:(1) grain UV を tilingScale * pixelCoord / grainTextureSize + 24fps アニメーションオフセットで計算(trunc(time * 24) が 24fps フィルムフレームレートを模倣、float2(0.6379, 1.7358) ランダムスキップ);(2) grain を事前計算ノイズテクスチャからサンプリング(Mirror アドレスモード)または手続き型 hash21 ノイズ(デュアルパス);(3) 輝度減衰 4x(1-x) 公式(Rec.601 luma 0.21/0.72/0.07)——純黒(lum=0)/純白(lum=1)でグレイン消失、中間調(lum=0.5)でピーク、リアルフィルムグレインの物理特性を模倣;(4) o3de 準拠の置換型 lerp(rgb = lerp(rgb, grain, intensity))、加算式ではない。パラメータ:intensity(o3de デフォルト 0.2)、luminanceDampening(デフォルト 0.0)、tilingScale(デフォルト 1.0)、size、noiseType(hash/texture)、animated(24fps)。1:1 CPU/GPU リファレンス:filmGrainPixel() 純粋関数 + hash21() が GLSL とビット正確に一致、WebGL なしでテスト可能。27 ユニットテスト。",
         "advantage": "soup3D にはポストプロセスが全くない —— ブルームなし、トーンマッピングなし、フィルムグレインなし、HUD 用の単一フルスクリーン画像オーバーレイのみ;VREEN は輝度減衰(4x(1-x) 中間調ピーク)、24fps アニメーション、grain テクスチャ + 手続き型 hash デュアルパス、1:1 CPU/GPU リファレンスによるヘッドレステスト付きの o3de Atom クラスフィルムグレインを提供(o3de Atom FilmGrain クラスの技術)"
+      },
+      "gpuPicking": {
+        "title": "GPU ピッキング(o3de Atom EditorMeshPickPass / three.js ColorPick)",
+        "desc": "オフスクリーン ID レンダリング + readPixels による O(1) オブジェクトピッキング。o3de Atom EditorMeshPickPass + three.js ColorPickMesh から適応。各ピック可能オブジェクトに稠密 24-bit pickId(最大 16M オブジェクト)を割り当て、RGB にエンコードしてオフスクリーン MRT FBO(attachment 0 = オブジェクト id、attachment 1 = インスタンス id、InstancedMesh 用)に深度テスト付きでレンダリングし、最前面のオブジェクトのみ残す。pick(x,y) は readPixels で 1 ピクセル読み取り O(1) でデコード。pickAt(シングルクリック)、pickRect(ボックス選択 + 重複排除)、InstancedMesh インスタンス別 id 解決をサポート。CPU Raycaster と補完的:GPU ピッキングが O(1) でヒットオブジェクトを特定、Raycaster がその単一オブジェクトの faceIndex/uv/point を精緻化。純 CPU encodeId24/decodeId24 は GLSL encodeId24() とビット級 1:1、WebGL 無しでテスト可能。44 個のユニットテスト。",
+        "advantage": "soup3D は基本的な CPU レイキャストのみ(三角形ごと O(三角形数)、インスタンス id 解決なし、ボックス選択なし);VREEN は O(1) readPixels、24-bit pickId(16M オブジェクト)、MRT デュアルアタッチメント(オブジェクト id + インスタンス id)、InstancedMesh インスタンス別ピッキング、ボックス選択重複排除、performance 用 resolutionScale、1:1 CPU/GPU エンコード/デコードリファレンス付きの o3de Atom クラス GPU ピッキングを提供(o3de Atom EditorMeshPickPass クラスの技術)"
       }
     }
   }
