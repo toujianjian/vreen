@@ -1033,6 +1033,122 @@ soup3D has **no specular AA** — shiny normal-mapped surfaces shimmer at distan
 VREEN's four-technique toolkit matches UE5 `MaterialSpecularAA` /
 `GetRoughnessFromNormalLength` and o3de Atom's `SpecularAA` modifier.
 
+### `ParallaxOcclusionMapping` (`ParallaxOcclusionMapping.ts`)
+
+**Parallax Occlusion Mapping (POM)** — gives flat textured surfaces a 3D
+geometric appearance by ray-marching through a height map in tangent
+space, without adding any vertices. A brick wall, cobblestone floor, or
+embossed tile gains convincing depth and parallax at grazing angles.
+
+Adapted from o3de Atom `ParallaxMapping.azsli`, Real-Time Rendering 4th
+ed. §6.7.1, Tartachuk (2004) "Parallax Occlusion Mapping", and McGuire &
+McGuire (2005) "Bump-Mapped Parallax Mapping".
+
+Five algorithms (matching o3de `ParallaxAlgorithm` enum):
+
+| Algorithm | Description | Cost | Quality |
+|-----------|-------------|------|---------|
+| `basic` | Single-sample offset along view dir. 1 texture fetch. | 1 tap | Lowest (artifacts at grazing angles) |
+| `steep` | Multi-step ray march until first intersection. No interpolation. | N taps | Medium (stair-step artifacts) |
+| `pom` | Steep + linear interpolation between last two samples. | N taps | **Standard AAA** (smooth) |
+| `relief` | Steep + binary search refinement (N extra halving steps). | 2N taps | Highest precision |
+| `contact` | Steep + Contact refinement (Riccardi 2018). | ~1.5N taps | High precision, fewer samples |
+
+Quality presets (step counts, matching o3de `ParallaxQuality`):
+
+| Quality | Steps | Use case |
+|---------|-------|----------|
+| `low` | 16 | Mobile / VR (performance priority) |
+| `medium` | 32 | Default — balanced quality/performance |
+| `high` | 64 | Desktop high-quality |
+| `ultra` | 128 | Cinematic / screenshot |
+
+Optional features:
+- **Self-shadowing**: From the intersection point, march towards the light
+  direction and check if the height field occludes the ray. Produces soft
+  self-shadowing in crevices and under overhangs. Controlled by
+  `enableShadow` + `shadowStrength`.
+- **Pixel Depth Offset (PDO)**: Converts the tangent-space offset back to
+  world space and recomputes `gl_FragDepth`, so parallax surfaces
+  participate correctly in depth testing, shadow receiving, and
+  post-processing (DoF, SSAO, etc.).
+
+| Stage | Function | Description |
+|-------|----------|-------------|
+| Height sampling | `sampleHeightmap(hm, w, h, u, v, wrap)` | Bilinear sample with o3de convention `1.0 - raw.r`. |
+| Normalized depth | `getNormalizedDepth(hm, w, h, u, v, start, stop, invRange, wrap)` | Clamped depth in [0,1] (o3de `GetNormalizedDepth`). |
+| Basic POM | `basicParallaxMapping(hm, w, h, uv, viewDirTS, depthFactor, wrap)` | Single-sample offset (o3de `BasicParallaxMapping`). |
+| Advanced POM | `advancedParallaxMapping(hm, w, h, uv, viewDir, lightDir, depthFactor, depthOffset, numSteps, algorithm, enableShadow, shadowSteps, wrap)` | Multi-step ray march + refinement + optional self-shadow (o3de `AdvancedParallaxMapping`). |
+| Unified entry | `calculateParallaxOffset(hm, w, h, uv, viewDir, lightDir, options, wrap)` | Dispatches to basic or advanced based on `options.algorithm`. |
+| Pixel depth offset | `calcPixelDepthOffset(tangentOffset, posWS, T, B, N, viewProj)` | Tangent→world→clip space depth (o3de `CalcPixelDepthOffset`). |
+
+```ts
+import { calculateParallaxOffset } from '@vreen/engine/materials';
+
+// In vertex shader: compute tangent-space view direction
+// In fragment shader:
+const result = calculateParallaxOffset(
+  heightmapData, heightmapWidth, heightmapHeight,
+  { u: v_uv.x, v: v_uv.y },
+  { x: viewDirTS.x, y: viewDirTS.y, z: viewDirTS.z },
+  { x: lightDirTS.x, y: lightDirTS.y, z: lightDirTS.z },
+  {
+    algorithm: 'pom',       // Standard AAA POM
+    quality: 'medium',      // 32 steps
+    depthFactor: 0.05,      // Parallax depth
+    enableShadow: true,     // Soft self-shadowing
+    shadowStrength: 0.5,
+  },
+);
+
+// Use offset UV for all subsequent texture samples
+const albedo = sampleTexture(albedoMap, result.uv.u, result.uv.v);
+const normal = sampleTexture(normalMap, result.uv.u, result.uv.v);
+// Multiply direct lighting by shadow attenuation
+directLighting *= result.shadowAttenuation;
+```
+
+GLSL chunks for GPU use:
+- `PARALLAX_POM_CHUNK` — Full POM algorithm with self-shadowing + overload
+- `PARALLAX_BASIC_CHUNK` — Single-sample basic parallax (fastest)
+- `PARALLAX_RELIEF_CHUNK` — Steep + binary search (highest precision)
+
+| Property | Default | Notes |
+|----------|---------|-------|
+| `algorithm` | `'pom'` | `'basic'` / `'steep'` / `'pom'` / `'relief'` / `'contact'` |
+| `quality` | `'medium'` | `'low'`(16) / `'medium'`(32) / `'high'`(64) / `'ultra'`(128) |
+| `numSteps` | (from quality) | Override step count directly [1, 256] |
+| `depthFactor` | 0.05 | Parallax depth scale. Larger = stronger effect but more artifacts. |
+| `depthOffset` | 0 | Shifts the height field up/down in tangent space. |
+| `enableShadow` | false | Enable soft self-shadowing. |
+| `shadowSteps` | (auto) | Self-shadow ray march steps. Defaults to `numSteps * currentStep`. |
+| `shadowStrength` | 0.5 | Self-shadow intensity [0, 1]. |
+
+| Feature | VREEN POM | soup3D |
+|---------|-----------|--------|
+| Basic parallax mapping | ✓ | ✗ |
+| Steep parallax mapping | ✓ | ✗ |
+| POM with interpolation | ✓ | ✗ |
+| Relief mapping (binary search) | ✓ | ✗ |
+| Contact refinement (Riccardi 2018) | ✓ | ✗ |
+| Self-shadowing | ✓ | ✗ |
+| Pixel Depth Offset (PDO) | ✓ | ✗ |
+| 5 quality presets (16-128 steps) | ✓ | ✗ |
+| CPU reference + GLSL chunks | ✓ (1:1 with o3de) | ✗ |
+| Normal mapping only | — | ✓ (flat, no depth) |
+
+soup3D has **no parallax occlusion mapping** — flat surfaces remain flat
+even with normal maps (normal maps fake lighting but not geometry
+displacement or parallax at grazing angles). VREEN's POM gives real 3D
+depth perception, matching o3de Atom's `ParallaxMapping` feature and
+UE5's `ParallaxOcclusionMapping` material node.
+
+- o3de Atom `ParallaxMapping.azsli` — reference implementation
+- Real-Time Rendering 4th ed. §6.7.1 — theory
+- Tartachuk (2004) — original POM paper
+- McGuire & McGuire (2005) — relief mapping
+- Andrea Riccardi (2018) — Contact refinement technique
+
 ### `ShaderChunks/` Subdirectory
 
 10 GLSL fragment string constants + `ShaderChunkRegistry`:

@@ -236,4 +236,29 @@ export {
   type GSAAVertex,
   type LEANMapData,
 } from './SpecularAA';
+// 视差遮挡贴图 (Parallax Occlusion Mapping, POM)。
+// 适配自 o3de Atom ParallaxMapping.azsli + RTR4 §6.7.1 + Tartachuk 2004。
+// 5 种算法:Basic(单采样) / Steep(多步射线) / POM(线性插值) /
+// Relief(二分查找) / Contact(Riccardi 2018)。可选自阴影 + 像素深度偏移(PDO)。
+// 质量预设:Low=16 / Medium=32 / High=64 / Ultra=128 步(与 o3de 一致)。
+// 让平坦表面(砖墙 / 鹅卵石 / 地砖)获得 3D 几何般的深度感,无需增加顶点。
+// 纯 CPU Float32Array 参考实现 + GLSL chunk(可直接嵌入 WebGL2 片段着色器)。
+// soup3D 无视差遮挡贴图,仅支持基础法线贴图。
+export {
+  PARALLAX_QUALITY_STEPS,
+  sampleHeightmap,
+  getNormalizedDepth,
+  basicParallaxMapping,
+  advancedParallaxMapping,
+  calculateParallaxOffset,
+  calcPixelDepthOffset,
+  PARALLAX_POM_CHUNK,
+  PARALLAX_BASIC_CHUNK,
+  PARALLAX_RELIEF_CHUNK,
+  type ParallaxAlgorithm,
+  type ParallaxQuality,
+  type ParallaxOptions,
+  type ParallaxResult,
+  type PixelDepthOffset,
+} from './ParallaxOcclusionMapping';
 

@@ -1148,6 +1148,11 @@
         "title": "指数阴影贴图(o3de Atom)",
         "desc": "指数阴影贴图(ESM)CPU 参考实现,适配自 o3de Atom EsmShadowmapsPass + DepthExponentiationPass、Salvi 2008《Fast Shadow Maps on a 1K Budget》与 Annen et al. 2008《Exponential Shadow Maps》。把阴影贴图深度转换到 exp(c·d) 域,使线性 / 高斯滤波在数学上合法(无 PCF 混叠),从而允许对预滤波阴影贴图做硬件 bilinear 采样。可见度公式与 o3de ESM.azsli SampleESM 1:1 对应:visibility = clamp(exp(-c·d_receiver) · ESM[u,v], 0, 1)。管线:expDepthMap(深度指数化)→ filterESM(可分离 Gaussian 或 box H+V 模糊)→ sampleESM(对预滤波纹理 1-tap bilinear)或 sampleESMFiltered(内联 N×N box)。软阴影只需 1-9 tap,PCSS 需 16-41 tap。可配置指数 c(16-bit 纹理 ≤11,32-bit ≤80)、bias、wrap 模式、核(gaussian/box)、半径、sigma、可分离标志。含 sampleESMPCF 用于交叉验证。GLSL chunk ESM_SAMPLE_GLSL 提供匹配的 GPU 函数(sampleESM、sampleESMBox、expDepth)。与 ShadowMapManager(basic/PCF/PCSS)互补,VREEN 现有 4 种阴影方案覆盖全精度-性能谱。纯 CPU Float32Array,无 WebGL 依赖。51 个单元测试。",
         "advantage": "soup3D 仅有基础硬阴影,无 ESM / 软阴影 / PCSS"
+      },
+      "pom": {
+        "title": "视差遮挡贴图(o3de Atom)",
+        "desc": "视差遮挡贴图(POM)CPU 参考实现 + GLSL chunk,适配自 o3de Atom ParallaxMapping.azsli + RTR4 §6.7.1 + Tartachuk 2004《Parallax Occlusion Mapping》+ Riccardi 2018《Contact Refinement Parallax Mapping》。在切线空间中沿高度图射线步进,让平坦纹理表面(砖墙 / 鹅卵石 / 浮雕地砖)在不增加顶点的情况下获得逼真的 3D 几何深度感。5 种算法:basic(单采样偏移)/ steep(多步射线步进)/ pom(steep + 线性插值,AAA 标准)/ relief(steep + 二分查找细化)/ contact(Riccardi 2018 高精度少样本)。可选自阴影(从交点向光源步进检测遮挡,产生柔和缝隙阴影)。可选像素深度偏移(PDO)——将切线空间偏移转回世界空间并重算 gl_FragDepth,以正确进行深度测试和接收阴影。4 档质量预设与 o3de 一致:Low=16 / Medium=32 / High=64 / Ultra=128 步。深度范围保护(stopDepth - startDepth < 0.0001 返回 0)匹配 o3de 边界处理。包裹模式:clamp / repeat。纯 CPU Float32Array 参考 + 3 个 GLSL chunk(PARALLAX_BASIC_CHUNK / PARALLAX_POM_CHUNK / PARALLAX_RELIEF_CHUNK)可直接嵌入 WebGL2 片段着色器。61 个单元测试。",
+        "advantage": "soup3D 仅支持法线贴图(平坦,无深度),无 POM / relief / contact refinement / 自阴影 / PDO"
       }
     }
   }

@@ -1148,6 +1148,11 @@
         "title": "エクスポネンシャルシャドウマップ(o3de Atom)",
         "desc": "エクスポネンシャルシャドウマップ(ESM)CPU リファレンス実装、o3de Atom EsmShadowmapsPass + DepthExponentiationPass、Salvi 2008『Fast Shadow Maps on a 1K Budget』および Annen et al. 2008『Exponential Shadow Maps』から適応。シャドウマップ深度を exp(c·d) ドメインに変換し、線形 / ガウシアンフィルタリングが数学的に合法化(PCF エイリアシングなし)、プレフィルタ済みシャドウマップのハードウェア bilinear サンプリングが可能に。可視度公式は o3de ESM.azsli SampleESM と 1:1 対応:visibility = clamp(exp(-c·d_receiver) · ESM[u,v], 0, 1)。パイプライン:expDepthMap(深度指数化)→ filterESM(分離型 Gaussian または box H+V ブラー)→ sampleESM(プレフィルタ済みテクスチャに 1-tap bilinear)または sampleESMFiltered(インライン N×N box)。ソフトシャドウは 1-9 tap、PCSS は 16-41 tap。設定可能な指数 c(16-bit テクスチャ ≤11、32-bit ≤80)、bias、wrap モード、カーネル(gaussian/box)、半径、sigma、分離フラグ。クロス検証用 sampleESMPCF を含む。GLSL chunk ESM_SAMPLE_GLSL が一致する GPU 関数(sampleESM、sampleESMBox、expDepth)を提供。ShadowMapManager(basic/PCF/PCSS)と補完し、VREEN は全精度-性能スペクトラムをカバーする 4 つのシャドウソリューションを提供。純粋 CPU Float32Array、WebGL 非依存。51 個のユニットテスト。",
         "advantage": "soup3D は基礎的なハードシャドウのみ、ESM / ソフトシャドウ / PCSS なし"
+      },
+      "pom": {
+        "title": "視差オクルージョンマッピング(o3de Atom)",
+        "desc": "視差オクルージョンマッピング(POM)CPU リファレンス + GLSL チャンク。o3de Atom ParallaxMapping.azsli + RTR4 §6.7.1 + Tartachuk 2004『Parallax Occlusion Mapping』+ Riccardi 2018『Contact Refinement Parallax Mapping』から適応。接線空間でハイトマップをレイマーチし、平坦なテクスチャ面(レンガ壁 / 石畳 / 浮彫タイル)に頂点追加なしでリアルな 3D 幾何深度を与える。5 つのアルゴリズム:basic(1 タップ オフセット)/ steep(マルチステップ レイマーチ)/ pom(steep + 線形補間、AAA 標準)/ relief(steep + バイナリサーチ精密化)/ contact(Riccardi 2018 高精度少サンプル)。オプション自己遮蔽(交点から光源へマーチして遮蔽を検出、柔らかい隙間陰影を生成)。オプション ピクセル深度オフセット(PDO)——接線空間オフセットを世界空間へ戻し gl_FragDepth を再計算、正しい深度テストと影受信を実現。4 段階品質プリセットは o3de と一致:Low=16 / Medium=32 / High=64 / Ultra=128 ステップ。深度範囲ガード(stopDepth - startDepth < 0.0001 で 0 を返す)は o3de 境界ケース処理に一致。ラップモード:clamp / repeat。純粋 CPU Float32Array リファレンス + 3 つの GLSL チャンク(PARALLAX_BASIC_CHUNK / PARALLAX_POM_CHUNK / PARALLAX_RELIEF_CHUNK)は WebGL2 フラグメントシェーダーに直接埋め込み可能。61 個のユニットテスト。",
+        "advantage": "soup3D は法線マッピングのみ(平坦、深度なし)、POM / relief / contact refinement / 自己遮蔽 / PDO なし"
       }
     }
   }
