@@ -1067,4 +1067,69 @@ export {
   type TaskShaderInput,
   type MeshShaderInput,
 } from './MeshShaderPipeline';
+// MeshDistanceField — 网格距离场 (MDF) + 距离场软阴影 (DFSS) + 距离场环境光遮蔽 (DFAO)。
+// 适配自 UE5 "Mesh Distance Fields" + "Distance Field Shadowing" +
+// "Distance Field Ambient Occlusion" + Hart 1996 "Sphere Tracing" +
+// Crassin et al. 2011 "Interactive Indirect Illumination Using Voxel Cone Tracing" +
+// Ericson 2005 "Real-Time Collision Detection" §5.1.5(点-三角形距离)。
+// 把网格表面编码为 3D 均匀网格上的有符号距离场,球面追踪沿光线步进,
+// 每步前进"当前点到表面的最短距离",保证不穿透表面 → 无 aliasing,无 acne,自然软阴影。
+// 与 ShadowMapManager(basic/PCF/PCSS)/ ESM / VSM / CSM 互补:
+// 光空间方案受限于纹理分辨率与投影几何,SDF 是世界空间方案,无 bias 调参,无漏光。
+// 同一 SDF 可复用于阴影 (DFSS)、AO (DFAO)、碰撞、GI、粒子碰撞,内存独立于场景复杂度。
+// 纯 CPU Float32Array 实现,无 WebGL 依赖,可在 Node/无头环境测试。
+// soup3D 仅 basic 硬阴影,无 SDF / DFSS / DFAO;VREEN 现有 6 种阴影方案覆盖全精度-性能谱。
+export {
+  // 向量工具
+  vadd as mdfVadd,
+  vsub as mdfVsub,
+  vscale as mdfVscale,
+  vdot as mdfVdot,
+  vcross as mdfVcross,
+  vlength as mdfVlength,
+  vnormalize as mdfVnormalize,
+  // 几何基础
+  pointTriangleDistanceSq,
+  pointAABBSignedDistance,
+  // SDF 构建
+  computeMeshAABB,
+  collectTriangles,
+  isPointInsideMesh,
+  rayTriangleIntersect,
+  buildMeshSDF,
+  buildSphereSDF,
+  buildBoxSDF,
+  // 索引与坐标变换
+  idx3,
+  idx3Dim,
+  worldToVoxel,
+  voxelToWorld,
+  isInsideGrid,
+  // SDF 采样
+  sampleSDFNearest,
+  sampleSDFTrilinear,
+  sampleSDFGradient,
+  // 球面追踪
+  rayMarchSDF,
+  // DFSS / DFAO
+  dfssShadow,
+  dfao,
+  // 工具
+  sdfMemoryBytes,
+  sdfMemoryMB,
+  getSDFStats,
+  // GLSL 着色器块
+  SDF_SAMPLE_GLSL,
+  DFSS_SHADOW_GLSL,
+  DFAO_GLSL,
+  MESH_DISTANCE_FIELD_GLSL,
+  // 类型
+  type MDFVec3,
+  type MeshData as MDFMeshData,
+  type SDFGrid,
+  type SDFBuildOptions,
+  type RayMarchResult,
+  type DFSSOptions,
+  type DFAOOptions,
+} from './MeshDistanceField';
 

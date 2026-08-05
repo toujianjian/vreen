@@ -1163,6 +1163,11 @@
         "title": "Mesh Shader パイプライン(o3de Atom / NVIDIA Turing)",
         "desc": "Mesh Shader パイプライン(Task Shader + Mesh Shader)CPU リファレンス実装。o3de Atom MeshShaderPass / MeshShaderDispatchItem、NVIDIA Turing Mesh Shaders(SIGGRAPH 2019)、Vulkan VK_EXT_mesh_shaderから適応。従来の IA → VS → HS → DS → GS → RS → PS パイプラインを Task Shader → Mesh Shader → RS → PS に置換。Task Shader は 32 meshlet ワークグループで GPU レベルの meshlet カリングを実行: LOD 距離 + 視錐台(球 vs 6 平面)+ 法線コーン背面 + HZB オクルージョン、可視 meshlet を TaskDispatchItem[] に圧縮。Mesh Shader は頂点をクリップ空間に変換し、三角形ごとの背面カリングを実行。WebGL2 は Mesh Shader をネイティブサポートしないため、本モジュールは CPU リファレンス(純粋関数、WebGL 非依存、Node/ヘッドレス環境で実行可能)+ GLSL chunks(TASK_SHADER_GLSL、MESH_SHADER_GLSL)を提供——将来の WebGL2 エミュレーションや WebGPU 統合向け。MeshletRenderer(CPU meshlet 構築)と補完——meshletBoundsToCullData() が両者を橋渡し。14 個の関数と型をエクスポート、74 個のユニットテスト、mat4Multiply は列優先。MeshletRenderer + VisibilityBuffer + HierarchicalZBuffer と組み合わせ、VREEN は UE5 Nanite および o3de Atom MeshletsModule に匹敵する完全な GPU 駆動レンダリングスタックを保有。",
         "advantage": "soup3D は全ジオメトリに従来の IA + VS パイプラインのみを使用、メッシュ全体を一括提交、meshlet 単位のカリングなし、Task/Mesh Shader なし、GPU 駆動 dispatch なし"
+      },
+      "meshDistanceField": {
+        "title": "メッシュ距離場(UE5 / Hart 1996)",
+        "desc": "メッシュ距離場(MDF)+ 距離場ソフトシャドウ(DFSS)+ 距離場アンビエントオクルージョン(DFAO)CPU リファレンス実装。UE5 Mesh Distance Fields + Distance Field Shadowing + Distance Field Ambient Occlusion、Hart 1996 スフィアトレーシング、Crassin 等 2011 ボクセルコーントレーシング、Ericson 2005《リアルタイム衝突検出》§5.1.5(点-三角形距離)から適応。メッシュ表面を 3D 均一グリッドの符号付き距離場(外部正、表面ゼロ、内部負)としてエンコード。スフィアトレーシングは光線に沿って現在の SDF 値ずつ前進し、表面貫通を保証しない: エイリアスなし、アクネなし、バイアス調整不要、コーントレーシングで自然なソフトシャドウ。同一 SDF はシャドウ(DFSS コーントレーシング、penumbra = d / (t * lightSize))、アンビエントオクルージョン(DFAO Fibonacci 半球サンプリング)、衝突、GI、粒子衝突に再利用可能。ワールド空間ソリューションで光空間シャドウ族(basic / PCF / PCSS / ESM / VSM / CSM)を補完: 光空間マップはテクスチャ解像度と投影ジオメトリに制限されるが、SDF はボクセル解像度のみに制約され、視点/光源から独立。黄金比方向 (1, φ⁻¹, φ⁻²) で内外判定パリティカウント、軸整列エッジ/頂点の退化を回避。最小バイアス = 2× ボクセルサイズ(解像度由来、シーン調整不要)。三線形サンプリングは GLSL texture(sampler3D, LINEAR) と一致。レイ-AABB 入口計算でメッシュ AABB 外の点からのシャドウをサポート。68 個のユニットテスト、純粋関数、WebGL 非依存、Node/ヘッドレス環境で実行可能。GLSL chunks(SDF_SAMPLE_GLSL、DFSS_SHADOW_GLSL、DFAO_GLSL)で将来の GPU 統合向け。VREEN は現在 6 種のシャドウソリューション(basic / PCF / PCSS / ESM / VSM / DFSS)を保有、DFSS は唯一のワールド空間オプション。",
+        "advantage": "soup3D は basic ハードシャドウのみでバイアス調整アーティファクトあり; 符号付き距離場なし、ワールド空間シャドウソリューションなし、距離場アンビエントオクルージョンなし、シャドウマップは単一用途のみ"
       }
     }
   }

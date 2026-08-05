@@ -1163,6 +1163,11 @@
         "title": "Mesh Shader 管线(o3de Atom / NVIDIA Turing)",
         "desc": "Mesh Shader 管线(Task Shader + Mesh Shader)CPU 参考实现,适配自 o3de Atom MeshShaderPass / MeshShaderDispatchItem、NVIDIA Turing Mesh Shaders(SIGGRAPH 2019)与 Vulkan VK_EXT_mesh_shader。把传统 IA → VS → HS → DS → GS → RS → PS 管线替换为 Task Shader → Mesh Shader → RS → PS。Task Shader 在 32 meshlet 工作组中做 GPU 级 meshlet 剔除:LOD 距离 + 视锥(球 vs 6 平面)+ 法线锥背面 + HZB 遮挡,把可见 meshlet 压缩成 TaskDispatchItem[]。Mesh Shader 把顶点变换到裁剪空间并做每三角形背面剔除。WebGL2 不原生支持 Mesh Shader,本模块提供 CPU 参考实现(纯函数,无 WebGL 依赖,可在 Node/无头环境运行)+ GLSL chunks(TASK_SHADER_GLSL、MESH_SHADER_GLSL)用于未来 WebGL2 模拟或 WebGPU 集成。与 MeshletRenderer(CPU meshlet 构建)互补——meshletBoundsToCullData() 连接两者。导出 14 个函数与类型,74 个单元测试,mat4Multiply 列主序。与 MeshletRenderer + VisibilityBuffer + HierarchicalZBuffer 组合,VREEN 具备完整 GPU 驱动渲染栈,对标 UE5 Nanite 与 o3de Atom MeshletsModule。",
         "advantage": "soup3D 仅使用传统 IA + VS 管线处理所有几何,整网格提交,无 meshlet 级剔除,无 Task/Mesh Shader,无 GPU 驱动 dispatch"
+      },
+      "meshDistanceField": {
+        "title": "网格距离场(UE5 / Hart 1996)",
+        "desc": "网格距离场(MDF)+ 距离场软阴影(DFSS)+ 距离场环境光遮蔽(DFAO)CPU 参考实现,适配自 UE5 Mesh Distance Fields + Distance Field Shadowing + Distance Field Ambient Occlusion、Hart 1996 球面追踪、Crassin 等 2011 体素锥追踪与 Ericson 2005《实时碰撞检测》§5.1.5(点-三角形距离)。把网格表面编码为 3D 均匀网格有符号距离场(外部为正,表面为零,内部为负)。球面追踪沿光线每步前进当前 SDF 值,保证不穿透表面:无 aliasing,无 acne,无需 bias 调参,锥追踪产生自然软阴影。同一 SDF 可复用于阴影(DFSS 锥追踪,penumbra = d / (t * lightSize))、环境光遮蔽(DFAO Fibonacci 半球采样)、碰撞、GI 与粒子碰撞。世界空间方案,与光空间阴影族(basic / PCF / PCSS / ESM / VSM / CSM)互补:光空间贴图受限于纹理分辨率与投影几何,SDF 仅受体素分辨率约束,独立于视角/光源。黄金比例方向 (1, φ⁻¹, φ⁻²) 用于内外判定奇偶计数,避免轴对齐边/顶点退化。最小偏置 = 2× 体素尺寸(由分辨率推导,非场景调参)。三线性采样与 GLSL texture(sampler3D, LINEAR) 一致。射线-AABB 入口计算支持网格 AABB 外点的阴影。68 个单元测试,纯函数,无 WebGL 依赖,可在 Node/无头环境运行。GLSL chunks(SDF_SAMPLE_GLSL、DFSS_SHADOW_GLSL、DFAO_GLSL)用于未来 GPU 集成。VREEN 现有 6 种阴影方案(basic / PCF / PCSS / ESM / VSM / DFSS)覆盖全精度-性能谱,DFSS 是唯一世界空间方案。",
+        "advantage": "soup3D 仅 basic 硬阴影且存在 bias 调参伪影;无符号距离场,无世界空间阴影方案,无距离场环境光遮蔽,阴影贴图仅单一用途"
       }
     }
   }

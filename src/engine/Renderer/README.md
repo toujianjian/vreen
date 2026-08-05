@@ -3007,6 +3007,352 @@ void main() {
 
 ---
 
+### Mesh Distance Field (`MeshDistanceField.ts`)
+
+**Mesh Distance Field (MDF)** — a *world-space* signed distance field
+(SDF) representation of mesh surfaces, plus **Distance Field Soft
+Shadows (DFSS)** and **Distance Field Ambient Occlusion (DFAO)**
+algorithms built on top of it. Adapted from UE5 "Mesh Distance Fields"
++ "Distance Field Shadowing" + "Distance Field Ambient Occlusion",
+Hart 1996 "Sphere Tracing", Crassin et al. 2011 (cone tracing idea),
+and Ericson 2005 "Real-Time Collision Detection" §5.1.5 (point-
+triangle distance).
+
+This is the **world-space** counterpart to the existing *light-space*
+shadow family (`ShadowMapManager` basic/PCF/PCSS, `CascadedShadowMap`,
+`ExponentialShadowMap`, `VirtualShadowMap`). Light-space shadow maps
+rasterize depth in light clip space — they are bounded by texture
+resolution and light projection geometry, and produce aliasing, acne,
+peter-panning, and light leaking artifacts that require bias tuning.
+MDF instead encodes the surface as a continuous 3D scalar field:
+positive outside, zero on the surface, negative inside. **Sphere
+tracing** advances along a ray by the current SDF value, guaranteeing
+no surface penetration — no aliasing, no acne, no bias tuning, and
+natural soft shadows from cone tracing.
+
+soup3D has only basic hard shadows. VREEN now has **6 shadow
+solutions** (basic / PCF / PCSS / ESM / VSM / DFSS) covering the full
+performance/quality spectrum, and DFSS is the only **world-space**
+option that the light-space family cannot replace.
+
+**Why SDF vs shadow maps?**
+
+| Aspect | Shadow Maps (basic/PCF/PCSS/ESM/VSM) | Mesh Distance Field (DFSS/DFAO) |
+|--------|---------------------------------------|----------------------------------|
+| Working space | Light clip space (rasterized depth) | World space (3D scalar field) |
+| Resolution dependence | Texel density in light frustum | Voxel grid resolution (independent of view/light) |
+| Aliasing | Yes (PCF/PCSS tap patterns, VSM bleeding, ESM leaking) | No (continuous trilinear interpolation) |
+| Acne / peter-panning | Yes (requires bias tuning) | No (no depth comparison) |
+| Soft shadows | PCSS (16-41 taps) / ESM (blur) / VSM (variance) | Cone tracing (mathematically strict penumbra) |
+| Ambient occlusion | Not supported (needs SSAO/GTAO separate) | Same SDF reused for DFAO |
+| Multi-purpose | Shadow only | Shadow + AO + collision + GI + particle collision |
+| Memory | 2D texture (light atlas) | 3D texture (O(N³) voxels) |
+| Build cost | Per-frame (cheap) | Once (baked, expensive) |
+| Dynamic meshes | Yes (per-frame) | No (requires rebuild or SDF composition) |
+| Best use case | Large outdoor dynamic scenes (CSM) | Static / semi-static geometry, characters, interiors |
+
+**Data model:**
+
+```ts
+interface SDFGrid {
+  data: Float32Array;        // dimX × dimY × dimZ, row-major (z → y → x)
+  dimX, dimY, dimZ: number;  // voxel resolution per axis
+  boundsMin: MDFVec3;        // world-space AABB min corner
+  boundsMax: MDFVec3;        // world-space AABB max corner
+  voxelSize: MDFVec3;        // world size of one voxel (x, y, z)
+  maxDistance: number;       // truncation distance (saves memory)
+}
+```
+
+**Pipeline:**
+
+| Stage | Function | Description |
+|-------|----------|-------------|
+| 1. Build AABB | `computeMeshAABB(mesh)` | Compute world-space bounding box of mesh vertices. |
+| 2. Collect triangles | `collectTriangles(mesh)` | Flatten indexed / non-indexed mesh into `MDFVec3[][]`. |
+| 3. Inside test | `isPointInsideMesh(p, triangles)` | Parity-count ray-triangle intersections along a golden-ratio direction `(1, φ⁻¹, φ⁻²)` (avoids axis-aligned edge/vertex degeneracies). |
+| 4. Build SDF | `buildMeshSDF(mesh, opts)` | For each voxel center: brute-force nearest triangle distance (Ericson RTCD §5.1.5) + inside test → signed distance, truncated to `±maxDistance`. AABB early-out for far voxels. |
+| 5. Sample (nearest) | `sampleSDFNearest(sdf, p)` | Voxelize `p`, return data[idx] (out-of-grid → +∞). |
+| 6. Sample (trilinear) | `sampleSDFTrilinear(sdf, p)` | 8-tap trilinear interpolation (matches GLSL `texture(sampler3D, LINEAR)`). |
+| 7. Gradient / normal | `sampleSDFGradient(sdf, p)` | Central-difference gradient → surface normal (matches `computeNormalFromSDF()`). |
+| 8. Sphere trace | `rayMarchSDF(sdf, origin, dir, ...)` | Hart 1996 algorithm: advance `t += d` each step until `d < ε` (hit) or `t > maxDistance` (miss). Auto-advances to grid boundary if origin is outside. |
+| 9. DFSS shadow | `dfssShadow(sdf, point, lightDir, lightDistance, opts)` | Cone-tracing soft shadow: along light direction, record min visibility = `d / (t * lightSize + bias * lightSize)`; SDF < ε → fully occluded (returns 0). |
+| 10. DFAO | `dfao(sdf, point, normal, opts)` | Hemisphere cone tracing: emit `numSamples` Fibonacci-distributed rays in the normal hemisphere, sphere-trace each, accumulate occlusion = `max(0, 1 - dist / radius)`. |
+
+**Inside test (parity rule):**
+
+The classic even-odd rule: cast a ray from the query point and count
+triangle intersections — even count = outside, odd = inside. The
+challenge is that axis-aligned rays `(1, 0, 0)` can hit shared
+edges/vertices/diagonals and produce ambiguous counts. VREEN uses
+the **golden ratio direction** `(1, φ⁻¹, φ⁻²) ≈ (1, 0.618, 0.382)`
+which has different magnitudes on each axis and is statistically
+almost impossible to align with any geometric feature. An `axis`
+parameter allows switching the dominant axis for thin geometry
+(`'x' | 'y' | 'z'`).
+
+**Sphere tracing (Hart 1996):**
+
+```
+t = 0  (or ray-AABB entry t if origin is outside the grid)
+loop maxSteps:
+  p = origin + t * dir
+  d = sampleSDFTrilinear(sdf, p)
+  if !isFinite(d):  return miss (left grid)
+  if d < ε:         return hit at p
+  if t > maxDist:   return miss
+  t += max(d, ε/2)  // advance by current SDF value
+```
+
+Key property: the step size equals the distance to the nearest
+surface, so the ray **cannot overshoot** — this is what eliminates
+aliasing and acne. Far from the surface, steps are large (fast); near
+the surface, steps shrink (precise).
+
+**DFSS (cone tracing soft shadow):**
+
+```
+origin = point + lightDir * bias    // avoid self-intersection
+t = 0
+minVisibility = 1.0
+for step in 0..maxSteps:
+  p = origin + lightDir * t
+  d = sampleSDFTrilinear(sdf, p)
+  if !isFinite(d):  break (left grid, no occlusion)
+  if d < hitEpsilon:  return 0.0   // hit surface, fully occluded
+  // Cone tracing: penumbra width at distance t with light source size S
+  // is t * S. The SDF value d is the radius of the unoccluded sphere
+  // around p. Visibility ≈ d / (t * S + bias * S).
+  penumbra = d / (t * lightSize + bias * lightSize)
+  visibility = min(1.0, penumbra * sharpness)
+  minVisibility = min(minVisibility, visibility)
+  t += max(d, hitEpsilon / 2)      // sphere-trace step
+return minVisibility
+```
+
+Physical interpretation: the SDF value `d` at point `p` is the radius
+of a sphere centered at `p` that is guaranteed to be empty. If that
+sphere is large compared to the cone radius `t * lightSize` at that
+distance, the point is "lit" (small penumbra); if it's small, the
+point is in the penumbra of an occluder. Accumulating the minimum
+visibility across the ray gives the soft shadow.
+
+**DFAO (hemisphere cone tracing):**
+
+Emit `numSamples` rays in the normal hemisphere using a Fibonacci
+sphere distribution (golden-angle). For each ray, sphere-trace up to
+`radius` distance. If a hit occurs at distance `d`, occlusion =
+`max(0, 1 - d / radius)`. Average all rays, multiply by `strength`,
+subtract from 1. The result is more stable than SSAO/GTAO (no
+screen-space noise, no edge artifacts) and more accurate than HBAO
+(full hemisphere coverage).
+
+**Bias handling:**
+
+Both DFSS and DFAO enforce a **minimum bias of `2 × voxelSize`** to
+prevent the surface-near region (where SDF ≈ 0) from being
+misclassified as a hit. This is the SDF equivalent of the shadow-map
+bias, but it's derived from the voxel resolution rather than tuned
+per scene.
+
+**Coordinate transforms:**
+
+| Transform | Function | Formula |
+|-----------|----------|---------|
+| World → voxel (float) | `worldToVoxel(p, sdf)` | `(p - boundsMin) / voxelSize - 0.5` |
+| Voxel → world | `voxelToWorld(v, sdf)` | `(v + 0.5) * voxelSize + boundsMin` |
+| Voxel index (uniform) | `idx3(x, y, z, dim)` | `(z * dim + y) * dim + x` |
+| Voxel index (non-uniform) | `idx3Dim(x, y, z, dimX, dimY)` | `(z * dimY + y) * dimX + x` |
+| Inside grid test | `isInsideGrid(p, sdf)` | `boundsMin ≤ p ≤ boundsMax` (all axes) |
+
+**Analytic SDF builders (for testing / simple scenes):**
+
+- `buildSphereSDF(center, radius, boundsMin, boundsMax, resolution)` —
+  `d = |p - center| - radius`
+- `buildBoxSDF(boxMin, boxMax, boundsMin, boundsMax, resolution)` —
+  uses `pointAABBSignedDistance` (positive outside, negative inside,
+  zero on the surface).
+
+**API surface:**
+
+```ts
+import {
+  // Vector utilities (prefixed mdf to avoid collision with SSGI)
+  mdfVadd, mdfVsub, mdfVscale, mdfVdot, mdfVcross, mdfVlength, mdfVnormalize,
+  // Geometry
+  pointTriangleDistanceSq,    // Ericson RTCD §5.1.5
+  pointAABBSignedDistance,    // signed distance to AABB
+  // SDF construction
+  computeMeshAABB,            // mesh → world AABB
+  collectTriangles,           // mesh → MDFVec3[][]
+  isPointInsideMesh,          // parity rule with golden-ratio direction
+  rayTriangleIntersect,       // Möller–Trumbore
+  buildMeshSDF,               // mesh → SDFGrid (brute-force, with AABB early-out)
+  buildSphereSDF,             // analytic sphere SDF
+  buildBoxSDF,                // analytic box SDF
+  // Indexing & coordinates
+  idx3, idx3Dim,              // voxel index helpers
+  worldToVoxel, voxelToWorld, // coordinate transforms
+  isInsideGrid,               // bounds check
+  // Sampling
+  sampleSDFNearest,           // 1-tap nearest
+  sampleSDFTrilinear,         // 8-tap trilinear (GPU texture3D equivalent)
+  sampleSDFGradient,          // central-difference normal estimation
+  // Sphere tracing
+  rayMarchSDF,                // Hart 1996, with ray-AABB entry computation
+  // Algorithms
+  dfssShadow,                 // distance field soft shadows (cone tracing)
+  dfao,                       // distance field ambient occlusion (hemisphere)
+  // Utilities
+  sdfMemoryBytes, sdfMemoryMB, getSDFStats,
+  // GLSL chunks (for GPU integration)
+  SDF_SAMPLE_GLSL,            // sampleSDF + sampleSDFGradient
+  DFSS_SHADOW_GLSL,           // dfssShadow
+  DFAO_GLSL,                  // dfao
+  MESH_DISTANCE_FIELD_GLSL,   // all three combined
+  // Types
+  type MDFVec3, type MDFMeshData, type SDFGrid,
+  type SDFBuildOptions, type RayMarchResult,
+  type DFSSOptions, type DFAOOptions,
+} from '@vreen/engine/renderer';
+```
+
+**Usage (CPU reference):**
+
+```ts
+import {
+  buildMeshSDF, dfssShadow, dfao, sampleSDFGradient,
+  type MDFMeshData,
+} from '@vreen/engine/renderer';
+
+// 1. Build SDF (one-time, bake offline for static meshes)
+const mesh: MDFMeshData = {
+  positions: meshPositions, // Float32Array (xyz interleaved)
+  indices: meshIndices,     // Uint32Array
+};
+const sdf = buildMeshSDF(mesh, {
+  resolution: 32,    // 32³ = 32768 voxels
+  padding: 0.1,      // expand AABB by 0.1 world units
+  signed: true,      // negative inside, positive outside
+});
+console.log(getSDFStats(sdf));
+// → { dimX: 32, dimY: 32, dimZ: 32, totalVoxels: 32768,
+//     memoryMB: 0.125, maxDistance: ..., bounds: ..., voxelSize: ... }
+
+// 2. Compute soft shadow for a surface point
+const lightDir = { x: 0.5, y: 0.8, z: 0.3 }; // direction TO light
+const surfacePoint = { x: 1.0, y: 0.5, z: 0.0 };
+const visibility = dfssShadow(sdf, surfacePoint, lightDir, Infinity, {
+  lightSize: 0.1,     // larger → softer shadows
+  maxDistance: 10.0,
+  maxSteps: 32,
+  sharpness: 1.0,
+});
+// visibility ∈ [0, 1], 0 = fully shadowed, 1 = fully lit
+
+// 3. Compute ambient occlusion
+const normal = sampleSDFGradient(sdf, surfacePoint);
+const ao = dfao(sdf, surfacePoint, normal, {
+  radius: 1.0,        // AO influence radius
+  numSamples: 8,      // hemisphere rays (Fibonacci distribution)
+  strength: 1.0,
+});
+// ao ∈ [0, 1], 0 = fully occluded, 1 = no occlusion
+```
+
+**Usage (GPU path, GLSL chunks):**
+
+```glsl
+uniform sampler3D uSDF;
+uniform vec3 uSDFMin, uSDFMax;  // world-space AABB
+uniform vec3 uSDFVoxelSize;
+
+// inject SDF_SAMPLE_GLSL
+float d = sampleSDF(uSDF, uSDFMin, uSDFMax, worldPos);
+vec3 n = sampleSDFGradient(uSDF, uSDFMin, uSDFMax, worldPos, uSDFVoxelSize);
+
+// inject DFSS_SHADOW_GLSL
+float shadow = dfssShadow(uSDF, uSDFMin, uSDFMax, worldPos,
+                           lightDir, lightSize, maxDist, maxSteps);
+
+// inject DFAO_GLSL
+float ao = dfao(uSDF, uSDFMin, uSDFMax, worldPos, normal,
+                radius, numSamples, maxSteps);
+```
+
+**Design choices:**
+
+- **Brute-force SDF build** — O(voxels × triangles). Sufficient for
+  small meshes (32³ × few hundred triangles). Large production meshes
+  should use a BVH (not implemented here; future GPU path will use
+  compute shaders with morton-ordered voxel dispatch).
+- **Golden-ratio inside-test direction** — `(1, φ⁻¹, φ⁻²)` avoids
+  axis-aligned degeneracies that cause parity errors on shared
+  edges/vertices. The `axis` parameter allows dominant-axis switching
+  for thin geometry (e.g., walls aligned to one axis).
+- **Trilinear sampling** — matches GLSL `texture(sampler3D, uvw)` in
+  `LINEAR` filter mode, so CPU and GPU produce identical results
+  (within float precision). Out-of-grid returns `+∞` (fully outside,
+  no occlusion).
+- **Sphere tracing with ray-AABB entry** — if the ray origin is
+  outside the SDF grid, `rayMarchSDF` first computes the entry `t`
+  via the slab method and advances to the boundary. This allows
+  shadows from points outside the mesh's AABB (e.g., a character
+  standing next to a building).
+- **Cone tracing for DFSS** — UE5's algorithm: at each step, the SDF
+  value `d` represents an unoccluded sphere radius, and the cone
+  radius at distance `t` is `t * lightSize`. The ratio
+  `d / (t * lightSize)` is the local visibility. Accumulating the
+  minimum gives the final soft shadow. `sharpness > 1` sharpens,
+  `sharpness < 1` softens.
+- **Minimum bias = 2 × voxelSize** — enforced in both `dfssShadow`
+  and `dfao` to prevent the surface-near region (SDF ≈ 0) from being
+  misclassified as a hit. This is resolution-derived, not scene-tuned.
+- **Fibonacci hemisphere** — for DFAO, directions are generated using
+  the golden-angle Fibonacci spiral, which gives more uniform
+  coverage than random sampling and is deterministic (no noise seed
+  needed). The local `+Z` is aligned to the surface normal via a TBN
+  basis.
+- **Memory** — `Float32Array` of size `dimX × dimY × dimZ`. A 32³
+  grid is 128 KB; a 64³ grid is 1 MB; a 128³ grid is 8 MB. Use
+  `maxDistance` truncation to avoid wasting memory on far voxels.
+- **GLSL chunks** — `SDF_SAMPLE_GLSL`, `DFSS_SHADOW_GLSL`,
+  `DFAO_GLSL` are provided for future GPU integration. They mirror
+  the CPU functions 1:1, so test results transfer directly.
+- **Complements, does not replace, light-space shadows** — DFSS is
+  best for static / semi-static geometry (characters, interiors,
+  props) where the SDF can be baked once. For dynamic geometry
+  (animated characters, moving objects), light-space shadows (PCSS,
+  ESM, VSM) remain the better choice. A typical scene uses CSM for
+  outdoor sun shadows + DFSS for indoor static occluders.
+
+**Comparison to soup3D:**
+
+| Feature | soup3D | VREEN |
+|---------|--------|-------|
+| Hard shadows | ✓ (basic shadow map) | ✓ (basic / PCF) |
+| PCF soft shadows | ✗ | ✓ (PCF / PCSS) |
+| Exponential Shadow Maps | ✗ | ✓ (ESM) |
+| Virtual Shadow Maps | ✗ | ✓ (VSM) |
+| Cascaded Shadow Maps | ✗ | ✓ (CSM/PSSM) |
+| Mesh Distance Field | ✗ | ✓ (MDF) |
+| Distance Field Soft Shadows | ✗ | ✓ (DFSS) |
+| Distance Field Ambient Occlusion | ✗ | ✓ (DFAO) |
+| World-space shadow solution | ✗ | ✓ (SDF-based) |
+| Multi-purpose (shadow + AO + collision) | ✗ | ✓ (single SDF) |
+
+**References:**
+- UE5 `Engine/Source/Runtime/Engine/Private/DistanceFieldAtlas.cpp` — SDF storage + streaming
+- UE5 `Engine/Source/Runtime/Renderer/Private/DistanceFieldShading.cpp` — DFSS + DFAO
+- Hart 1996 "Sphere Tracing: A Geometric Method for the Antialiased Ray Tracing of Implicit Surfaces" — sphere tracing algorithm
+- Crassin et al. 2011 "Interactive Indirect Illumination Using Voxel Cone Tracing" — cone tracing idea
+- Ericson 2005 "Real-Time Collision Detection" §5.1.5 — point-triangle closest point
+- Möller & Trumbore 1997 "Fast, Minimum Storage Ray-Triangle Intersection" — ray-triangle test
+- Annen et al. 2008 "Exponential Shadow Maps" — comparison (light-space alternative)
+- Salvi 2008 "Fast Shadow Maps on a 1K Budget" — ESM comparison
+
+---
+
 **Why MRT + GBuffer?** Forward rendering (the current main path) shades
 each fragment once with all lights. For scenes with many lights,
 forward rendering becomes fill-rate-bound. Deferred rendering shades
