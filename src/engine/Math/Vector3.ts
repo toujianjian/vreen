@@ -58,8 +58,43 @@ export class Vector3 {
     return this.multiplyScalar(1 / s);
   }
 
+  /** Component-wise multiply: this = this * v. Mirrors three.js Vector3.multiply. */
+  multiply(v: Vector3): this {
+    this.x *= v.x;
+    this.y *= v.y;
+    this.z *= v.z;
+    return this;
+  }
+
+  /** Component-wise divide: this = this / v. Mirrors three.js Vector3.divide. */
+  divide(v: Vector3): this {
+    this.x /= v.x;
+    this.y /= v.y;
+    this.z /= v.z;
+    return this;
+  }
+
+  /** Component-wise: this = a * b. Mirrors three.js Vector3.multiplyVectors. */
+  multiplyVectors(a: Vector3, b: Vector3): this {
+    this.x = a.x * b.x;
+    this.y = a.y * b.y;
+    this.z = a.z * b.z;
+    return this;
+  }
+
   dot(v: Vector3): number {
     return this.x * v.x + this.y * v.y + this.z * v.z;
+  }
+
+  /**
+   * Angle (radians) between this and v. Both vectors are treated as directions;
+   * zero-length vectors return 0. Mirrors three.js Vector3.angleTo.
+   */
+  angleTo(v: Vector3): number {
+    const denom = Math.sqrt(this.lengthSq() * v.lengthSq());
+    if (denom === 0) return 0;
+    const cos = Math.max(-1, Math.min(1, this.dot(v) / denom));
+    return Math.acos(cos);
   }
 
   cross(v: Vector3): this {
