@@ -38,35 +38,40 @@ export class Matrix4 {
     return this.multiplyMatrices(m, this);
   }
 
+  /** 标准列主序矩阵乘法:this = a × b。与 three.js 语义一致
+   *  (multiply = this×m, premultiply = m×this)。
+   *  注意:历史版本曾错误实现为 b×a,导致 Object3D 世界矩阵组合
+   *  (parent×local) 被算成 local×parent,现已修正为本标准语义。 */
   multiplyMatrices(a: Matrix4, b: Matrix4): this {
     const ae = a.elements;
     const be = b.elements;
     const e = this.elements;
     // Manual unroll — perf matters; we call this every frame.
+    // 结果第 (i,j) 项 = a 第 i 行 · b 第 j 列。
     const a11 = ae[0],  a12 = ae[4],  a13 = ae[8],  a14 = ae[12];
     const a21 = ae[1],  a22 = ae[5],  a23 = ae[9],  a24 = ae[13];
     const a31 = ae[2],  a32 = ae[6],  a33 = ae[10], a34 = ae[14];
     const a41 = ae[3],  a42 = ae[7],  a43 = ae[11], a44 = ae[15];
-    let b11 = be[0],  b12 = be[4],  b13 = be[8],  b14 = be[12];
-    e[0]  = b11 * a11 + b12 * a21 + b13 * a31 + b14 * a41;
-    e[4]  = b11 * a12 + b12 * a22 + b13 * a32 + b14 * a42;
-    e[8]  = b11 * a13 + b12 * a23 + b13 * a33 + b14 * a43;
-    e[12] = b11 * a14 + b12 * a24 + b13 * a34 + b14 * a44;
-    b11 = be[1];  b12 = be[5];  b13 = be[9];  b14 = be[13];
-    e[1]  = b11 * a11 + b12 * a21 + b13 * a31 + b14 * a41;
-    e[5]  = b11 * a12 + b12 * a22 + b13 * a32 + b14 * a42;
-    e[9]  = b11 * a13 + b12 * a23 + b13 * a33 + b14 * a43;
-    e[13] = b11 * a14 + b12 * a24 + b13 * a34 + b14 * a44;
-    b11 = be[2];  b12 = be[6];  b13 = be[10]; b14 = be[14];
-    e[2]  = b11 * a11 + b12 * a21 + b13 * a31 + b14 * a41;
-    e[6]  = b11 * a12 + b12 * a22 + b13 * a32 + b14 * a42;
-    e[10] = b11 * a13 + b12 * a23 + b13 * a33 + b14 * a43;
-    e[14] = b11 * a14 + b12 * a24 + b13 * a34 + b14 * a44;
-    b11 = be[3];  b12 = be[7];  b13 = be[11]; b14 = be[15];
-    e[3]  = b11 * a11 + b12 * a21 + b13 * a31 + b14 * a41;
-    e[7]  = b11 * a12 + b12 * a22 + b13 * a32 + b14 * a42;
-    e[11] = b11 * a13 + b12 * a23 + b13 * a33 + b14 * a43;
-    e[15] = b11 * a14 + b12 * a24 + b13 * a34 + b14 * a44;
+    let b11 = be[0],  b21 = be[1],  b31 = be[2],  b41 = be[3];
+    e[0]  = a11 * b11 + a12 * b21 + a13 * b31 + a14 * b41;
+    e[1]  = a21 * b11 + a22 * b21 + a23 * b31 + a24 * b41;
+    e[2]  = a31 * b11 + a32 * b21 + a33 * b31 + a34 * b41;
+    e[3]  = a41 * b11 + a42 * b21 + a43 * b31 + a44 * b41;
+    b11 = be[4];  b21 = be[5];  b31 = be[6];  b41 = be[7];
+    e[4]  = a11 * b11 + a12 * b21 + a13 * b31 + a14 * b41;
+    e[5]  = a21 * b11 + a22 * b21 + a23 * b31 + a24 * b41;
+    e[6]  = a31 * b11 + a32 * b21 + a33 * b31 + a34 * b41;
+    e[7]  = a41 * b11 + a42 * b21 + a43 * b31 + a44 * b41;
+    b11 = be[8];  b21 = be[9];  b31 = be[10]; b41 = be[11];
+    e[8]  = a11 * b11 + a12 * b21 + a13 * b31 + a14 * b41;
+    e[9]  = a21 * b11 + a22 * b21 + a23 * b31 + a24 * b41;
+    e[10] = a31 * b11 + a32 * b21 + a33 * b31 + a34 * b41;
+    e[11] = a41 * b11 + a42 * b21 + a43 * b31 + a44 * b41;
+    b11 = be[12]; b21 = be[13]; b31 = be[14]; b41 = be[15];
+    e[12] = a11 * b11 + a12 * b21 + a13 * b31 + a14 * b41;
+    e[13] = a21 * b11 + a22 * b21 + a23 * b31 + a24 * b41;
+    e[14] = a31 * b11 + a32 * b21 + a33 * b31 + a34 * b41;
+    e[15] = a41 * b11 + a42 * b21 + a43 * b31 + a44 * b41;
     return this;
   }
 

@@ -32,7 +32,8 @@ describe('BRDFLUT', () => {
     it('默认 size=256', () => {
       const lut = BRDFLUT.generate();
       expect(lut.size).toBe(256);
-    });
+      // 256×256×1024 ≈ 6700 万次带三角函数积分,慢机器可能超过默认 5s 超时。
+    }, 30000);
 
     it('数据长度 = size * size * 2', () => {
       const lut = BRDFLUT.generate({ size: 64 });

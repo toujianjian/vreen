@@ -371,11 +371,11 @@ describe('VignettePass (enhanced)', () => {
 // ── FilmGrainPass ───────────────────────────────────────────────────
 
 describe('FilmGrainPass', () => {
-  it('defaults to intensity 0.25, size 1.5, animated true', () => {
+  it('defaults to intensity 0.2, size 1.5, animated true', () => {
     const p = new FilmGrainPass();
     expect(p.name).toBe('film-grain');
     expect(p.enabled).toBe(false);
-    expect(p.intensity).toBe(0.25);
+    expect(p.intensity).toBe(0.2);
     expect(p.size).toBe(1.5);
     expect(p.animated).toBe(true);
     expect(p.time).toBe(0.0);

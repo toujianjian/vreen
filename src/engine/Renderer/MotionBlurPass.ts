@@ -201,9 +201,8 @@ export class MotionBlurPass {
     vbuf.fill(0);
 
     // 当前帧 VP = projection * view。
-    // 注意:VREEN 的 multiplyMatrices(a, b) 计算 b * a(与 three.js 相反),
-    // 因此为得到 P * V,参数顺序应为 (V, P)。
-    const currVP = new Matrix4().multiplyMatrices(camera.matrixWorldInverse, camera.projectionMatrix);
+    // 标准列主序:multiplyMatrices(a, b) = a × b,故取 (projection, view)。
+    const currVP = new Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
 
     let objectsProcessed = 0;
     let pixelsWritten = 0;
@@ -332,7 +331,7 @@ export class MotionBlurPass {
     let camVelData: Float32Array | null = null;
     let maxCamVel = 0;
     if (this.cameraMotionEnabled && this.prevViewProjection !== null) {
-      const currVP = new Matrix4().multiplyMatrices(camera.matrixWorldInverse, camera.projectionMatrix);
+      const currVP = new Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
       const invCurr = new Matrix4().getInverse(currVP);
       const prevVP = this.prevViewProjection;
       camVelData = new Float32Array(iw * ih * 2);

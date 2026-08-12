@@ -88,11 +88,9 @@ export class VelocityPass {
   updateMatrices(camera: Camera): void {
     // prev ← curr
     this.prevViewProjection.copy(this.currViewProjection);
-    // curr ← view * projection
-    // camera.matrixWorldInverse 是 view,camera.projectionMatrix 是 projection。
-    // 注意:Matrix4.multiplyMatrices(a, b) 等价 a * b;view-projection = view * projection? 不,通常是 projection * view。
-    // 我们的 VELOCITY_FRAG 中:u_currViewProjection * vec4(worldPos,1.0) 得到 clip 空间,
-    // 因此传给 shader 的应是 projection * view。这里按 multiplyMatrices(projection, view)。
+    // curr ← projection * view(camera.matrixWorldInverse 是 view,projectionMatrix 是 projection)。
+    // VELOCITY_FRAG 中 u_currViewProjection * vec4(worldPos,1.0) 把世界坐标变换到 clip 空间,
+    // 标准列主序 multiplyMatrices(a, b) = a × b,故取 (projection, view)。
     this.currViewProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
   }
 

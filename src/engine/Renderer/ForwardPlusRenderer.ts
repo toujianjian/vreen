@@ -496,9 +496,8 @@ export class ForwardPlusRenderer {
    */
   cullLights(lights: ForwardPlusLight[], camera: Camera): ForwardPlusLight[] {
     this._viewMatrix.getInverse(camera.matrixWorld);
-    // VREEN 的 multiplyMatrices(a, b) 计算 b * a(与 three.js 相反),
-    // 为得到 P * V,参数顺序应为 (V, P)。参见 MotionBlurPass.ts:204 注释。
-    this._viewProj.multiplyMatrices(this._viewMatrix, camera.projectionMatrix);
+    // 标准列主序:multiplyMatrices(a, b) = a × b,投影 × 视图 = projection * view。
+    this._viewProj.multiplyMatrices(camera.projectionMatrix, this._viewMatrix);
     this._frustum.setFromViewProjectionMatrix(this._viewProj);
 
     const visible: ForwardPlusLight[] = [];
@@ -533,8 +532,8 @@ export class ForwardPlusRenderer {
    */
   computeLightTiles(lights: ForwardPlusLight[], camera: Camera): void {
     this._viewMatrix.getInverse(camera.matrixWorld);
-    // VREEN 的 multiplyMatrices(a, b) 计算 b * a,为得到 P * V 顺序为 (V, P)。
-    this._viewProj.multiplyMatrices(this._viewMatrix, camera.projectionMatrix);
+    // 标准列主序:投影 × 视图 = projection * view。
+    this._viewProj.multiplyMatrices(camera.projectionMatrix, this._viewMatrix);
 
     const tx = this.tileCount.x;
     const ty = this.tileCount.y;
