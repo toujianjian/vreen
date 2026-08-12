@@ -162,7 +162,10 @@ describe('ShaderCompiler injectChunks', () => {
     const compiler = new ShaderCompiler(reg);
     const src = `void main() {}`;
     const out = compiler.injectChunks(src, ['COMMON']);
-    expect(out.startsWith('float helper')).toBe(true);
+    // inject() 输出为 `#define CHUNK_<NAME>\n<glsl>`,故源码以 #define 头开头,
+    // chunk 内容紧随其后、且位于 main() 之前。
+    expect(out.startsWith('#define CHUNK_COMMON\nfloat helper')).toBe(true);
+    expect(out.indexOf('float helper')).toBeLessThan(out.indexOf('void main'));
   });
 
   it('throws on unregistered chunk', () => {

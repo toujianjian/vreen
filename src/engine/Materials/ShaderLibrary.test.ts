@@ -22,17 +22,18 @@ describe('ShaderLibrary construction', () => {
   it('default loads all 15 builtins', () => {
     const lib = new ShaderLibrary(true);
     expect(lib.size()).toBe(15);
+    // list() 按字典序返回(见 ShaderLibrary.list 文档),这里断言字典序而非注册顺序。
     expect(lib.list()).toEqual([
       'blinn-phong',
       'diffuse',
       'env-map',
       'fur',
+      'parallax',
+      'particle',
       'pbr',
       'pbr-ibl',
-      'parallax',
       'phong',
       'post-process',
-      'particle',
       'skybox',
       'toon',
       'unlit',
