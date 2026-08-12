@@ -16,6 +16,11 @@ class CountAction extends BTNode {
     super(name);
   }
   tick(_blackboard?: Blackboard): BTStatus {
+    // 遵循引擎 abort 契约:中止后 tick 不执行,直接返回 failure(见 BTAction.tick)。
+    if (this.isAborted()) {
+      this._status = 'failure';
+      return this._status;
+    }
     this.count++;
     this._status = this.result;
     return this._status;

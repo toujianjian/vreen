@@ -158,7 +158,8 @@ export class Failer extends BTDecorator {
  * UntilFail — 重复 tick 子节点,直到子节点返回 failure 时整体返回 success。
  * 子节点 success/running → 继续 running(下一帧再 tick);
  * 子节点 failure → 整体 success。
- * 设置 maxIterations 防止死循环(默认 -1 = 无限)。
+ * maxIterations 限制单次 tick 内最多循环次数(默认 1 = 每次 tick 最多检查一次,
+ * 即"success → 等下一帧再检查";显式传 < 0 才无限循环,需保证子节点最终会 failure)。
  */
 export class UntilFail extends BTDecorator {
   /** 最大迭代次数(防止无限循环,< 0 表示无限)。 */
@@ -166,7 +167,7 @@ export class UntilFail extends BTDecorator {
   /** 已迭代次数。 */
   private iter: number = 0;
 
-  constructor(name: string = '', child: BTNode | null = null, maxIterations: number = -1) {
+  constructor(name: string = '', child: BTNode | null = null, maxIterations: number = 1) {
     super(name, child);
     this.maxIterations = maxIterations;
   }

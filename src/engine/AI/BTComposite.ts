@@ -183,8 +183,11 @@ export class Parallel extends BTComposite {
   /** 添加子节点时同步默认策略(若用户未显式设置)。 */
   addChild(node: BTNode): this {
     super.addChild(node);
-    // 默认策略下 successThreshold 跟随 childCount
-    if (this.policy.successThreshold === this.children.length - 1) {
+    // 默认策略下 successThreshold 跟随 childCount。
+    // 注意:super(name, children) 构造期间会多态调用本方法,此时 policy
+    // 字段尚未初始化(子类字段在 super() 返回后才赋值),直接访问会 TypeError。
+    // 故仅在 policy 已就绪时同步;构造期间由构造函数末尾按 children.length 设默认。
+    if (this.policy && this.policy.successThreshold === this.children.length - 1) {
       this.policy.successThreshold = this.children.length;
     }
     return this;
