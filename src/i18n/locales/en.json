@@ -1223,6 +1223,11 @@
         "title": "GPU Picking (o3de Atom EditorMeshPickPass / three.js ColorPick)",
         "desc": "O(1) object picking via offscreen ID rendering + readPixels, adapted from o3de Atom EditorMeshPickPass + three.js ColorPickMesh. Each pickable object is assigned a dense 24-bit pickId (up to 16M objects), encoded to RGB and rendered to an offscreen MRT FBO (attachment 0 = object id, attachment 1 = instance id for InstancedMesh) with depth testing so only the frontmost object survives. pick(x,y) reads a single pixel via readPixels and decodes the id in O(1). Supports pickAt (single click), pickRect (box select with deduplication), and InstancedMesh per-instance id resolution. Complementary to CPU Raycaster: GPU picking determines the hit object in O(1); Raycaster then refines to exact faceIndex/uv/point on that single object. Pure CPU encodeId24/decodeId24 functions are 1:1 bit-exact with the GLSL encodeId24() shader, testable without WebGL. 44 unit tests.",
         "advantage": "soup3D only provides basic CPU raycasting (per-triangle, O(triangle count), no instance-id resolution, no box selection); VREEN provides o3de Atom-class GPU picking with O(1) readPixels, 24-bit pickId (16M objects), MRT dual-attachment (object id + instance id), InstancedMesh per-instance picking, box-select deduplication, resolutionScale for performance, and 1:1 CPU/GPU encode/decode reference (o3de Atom EditorMeshPickPass class technology)"
+      },
+      "transformControls": {
+        "title": "TransformControls (three.js editor gizmo)",
+        "desc": "Editor object-transform gizmo: translate / rotate / scale modes with world-local space toggle. Axis-end picker spheres hit-test via an internal raycast; dragging maps to the target's position/rotation/scale. The pure-data compute functions (buildDragPlane / computeTranslate / computeScale / computeRotate) are WebGL-free and unit-testable (47 tests). getMeshData() emits render data any backend can draw. Adapted from three.js TransformControls.",
+        "advantage": "soup3D has no editor gizmo; VREEN ships a three.js-class TransformControls with translate/rotate/scale modes, world/local space, axis-end pickers, snap support, and 47 pure-data unit tests."
       }
     }
   }

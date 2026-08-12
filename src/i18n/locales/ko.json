@@ -1223,6 +1223,11 @@
         "title": "GPU 피킹(o3de Atom EditorMeshPickPass / three.js ColorPick)",
         "desc": "오프스크린 ID 렌더링 + readPixels 기반 O(1) 오브젝트 피킹. o3de Atom EditorMeshPickPass + three.js ColorPickMesh에서 적응. 피킹 가능한 각 오브젝트에 조밀한 24-bit pickId(최대 16M 오브젝트)를 할당하고 RGB로 인코딩하여 오프스크린 MRT FBO(attachment 0 = 오브젝트 id, attachment 1 = 인스턴스 id, InstancedMesh용)에 깊이 테스트와 함께 렌더링하여 가장 앞쪽 오브젝트만 남김. pick(x,y)는 readPixels로 1픽셀을 읽어 O(1)로 디코딩. pickAt(단일 클릭), pickRect(박스 선택 + 중복 제거), InstancedMesh 인스턴스별 id 해석 지원. CPU Raycaster와 보완적: GPU 피킹이 O(1)로 히트 오브젝트를 특정하고, Raycaster가 해당 단일 오브젝트의 faceIndex/uv/point를 정밀화. 순수 CPU encodeId24/decodeId24는 GLSL encodeId24()와 비트급 1:1, WebGL 없이 테스트 가능. 44개 유닛 테스트.",
         "advantage": "soup3D는 기본 CPU 레이캐스트만 제공(삼각형별 O(삼각형 수), 인스턴스 id 해석 없음, 박스 선택 없음); VREEN은 O(1) readPixels, 24-bit pickId(16M 오브젝트), MRT 듀얼 어태치먼트(오브젝트 id + 인스턴스 id), InstancedMesh 인스턴스별 피킹, 박스 선택 중복 제거, performance용 resolutionScale, 1:1 CPU/GPU 인코드/디코드 레퍼런스가 포함된 o3de Atom 급 GPU 피킹 제공(o3de Atom EditorMeshPickPass 급 기술)"
+      },
+      "transformControls": {
+        "title": "TransformControls(three.js 에디터 gizmo)",
+        "desc": "에디터 객체 변형 기즈모:translate/rotate/scale 3가지 모드 + 월드/로컬 공간 전환. 축 끝 구체 피커가 내부 레이캐스트로 히트 테스트하고, 드래그를 타깃의 position/rotation/scale에 반영. 순수 데이터 계산 함수(buildDragPlane/computeTranslate/computeScale/computeRotate)는 WebGL 비의존이며 유닛 테스트 가능(47개 테스트). getMeshData()가 임의 백엔드용 렌더 데이터를 생성. three.js TransformControls에서 적응.",
+        "advantage": "soup3D에는 에디터 기즈모가 없습니다; VREEN은 translate/rotate/scale 3가지 모드, 월드/로컬 공간, 축 피커, 스냅 지원, 47개의 순수 데이터 유닛 테스트를 갖춘 three.js급 TransformControls를 제공합니다."
       }
     }
   }

@@ -30,6 +30,23 @@ export type {
   SweptCharacterControllerOptions,
 } from './SweptCharacterController';
 
+// TransformControls — 编辑器物体变换 gizmo (translate / rotate / scale)。
+// 轴端球 picker 做命中检测,拖拽映射到 target 变换;纯数据计算函数
+// (buildDragPlane / computeTranslate / computeScale / computeRotate)
+// 无 WebGL 依赖、可单测。适配 three.js TransformControls。
+export { TransformControls, buildDragPlane, computeTranslate, computeScale, computeRotate } from './TransformControls';
+export type {
+  TransformMode,
+  TransformSpace,
+  TransformAxis,
+  TransformControlsOptions,
+  TransformColors,
+  TranslateContext,
+  ScaleContext,
+  RotateContext,
+  RotateResult,
+} from './TransformControls';
+
 // VR/XR 支持已迁移到独立的 WebXR 模块 (src/engine/WebXR),
 // 提供完整的会话管理器 + 控制器 (手部25关节+捏合) + AR 子系统
 // (光照估计/平面检测/深度感知) + DOM 按钮 + Provider 抽象 (可测试)。

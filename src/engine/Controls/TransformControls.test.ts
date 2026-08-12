@@ -322,16 +322,16 @@ describe('computeScale', () => {
     expect(out.x).toBeCloseTo(2.5, 5);
   });
 
-  it('scaleSnap 为 0 时回退到 snap 本身(|| snap)', () => {
+  it('round 结果为 0 时回退到 snap 本身(|| snap)', () => {
     const out = new Vector3();
     computeScale(baseCtx({
       axis: 'X',
       pointStart: new Vector3(1, 0, 0),
-      pointEnd: new Vector3(1.1, 0, 0),
+      pointEnd: new Vector3(0.2, 0, 0),
       scaleStart: new Vector3(1, 1, 1),
       scaleSnap: 0.5,
     }), out);
-    // ratio = 1.1; round(1.1/0.5)*0.5 = round(2.2)*0.5 = 2*0.5 = 1.0 → || 0.5 = 0.5
+    // ratio = 0.2; round(0.2/0.5)*0.5 = round(0.4)*0.5 = 0*0.5 = 0 → 0 || 0.5 = 0.5
     expect(out.x).toBeCloseTo(0.5, 5);
   });
 });
@@ -382,14 +382,15 @@ describe('computeRotate', () => {
     const out: RotateResult = { rotationAxis: new Vector3(), rotationAngle: 0 };
     // pointStart=(1,0,0), pointEnd=(0,1,0), eye=(0,0,1)
     // angle = angleTo = π/2
-    // endNorm × startNorm · eye = (0,1,0)×(1,0,0)·(0,0,1) = (0,0,-1)·(0,0,1) = -1 < 0 → angle *= -1
+    // endNorm × startNorm · eye = (0,1,0)×(1,0,0)·(0,0,1) = (0,0,-1)·(0,0,1) = -1 < 0 → angle *= 1
+    // 从 +Z 看 XY 平面逆时针拖拽(右侧→上方)为正旋转 → +π/2
     computeRotate(baseCtx({
       axis: 'E',
       pointStart: new Vector3(1, 0, 0),
       pointEnd: new Vector3(0, 1, 0),
     }), target, out);
     expect(out.rotationAxis.z).toBeCloseTo(1, 5); // eye = +Z
-    expect(out.rotationAngle).toBeCloseTo(-Math.PI / 2, 4);
+    expect(out.rotationAngle).toBeCloseTo(Math.PI / 2, 4);
   });
 
   it('local X 轴:target = quaternionStart * setFromAxisAngle(X, angle)', () => {
@@ -604,22 +605,12 @@ describe('TransformControls axis picking', () => {
     tc.attach(obj);
     tc.update(); // 对齐 gizmo + 更新 picker matrixWorld
 
-    // 直接 raycast picker:从 picker 子树找 X 命名 mesh,构造指向它的射线
-    const helper = tc.getHelper();
-    // 找 translate picker 根(visible=false 且子树含 X 命名 mesh)
-    let pickerRoot: Object3D | null = null;
-    for (const child of helper.children) {
-      if (!child.visible) {
-        let hasX = false;
-        child.traverse((o) => { if (o.name === 'X') hasX = true; });
-        if (hasX) { pickerRoot = child; break; }
-      }
-    }
-    expect(pickerRoot).not.toBeNull();
+    // 直接 raycast picker 子树(与真实 pointerHover 的 raycast 目标一致:_picker[mode])
+    const pickerRoot = tc.getPicker('translate');
 
     // 找 X 命名的 mesh,取其世界位置,从相机方向射一射线
     let xMesh: Mesh | null = null;
-    pickerRoot!.traverse((o) => {
+    pickerRoot.traverse((o) => {
       if (o.name === 'X' && (o as Mesh).geometry && !xMesh) xMesh = o as Mesh;
     });
     expect(xMesh).not.toBeNull();
@@ -645,17 +636,9 @@ describe('TransformControls axis picking', () => {
     tc.attach(obj);
     tc.update();
 
-    const helper = tc.getHelper();
-    let pickerRoot: Object3D | null = null;
-    for (const child of helper.children) {
-      if (!child.visible) {
-        let hasY = false;
-        child.traverse((o) => { if (o.name === 'Y') hasY = true; });
-        if (hasY) { pickerRoot = child; break; }
-      }
-    }
+    const pickerRoot = tc.getPicker('translate');
     let yMesh: Mesh | null = null;
-    pickerRoot!.traverse((o) => {
+    pickerRoot.traverse((o) => {
       if (o.name === 'Y' && (o as Mesh).geometry && !yMesh) yMesh = o as Mesh;
     });
     const wp = new Vector3();
@@ -679,17 +662,9 @@ describe('TransformControls axis picking', () => {
     tc.update();
 
     // 找 X picker 的世界位置,投影到 NDC,用 pointerHover 验证
-    const helper = tc.getHelper();
-    let pickerRoot: Object3D | null = null;
-    for (const child of helper.children) {
-      if (!child.visible) {
-        let hasX = false;
-        child.traverse((o) => { if (o.name === 'X') hasX = true; });
-        if (hasX) { pickerRoot = child; break; }
-      }
-    }
+    const pickerRoot = tc.getPicker('translate');
     let xMesh: Mesh | null = null;
-    pickerRoot!.traverse((o) => {
+    pickerRoot.traverse((o) => {
       if (o.name === 'X' && (o as Mesh).geometry && !xMesh) xMesh = o as Mesh;
     });
     const wp = new Vector3();
@@ -853,17 +828,9 @@ describe('TransformControls end-to-end translate', () => {
     tc.update();
 
     // 找 X picker 世界中心,投影 NDC,作为 pointerDown 位置
-    const helper = tc.getHelper();
-    let pickerRoot: Object3D | null = null;
-    for (const child of helper.children) {
-      if (!child.visible) {
-        let hasX = false;
-        child.traverse((o) => { if (o.name === 'X') hasX = true; });
-        if (hasX) { pickerRoot = child; break; }
-      }
-    }
+    const pickerRoot = tc.getPicker('translate');
     let xMesh: Mesh | null = null;
-    pickerRoot!.traverse((o) => {
+    pickerRoot.traverse((o) => {
       if (o.name === 'X' && (o as Mesh).geometry && !xMesh) xMesh = o as Mesh;
     });
     const wp = new Vector3();

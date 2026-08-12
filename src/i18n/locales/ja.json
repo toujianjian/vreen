@@ -1223,6 +1223,11 @@
         "title": "GPU ピッキング(o3de Atom EditorMeshPickPass / three.js ColorPick)",
         "desc": "オフスクリーン ID レンダリング + readPixels による O(1) オブジェクトピッキング。o3de Atom EditorMeshPickPass + three.js ColorPickMesh から適応。各ピック可能オブジェクトに稠密 24-bit pickId(最大 16M オブジェクト)を割り当て、RGB にエンコードしてオフスクリーン MRT FBO(attachment 0 = オブジェクト id、attachment 1 = インスタンス id、InstancedMesh 用)に深度テスト付きでレンダリングし、最前面のオブジェクトのみ残す。pick(x,y) は readPixels で 1 ピクセル読み取り O(1) でデコード。pickAt(シングルクリック)、pickRect(ボックス選択 + 重複排除)、InstancedMesh インスタンス別 id 解決をサポート。CPU Raycaster と補完的:GPU ピッキングが O(1) でヒットオブジェクトを特定、Raycaster がその単一オブジェクトの faceIndex/uv/point を精緻化。純 CPU encodeId24/decodeId24 は GLSL encodeId24() とビット級 1:1、WebGL 無しでテスト可能。44 個のユニットテスト。",
         "advantage": "soup3D は基本的な CPU レイキャストのみ(三角形ごと O(三角形数)、インスタンス id 解決なし、ボックス選択なし);VREEN は O(1) readPixels、24-bit pickId(16M オブジェクト)、MRT デュアルアタッチメント(オブジェクト id + インスタンス id)、InstancedMesh インスタンス別ピッキング、ボックス選択重複排除、performance 用 resolutionScale、1:1 CPU/GPU エンコード/デコードリファレンス付きの o3de Atom クラス GPU ピッキングを提供(o3de Atom EditorMeshPickPass クラスの技術)"
+      },
+      "transformControls": {
+        "title": "TransformControls(three.js エディタ gizmo)",
+        "desc": "エディタのオブジェクト変形ギズモ:translate/rotate/scale の 3 モード + ワールド/ローカル空間切替。軸端の球ピッカーが内部レイキャストでヒットテストし、ドラッグをターゲットの position/rotation/scale に反映。純データ計算関数(buildDragPlane/computeTranslate/computeScale/computeRotate)は WebGL 非依存でユニットテスト可能(47 テスト)。getMeshData() が任意バックエンド向けの描画データを生成。three.js TransformControls から適応。",
+        "advantage": "soup3D にエディタギズモはありません;VREEN は translate/rotate/scale の 3 モード、ワールド/ローカル空間、軸端ピッカー、スナップ対応、47 の純データユニットテストを備えた three.js 級 TransformControls を提供します。"
       }
     }
   }

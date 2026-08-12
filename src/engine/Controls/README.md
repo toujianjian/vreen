@@ -23,6 +23,10 @@ Non-immersive (desktop / touch)
 CharacterController       ── kinematic avatar (gravity, jump, steps, slope limit)
                               decoupled from ECS; takes a GroundSampleFn callback
 
+Editor
+   TransformControls      ── object-transform gizmo (translate/rotate/scale + snap)
+                              axis-end picker hit-testing; pure-data, no Camera mutation
+
 Immersive (WebXR)
    VRController           ── session lifecycle + headset pose + eye params
                               + hand tracking; produces typed data, no Camera mutation
@@ -202,6 +206,58 @@ quaternion, copies each `XRView`'s projection + view matrices into
 `isAvailable() === false`, `requestSession()` → `false`, `update()` is a
 no-op. `VRController` owns no GL resources.
 
+### `TransformControls` (`TransformControls.ts`)
+
+Editor object-transform gizmo — the `three.js` `TransformControls`
+counterpart. Unlike the camera controllers above it edits an arbitrary
+target `Object3D` (position / rotation / scale) and renders its own
+visible gizmo instead of driving a camera.
+
+| Export | Role |
+|--------|------|
+| `TransformControls` | Attach to an object → visible gizmo + pointer-driven editing of its transform. |
+| `TransformMode` | `'translate' \| 'rotate' \| 'scale'` — which transform a drag edits. |
+| `TransformSpace` | `'world' \| 'local'` — axis frame for translate / rotate. |
+| `TransformAxis` | Hit axis: `'X' \| 'Y' \| 'Z' \| 'XY' \| 'XZ' \| 'YZ' \| 'XYZ'` (and `-X`… for scale). |
+| `TransformControlsOptions` | `mode`, `space`, `size`, `translationSnap` / `rotationSnap` / `scaleSnap`, `preventDefaultGestures`, `min/maxX/Y/Z` clamps, `enableHover`. |
+| `TransformColors` | Per-axis gizmo colors (`xAxis` / `yAxis` / `zAxis` / `active`). |
+| `buildDragPlane` | Pure data: ray-plane intersection for a drag. |
+| `computeTranslate` | Pure data: drag → new target position (snap-aware, clamped). |
+| `computeScale` | Pure data: drag → new target scale (snap-aware, sign-preserving). |
+| `computeRotate` | Pure data: drag → rotation axis + angle (snap-aware). |
+| `TranslateContext` / `ScaleContext` / `RotateContext` | Pure-data inputs for the compute functions. |
+| `RotateResult` | `{ rotationAxis: Vector3; rotationAngle: number }`. |
+
+```ts
+export class TransformControls {
+  mode: TransformMode;   space: TransformSpace;   // 'translate' / 'world'
+  translationSnap: number | null;  rotationSnap: number | null;
+  scaleSnap: number | null;        enabled: boolean;
+  axis: TransformAxis | null;      dragging: boolean;
+  onChange / onMouseDown / onMouseUp / onObjectChange: (() => void) | null;
+  constructor(camera: Camera, domElement: HTMLElement, opts?: TransformControlsOptions);
+  getHelper(): Object3D;            // gizmo root — add to the scene to render
+  getPicker(mode: TransformMode): Object3D;   // invisible, raycastable
+  getGizmo(mode: TransformMode): Object3D;    // visible handles
+  attach(object: Object3D): this;   detach(): this;
+  getObject(): Object3D | null;
+  setMode(mode); setSpace(space); setSize(size);
+  setTranslationSnap(v); setRotationSnap(v); setScaleSnap(v);
+  setColors(xAxis, yAxis, zAxis, active): void;
+  reset(): void;  update(): void;  dispose(): void;
+}
+```
+
+Pointer flow: `pointerdown` hit-tests the invisible picker subtrees via
+`Raycaster` → sets `axis`; `pointermove` projects the drag onto the
+drag plane and maps it to the target transform through the pure compute
+functions (snap + axis clamps applied); `pointerup` ends the drag and
+fires `onMouseUp`. `getHelper()` returns the gizmo root `Object3D` —
+add it to the scene once and call `update()` per frame. The gizmo is
+built from plain `BufferGeometry` + `MeshBasicMaterial` meshes, so it
+renders with any renderer. The pure compute functions are WebGL-free and
+unit-tested (47 tests in `TransformControls.test.ts`).
+
 ---
 
 ## Usage
@@ -265,6 +321,19 @@ if (vr.isAvailable() && await vr.requestSession({ referenceSpace: 'local-floor' 
 // teardown: vr.dispose();
 ```
 
+### TransformControls — attach a gizmo to an object
+
+```ts
+import { TransformControls } from '@vreen/engine';
+const tc = new TransformControls(camera, canvas, { mode: 'translate', space: 'world', translationSnap: 0.5 });
+scene.add(tc.getHelper());                  // gizmo renders inside the scene
+tc.attach(mesh);                            // start editing `mesh`
+tc.onObjectChange = () => outliner.refresh();
+// frame loop: tc.update(); renderer.render(scene, camera);
+tc.setMode('scale'); tc.setScaleSnap(0.25); // switch mode / snapping at runtime
+// teardown: tc.detach(); tc.dispose();
+```
+
 ---
 
 ## Invariants
@@ -287,6 +356,13 @@ if (vr.isAvailable() && await vr.requestSession({ referenceSpace: 'local-floor' 
   every method degrades to a safe no-op / `false`.
 - All controllers honour `setEnabled(false)`: input ignored, listeners
   remain attached (so `setEnabled(true)` resumes without re-wiring).
+- `TransformControls` is the only controller that drives an arbitrary
+  `Object3D` (not a camera). It owns no GL resources; the gizmo is a
+  plain `Object3D` subtree the caller adds via `getHelper()`. Picker
+  meshes stay invisible (`visible=false`) yet remain raycastable — the
+  pure compute functions (`buildDragPlane` / `computeTranslate` /
+  `computeScale` / `computeRotate`) are unit-tested without WebGL
+  (47 tests in `TransformControls.test.ts`).
 
 ---
 
@@ -296,5 +372,5 @@ if (vr.isAvailable() && await vr.requestSession({ referenceSpace: 'local-floor' 
 - `src/engine/Math/MathUtils.ts` — `angleDelta`, `wrapAngle`, `clamp`.
 - `src/engine/Animation/AnimationStateMachine.ts` — consumes `CharacterController.getState()`.
 - `src/engine/ECS/PhysicsComponents.ts` — `Rigidbody` / `Collider` for kinematic coupling.
-- three.js `OrbitControls` / `FlyControls` / `PointerLockControls` / `MapControls` — input semantics. WebXR Device API (`navigator.xr`, `XRSession`, `XRFrame`, `XRInputSource` — https://immersive-web.github.io/webxr/).
+- three.js `OrbitControls` / `FlyControls` / `PointerLockControls` / `MapControls` / `TransformControls` — input semantics and gizmo editing. WebXR Device API (`navigator.xr`, `XRSession`, `XRFrame`, `XRInputSource` — https://immersive-web.github.io/webxr/).
 - `src/engine/Controls/index.ts` — barrel re-exports for the module.

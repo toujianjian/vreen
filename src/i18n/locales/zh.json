@@ -1223,6 +1223,11 @@
         "title": "GPU 拾取(o3de Atom EditorMeshPickPass / three.js ColorPick)",
         "desc": "O(1) 物体拾取(离屏 ID 渲染 + readPixels),适配 o3de Atom EditorMeshPickPass + three.js ColorPickMesh。每个可拾取物体分配稠密 24-bit pickId(最多 16M 物体),编码为 RGB 渲染到离屏 MRT FBO(attachment 0 = 物体 id,attachment 1 = 实例 id,用于 InstancedMesh),开启深度测试只保留最前面物体。pick(x,y) 用 readPixels 读单像素并 O(1) 解码。支持 pickAt(单点)、pickRect(框选去重)、InstancedMesh 逐实例 id 解析。与 CPU Raycaster 互补:GPU 拾取 O(1) 确定命中物体,Raycaster 再对该物体精修 faceIndex/uv/point。纯 CPU encodeId24/decodeId24 与 GLSL encodeId24() 位级 1:1,无 WebGL 也可测试。44 个单元测试。",
         "advantage": "soup3D 仅有基础 CPU 射线投射(逐三角形 O(三角形数),无实例 id 解析,无框选);VREEN 提供 o3de Atom 级 GPU 拾取,O(1) readPixels、24-bit pickId(16M 物体)、MRT 双附件(物体 id + 实例 id)、InstancedMesh 逐实例拾取、框选去重、resolutionScale 性能调节、1:1 CPU/GPU 编解码参考(o3de Atom EditorMeshPickPass 级技术)"
+      },
+      "transformControls": {
+        "title": "TransformControls(three.js 编辑器 gizmo)",
+        "desc": "编辑器物体变换手柄:translate/rotate/scale 三模式 + 世界/本地空间切换。轴端球 picker 经内部 raycast 做命中检测,拖拽映射到目标 position/rotation/scale。纯数据计算函数(buildDragPlane/computeTranslate/computeScale/computeRotate)无 WebGL 依赖、可单测(47 个测试)。getMeshData() 产出渲染数据供任意后端绘制。适配 three.js TransformControls。",
+        "advantage": "soup3D 无编辑器手柄;VREEN 提供 three.js 级 TransformControls,含 translate/rotate/scale 三模式、世界/本地空间、轴端球拾取、吸附支持与 47 个纯数据单元测试。"
       }
     }
   }
