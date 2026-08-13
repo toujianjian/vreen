@@ -247,9 +247,9 @@ describe('Vector3', () => {
       m.elements[0] = 2;  // col 0 x
       m.elements[5] = 3;  // col 1 y
       m.elements[10] = 4; // col 2 z
-      expect(new Vector3().setFromMatrixColumn(0, m)).toEqual(new Vector3(2, 0, 0));
-      expect(new Vector3().setFromMatrixColumn(1, m)).toEqual(new Vector3(0, 3, 0));
-      expect(new Vector3().setFromMatrixColumn(2, m)).toEqual(new Vector3(0, 0, 4));
+      expect(new Vector3().setFromMatrixColumn(m, 0)).toEqual(new Vector3(2, 0, 0));
+      expect(new Vector3().setFromMatrixColumn(m, 1)).toEqual(new Vector3(0, 3, 0));
+      expect(new Vector3().setFromMatrixColumn(m, 2)).toEqual(new Vector3(0, 0, 4));
     });
 
     it('setFromMatrixScale extracts column lengths (rotation-invariant)', () => {

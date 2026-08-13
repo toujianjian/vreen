@@ -3,6 +3,8 @@
 // 内部转置为 column-major。getNormalMatrix 接受 Matrix4(仅 type import)。
 
 import type { Matrix4 } from './Matrix4';
+import type { Vector2 } from './Vector2';
+import type { Vector3 } from './Vector3';
 
 export class Matrix3 {
   /** Column-major 9 元素存储:elements[0..2] = col0, [3..5] = col1, [6..8] = col2。 */
@@ -66,6 +68,14 @@ export class Matrix3 {
 
   clone(): Matrix3 {
     return new Matrix3().fromArray(this.elements);
+  }
+
+  /** 把矩阵的三根基向量分别提取到 xAxis/yAxis/zAxis(three.js Matrix3.extractBasis)。 */
+  extractBasis(xAxis: Vector3, yAxis: Vector3, zAxis: Vector3): this {
+    xAxis.setFromMatrix3Column(this, 0);
+    yAxis.setFromMatrix3Column(this, 1);
+    zAxis.setFromMatrix3Column(this, 2);
+    return this;
   }
 
   /** 从 4x4 矩阵的左上 3x3 复制。 */
@@ -177,6 +187,66 @@ export class Matrix3 {
     return this.setFromMatrix4(matrix4).invert().transpose();
   }
 
+  /** 2D UV 变换矩阵:平移 (tx,ty) + 缩放 (sx,sy) + 绕 (cx,cy) 旋转(three.js 同款公式)。 */
+  setUvTransform(
+    tx: number, ty: number, sx: number, sy: number, rotation: number, cx: number, cy: number,
+  ): this {
+    const c = Math.cos(rotation);
+    const s = Math.sin(rotation);
+
+    this.set(
+      sx * c, sx * s, -sx * (c * cx + s * cy) + cx + tx,
+      -sy * s, sy * c, -sy * (-s * cx + c * cy) + cy + ty,
+      0, 0, 1,
+    );
+
+    return this;
+  }
+
+  /** 后乘缩放(先缩放后原变换):this = makeScale(sx,sy) * this。 */
+  scale(sx: number, sy: number): this {
+    this.premultiply(_m3.makeScale(sx, sy));
+    return this;
+  }
+
+  /** 后乘旋转(先旋转后原变换),逆时针为正。 */
+  rotate(theta: number): this {
+    this.premultiply(_m3.makeRotation(-theta));
+    return this;
+  }
+
+  /** 后乘平移(先平移后原变换):this = makeTranslation(tx,ty) * this。 */
+  translate(tx: number, ty: number): this {
+    this.premultiply(_m3.makeTranslation(tx, ty));
+    return this;
+  }
+
+  /** 平移矩阵。接受 (x,y) 或 Vector2(three.js 同款双形态)。 */
+  makeTranslation(x: Vector2): this;
+  makeTranslation(x: number, y: number): this;
+  makeTranslation(x: number | Vector2, y?: number): this {
+    if (typeof x === 'number') {
+      this.set(1, 0, x, 0, 1, y as number, 0, 0, 1);
+    } else {
+      this.set(1, 0, x.x, 0, 1, x.y, 0, 0, 1);
+    }
+    return this;
+  }
+
+  /** 逆时针旋转矩阵。 */
+  makeRotation(theta: number): this {
+    const c = Math.cos(theta);
+    const s = Math.sin(theta);
+    this.set(c, -s, 0, s, c, 0, 0, 0, 1);
+    return this;
+  }
+
+  /** 缩放矩阵。 */
+  makeScale(x: number, y: number): this {
+    this.set(x, 0, 0, 0, y, 0, 0, 0, 1);
+    return this;
+  }
+
   /** 把 this 的转置写入 r(9 元素),this 本身不变。 */
   transposeIntoArray(r: number[]): this {
     const m = this.elements;
@@ -223,3 +293,6 @@ export class Matrix3 {
     return true;
   }
 }
+
+/** 模块级共享临时矩阵,避免 scale/rotate/translate 每次调用分配(three.js 同款)。 */
+const _m3 = new Matrix3();

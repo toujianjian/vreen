@@ -249,9 +249,15 @@ export class Vector3 {
   }
 
   /** 从 4x4 矩阵(列主序 16 元素)提取第 `index` 列的前 3 个元素到 this。
-   *  与 three.js Vector3.setFromMatrixColumn 语义一致。 */
-  setFromMatrixColumn(index: number, m: { elements: Float32Array | number[] }): this {
+   *  参数序与 three.js Vector3.setFromMatrixColumn 完全一致(m 在前,index 在后)。 */
+  setFromMatrixColumn(m: { elements: Float32Array | number[] }, index: number): this {
     return this.fromArray(m.elements, index * 4);
+  }
+
+  /** 从 3x3 矩阵(列主序 9 元素)提取第 `index` 列的前 3 个元素到 this。
+   *  与 three.js Vector3.setFromMatrix3Column 语义一致。 */
+  setFromMatrix3Column(m: { elements: ArrayLike<number> }, index: number): this {
+    return this.fromArray(m.elements, index * 3);
   }
 
   /** 从 4x4 矩阵的上 3x3 旋转/缩放子块提取各列向量长度作为缩放分量。

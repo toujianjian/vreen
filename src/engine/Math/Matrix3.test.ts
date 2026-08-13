@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { Matrix3 } from './Matrix3';
 import { Matrix4 } from './Matrix4';
+import { Vector2 } from './Vector2';
+import { Vector3 } from './Vector3';
 
 describe('Matrix3', () => {
   describe('construction', () => {
@@ -393,6 +395,146 @@ describe('Matrix3', () => {
         2, 5, 8,
         3, 6, 9,
       ]);
+    });
+  });
+
+  describe('extractBasis', () => {
+    it('extracts basis columns into vectors', () => {
+      const c = Math.cos(Math.PI / 4);
+      const s = Math.sin(Math.PI / 4);
+      const m = new Matrix3().makeRotation(Math.PI / 4);
+      const x = new Vector3();
+      const y = new Vector3();
+      const z = new Vector3();
+      m.extractBasis(x, y, z);
+      // makeRotation column-major: [c, s, 0, -s, c, 0, 0, 0, 1]
+      expect(x.x).toBeCloseTo(c, 10);
+      expect(x.y).toBeCloseTo(s, 10);
+      expect(x.z).toBeCloseTo(0, 10);
+      expect(y.x).toBeCloseTo(-s, 10);
+      expect(y.y).toBeCloseTo(c, 10);
+      expect(y.z).toBeCloseTo(0, 10);
+      expect(z.x).toBeCloseTo(0, 10);
+      expect(z.y).toBeCloseTo(0, 10);
+      expect(z.z).toBeCloseTo(1, 10);
+    });
+
+    it('returns this', () => {
+      const m = new Matrix3();
+      const x = new Vector3(), y = new Vector3(), z = new Vector3();
+      expect(m.extractBasis(x, y, z)).toBe(m);
+    });
+  });
+
+  describe('setUvTransform', () => {
+    it('no rotation about origin produces scale+translate', () => {
+      const m = new Matrix3().setUvTransform(2, 3, 2, 4, 0, 0, 0);
+      // row-major: [2,0,2; 0,4,3; 0,0,1] → column-major [2,0,0, 0,4,0, 2,3,1]
+      expect(m.elements[0]).toBe(2);
+      expect(m.elements[4]).toBe(4);
+      expect(m.elements[6]).toBe(2);
+      expect(m.elements[7]).toBe(3);
+      expect(m.elements[8]).toBe(1);
+    });
+
+    it('rotation 90° about center is a pure rotation matrix', () => {
+      const m = new Matrix3().setUvTransform(0, 0, 1, 1, Math.PI / 2, 0, 0);
+      // row-major: [cos90, sin90, 0; -sin90, cos90, 0; 0,0,1] = [0,1,0; -1,0,0; 0,0,1]
+      expect(m.elements[0]).toBeCloseTo(0, 10);
+      expect(m.elements[1]).toBeCloseTo(-1, 10);
+      expect(m.elements[3]).toBeCloseTo(1, 10);
+      expect(m.elements[4]).toBeCloseTo(0, 10);
+      expect(m.elements[8]).toBeCloseTo(1, 10);
+    });
+  });
+
+  describe('makeTranslation', () => {
+    it('number form', () => {
+      const m = new Matrix3().makeTranslation(2, 3);
+      // row-major: [1,0,2; 0,1,3; 0,0,1] → column-major [1,0,0, 0,1,0, 2,3,1]
+      expect(m.elements).toEqual([1, 0, 0, 0, 1, 0, 2, 3, 1]);
+    });
+
+    it('Vector2 form', () => {
+      const m = new Matrix3().makeTranslation(new Vector2(2, 3));
+      expect(m.elements).toEqual([1, 0, 0, 0, 1, 0, 2, 3, 1]);
+    });
+  });
+
+  describe('makeRotation', () => {
+    it('90° counterclockwise', () => {
+      const m = new Matrix3().makeRotation(Math.PI / 2);
+      // row-major: [0,-1,0; 1,0,0; 0,0,1] → column-major [0,1,0, -1,0,0, 0,0,1]
+      expect(m.elements[0]).toBeCloseTo(0, 10);
+      expect(m.elements[1]).toBeCloseTo(1, 10);
+      expect(m.elements[3]).toBeCloseTo(-1, 10);
+      expect(m.elements[4]).toBeCloseTo(0, 10);
+      expect(m.elements[8]).toBe(1);
+    });
+  });
+
+  describe('makeScale', () => {
+    it('produces diagonal scale', () => {
+      const m = new Matrix3().makeScale(2, 3);
+      expect(m.elements).toEqual([2, 0, 0, 0, 3, 0, 0, 0, 1]);
+    });
+  });
+
+  describe('scale / rotate / translate', () => {
+    it('scale premultiplies a scale onto identity', () => {
+      const m = new Matrix3().scale(2, 3);
+      expect(m.elements).toEqual([2, 0, 0, 0, 3, 0, 0, 0, 1]);
+    });
+
+    it('rotate premultiplies a rotation onto identity', () => {
+      // rotate(θ) → premultiply makeRotation(-θ); makeRotation(-π/2) column-major = [0,-1,0, 1,0,0, 0,0,1]
+      const m = new Matrix3().rotate(Math.PI / 2);
+      expect(m.elements[0]).toBeCloseTo(0, 10);
+      expect(m.elements[1]).toBeCloseTo(-1, 10);
+      expect(m.elements[3]).toBeCloseTo(1, 10);
+      expect(m.elements[4]).toBeCloseTo(0, 10);
+    });
+
+    it('translate premultiplies a translation onto identity', () => {
+      const m = new Matrix3().translate(2, 3);
+      expect(m.elements).toEqual([1, 0, 0, 0, 1, 0, 2, 3, 1]);
+    });
+
+    it('matches explicit makeScale on non-identity', () => {
+      const a = new Matrix3().set(1, 2, 3, 4, 5, 6, 7, 8, 9);
+      const expected = new Matrix3().multiplyMatrices(
+        new Matrix3().makeScale(2, 4),
+        a,
+      );
+      const result = new Matrix3().copy(a).scale(2, 4);
+      expect(result.elements).toEqual(expected.elements);
+    });
+
+    it('chained rotate matches premultiply order', () => {
+      const a = new Matrix3().set(1, 2, 3, 4, 5, 6, 7, 8, 9);
+      // a.scale(2,3).rotate(0.5) => rot(-0.5) * scale(2,3) * a
+      const expected = new Matrix3()
+        .multiplyMatrices(new Matrix3().makeScale(2, 3), a)
+        .premultiply(new Matrix3().makeRotation(-0.5));
+      const result = new Matrix3().copy(a).scale(2, 3).rotate(0.5);
+      expect(result.elements[0]).toBeCloseTo(expected.elements[0], 10);
+      expect(result.elements[1]).toBeCloseTo(expected.elements[1], 10);
+      expect(result.elements[4]).toBeCloseTo(expected.elements[4], 10);
+      expect(result.elements[8]).toBeCloseTo(expected.elements[8], 10);
+    });
+  });
+
+  describe('equals', () => {
+    it('equal matrices', () => {
+      const a = new Matrix3().set(1, 2, 3, 4, 5, 6, 7, 8, 9);
+      const b = new Matrix3().set(1, 2, 3, 4, 5, 6, 7, 8, 9);
+      expect(a.equals(b)).toBe(true);
+    });
+
+    it('different matrices', () => {
+      const a = new Matrix3().set(1, 2, 3, 4, 5, 6, 7, 8, 9);
+      const b = new Matrix3().set(1, 2, 3, 4, 5, 6, 7, 8, 0);
+      expect(a.equals(b)).toBe(false);
     });
   });
 });
