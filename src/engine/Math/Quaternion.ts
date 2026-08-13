@@ -2,6 +2,7 @@
 // three.js). Composable with Vector3 + scale via Matrix4.compose().
 
 import type { Vector3 } from './Vector3';
+import type { EulerOrder } from './Euler';
 
 export class Quaternion {
   x: number;
@@ -73,7 +74,7 @@ export class Quaternion {
   }
 
   /** Euler XYZ in radians (matches three.js default order). */
-  setFromEuler(x: number, y: number, z: number, order: 'XYZ' | 'YXZ' = 'XYZ'): this {
+  setFromEuler(x: number, y: number, z: number, order: EulerOrder = 'XYZ'): this {
     const c1 = Math.cos(x / 2);
     const c2 = Math.cos(y / 2);
     const c3 = Math.cos(z / 2);
@@ -91,6 +92,30 @@ export class Quaternion {
         this.x = s1 * c2 * c3 + c1 * s2 * s3;
         this.y = c1 * s2 * c3 - s1 * c2 * s3;
         this.z = c1 * c2 * s3 - s1 * s2 * c3;
+        this.w = c1 * c2 * c3 + s1 * s2 * s3;
+        break;
+      case 'ZXY':
+        this.x = s1 * c2 * c3 - c1 * s2 * s3;
+        this.y = c1 * s2 * c3 + s1 * c2 * s3;
+        this.z = c1 * c2 * s3 + s1 * s2 * c3;
+        this.w = c1 * c2 * c3 - s1 * s2 * s3;
+        break;
+      case 'ZYX':
+        this.x = s1 * c2 * c3 - c1 * s2 * s3;
+        this.y = c1 * s2 * c3 + s1 * c2 * s3;
+        this.z = c1 * c2 * s3 - s1 * s2 * c3;
+        this.w = c1 * c2 * c3 + s1 * s2 * s3;
+        break;
+      case 'YZX':
+        this.x = s1 * c2 * c3 + c1 * s2 * s3;
+        this.y = c1 * s2 * c3 + s1 * c2 * s3;
+        this.z = c1 * c2 * s3 - s1 * s2 * c3;
+        this.w = c1 * c2 * c3 - s1 * s2 * s3;
+        break;
+      case 'XZY':
+        this.x = s1 * c2 * c3 - c1 * s2 * s3;
+        this.y = c1 * s2 * c3 - s1 * c2 * s3;
+        this.z = c1 * c2 * c3 + s1 * s2 * c3;
         this.w = c1 * c2 * c3 + s1 * s2 * s3;
         break;
     }

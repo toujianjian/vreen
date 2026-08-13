@@ -2,7 +2,16 @@
 // API mirrors three.js for drop-in familiarity, but written from scratch
 // so the engine has zero external runtime dependencies (no three.js).
 
-import type { Quaternion } from './Quaternion';
+import { Quaternion } from './Quaternion';
+import type { EulerOrder } from './Euler';
+
+/** 满足 Vector3.project/unproject 的相机最小结构(Camera 的字段即此形态)。 */
+interface CameraLike {
+  matrixWorld: { elements: Float32Array | number[] };
+  matrixWorldInverse: { elements: Float32Array | number[] };
+  projectionMatrix: { elements: Float32Array | number[] };
+  projectionMatrixInverse: { elements: Float32Array | number[] };
+}
 
 export class Vector3 {
   x: number;
@@ -328,6 +337,207 @@ export class Vector3 {
     return this;
   }
 
+  /** 三分量统一设为标量。three.js Vector3.setScalar。 */
+  setScalar(scalar: number): this {
+    this.x = scalar;
+    this.y = scalar;
+    this.z = scalar;
+    this._onChangeCallback();
+    return this;
+  }
+
+  /** 三分量统一减去标量。three.js Vector3.subScalar。 */
+  subScalar(s: number): this {
+    this.x -= s;
+    this.y -= s;
+    this.z -= s;
+    this._onChangeCallback();
+    return this;
+  }
+
+  /** this = a × b(叉积,结果垂直于二者)。three.js Vector3.crossVectors。 */
+  crossVectors(a: Vector3, b: Vector3): this {
+    const ax = a.x, ay = a.y, az = a.z;
+    const bx = b.x, by = b.y, bz = b.z;
+    this.x = ay * bz - az * by;
+    this.y = az * bx - ax * bz;
+    this.z = ax * by - ay * bx;
+    this._onChangeCallback();
+    return this;
+  }
+
+  /** 绕任意轴(不必单位化)旋转 `angle` 弧度。three.js Vector3.applyAxisAngle。 */
+  applyAxisAngle(axis: Vector3, angle: number): this {
+    return this.applyQuaternion(_quaternion.setFromAxisAngle(axis, angle));
+  }
+
+  /** 应用欧拉角旋转(按 Euler.order 指定顺序)。three.js Vector3.applyEuler。 */
+  applyEuler(euler: { x: number; y: number; z: number; order: EulerOrder }): this {
+    return this.applyQuaternion(_quaternion.setFromEuler(euler.x, euler.y, euler.z, euler.order));
+  }
+
+  /** 应用法线矩阵(3x3 变换后归一化),用于法线从局部→世界。three.js Vector3.applyNormalMatrix。 */
+  applyNormalMatrix(m: { elements: Float32Array | number[] }): this {
+    return this.applyMatrix3(m).normalize();
+  }
+
+  /** 各分量独立限制在 [minVal, maxVal]。three.js Vector3.clampScalar。 */
+  clampScalar(minVal: number, maxVal: number): this {
+    this.x = Math.max(minVal, Math.min(maxVal, this.x));
+    this.y = Math.max(minVal, Math.min(maxVal, this.y));
+    this.z = Math.max(minVal, Math.min(maxVal, this.z));
+    this._onChangeCallback();
+    return this;
+  }
+
+  /** 长度限制在 [min, max](方向不变,零向量保持零)。three.js Vector3.clampLength。 */
+  clampLength(min: number, max: number): this {
+    const length = this.length();
+    return this.divideScalar(length || 1).multiplyScalar(Math.max(min, Math.min(max, length)));
+  }
+
+  /** 沿法线反射:this = this − 2·(this·normal)·normal。three.js Vector3.reflect。 */
+  reflect(normal: Vector3): this {
+    return this.sub(_v2.copy(normal).multiplyScalar(2 * this.dot(normal)));
+  }
+
+  /** 曼哈顿距离(分量差绝对值之和)。three.js Vector3.distanceToManhattan。 */
+  distanceToManhattan(v: Vector3): number {
+    return Math.abs(this.x - v.x) + Math.abs(this.y - v.y) + Math.abs(this.z - v.z);
+  }
+
+  /** 曼哈顿长度(分量绝对值之和)。three.js Vector3.lengthManhattan。 */
+  lengthManhattan(): number {
+    return Math.abs(this.x) + Math.abs(this.y) + Math.abs(this.z);
+  }
+
+  /** 按索引取分量(0=x, 1=y, 2=z)。越界抛错。three.js Vector3.getComponent。 */
+  getComponent(index: number): number {
+    switch (index) {
+      case 0: return this.x;
+      case 1: return this.y;
+      case 2: return this.z;
+      default: throw new Error(`index is out of range: ${index}`);
+    }
+  }
+
+  /** 按索引写分量(0=x, 1=y, 2=z)。越界抛错。three.js Vector3.setComponent。 */
+  setComponent(index: number, value: number): this {
+    switch (index) {
+      case 0: this.x = value; break;
+      case 1: this.y = value; break;
+      case 2: this.z = value; break;
+      default: throw new Error(`index is out of range: ${index}`);
+    }
+    this._onChangeCallback();
+    return this;
+  }
+
+  /** 世界坐标 → 裁剪/屏幕坐标:经相机 matrixWorldInverse + projectionMatrix 变换。 */
+  project(camera: CameraLike): this {
+    return this.applyMatrix4(camera.matrixWorldInverse).applyMatrix4(camera.projectionMatrix);
+  }
+
+  /** 裁剪/屏幕坐标 → 世界坐标:经相机 projectionMatrixInverse + matrixWorld 变换。 */
+  unproject(camera: CameraLike): this {
+    return this.applyMatrix4(camera.projectionMatrixInverse).applyMatrix4(camera.matrixWorld);
+  }
+
+  /** 各分量设为 [0,1) 均匀随机。three.js Vector3.random。 */
+  random(): this {
+    this.x = Math.random();
+    this.y = Math.random();
+    this.z = Math.random();
+    this._onChangeCallback();
+    return this;
+  }
+
+  /** 设为均匀单位球面上随机方向(角度均匀采样,避免极点聚集)。three.js Vector3.randomDirection。 */
+  randomDirection(): this {
+    const u = Math.random() * 2 - 1;
+    const t = Math.random() * Math.PI * 2;
+    const r = Math.sqrt(1 - u * u);
+    this.x = r * Math.cos(t);
+    this.y = u;
+    this.z = r * Math.sin(t);
+    this._onChangeCallback();
+    return this;
+  }
+
+  /** 各分量向下取整。three.js Vector3.floor。 */
+  floor(): this {
+    this.x = Math.floor(this.x);
+    this.y = Math.floor(this.y);
+    this.z = Math.floor(this.z);
+    this._onChangeCallback();
+    return this;
+  }
+
+  /** 各分量向上取整。three.js Vector3.ceil。 */
+  ceil(): this {
+    this.x = Math.ceil(this.x);
+    this.y = Math.ceil(this.y);
+    this.z = Math.ceil(this.z);
+    this._onChangeCallback();
+    return this;
+  }
+
+  /** 各分量四舍五入。three.js Vector3.round。 */
+  round(): this {
+    this.x = Math.round(this.x);
+    this.y = Math.round(this.y);
+    this.z = Math.round(this.z);
+    this._onChangeCallback();
+    return this;
+  }
+
+  /** 各分量向零取整(正数 floor,负数 ceil)。three.js Vector3.roundToZero。 */
+  roundToZero(): this {
+    this.x = this.x < 0 ? Math.ceil(this.x) : Math.floor(this.x);
+    this.y = this.y < 0 ? Math.ceil(this.y) : Math.floor(this.y);
+    this.z = this.z < 0 ? Math.ceil(this.z) : Math.floor(this.z);
+    this._onChangeCallback();
+    return this;
+  }
+
+  /** 各分量取符号(-1 / 0 / 1)。three.js Vector3.sign。 */
+  sign(): this {
+    this.x = Math.sign(this.x);
+    this.y = Math.sign(this.y);
+    this.z = Math.sign(this.z);
+    this._onChangeCallback();
+    return this;
+  }
+
+  /** 从球坐标(radius, phi, theta)写入直角坐标。three.js Vector3.setFromSpherical。 */
+  setFromSpherical(s: { radius: number; phi: number; theta: number }): this {
+    return this.setFromSphericalCoords(s.radius, s.phi, s.theta);
+  }
+
+  /** 从球坐标三个分量写入直角坐标。three.js Vector3.setFromSphericalCoords。 */
+  setFromSphericalCoords(radius: number, phi: number, theta: number): this {
+    const sinPhiRadius = Math.sin(phi) * radius;
+    this.x = sinPhiRadius * Math.sin(theta);
+    this.y = Math.cos(phi) * radius;
+    this.z = sinPhiRadius * Math.cos(theta);
+    this._onChangeCallback();
+    return this;
+  }
+
+  /** 从柱坐标(radius, theta, y)写入直角坐标。three.js Vector3.setFromCylindrical。 */
+  setFromCylindrical(c: { radius: number; theta: number; y: number }): this {
+    return this.setFromCylindricalCoords(c.radius, c.theta, c.y);
+  }
+
+  /** 从柱坐标三个分量写入直角坐标。three.js Vector3.setFromCylindricalCoords。 */
+  setFromCylindricalCoords(radius: number, theta: number, y: number): this {
+    this.x = radius * Math.sin(theta);
+    this.y = y;
+    this.z = radius * Math.cos(theta);
+    this._onChangeCallback();
+    return this;
+  }
+
   /** 值相等比较。 */
   equals(v: Vector3): boolean {
     return this.x === v.x && this.y === v.y && this.z === v.z;
@@ -345,7 +555,7 @@ export class Vector3 {
   }
 
   /** 应用 3x3 矩阵(列主序 9 元素)。
-   *  VREEN 没有 Matrix3 类,这里用结构类型 `{ elements }` 接受任意 9 元素数组。 */
+   *  接受 Matrix3 或任意含 9 元素 `elements` 的结构类型。 */
   applyMatrix3(m: { elements: Float32Array | number[] }): this {
     const e = m.elements;
     const x = this.x, y = this.y, z = this.z;
@@ -380,3 +590,5 @@ export class Vector3 {
 }
 
 export const _v3 = new Vector3();
+const _v2 = new Vector3();
+const _quaternion = new Quaternion();
