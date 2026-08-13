@@ -4,6 +4,7 @@
 
 import { Quaternion } from './Quaternion';
 import type { EulerOrder } from './Euler';
+import type { BufferAttribute } from '../Core/BufferAttribute';
 
 /** 满足 Vector3.project/unproject 的相机最小结构(Camera 的字段即此形态)。 */
 interface CameraLike {
@@ -224,6 +225,15 @@ export class Vector3 {
     this.x = array[offset];
     this.y = array[offset + 1];
     this.z = array[offset + 2];
+    this._onChangeCallback();
+    return this;
+  }
+
+  /** 从 BufferAttribute 第 index 个元素读取 x/y/z(three.js Vector3.fromBufferAttribute)。 */
+  fromBufferAttribute(attribute: BufferAttribute, index: number): this {
+    this.x = attribute.getX(index);
+    this.y = attribute.getY(index);
+    this.z = attribute.getZ(index);
     this._onChangeCallback();
     return this;
   }

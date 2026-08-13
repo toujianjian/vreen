@@ -4,6 +4,7 @@
 // 的对象,从而无需在运行时 import Matrix3。
 
 import { clamp } from './MathUtils';
+import type { BufferAttribute } from '../Core/BufferAttribute';
 
 /** Matrix3 最小结构类型,用于 applyMatrix3。 */
 interface Matrix3Like {
@@ -277,6 +278,13 @@ export class Vector2 {
   fromArray(a: [number, number]): this {
     this.x = a[0];
     this.y = a[1];
+    return this;
+  }
+
+  /** 从 BufferAttribute 第 index 个元素读取 x/y(three.js Vector2.fromBufferAttribute)。 */
+  fromBufferAttribute(attribute: BufferAttribute, index: number): this {
+    this.x = attribute.getX(index);
+    this.y = attribute.getY(index);
     return this;
   }
 

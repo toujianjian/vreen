@@ -3,6 +3,8 @@
 
 import type { Vector3 } from './Vector3';
 import type { EulerOrder } from './Euler';
+import { clamp } from './MathUtils';
+import type { BufferAttribute } from '../Core/BufferAttribute';
 
 export class Quaternion {
   x: number;
@@ -333,5 +335,64 @@ export class Quaternion {
   /** Apply this quaternion's rotation to vector v (in place). Mutates and returns v. */
   applyToVector(v: Vector3): Vector3 {
     return v.applyQuaternion(this);
+  }
+
+  /** Dot product based (4-sphere) angle between two quaternions, in radians. */
+  angleTo(q: Quaternion): number {
+    return 2 * Math.acos(Math.abs(clamp(this.dot(q), -1, 1)));
+  }
+
+  /** Rotate this quaternion toward `q` by at most `step` radians. Mutates this. */
+  rotateTowards(q: Quaternion, step: number): this {
+    const angle = this.angleTo(q);
+    if (angle === 0) return this;
+    const t = Math.min(1, step / angle);
+    this.slerp(q, t);
+    return this;
+  }
+
+  /** Squared length (x²+y²+z²+w²). */
+  lengthSq(): number {
+    return this.x * this.x + this.y * this.y + this.z * this.z + this.w * this.w;
+  }
+
+  /** Euclidean length of the 4-vector. */
+  length(): number {
+    return Math.sqrt(this.lengthSq());
+  }
+
+  /** this = slerp(qa → qb, t). Composes copy + slerp, matching three.js. */
+  slerpQuaternions(qa: Quaternion, qb: Quaternion, t: number): this {
+    return this.copy(qa).slerp(qb, t);
+  }
+
+  /** Set this to a uniformly random rotation (Shoemake algorithm). */
+  random(): this {
+    const theta1 = 2 * Math.PI * Math.random();
+    const theta2 = 2 * Math.PI * Math.random();
+    const x0 = Math.random();
+    const r1 = Math.sqrt(1 - x0);
+    const r2 = Math.sqrt(x0);
+    return this.set(
+      r1 * Math.sin(theta1),
+      r1 * Math.cos(theta1),
+      r2 * Math.sin(theta2),
+      r2 * Math.cos(theta2),
+    );
+  }
+
+  /** Read x/y/z/w from a BufferAttribute at the given index. */
+  fromBufferAttribute(attribute: BufferAttribute, index: number): this {
+    this.x = attribute.getX(index);
+    this.y = attribute.getY(index);
+    this.z = attribute.getZ(index);
+    this.w = attribute.getW(index);
+    this._onChangeCallback();
+    return this;
+  }
+
+  /** JSON-serializable form: [x, y, z, w] array (matches three.js). */
+  toJSON(): [number, number, number, number] {
+    return this.toArray();
   }
 }

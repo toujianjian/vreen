@@ -37,6 +37,26 @@ export class BufferAttribute {
   get z(): number { return this.array[2]; }
   set z(v: number) { this.array[2] = v; this.version++; }
 
+  getX(index: number): number { return this.array[index * this.itemSize + 0]; }
+  getY(index: number): number { return this.array[index * this.itemSize + 1]; }
+  getZ(index: number): number { return this.array[index * this.itemSize + 2]; }
+  getW(index: number): number { return this.array[index * this.itemSize + 3]; }
+  getXY<T extends { x: number; y: number; set: (x: number, y: number) => T }>(index: number, target: T): T {
+    const o = index * this.itemSize;
+    return target.set(this.array[o], this.array[o + 1]);
+  }
+  getXYZ<T extends { x: number; y: number; z: number; set: (x: number, y: number, z: number) => T }>(
+    index: number, target: T,
+  ): T {
+    const o = index * this.itemSize;
+    return target.set(this.array[o], this.array[o + 1], this.array[o + 2]);
+  }
+  getXYZW<T extends { x: number; y: number; z: number; w: number; set: (x: number, y: number, z: number, w: number) => T }>(
+    index: number, target: T,
+  ): T {
+    const o = index * this.itemSize;
+    return target.set(this.array[o], this.array[o + 1], this.array[o + 2], this.array[o + 3]);
+  }
   setX(index: number, x: number): this { this.array[index * this.itemSize + 0] = x; this.version++; return this; }
   setY(index: number, y: number): this { this.array[index * this.itemSize + 1] = y; this.version++; return this; }
   setZ(index: number, z: number): this { this.array[index * this.itemSize + 2] = z; this.version++; return this; }
