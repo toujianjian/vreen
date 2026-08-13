@@ -73,6 +73,31 @@ describe('Spherical', () => {
     });
   });
 
+  describe('makeSafe', () => {
+    it('phi=0 被钳制到 EPS', () => {
+      const s = new Spherical(1, 0, 0);
+      s.makeSafe();
+      expect(s.phi).toBeCloseTo(0.000001, 9);
+    });
+
+    it('phi=π 被钳制到 π-EPS', () => {
+      const s = new Spherical(1, Math.PI, 0);
+      s.makeSafe();
+      expect(s.phi).toBeCloseTo(Math.PI - 0.000001, 9);
+    });
+
+    it('phi 在安全范围保持不变', () => {
+      const s = new Spherical(1, Math.PI / 2, 0);
+      s.makeSafe();
+      expect(s.phi).toBeCloseTo(Math.PI / 2, 9);
+    });
+
+    it('返回 this 支持链式', () => {
+      const s = new Spherical(1, 0, 0);
+      expect(s.makeSafe()).toBe(s);
+    });
+  });
+
   describe('restrictPhi', () => {
     it('将 phi 限制在 [min, max] 范围内', () => {
       const s = new Spherical(1, 0.5, 0);
