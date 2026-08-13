@@ -285,7 +285,7 @@ describe('Reflector reflectionMatrix', () => {
 describe('Reflector computeTextureMatrix', () => {
   it('returns a 4×4 matrix', () => {
     const r = new Reflector();
-    const proj = new Matrix4().makePerspective(Math.PI / 4, 1, 0.1, 100);
+    const proj = new Matrix4().makePerspective(-0.1 * Math.tan(Math.PI / 8), 0.1 * Math.tan(Math.PI / 8), 0.1 * Math.tan(Math.PI / 8), -0.1 * Math.tan(Math.PI / 8), 0.1, 100);
     const view = new Matrix4().makeLookAt(
       { x: 0, y: -5, z: 10 },
       { x: 0, y: 0, z: 0 },
@@ -299,7 +299,7 @@ describe('Reflector computeTextureMatrix', () => {
     // 原点在 y=0 平面上,镜像相机也在平面上,投影后 NDC ≈ (0, 0) → UV (0.5, 0.5)
     // 但这取决于视图矩阵,这里只验证不崩溃且结果合理
     const r = new Reflector();
-    const proj = new Matrix4().makePerspective(Math.PI / 4, 1, 0.1, 100);
+    const proj = new Matrix4().makePerspective(-0.1 * Math.tan(Math.PI / 8), 0.1 * Math.tan(Math.PI / 8), 0.1 * Math.tan(Math.PI / 8), -0.1 * Math.tan(Math.PI / 8), 0.1, 100);
     const view = new Matrix4().makeLookAt(
       { x: 0, y: 0, z: 10 },
       { x: 0, y: 0, z: 0 },
@@ -317,7 +317,7 @@ describe('Reflector computeTextureMatrix', () => {
 describe('Reflector computeObliqueProjection', () => {
   it('returns a Matrix4 without crashing', () => {
     const r = new Reflector();
-    const proj = new Matrix4().makePerspective(Math.PI / 4, 1, 0.1, 100);
+    const proj = new Matrix4().makePerspective(-0.1 * Math.tan(Math.PI / 8), 0.1 * Math.tan(Math.PI / 8), 0.1 * Math.tan(Math.PI / 8), -0.1 * Math.tan(Math.PI / 8), 0.1, 100);
     const view = new Matrix4().makeLookAt(
       { x: 0, y: 5, z: 10 },
       { x: 0, y: 0, z: 0 },
@@ -329,7 +329,7 @@ describe('Reflector computeObliqueProjection', () => {
 
   it('modifies the near-plane row (row 3)', () => {
     const r = new Reflector();
-    const proj = new Matrix4().makePerspective(Math.PI / 4, 1, 0.1, 100);
+    const proj = new Matrix4().makePerspective(-0.1 * Math.tan(Math.PI / 8), 0.1 * Math.tan(Math.PI / 8), 0.1 * Math.tan(Math.PI / 8), -0.1 * Math.tan(Math.PI / 8), 0.1, 100);
     const view = new Matrix4().makeLookAt(
       { x: 0, y: 5, z: 10 },
       { x: 0, y: 0, z: 0 },
@@ -349,7 +349,7 @@ describe('Reflector computeObliqueProjection', () => {
   it('returns original projection for degenerate case (parallel plane)', () => {
     // 平面与近裁剪面平行 — 可能退化,但不应崩溃
     const r = new Reflector();
-    const proj = new Matrix4().makePerspective(Math.PI / 4, 1, 0.1, 100);
+    const proj = new Matrix4().makePerspective(-0.1 * Math.tan(Math.PI / 8), 0.1 * Math.tan(Math.PI / 8), 0.1 * Math.tan(Math.PI / 8), -0.1 * Math.tan(Math.PI / 8), 0.1, 100);
     const view = new Matrix4(); // identity view
     const oblique = r.computeObliqueProjection(proj, view);
     expect(oblique.elements.length).toBe(16);

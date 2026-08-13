@@ -18,7 +18,7 @@ import type { TAACamera, TAAInput } from './TAAPass';
 /** 构造一个最小可用的相机(只需 projectionMatrix)。 */
 function makeCamera(): TAACamera {
   const cam = new Matrix4();
-  cam.makePerspective(Math.PI / 4, 1, 0.1, 100);
+  cam.makePerspective(-0.1 * Math.tan(Math.PI / 8), 0.1 * Math.tan(Math.PI / 8), 0.1 * Math.tan(Math.PI / 8), -0.1 * Math.tan(Math.PI / 8), 0.1, 100);
   return { projectionMatrix: cam };
 }
 
@@ -218,7 +218,7 @@ describe('TAAPass jitter', () => {
     p.currentJitter.x = 1.0; // 1 像素
     p.currentJitter.y = -2.0; // -2 像素
     const proj = new Matrix4();
-    proj.makePerspective(Math.PI / 4, 1, 0.1, 100);
+    proj.makePerspective(-0.1 * Math.tan(Math.PI / 8), 0.1 * Math.tan(Math.PI / 8), 0.1 * Math.tan(Math.PI / 8), -0.1 * Math.tan(Math.PI / 8), 0.1, 100);
     const e8Before = proj.elements[8];
     const e9Before = proj.elements[9];
     p.applyJitter(proj);
@@ -615,7 +615,7 @@ describe('TAAPass structural camera', () => {
   it('accepts any object with projectionMatrix', () => {
     const p = new TAAPass({ width: 8, height: 8 });
     const proj = new Matrix4();
-    proj.makePerspective(Math.PI / 4, 1, 0.1, 100);
+    proj.makePerspective(-0.1 * Math.tan(Math.PI / 8), 0.1 * Math.tan(Math.PI / 8), 0.1 * Math.tan(Math.PI / 8), -0.1 * Math.tan(Math.PI / 8), 0.1, 100);
     const cam: TAACamera = { projectionMatrix: proj };
     expect(() => p.render(makeInput(makeBlackImage(8, 8), 8, 8), null, cam)).not.toThrow();
   });

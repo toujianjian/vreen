@@ -37,6 +37,9 @@ export { SimplexNoise } from './SimplexNoise';
 export { Spherical } from './Spherical';
 export { Cylindrical } from './Cylindrical';
 
+// 坐标系常量 (three.js WebGLCoordinateSystem/WebGPUCoordinateSystem)
+export { WebGLCoordinateSystem, WebGPUCoordinateSystem } from './Matrix4';
+
 // 颜色
 export { Color, type HSL } from './Color';
 

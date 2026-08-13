@@ -22,22 +22,15 @@ export class PerspectiveCamera extends Camera {
   }
 
   override updateProjectionMatrix(): void {
+    // 对称垂直视锥 (filmOffset = 0):top/bottom 由 fov 决定,left/right 由 aspect 决定。
     const top = this.near * Math.tan((this.fov * Math.PI) / 360);
     const height = 2 * top;
     const width = this.aspect * height;
     const left = -width / 2;
-    // We delegate the actual frustum build to Matrix4.makePerspective —
-    // symmetric vertical fov, WebGL depth [-1, 1]. (Same as three.js with
-    // filmOffset = 0.)
-    this.projectionMatrix.makePerspective(
-      (this.fov * Math.PI) / 180,
-      this.aspect,
-      this.near,
-      this.far,
-    );
+    const right = -left;
+    const bottom = -top;
+    // 委托 Matrix4.makePerspective 构建视锥,WebGL 深度 [-1, 1]。
+    this.projectionMatrix.makePerspective(left, right, top, bottom, this.near, this.far);
     this.projectionMatrixInverse.getInverse(this.projectionMatrix);
-    // We *do not* shift the frustum; symmetric camera. (Keeping the vars
-    // around to remind future readers why the local `left` calc exists.)
-    void left;
   }
 }

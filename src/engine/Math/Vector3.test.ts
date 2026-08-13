@@ -340,7 +340,7 @@ describe('Vector3', () => {
     it('perspective matrix applies perspective divide', () => {
       // 简单透视:把 z=-1 的点投影,w = -z = 1,结果不变(近似)
       const m = new Matrix4();
-      m.makePerspective(Math.PI / 2, 1, 0.1, 100);
+      m.makePerspective(-0.1, 0.1, 0.1, -0.1, 0.1, 100);
       const v = new Vector3(0, 0, -1).applyMatrix4(m);
       // 投影后 x,y 应为 0(点在视轴中心),z 在 [-1,1] 范围
       expect(v.x).toBeCloseTo(0, 5);
@@ -478,7 +478,7 @@ describe('Vector3', () => {
     it('round-trips a point through a camera', () => {
       const matrixWorld = new Matrix4().makeTranslation(10, 20, 30);
       const matrixWorldInverse = new Matrix4().copy(matrixWorld).invert();
-      const projectionMatrix = new Matrix4().makePerspective(Math.PI / 2, 1, 0.1, 100);
+      const projectionMatrix = new Matrix4().makePerspective(-0.1, 0.1, 0.1, -0.1, 0.1, 100);
       const projectionMatrixInverse = new Matrix4().copy(projectionMatrix).invert();
       const camera = { matrixWorld, matrixWorldInverse, projectionMatrix, projectionMatrixInverse };
 

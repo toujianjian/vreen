@@ -95,7 +95,7 @@ describe('ReflectorMaterial type', () => {
 describe('ReflectorMaterial copy / clone', () => {
   it('copy duplicates all fields', () => {
     const tex = {} as any;
-    const mat4 = new Matrix4().makePerspective(1, 1, 0.1, 100);
+    const mat4 = new Matrix4().makePerspective(-0.1 * Math.tan(0.5), 0.1 * Math.tan(0.5), 0.1 * Math.tan(0.5), -0.1 * Math.tan(0.5), 0.1, 100);
     const src = new ReflectorMaterial({
       reflectionTexture: tex,
       textureMatrix: mat4,
@@ -220,7 +220,7 @@ describe('ReflectorMaterial shader source', () => {
 describe('ReflectorMaterial integration with Reflector math', () => {
   it('textureMatrix field accepts Matrix4 from Reflector.computeTextureMatrix', () => {
     // 模拟 Reflector.computeTextureMatrix 的输出
-    const proj = new Matrix4().makePerspective(Math.PI / 4, 1, 0.1, 100);
+    const proj = new Matrix4().makePerspective(-0.1 * Math.tan(Math.PI / 8), 0.1 * Math.tan(Math.PI / 8), 0.1 * Math.tan(Math.PI / 8), -0.1 * Math.tan(Math.PI / 8), 0.1, 100);
     const view = new Matrix4().makeLookAt(
       { x: 0, y: -5, z: 10 },
       { x: 0, y: 0, z: 0 },

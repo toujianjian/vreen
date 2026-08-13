@@ -16,10 +16,12 @@ function makeTestFrustum(): Frustum {
     { x: 0, y: 1, z: 0 },
   );
   const proj = new Matrix4().makePerspective(
-    Math.PI / 2, // 90°
-    1,           // aspect
-    0.1,         // near
-    100,         // far
+    -0.1,  // left  = -top (top = near·tan(90°/2) = 0.1)
+    0.1,   // right
+    0.1,   // top
+    -0.1,  // bottom
+    0.1,   // near
+    100,   // far
   );
   const vp = new Matrix4().multiplyMatrices(proj, view);
   return new Frustum().setFromViewProjectionMatrix(vp);
