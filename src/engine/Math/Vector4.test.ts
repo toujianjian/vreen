@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { Vector4 } from './Vector4';
+import { Vector3 } from './Vector3';
 import { Matrix4 } from './Matrix4';
+import { Quaternion } from './Quaternion';
+import { BufferAttribute } from '../Core/BufferAttribute';
 
 describe('Vector4', () => {
   describe('construction', () => {
@@ -384,6 +387,175 @@ describe('Vector4', () => {
       expect(v.y).toBe(5);
       expect(v.z).toBe(6);
       expect(v.w).toBe(7);
+    });
+
+    it('toArray writes into target array at offset', () => {
+      const out: number[] = [0, 0, 0, 0, 0, 0];
+      const arr = new Vector4(1, 2, 3, 4).toArray(out, 1);
+      expect(arr).toBe(out);
+      expect(out).toEqual([0, 1, 2, 3, 4, 0]);
+    });
+
+    it('fromArray reads at offset', () => {
+      const v = new Vector4().fromArray([99, 1, 2, 3, 4, 99], 1);
+      expect(v).toEqual(new Vector4(1, 2, 3, 4));
+    });
+  });
+
+  describe('min / max', () => {
+    it('min keeps component-wise minimum', () => {
+      const v = new Vector4(5, 1, 3, 2).min(new Vector4(2, 4, 3, 0));
+      expect(v.x).toBe(2);
+      expect(v.y).toBe(1);
+      expect(v.z).toBe(3);
+      expect(v.w).toBe(0);
+    });
+
+    it('max keeps component-wise maximum', () => {
+      const v = new Vector4(5, 1, 3, 2).max(new Vector4(2, 4, 3, 0));
+      expect(v.x).toBe(5);
+      expect(v.y).toBe(4);
+      expect(v.z).toBe(3);
+      expect(v.w).toBe(2);
+    });
+  });
+
+  describe('clamp / clampScalar / clampLength', () => {
+    it('clamp component-wise', () => {
+      const v = new Vector4(-1, 0.5, 3, 2).clamp(new Vector4(0, 0, 0, 1), new Vector4(1, 1, 1, 2));
+      expect(v.x).toBe(0);
+      expect(v.y).toBe(0.5);
+      expect(v.z).toBe(1);
+      expect(v.w).toBe(2);
+    });
+
+    it('clampScalar clamps all components', () => {
+      const v = new Vector4(-2, 0.5, 5, 1.5).clampScalar(-1, 1);
+      expect(v.x).toBe(-1);
+      expect(v.y).toBe(0.5);
+      expect(v.z).toBe(1);
+      expect(v.w).toBe(1);
+    });
+
+    it('clampLength clamps length preserving direction', () => {
+      const v = new Vector4(3, 4, 0, 0).clampLength(1, 2);
+      expect(v.length()).toBeCloseTo(2);
+      expect(v.normalize().dot(new Vector4(0.6, 0.8, 0, 0))).toBeCloseTo(1);
+    });
+
+    it('clampLength on zero vector stays zero', () => {
+      const v = new Vector4(0, 0, 0, 0).clampLength(1, 2);
+      expect(v.length()).toBe(0);
+    });
+  });
+
+  describe('floor / ceil / round / roundToZero', () => {
+    it('floor', () => {
+      const v = new Vector4(1.7, -1.7, 2.2, -2.9).floor();
+      expect(v.x).toBe(1);
+      expect(v.y).toBe(-2);
+      expect(v.z).toBe(2);
+      expect(v.w).toBe(-3);
+    });
+
+    it('ceil', () => {
+      const v = new Vector4(1.2, -1.2, 2.8, -2.1).ceil();
+      expect(v.x).toBe(2);
+      expect(v.y).toBe(-1);
+      expect(v.z).toBe(3);
+      expect(v.w).toBe(-2);
+    });
+
+    it('round', () => {
+      const v = new Vector4(1.4, 1.6, -1.4, -1.6).round();
+      expect(v.x).toBe(1);
+      expect(v.y).toBe(2);
+      expect(v.z).toBe(-1);
+      expect(v.w).toBe(-2);
+    });
+
+    it('roundToZero truncates toward zero', () => {
+      const v = new Vector4(1.7, -1.7, 2.9, -2.9).roundToZero();
+      expect(v.x).toBe(1);
+      expect(v.y).toBe(-1);
+      expect(v.z).toBe(2);
+      expect(v.w).toBe(-2);
+    });
+  });
+
+  describe('setAxisAngleFromQuaternion', () => {
+    it('identity quaternion gives zero angle, arbitrary axis (1,0,0)', () => {
+      const q = new Quaternion();
+      const v = new Vector4().setAxisAngleFromQuaternion(q);
+      expect(v.x).toBe(1);
+      expect(v.y).toBe(0);
+      expect(v.z).toBe(0);
+      expect(v.w).toBe(0);
+    });
+
+    it('90° around Z gives axis (0,0,1), angle π/2', () => {
+      const q = new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), Math.PI / 2);
+      const v = new Vector4().setAxisAngleFromQuaternion(q);
+      expect(v.x).toBeCloseTo(0);
+      expect(v.y).toBeCloseTo(0);
+      expect(v.z).toBeCloseTo(1);
+      expect(v.w).toBeCloseTo(Math.PI / 2);
+    });
+  });
+
+  describe('setAxisAngleFromRotationMatrix', () => {
+    it('identity matrix gives angle 0, axis (1,0,0)', () => {
+      const m = new Matrix4();
+      const v = new Vector4().setAxisAngleFromRotationMatrix(m);
+      expect(v.x).toBe(1);
+      expect(v.y).toBe(0);
+      expect(v.z).toBe(0);
+      expect(v.w).toBe(0);
+    });
+
+    it('90° rotation around Z gives axis (0,0,1), angle π/2', () => {
+      const m = new Matrix4().makeRotationZ(Math.PI / 2);
+      const v = new Vector4().setAxisAngleFromRotationMatrix(m);
+      expect(v.x).toBeCloseTo(0);
+      expect(v.y).toBeCloseTo(0);
+      expect(v.z).toBeCloseTo(1);
+      expect(v.w).toBeCloseTo(Math.PI / 2);
+    });
+  });
+
+  describe('setFromMatrixPosition', () => {
+    it('reads translation column from matrix', () => {
+      const m = new Matrix4().makeTranslation(5, 6, 7);
+      const v = new Vector4().setFromMatrixPosition(m);
+      expect(v.x).toBe(5);
+      expect(v.y).toBe(6);
+      expect(v.z).toBe(7);
+      expect(v.w).toBe(1);
+    });
+  });
+
+  describe('fromBufferAttribute', () => {
+    it('reads x/y/z/w at index (itemSize 4)', () => {
+      const attr = new BufferAttribute(new Float32Array([1, 2, 3, 4, 5, 6, 7, 8]), 4);
+      const v = new Vector4().fromBufferAttribute(attr, 1);
+      expect(v.x).toBe(5);
+      expect(v.y).toBe(6);
+      expect(v.z).toBe(7);
+      expect(v.w).toBe(8);
+    });
+  });
+
+  describe('random', () => {
+    it('sets all components to [0, 1)', () => {
+      const v = new Vector4(9, 9, 9, 9).random();
+      expect(v.x).toBeGreaterThanOrEqual(0);
+      expect(v.x).toBeLessThan(1);
+      expect(v.y).toBeGreaterThanOrEqual(0);
+      expect(v.y).toBeLessThan(1);
+      expect(v.z).toBeGreaterThanOrEqual(0);
+      expect(v.z).toBeLessThan(1);
+      expect(v.w).toBeGreaterThanOrEqual(0);
+      expect(v.w).toBeLessThan(1);
     });
   });
 });

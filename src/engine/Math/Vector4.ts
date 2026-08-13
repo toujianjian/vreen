@@ -176,6 +176,184 @@ export class Vector4 {
     return this;
   }
 
+  /** 从单位四元数提取轴-角,写入 (axis.xyz, angle.w)。q 须已归一化。 */
+  setAxisAngleFromQuaternion(q: { w: number; x: number; y: number; z: number }): this {
+    this.w = 2 * Math.acos(q.w);
+    const s = Math.sqrt(1 - q.w * q.w);
+    if (s < 0.0001) {
+      this.x = 1;
+      this.y = 0;
+      this.z = 0;
+    } else {
+      this.x = q.x / s;
+      this.y = q.y / s;
+      this.z = q.z / s;
+    }
+    return this;
+  }
+
+  /** 从旋转矩阵提取轴-角,写入 (axis.xyz, angle.w)。假定 m 上 3x3 为纯旋转矩阵。 */
+  setAxisAngleFromRotationMatrix(m: Matrix4Like): this {
+    let angle = 0, x = 0, y = 0, z = 0;
+    const epsilon = 0.01, epsilon2 = 0.1;
+    const te = m.elements;
+    const m11 = te[0], m12 = te[4], m13 = te[8];
+    const m21 = te[1], m22 = te[5], m23 = te[9];
+    const m31 = te[2], m32 = te[6], m33 = te[10];
+
+    if (
+      Math.abs(m12 - m21) < epsilon &&
+      Math.abs(m13 - m31) < epsilon &&
+      Math.abs(m23 - m32) < epsilon
+    ) {
+      // singularity found
+      if (
+        Math.abs(m12 + m21) < epsilon2 &&
+        Math.abs(m13 + m31) < epsilon2 &&
+        Math.abs(m23 + m32) < epsilon2 &&
+        Math.abs(m11 + m22 + m33 - 3) < epsilon2
+      ) {
+        // identity matrix, angle = 0
+        this.set(1, 0, 0, 0);
+        return this;
+      }
+      // angle = 180
+      angle = Math.PI;
+      const xx = (m11 + 1) / 2;
+      const yy = (m22 + 1) / 2;
+      const zz = (m33 + 1) / 2;
+      const xy = (m12 + m21) / 4;
+      const xz = (m13 + m31) / 4;
+      const yz = (m23 + m32) / 4;
+      if (xx > yy && xx > zz) {
+        if (xx < epsilon) {
+          x = 0;
+          y = 0.707106781;
+          z = 0.707106781;
+        } else {
+          x = Math.sqrt(xx);
+          y = xy / x;
+          z = xz / x;
+        }
+      } else if (yy > zz) {
+        if (yy < epsilon) {
+          x = 0.707106781;
+          y = 0;
+          z = 0.707106781;
+        } else {
+          y = Math.sqrt(yy);
+          x = xy / y;
+          z = yz / y;
+        }
+      } else {
+        if (zz < epsilon) {
+          x = 0.707106781;
+          y = 0.707106781;
+          z = 0;
+        } else {
+          z = Math.sqrt(zz);
+          x = xz / z;
+          y = yz / z;
+        }
+      }
+      this.set(x, y, z, angle);
+      return this;
+    }
+
+    let s = Math.sqrt(
+      (m32 - m23) * (m32 - m23) +
+      (m13 - m31) * (m13 - m31) +
+      (m21 - m12) * (m21 - m12)
+    );
+    if (Math.abs(s) < 0.001) s = 1;
+    this.x = (m32 - m23) / s;
+    this.y = (m13 - m31) / s;
+    this.z = (m21 - m12) / s;
+    this.w = Math.acos((m11 + m22 + m33 - 1) / 2);
+    return this;
+  }
+
+  /** 从矩阵第 4 列读取平移,写入 x/y/z,矩阵 4x4 的 w 元素写入 w。 */
+  setFromMatrixPosition(m: Matrix4Like): this {
+    const e = m.elements;
+    this.x = e[12];
+    this.y = e[13];
+    this.z = e[14];
+    this.w = e[15];
+    return this;
+  }
+
+  min(v: Vector4): this {
+    this.x = Math.min(this.x, v.x);
+    this.y = Math.min(this.y, v.y);
+    this.z = Math.min(this.z, v.z);
+    this.w = Math.min(this.w, v.w);
+    return this;
+  }
+
+  max(v: Vector4): this {
+    this.x = Math.max(this.x, v.x);
+    this.y = Math.max(this.y, v.y);
+    this.z = Math.max(this.z, v.z);
+    this.w = Math.max(this.w, v.w);
+    return this;
+  }
+
+  /** 逐分量钳制到 [min, max]。假定 min < max。 */
+  clamp(min: Vector4, max: Vector4): this {
+    this.x = Math.max(min.x, Math.min(max.x, this.x));
+    this.y = Math.max(min.y, Math.min(max.y, this.y));
+    this.z = Math.max(min.z, Math.min(max.z, this.z));
+    this.w = Math.max(min.w, Math.min(max.w, this.w));
+    return this;
+  }
+
+  clampScalar(minVal: number, maxVal: number): this {
+    this.x = Math.max(minVal, Math.min(maxVal, this.x));
+    this.y = Math.max(minVal, Math.min(maxVal, this.y));
+    this.z = Math.max(minVal, Math.min(maxVal, this.z));
+    this.w = Math.max(minVal, Math.min(maxVal, this.w));
+    return this;
+  }
+
+  /** 将向量长度钳制到 [min, max],保持方向。 */
+  clampLength(min: number, max: number): this {
+    const length = this.length();
+    return this.divideScalar(length || 1).multiplyScalar(Math.max(min, Math.min(max, length)));
+  }
+
+  floor(): this {
+    this.x = Math.floor(this.x);
+    this.y = Math.floor(this.y);
+    this.z = Math.floor(this.z);
+    this.w = Math.floor(this.w);
+    return this;
+  }
+
+  ceil(): this {
+    this.x = Math.ceil(this.x);
+    this.y = Math.ceil(this.y);
+    this.z = Math.ceil(this.z);
+    this.w = Math.ceil(this.w);
+    return this;
+  }
+
+  round(): this {
+    this.x = Math.round(this.x);
+    this.y = Math.round(this.y);
+    this.z = Math.round(this.z);
+    this.w = Math.round(this.w);
+    return this;
+  }
+
+  roundToZero(): this {
+    this.x = Math.trunc(this.x);
+    this.y = Math.trunc(this.y);
+    this.z = Math.trunc(this.z);
+    this.w = Math.trunc(this.w);
+    return this;
+  }
+
   negate(): this {
     this.x = -this.x;
     this.y = -this.y;
@@ -242,15 +420,41 @@ export class Vector4 {
     );
   }
 
-  toArray(): [number, number, number, number] {
-    return [this.x, this.y, this.z, this.w];
+  toArray(): [number, number, number, number];
+  toArray(array: number[], offset?: number): number[];
+  toArray(array: number[] = [], offset = 0): number[] {
+    array[offset] = this.x;
+    array[offset + 1] = this.y;
+    array[offset + 2] = this.z;
+    array[offset + 3] = this.w;
+    return array;
   }
 
-  fromArray(a: [number, number, number, number]): this {
-    this.x = a[0];
-    this.y = a[1];
-    this.z = a[2];
-    this.w = a[3];
+  fromArray(array: ArrayLike<number>, offset = 0): this {
+    this.x = array[offset];
+    this.y = array[offset + 1];
+    this.z = array[offset + 2];
+    this.w = array[offset + 3];
+    return this;
+  }
+
+  /** 从 BufferAttribute 指定索引读取分量。attribute 需提供 getX/getY/getZ/getW。 */
+  fromBufferAttribute(
+    attribute: { getX(i: number): number; getY(i: number): number; getZ(i: number): number; getW(i: number): number },
+    index: number
+  ): this {
+    this.x = attribute.getX(index);
+    this.y = attribute.getY(index);
+    this.z = attribute.getZ(index);
+    this.w = attribute.getW(index);
+    return this;
+  }
+
+  random(): this {
+    this.x = Math.random();
+    this.y = Math.random();
+    this.z = Math.random();
+    this.w = Math.random();
     return this;
   }
 }
