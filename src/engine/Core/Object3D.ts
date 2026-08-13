@@ -12,6 +12,17 @@ function nextId(): number {
   return ++_id;
 }
 
+// Module-level temp objects(three.js 同款:复用避免每帧 GC 分配)。
+const _position = new Vector3();
+const _quaternion = new Quaternion();
+const _scale = new Vector3();
+const _m1 = new Matrix4();
+const _v1 = new Vector3();
+const _q1 = new Quaternion();
+const _xAxis = new Vector3(1, 0, 0);
+const _yAxis = new Vector3(0, 1, 0);
+const _zAxis = new Vector3(0, 0, 1);
+
 /**
  * 脏标记位掩码。当对象的某类数据变化时,通过位或运算标记;
  * SceneGraphProcessor / updateMatrixWorld 在下次遍历时只重算被标记的对象,
@@ -229,12 +240,168 @@ export class Object3D {
     }
   }
 
-  /** three.js-compat alias for updateMatrixWorld(force).
-   *  three.js 走 `Box3.setFromObject` 时会调 `updateWorldMatrix(updateParents, updateChildren)`,
-   *  自研 engine 只有 updateMatrixWorld。这里补一个同名 shim 避免跨 engine 混用时
-   *  `TypeError: object.updateWorldMatrix is not a function` 把整个 WebGL context 拖死。 */
-  updateWorldMatrix(_updateParents: boolean = false, _updateChildren: boolean = false): void {
-    this.updateMatrixWorld(true);
+  /** three.js-compat `updateWorldMatrix(updateParents, updateChildren)`.
+   *  与 `updateMatrixWorld(force)` 的区别:按需选择是否上溯更新祖先 / 下推更新后代,
+   *  而 updateMatrixWorld 总是递归整棵子树。语义对齐 three.js r169:
+   *  - updateParents=true:沿 parent 链向上,若祖先仍脏则先更新祖先
+   *  - updateChildren=true:沿子树向下递归(force 级联)
+   *  世界空间 getter(getWorldPosition 等)均调用本方法(updateParents=true,
+   *  updateChildren=false),保证只花遍历祖先的代价。 */
+  updateWorldMatrix(updateParents: boolean, updateChildren: boolean): void {
+    const parent = this.parent;
+    if (updateParents === true && parent !== null) {
+      parent.updateWorldMatrix(true, false);
+    }
+    if (this.matrixAutoUpdate) this.updateMatrix();
+    if (this.parent === null) {
+      this.matrixWorld.copy(this.matrix);
+    } else {
+      this.matrixWorld.multiplyMatrices(this.parent.matrixWorld, this.matrix);
+    }
+    this.matrixWorldNeedsUpdate = false;
+    this.clearDirty(DirtyFlag.MATRIX_WORLD);
+    if (updateChildren === true) {
+      for (const child of this.children) {
+        child.updateWorldMatrix(false, true);
+      }
+    }
+  }
+
+  /** World-space position of the object's origin. */
+  getWorldPosition(target: Vector3 = new Vector3()): Vector3 {
+    this.updateWorldMatrix(true, false);
+    return target.setFromMatrixPosition(this.matrixWorld);
+  }
+
+  /** World-space rotation of the object. */
+  getWorldQuaternion(target: Quaternion = new Quaternion()): Quaternion {
+    this.updateWorldMatrix(true, false);
+    this.matrixWorld.decompose(_position, target, _scale);
+    return target;
+  }
+
+  /** World-space scale of the object. */
+  getWorldScale(target: Vector3 = new Vector3()): Vector3 {
+    this.updateWorldMatrix(true, false);
+    this.matrixWorld.decompose(_position, _quaternion, target);
+    return target;
+  }
+
+  /** World-space direction the object is "looking" (along its local -Z axis).
+   *  VREEN 约定与 Camera.getWorldDirection / SceneUtils.getWorldDirection 一致:返回 -Z
+   *  (three.js 返回 +Z)。 */
+  getWorldDirection(target: Vector3 = new Vector3()): Vector3 {
+    this.updateWorldMatrix(true, false);
+    const e = this.matrixWorld.elements;
+    return target.set(-e[8], -e[9], -e[10]).normalize();
+  }
+
+  /** Convert a point in local space to world space (point, not vector). */
+  localToWorld(point: Vector3): Vector3 {
+    this.updateWorldMatrix(true, false);
+    return point.applyMatrix4(this.matrixWorld);
+  }
+
+  /** Convert a point in world space to local space (point, not vector). */
+  worldToLocal(point: Vector3): Vector3 {
+    this.updateWorldMatrix(true, false);
+    return point.applyMatrix4(_m1.copy(this.matrixWorld).invert());
+  }
+
+  /** Move this object so it becomes a child of parent, preserving its
+   *  world transform (three.js Object3D.attach). */
+  attach(object: Object3D): this {
+    this.updateWorldMatrix(true, false);
+    _m1.copy(this.matrixWorld).invert();
+    if (object.parent !== null) {
+      object.parent.updateWorldMatrix(true, false);
+      _m1.multiply(object.parent.matrixWorld);
+    }
+    object.applyMatrix4(_m1);
+    this.add(object);
+    object.updateWorldMatrix(false, true);
+    return this;
+  }
+
+  /** Apply a matrix to the object's local transform: premultiply into the
+   *  local matrix, then decompose back into position/rotation/scale. */
+  applyMatrix4(matrix: Matrix4): this {
+    if (this.matrixAutoUpdate) this.updateMatrix();
+    this.matrix.premultiply(matrix);
+    this.matrix.decompose(this.position, this.rotation, this.scale);
+    return this;
+  }
+
+  /** Apply a quaternion to the object's rotation (premultiply). */
+  applyQuaternion(q: Quaternion): this {
+    this.rotation.premultiply(q);
+    return this;
+  }
+
+  /** Rotate this object around an axis given in local space. */
+  rotateOnAxis(axis: Vector3, angle: number): this {
+    _q1.setFromAxisAngle(axis, angle);
+    this.rotation.multiply(_q1);
+    return this;
+  }
+
+  /** Rotate this object around an axis given in world space. */
+  rotateOnWorldAxis(axis: Vector3, angle: number): this {
+    _q1.setFromAxisAngle(axis, angle);
+    this.rotation.premultiply(_q1);
+    return this;
+  }
+
+  /** Rotate this object around its local X axis by `angle` radians. */
+  rotateX(angle: number): this {
+    return this.rotateOnAxis(_xAxis, angle);
+  }
+
+  /** Rotate this object around its local Y axis by `angle` radians. */
+  rotateY(angle: number): this {
+    return this.rotateOnAxis(_yAxis, angle);
+  }
+
+  /** Rotate this object around its local Z axis by `angle` radians. */
+  rotateZ(angle: number): this {
+    return this.rotateOnAxis(_zAxis, angle);
+  }
+
+  /** Translate this object along an axis given in local space by `distance`. */
+  translateOnAxis(axis: Vector3, distance: number): this {
+    _v1.copy(axis).applyQuaternion(this.rotation);
+    this.position.add(_v1.multiplyScalar(distance));
+    return this;
+  }
+
+  /** Translate along the object's local X axis. */
+  translateX(distance: number): this {
+    return this.translateOnAxis(_xAxis, distance);
+  }
+
+  /** Translate along the object's local Y axis. */
+  translateY(distance: number): this {
+    return this.translateOnAxis(_yAxis, distance);
+  }
+
+  /** Translate along the object's local Z axis. */
+  translateZ(distance: number): this {
+    return this.translateOnAxis(_zAxis, distance);
+  }
+
+  /** Detach this object from its parent (no-op if it has none). */
+  removeFromParent(): this {
+    const parent = this.parent;
+    if (parent !== null) parent.remove(this);
+    return this;
+  }
+
+  /** Remove all children. Reverse iteration so index shifts never skip a node. */
+  clear(): this {
+    for (let i = this.children.length - 1; i >= 0; i--) {
+      this.remove(this.children[i]);
+    }
+    return this;
   }
 
   /** Walk this subtree, depth-first. */
@@ -243,11 +410,47 @@ export class Object3D {
     for (const child of this.children) child.traverse(callback);
   }
 
-  /** Find a descendant by exact name. */
+  /** Walk the subtree, depth-first, skipping descendants of invisible nodes. */
+  traverseVisible(callback: (o: Object3D) => void): void {
+    if (this.visible === false) return;
+    callback(this);
+    for (const child of this.children) child.traverseVisible(callback);
+  }
+
+  /** Walk up the parent chain, nearest ancestor first. */
+  traverseAncestors(callback: (o: Object3D) => void): void {
+    const parent = this.parent;
+    if (parent !== null) {
+      callback(parent);
+      parent.traverseAncestors(callback);
+    }
+  }
+
+  /** Find a descendant by exact name (three.js semantics: includes self). */
   getObjectByName(name: string): Object3D | null {
     if (this.name === name) return this;
     for (const c of this.children) {
       const f = c.getObjectByName(name);
+      if (f) return f;
+    }
+    return null;
+  }
+
+  /** Find a descendant by its numeric id (includes self). */
+  getObjectById(id: number): Object3D | null {
+    if (this.id === id) return this;
+    for (const c of this.children) {
+      const f = c.getObjectById(id);
+      if (f) return f;
+    }
+    return null;
+  }
+
+  /** Find a descendant matching `property === value` (includes self). */
+  getObjectByProperty(name: string, value: unknown): Object3D | null {
+    if ((this as unknown as Record<string, unknown>)[name] === value) return this;
+    for (const c of this.children) {
+      const f = c.getObjectByProperty(name, value);
       if (f) return f;
     }
     return null;

@@ -856,10 +856,8 @@ export function CustomStage({ onError }: { onError?: () => void }) {
       fov: cam.fov,
       updateProjectionMatrix: () => cam.updateProjectionMatrix(),
       getWorldDirection: (t: THREE.Vector3) => {
-        // 复用我们刚加的 getWorldDirection,赋给 THREE.Vector3
-        const out = new THREE.Vector3();
-        cam.getWorldDirection(out as unknown as { x: number; y: number; z: number });
-        t.copy(out);
+        const out = cam.getWorldDirection();
+        t.copy(out as unknown as THREE.Vector3);
         return t;
       },
       lookAt: (x: number | THREE.Vector3, y?: number, z?: number) => {

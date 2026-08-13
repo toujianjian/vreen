@@ -14,6 +14,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { CubeCamera, CUBE_FACES } from './CubeCamera';
 import { PerspectiveCamera } from './PerspectiveCamera';
 import { Object3D } from '../Core/Object3D';
+import { Vector3 } from '../Math';
 
 // 每面对应的期望方向(+X, -X, +Y, -Y, +Z, -Z)
 const EXPECTED_DIRS: Record<string, [number, number, number]> = {
@@ -218,7 +219,7 @@ describe('CubeCamera', () => {
         // 相机不是 CubeCamera 的子节点,需手动更新 matrixWorld
         faceCam.updateMatrixWorld(true);
 
-        const dir = faceCam.getWorldDirection({ x: 0, y: 0, z: 0 });
+        const dir = faceCam.getWorldDirection(new Vector3());
         expect(dir.x).toBeCloseTo(dx, 5);
         expect(dir.y).toBeCloseTo(dy, 5);
         expect(dir.z).toBeCloseTo(dz, 5);
@@ -233,7 +234,7 @@ describe('CubeCamera', () => {
       // +X 面应朝向 (1,0,0)
       const pxCam = cam.cameras[0];
       pxCam.updateMatrixWorld(true);
-      const dir = pxCam.getWorldDirection({ x: 0, y: 0, z: 0 });
+      const dir = pxCam.getWorldDirection(new Vector3());
       expect(dir.x).toBeCloseTo(1, 5);
       expect(dir.y).toBeCloseTo(0, 5);
       expect(dir.z).toBeCloseTo(0, 5);
@@ -246,7 +247,7 @@ describe('CubeCamera', () => {
       cam.updateMatrixWorld(true);
       const pyCam = cam.cameras[2]; // +Y
       pyCam.updateMatrixWorld(true);
-      const dir = pyCam.getWorldDirection({ x: 0, y: 0, z: 0 });
+      const dir = pyCam.getWorldDirection(new Vector3());
       expect(Number.isNaN(dir.x)).toBe(false);
       expect(Number.isNaN(dir.y)).toBe(false);
       expect(Number.isNaN(dir.z)).toBe(false);
@@ -258,7 +259,7 @@ describe('CubeCamera', () => {
       cam.updateMatrixWorld(true);
       const nyCam = cam.cameras[3]; // -Y
       nyCam.updateMatrixWorld(true);
-      const dir = nyCam.getWorldDirection({ x: 0, y: 0, z: 0 });
+      const dir = nyCam.getWorldDirection(new Vector3());
       expect(Number.isNaN(dir.x)).toBe(false);
       expect(Number.isNaN(dir.y)).toBe(false);
       expect(Number.isNaN(dir.z)).toBe(false);
@@ -324,7 +325,7 @@ describe('CubeCamera', () => {
       // +Z 面方向
       const pzCam = cam.cameras[4];
       pzCam.updateMatrixWorld(true);
-      const dir = pzCam.getWorldDirection({ x: 0, y: 0, z: 0 });
+      const dir = pzCam.getWorldDirection(new Vector3());
       expect(dir.z).toBeCloseTo(1, 5);
     });
   });
