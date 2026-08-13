@@ -248,6 +248,15 @@ export class Vector3 {
     return this;
   }
 
+  /** 从 Euler 复制 x/y/z 分量到 this (three.js Vector3.setFromEuler,不做旋转)。 */
+  setFromEuler(e: { x: number; y: number; z: number }): this {
+    this.x = e.x;
+    this.y = e.y;
+    this.z = e.z;
+    this._onChangeCallback();
+    return this;
+  }
+
   /** 从 4x4 矩阵(列主序 16 元素)提取第 `index` 列的前 3 个元素到 this。
    *  参数序与 three.js Vector3.setFromMatrixColumn 完全一致(m 在前,index 在后)。 */
   setFromMatrixColumn(m: { elements: Float32Array | number[] }, index: number): this {

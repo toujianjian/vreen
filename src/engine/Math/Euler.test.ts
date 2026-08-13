@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { Euler, type EulerOrder } from './Euler';
 import { Quaternion } from './Quaternion';
+import { Vector3 } from './Vector3';
 
 // 90° 绕 Z 轴旋转矩阵 (column-major 16 元素):
 //   [ 0 -1 0 0 ]
@@ -59,6 +60,36 @@ describe('Euler', () => {
     it('omits order → keeps current order', () => {
       const e = new Euler(0, 0, 0, 'YZX');
       e.set(5, 6, 7);
+      expect(e.order).toBe('YZX');
+    });
+  });
+
+  describe('setFromVector3', () => {
+    it('copies x/y/z components', () => {
+      const e = new Euler().setFromVector3({ x: 1, y: 2, z: 3 });
+      expect(e.x).toBe(1);
+      expect(e.y).toBe(2);
+      expect(e.z).toBe(3);
+    });
+
+    it('defaults order to current order', () => {
+      const e = new Euler(0, 0, 0, 'ZYX');
+      e.setFromVector3({ x: 1, y: 2, z: 3 });
+      expect(e.order).toBe('ZYX');
+    });
+
+    it('explicit order overrides current order', () => {
+      const e = new Euler(0, 0, 0, 'ZYX');
+      e.setFromVector3({ x: 1, y: 2, z: 3 }, 'XZY');
+      expect(e.order).toBe('XZY');
+    });
+
+    it('accepts a real Vector3 (duck-typed)', () => {
+      const v = new Vector3(4, 5, 6);
+      const e = new Euler().setFromVector3(v, 'YZX');
+      expect(e.x).toBe(4);
+      expect(e.y).toBe(5);
+      expect(e.z).toBe(6);
       expect(e.order).toBe('YZX');
     });
   });

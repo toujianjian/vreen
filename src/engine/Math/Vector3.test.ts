@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import { Vector3 } from './Vector3';
 import { Matrix4 } from './Matrix4';
 import { Quaternion } from './Quaternion';
+import { Euler } from './Euler';
 
 describe('Vector3', () => {
   it('constructs with defaults', () => {
@@ -227,6 +228,39 @@ describe('Vector3', () => {
       expect(v.x).toBe(4);
       expect(v.y).toBe(5);
       expect(v.z).toBe(6);
+    });
+  });
+
+  describe('setFromEuler', () => {
+    it('copies x/y/z components without applying rotation', () => {
+      const v = new Vector3().setFromEuler({ x: 1, y: 2, z: 3 });
+      expect(v.x).toBe(1);
+      expect(v.y).toBe(2);
+      expect(v.z).toBe(3);
+    });
+
+    it('accepts a real Euler (duck-typed)', () => {
+      const e = new Euler(0.3, -0.5, 0.2, 'XZY');
+      const v = new Vector3().setFromEuler(e);
+      expect(v.x).toBe(0.3);
+      expect(v.y).toBe(-0.5);
+      expect(v.z).toBe(0.2);
+    });
+
+    it('roundtrips Euler.setFromVector3 ↔ Vector3.setFromEuler', () => {
+      const v = new Vector3(4, 5, 6);
+      const e = new Euler().setFromVector3(v);
+      const out = new Vector3().setFromEuler(e);
+      expect(out.x).toBe(4);
+      expect(out.y).toBe(5);
+      expect(out.z).toBe(6);
+    });
+
+    it('fires the onChange callback', () => {
+      let fired = 0;
+      const v = new Vector3().onChange(() => fired++);
+      v.setFromEuler({ x: 1, y: 2, z: 3 });
+      expect(fired).toBe(1);
     });
   });
 

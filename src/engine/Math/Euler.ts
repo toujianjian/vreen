@@ -39,6 +39,11 @@ export class Euler {
     return this;
   }
 
+  /** 从 Vector3 复制分量设置欧拉角 (three.js Euler.setFromVector3)。 */
+  setFromVector3(v: { x: number; y: number; z: number }, order: EulerOrder = this.order): this {
+    return this.set(v.x, v.y, v.z, order);
+  }
+
   clone(): Euler {
     return new Euler(this.x, this.y, this.z, this.order);
   }
