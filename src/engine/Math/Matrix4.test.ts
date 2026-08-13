@@ -169,4 +169,41 @@ describe('Matrix4', () => {
       expect(arr[15]).toBe(1);
     });
   });
+
+  describe('copyPosition', () => {
+    it('copies only the translation column, leaving rotation/scale intact', () => {
+      const src = new Matrix4().compose(
+        { x: 5, y: 10, z: -3 },
+        { x: 0, y: 0, z: 0, w: 1 },
+        { x: 2, y: 3, z: 4 },
+      );
+      const out = new Matrix4();
+      out.copyPosition(src);
+      expect(out.elements[12]).toBe(5);
+      expect(out.elements[13]).toBe(10);
+      expect(out.elements[14]).toBe(-3);
+      // 旋转/缩放列不受影响(仍是 identity)
+      expect(out.elements[0]).toBe(1);
+      expect(out.elements[5]).toBe(1);
+      expect(out.elements[10]).toBe(1);
+    });
+  });
+
+  describe('scale', () => {
+    it('scales the 3 basis columns in place, leaving translation', () => {
+      const m = new Matrix4().compose(
+        { x: 5, y: 10, z: -3 },
+        { x: 0, y: 0, z: 0, w: 1 },
+        { x: 1, y: 1, z: 1 },
+      );
+      m.scale({ x: 2, y: 3, z: 4 });
+      expect(m.elements[0]).toBeCloseTo(2);
+      expect(m.elements[5]).toBeCloseTo(3);
+      expect(m.elements[10]).toBeCloseTo(4);
+      // 平移列保持
+      expect(m.elements[12]).toBe(5);
+      expect(m.elements[13]).toBe(10);
+      expect(m.elements[14]).toBe(-3);
+    });
+  });
 });

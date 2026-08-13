@@ -115,7 +115,7 @@ import { Scene, PerspectiveCamera, WebGL2Renderer, BoxGeometry, StandardMaterial
 | Serialization | `Serialization/` | Registry · Geometry · Material · Scene ↔ JSON round-trip | [Serialization/README.md](./Serialization/README.md) |
 | SaveSystem | `SaveSystem/` | Multi-slot saves · Auto-save · LocalStorage adapter | [SaveSystem/README.md](./SaveSystem/README.md) |
 | SceneManager | `SceneManager/` | Multi-scene register/switch · Transition · Streaming | [SceneManager/README.md](./SceneManager/README.md) |
-| Animation | `Animation/` | Clip · Mixer · StateMachine · BlendSpace · Layer · IK · Procedural · RootMotion · BoneAttachment · Retargeting · SpringSolver · TwoBoneIK | [Animation/README.md](./Animation/README.md) |
+| Animation | `Animation/` | Clip · Mixer · StateMachine · BlendSpace · Layer · IK · Procedural · RootMotion · BoneAttachment · Retargeting · SkeletonUtils · SpringSolver · TwoBoneIK | [Animation/README.md](./Animation/README.md) |
 | ECS | `ECS/` | World · ComponentType · Systems · QueryBuilder · Broadphase · Prefab | [ECS/README.md](./ECS/README.md) |
 | Physics | `Physics/` | Rigid · Cloth · Fluid · Buoyancy · Vehicle · Flight · Constraints · Ragdoll · SoftBody · Rope | [Physics/README.md](./Physics/README.md) |
 | Events | `Events/` | EventBus · EventQueue · typed GameEvent hierarchy | [Events/README.md](./Events/README.md) |

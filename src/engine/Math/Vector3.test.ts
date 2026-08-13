@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { Vector3 } from './Vector3';
 import { Matrix4 } from './Matrix4';
+import { Quaternion } from './Quaternion';
 
 describe('Vector3', () => {
   it('constructs with defaults', () => {
@@ -213,6 +214,54 @@ describe('Vector3', () => {
       expect(v.x).toBe(4);
       expect(v.y).toBe(5);
       expect(v.z).toBe(6);
+    });
+
+    it('toArray writes at an offset into a caller array', () => {
+      const arr = [99, 99, 99, 99];
+      new Vector3(1, 2, 3).toArray(arr, 1);
+      expect(arr).toEqual([99, 1, 2, 3]);
+    });
+
+    it('fromArray reads at an offset', () => {
+      const v = new Vector3().fromArray([9, 9, 4, 5, 6], 2);
+      expect(v.x).toBe(4);
+      expect(v.y).toBe(5);
+      expect(v.z).toBe(6);
+    });
+  });
+
+  describe('setFromMatrix*', () => {
+    it('setFromMatrixPosition extracts the translation column', () => {
+      const m = new Matrix4();
+      m.elements[12] = 10;
+      m.elements[13] = 20;
+      m.elements[14] = 30;
+      const v = new Vector3().setFromMatrixPosition(m);
+      expect(v.x).toBe(10);
+      expect(v.y).toBe(20);
+      expect(v.z).toBe(30);
+    });
+
+    it('setFromMatrixColumn extracts a basis column', () => {
+      const m = new Matrix4();
+      m.elements[0] = 2;  // col 0 x
+      m.elements[5] = 3;  // col 1 y
+      m.elements[10] = 4; // col 2 z
+      expect(new Vector3().setFromMatrixColumn(0, m)).toEqual(new Vector3(2, 0, 0));
+      expect(new Vector3().setFromMatrixColumn(1, m)).toEqual(new Vector3(0, 3, 0));
+      expect(new Vector3().setFromMatrixColumn(2, m)).toEqual(new Vector3(0, 0, 4));
+    });
+
+    it('setFromMatrixScale extracts column lengths (rotation-invariant)', () => {
+      const m = new Matrix4().compose(
+        { x: 0, y: 0, z: 0 },
+        new Quaternion().setFromEuler(0.3, -0.5, 0.2),
+        { x: 2, y: 3, z: 4 },
+      );
+      const v = new Vector3().setFromMatrixScale(m);
+      expect(v.x).toBeCloseTo(2, 6);
+      expect(v.y).toBeCloseTo(3, 6);
+      expect(v.z).toBeCloseTo(4, 6);
     });
   });
 

@@ -66,4 +66,11 @@ export class AnimationClip {
       track.target = { node, property };
     }
   }
+
+  /** 解绑:清空所有 track 的 target 引用(与 bind 相反)。
+   *  由 AnimationMixer.uncacheAction 在移除 clip 时调用,避免残留
+   *  对已删除节点的引用;再次 bind 后可复用。 */
+  unbind(): void {
+    for (const track of this.tracks) track.target = null;
+  }
 }

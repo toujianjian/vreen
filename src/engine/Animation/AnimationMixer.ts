@@ -26,6 +26,7 @@ export class AnimationMixer {
     a = new AnimationAction(clip);
     this.actions.set(key, a);
     this.boundClips.has(clip) || (clip.bind(this.root), this.boundClips.add(clip));
+    a.isBound = true;
     return a;
   }
 
@@ -37,6 +38,25 @@ export class AnimationMixer {
     a.reset();
     a.play();
     return a;
+  }
+
+  /** clipAction 别名(three.js AnimationMixer.clipAction 语义):get-or-create。 */
+  clipAction(clip: AnimationClip): AnimationAction {
+    return this.actionFor(clip);
+  }
+
+  /** 停止并移除 `clip` 对应的 action,同时解绑 clip 的 track.target
+   *  (three.js AnimationMixer.uncacheAction 语义)。key 用 clip.name,
+   *  同名不同 clip 实例共享 key,确定不再使用该 clip 时才调用。 */
+  uncacheAction(clip: AnimationClip): void {
+    const key = `${this.root.uuid}:${clip.name}`;
+    const a = this.actions.get(key);
+    if (!a) return;
+    a.stop();
+    a.unbind();
+    clip.unbind();
+    this.actions.delete(key);
+    this.boundClips.delete(clip);
   }
 
   /** Stop all actions. */

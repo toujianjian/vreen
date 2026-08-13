@@ -1,8 +1,8 @@
 # VREEN 引擎项目交接文档（HANDOVER）
 
 > 本文档为**新接管的 Agent** 编写，内容覆盖：项目目标、工程结构、开发流程约定、
-> **已收尾的工作（TransformControls 模块完成 + Matrix4 语义修复 + AI/Materials 断言修复 +
-> 全量回归 11508 tests 全绿）**，以及后续推进建议。
+> **已收尾的工作（SkeletonUtils 模块完成 + TransformControls 模块完成 + Matrix4 语义修复 + AI/Materials 断言修复 +
+> 全量回归 11557 tests 全绿）**，以及后续推进建议。
 > 请务必先通读本文档，再动手修改代码。
 
 ---
@@ -155,7 +155,7 @@ gizmo 操控"的编辑闭环。
 | 4-7 | axis picking / pointerHover / end-to-end | picker 几何重叠（锥体偏胖 + 世界坐标未缩放）| §5.3 修复 + picker 命中区收敛后全部转绿 |
 
 最终 `npx vitest run src/engine/Controls/TransformControls.test.ts` → **47 个测试全绿**；
-全量回归 **440 文件 / 11508 tests 全绿**（~121s）。
+全量回归 **445 文件 / 11557 tests 全绿**（~135s）。
 
 ### 5.3 引擎级 Bug A：`Object3D.add` 只接受单参数（已修复）
 
@@ -183,8 +183,8 @@ gizmo 操控"的编辑闭环。
 并同步修正 5 个依赖旧交换序的调用方（ForwardPlusRenderer、MotionBlurPass、
 VelocityPass、BRDFLUT.test、PostProcessPasses.test，共 6 文件）。
 
-**验证**：全量回归 **11508 tests 全绿**，确认修复未破坏任何场景图/渲染/后处理行为——
-这是引擎级正确性收益，而不仅是 TransformControls 单点修复。
+**验证**：全量回归 **11557 tests 全绿**，确认修复未破坏任何场景图/渲染/后处理行为——
+这是引擎级正确性收益，而不仅是 TransformControls/SkeletonUtils 单点修复。
 
 ### 5.5 TransformControls 收尾执行记录（全部完成 ✅）
 
@@ -196,7 +196,7 @@ VelocityPass、BRDFLUT.test、PostProcessPasses.test，共 6 文件）。
 5. ✅ 主页 `src/components/home/Capabilities.tsx` 加 `transformControls` 卡片。
 6. ✅ 5 语言文件补 `transformControls` 词条（en/zh/ja/ko/es）。
 7. ✅ `src/engine/Controls/README.md` 的 TransformControls 章节（并入既有 README，o3de 风格）。
-8. ✅ `npm run typecheck` + 全量 `npx vitest run` → 11508 tests 全绿。
+8. ✅ `npm run typecheck` + 全量 `npx vitest run` → 11557 tests 全绿。
 9. ✅ 提交落地：`73e24fd`（收尾）+ `6f3f6e1`（Matrix4）+ `0e83cf2`（AI 修复）+
    `6f13530`（Materials 断言修复）。
 10. ✅ 删除临时文件 `test-output.txt`。
@@ -264,4 +264,4 @@ a37701d feat(Renderer): enhance FilmGrainPass to o3de Atom algorithm — luminan
 
 > 最后提醒：当前工作区**干净**（`git status` 无未提交变更），TransformControls
 > 已收尾（§5.5 全部完成）。接管后若需要：新 Agent 从第八节方向里选高价值模块，
-> 按第四节「开发流程约定」走完整闭环，全量回归 11508 tests 保持全绿。
+> 按第四节「开发流程约定」走完整闭环，全量回归 11557 tests 保持全绿。

@@ -81,6 +81,11 @@ export {
   type BindTransform,
   type BoneMapping,
   type RetargetConfig,
+  // SkeletonUtils (three.js examples/jsm/utils 适配)
+  retarget,
+  retargetClip,
+  clone,
+  type RetargetOptions,
   // Two-bone IK + LookAt IK
   TwoBoneIKSolver,
   LookAtIK,

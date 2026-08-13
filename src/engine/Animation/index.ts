@@ -33,6 +33,9 @@ export {
   type BoneMapping,
   type RetargetConfig,
 } from './AnimationRetargeting';
+// SkeletonUtils — three.js examples/jsm/utils/SkeletonUtils 适配:
+// retarget(实时姿势重定向)/ retargetClip(动画烘焙)/ clone(骨骼感知深拷贝)。
+export { retarget, retargetClip, clone, type RetargetOptions } from './SkeletonUtils';
 // Two-bone IK solver (law of cosines + pole vector) and LookAt IK.
 // The standard UE/Godot/o3de pattern for arm/leg IK and head tracking.
 export {

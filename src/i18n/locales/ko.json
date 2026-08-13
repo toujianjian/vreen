@@ -1228,6 +1228,11 @@
         "title": "TransformControls(three.js 에디터 gizmo)",
         "desc": "에디터 객체 변형 기즈모:translate/rotate/scale 3가지 모드 + 월드/로컬 공간 전환. 축 끝 구체 피커가 내부 레이캐스트로 히트 테스트하고, 드래그를 타깃의 position/rotation/scale에 반영. 순수 데이터 계산 함수(buildDragPlane/computeTranslate/computeScale/computeRotate)는 WebGL 비의존이며 유닛 테스트 가능(47개 테스트). getMeshData()가 임의 백엔드용 렌더 데이터를 생성. three.js TransformControls에서 적응.",
         "advantage": "soup3D에는 에디터 기즈모가 없습니다; VREEN은 translate/rotate/scale 3가지 모드, 월드/로컬 공간, 축 피커, 스냅 지원, 47개의 순수 데이터 유닛 테스트를 갖춘 three.js급 TransformControls를 제공합니다."
+      },
+      "skeletonUtils": {
+        "title": "SkeletonUtils(three.js examples/jsm/utils 어댑테이션)",
+        "desc": "스켈레톤 리타겟 유틸리티:retarget(실시간 포즈 리타겟 — 소스 스켈레톤의 현재 포즈를 본 단위로 타깃에 복사하고, 뼈 길이 비율로 스케일해 타깃의 사지 비율 유지)/ retargetClip(클립 베이킹 — rest-pose 뼈 길이 비율로 포지션 트랙을 스케일해 바로 재생 가능한 새 AnimationClip 생성)/ clone(스켈레톤 인식 딥 카피 — Bone과 Skeleton.bones 재매핑). AnimationRetargeting(o3de EMotionFX relative-to-bind-pose 전략)과 상호 보완. 모두 순수 데이터 구현, WebGL 비의존, 유닛 테스트 가능(7개 테스트). three.js examples/jsm/utils/SkeletonUtils에서 적응.",
+        "advantage": "soup3D에는 스켈레톤 애니메이션이 전혀 없습니다; VREEN은 실시간 retarget, retargetClip 클립 베이킹, 스켈레톤 인식 clone을 갖춘 three.js급 SkeletonUtils를 제공해 크로스 스켈레톤 클립 재사용이 바로 가능합니다."
       }
     }
   }

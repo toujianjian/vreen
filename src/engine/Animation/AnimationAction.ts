@@ -54,6 +54,17 @@ export class AnimationAction {
     return this;
   }
 
+  /** 解绑 action 自身:停止播放、重置时间、清空事件回调。
+   *  由 Mixer.uncacheAction 调用。track.target 的清理在
+   *  AnimationClip.unbind(一个 clip 可能被多个 action 引用,分两层解绑)。 */
+  unbind(): this {
+    this.isPlaying = false;
+    this.time = 0;
+    this.isBound = false;
+    this.eventCallbacks.clear();
+    return this;
+  }
+
   /** 注册事件回调。
    *  - name:事件名;'*' = 通配(接收所有事件)
    *  - 返回一个 unsubscribe 函数 */

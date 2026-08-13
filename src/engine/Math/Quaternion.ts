@@ -16,11 +16,32 @@ export class Quaternion {
     this.w = w;
   }
 
+  /**
+   * 变更回调:每个修改分量的 mutator 末尾调用。默认 no-op。
+   * Object3D 的 _BoundQuaternion 把它接到 markDirty,使
+   * `obj.rotation.setFromAxisAngle(...)` 等一切修改自动标记脏矩阵
+   * (three.js Quaternion._onChangeCallback 适配,解决 setFromAxisAngle/
+   * slerp/fromArray 等非 set/copy mutator 不触发脏标记的系统性缺口)。
+   */
+  /**
+   * 变更回调(three.js 适配):原型方法,默认 no-op。`onChange(callback)`
+   * 在实例上覆盖为自有属性 —— 未调 onChange 的实例**没有**自有
+   * `_onChangeCallback` 属性(three.js 同款),避免 toEqual 等深比较
+   * 因实例级函数引用差异误判不等。
+   */
+  protected _onChangeCallback(): void {}
+
+  onChange(callback: () => void): this {
+    this._onChangeCallback = callback;
+    return this;
+  }
+
   set(x: number, y: number, z: number, w: number): this {
     this.x = x;
     this.y = y;
     this.z = z;
     this.w = w;
+    this._onChangeCallback();
     return this;
   }
 
@@ -29,6 +50,7 @@ export class Quaternion {
     this.y = 0;
     this.z = 0;
     this.w = 1;
+    this._onChangeCallback();
     return this;
   }
 
@@ -37,11 +59,17 @@ export class Quaternion {
     this.y = q.y;
     this.z = q.z;
     this.w = q.w;
+    this._onChangeCallback();
     return this;
   }
 
   clone(): Quaternion {
     return new Quaternion(this.x, this.y, this.z, this.w);
+  }
+
+  /** 逐分量相等比较(与 Vector3.equals 一致的便捷方法,three.js Quaternion.equals)。 */
+  equals(q: Quaternion): boolean {
+    return q.x === this.x && q.y === this.y && q.z === this.z && q.w === this.w;
   }
 
   /** Euler XYZ in radians (matches three.js default order). */
@@ -66,6 +94,7 @@ export class Quaternion {
         this.w = c1 * c2 * c3 + s1 * s2 * s3;
         break;
     }
+    this._onChangeCallback();
     return this;
   }
 
@@ -76,6 +105,7 @@ export class Quaternion {
     this.y = qay * qbw + qaw * qby + qaz * qbx - qax * qbz;
     this.z = qaz * qbw + qaw * qbz + qax * qby - qay * qbx;
     this.w = qaw * qbw - qax * qbx - qay * qby - qaz * qbz;
+    this._onChangeCallback();
     return this;
   }
 
@@ -87,11 +117,68 @@ export class Quaternion {
       const inv = 1 / l;
       this.x *= inv; this.y *= inv; this.z *= inv; this.w *= inv;
     }
+    this._onChangeCallback();
     return this;
   }
 
-  toArray(): [number, number, number, number] {
-    return [this.x, this.y, this.z, this.w];
+  /** 写入数组(three.js 兼容:可指定目标数组与偏移,便于连续帧写入 Float32Array)。
+   *  无参数调用时返回 `[x, y, z, w]` 元组(向后兼容);带参时写入调用方数组。 */
+  toArray(): [number, number, number, number];
+  toArray(array: number[], offset?: number): number[];
+  toArray(array: number[] = [], offset = 0): number[] {
+    array[offset] = this.x;
+    array[offset + 1] = this.y;
+    array[offset + 2] = this.z;
+    array[offset + 3] = this.w;
+    return array;
+  }
+
+  /** 从数组读取(three.js 兼容:可指定偏移)。`ArrayLike<number>` 接受 number[]、
+   *  readonly number[] 与 Float32Array。 */
+  fromArray(array: ArrayLike<number>, offset = 0): this {
+    this.x = array[offset];
+    this.y = array[offset + 1];
+    this.z = array[offset + 2];
+    this.w = array[offset + 3];
+    this._onChangeCallback();
+    return this;
+  }
+
+  /** 从 4x4 矩阵(列主序 16 元素)的上 3x3 旋转子块提取单位四元数。
+   *  three.js Quaternion.setFromRotationMatrix 标准算法,支持任意正交旋转矩阵。 */
+  setFromRotationMatrix(m: { elements: Float32Array | number[] }): this {
+    const te = m.elements;
+    const m11 = te[0], m12 = te[4], m13 = te[8];
+    const m21 = te[1], m22 = te[5], m23 = te[9];
+    const m31 = te[2], m32 = te[6], m33 = te[10];
+    const trace = m11 + m22 + m33;
+    if (trace > 0) {
+      const s = 0.5 / Math.sqrt(trace + 1.0);
+      this.w = 0.25 / s;
+      this.x = (m32 - m23) * s;
+      this.y = (m13 - m31) * s;
+      this.z = (m21 - m12) * s;
+    } else if (m11 > m22 && m11 > m33) {
+      const s = 2.0 * Math.sqrt(1.0 + m11 - m22 - m33);
+      this.w = (m32 - m23) / s;
+      this.x = 0.25 * s;
+      this.y = (m12 + m21) / s;
+      this.z = (m13 + m31) / s;
+    } else if (m22 > m33) {
+      const s = 2.0 * Math.sqrt(1.0 + m22 - m11 - m33);
+      this.w = (m13 - m31) / s;
+      this.x = (m12 + m21) / s;
+      this.y = 0.25 * s;
+      this.z = (m23 + m32) / s;
+    } else {
+      const s = 2.0 * Math.sqrt(1.0 + m33 - m11 - m22);
+      this.w = (m21 - m12) / s;
+      this.x = (m13 + m31) / s;
+      this.y = (m23 + m32) / s;
+      this.z = 0.25 * s;
+    }
+    this._onChangeCallback();
+    return this;
   }
 
   /** Conjugate (negate xyz, keep w). For a unit quaternion this equals the inverse. */
@@ -99,6 +186,7 @@ export class Quaternion {
     this.x = -this.x;
     this.y = -this.y;
     this.z = -this.z;
+    this._onChangeCallback();
     return this;
   }
 
@@ -120,6 +208,7 @@ export class Quaternion {
     this.y = qay * qbw + qaw * qby + qaz * qbx - qax * qbz;
     this.z = qaz * qbw + qaw * qbz + qax * qby - qay * qbx;
     this.w = qaw * qbw - qax * qbx - qay * qby - qaz * qbz;
+    this._onChangeCallback();
     return this;
   }
 
@@ -162,6 +251,7 @@ export class Quaternion {
     this.y = axis.y * inv * s;
     this.z = axis.z * inv * s;
     this.w = Math.cos(half);
+    this._onChangeCallback();
     return this;
   }
 
@@ -197,6 +287,7 @@ export class Quaternion {
     this.x = ax * ratioA + qb.x * ratioB;
     this.y = ay * ratioA + qb.y * ratioB;
     this.z = az * ratioA + qb.z * ratioB;
+    this._onChangeCallback();
     return this;
   }
 

@@ -301,13 +301,19 @@ export class Matrix4 {
    * Decompose this matrix into translation / rotation / scale.
    * Mirrors three.js Matrix4.decompose.
    *
+   * 写入方式对齐 three.js:目标若有 `.set()`(即 Vector3 / Quaternion 实例),
+   * 经 `set()` 写入以触发 `_onChangeCallback` —— Object3D 的 _Bound* 绑定向量
+   * 会把回调接到 `markDirty(MATRIX | MATRIX_WORLD)`,使
+   * `matrix.decompose(obj.position, obj.rotation, obj.scale)` 后无需 force
+   * 即可重算世界矩阵(three.js decompose 同款语义)。
+   *
    * 注意:对于含负缩放(镜像)或剪切(非正交上 3x3)的矩阵,
    * 提取的 quaternion 可能不精确;此处只做标准 polar 分解,
    * 满足常规场景图变换需求。
    *
-   * @param targetPosition 写入位置
-   * @param targetQuaternion 写入旋转
-   * @param targetScale 写入缩放
+   * @param targetPosition 写入位置(Vector3 实例,或结构对象回退直接写字段)
+   * @param targetQuaternion 写入旋转(Quaternion 实例,或结构对象回退直接写字段)
+   * @param targetScale 写入缩放(Vector3 实例,或结构对象回退直接写字段)
    */
   decompose(
     targetPosition: { x: number; y: number; z: number },
@@ -315,18 +321,14 @@ export class Matrix4 {
     targetScale: { x: number; y: number; z: number },
   ): this {
     const e = this.elements;
-    // 位置:最后一列前 3 行
-    targetPosition.x = e[12];
-    targetPosition.y = e[13];
-    targetPosition.z = e[14];
+    // 位置:最后一列前 3 行(经 set() 触发 onChange,见 setVec3Like)
+    setVec3Like(targetPosition, e[12], e[13], e[14]);
 
     // 缩放:取上 3x3 各列向量长度
     const sx = Math.hypot(e[0], e[1], e[2]);
     const sy = Math.hypot(e[4], e[5], e[6]);
     const sz = Math.hypot(e[8], e[9], e[10]);
-    targetScale.x = sx;
-    targetScale.y = sy;
-    targetScale.z = sz;
+    setVec3Like(targetScale, sx, sy, sz);
 
     // 旋转:把上 3x3 每列除以缩放,得到纯旋转矩阵,再转为 quaternion
     // 处理 0 缩放(避免 NaN)
@@ -365,10 +367,79 @@ export class Matrix4 {
       qy = (m23 + m32) / s;
       qz = 0.25 * s;
     }
-    targetQuaternion.x = qx;
-    targetQuaternion.y = qy;
-    targetQuaternion.z = qz;
-    targetQuaternion.w = qw;
+    setQuatLike(targetQuaternion, qx, qy, qz, qw);
     return this;
+  }
+
+  /** 只把 `m` 的平移分量(第 4 列)复制到本矩阵,旋转/缩放保持不变。
+   *  与 three.js Matrix4.copyPosition 语义一致,供 SkeletonUtils 重定向时
+   *  在保留相对旋转的前提下把源骨骼位移写入全局矩阵。 */
+  copyPosition(m: Matrix4): this {
+    const te = this.elements;
+    const me = m.elements;
+    te[12] = me[12];
+    te[13] = me[13];
+    te[14] = me[14];
+    return this;
+  }
+
+  /** 对矩阵的旋转/缩放三列按 `v` 逐分量缩放(不触碰平移列)。
+   *  与 three.js Matrix4.scale 语义一致。注意:用本方法消除相对矩阵缩放前,
+   *  调用方需先用 `scale.setFromMatrixScale` 读回缩放,再传入其倒数。 */
+  scale(v: { x: number; y: number; z: number }): this {
+    const te = this.elements;
+    const x = v.x, y = v.y, z = v.z;
+    te[0] *= x; te[4] *= y; te[8] *= z;
+    te[1] *= x; te[5] *= y; te[9] *= z;
+    te[2] *= x; te[6] *= y; te[10] *= z;
+    te[3] *= x; te[7] *= y; te[11] *= z;
+    return this;
+  }
+}
+
+/**
+ * 写入三维分量:目标有 `.set(x, y, z)`(Vector3 实例)时经 set() 写入,
+ * 触发 `_onChangeCallback` —— Object3D 的 _BoundVector3 借此标记脏矩阵;
+ * 无 set() 的结构对象(纯 `{x,y,z}`)回退直接写字段。
+ * 对齐 three.js Matrix4.decompose 的 `position.set()` / `scale.set()`。
+ */
+function setVec3Like(
+  target: { x: number; y: number; z: number },
+  x: number,
+  y: number,
+  z: number,
+): void {
+  const set = (target as { set?: (x: number, y: number, z: number) => unknown }).set;
+  if (set !== undefined) {
+    set.call(target, x, y, z);
+  } else {
+    target.x = x;
+    target.y = y;
+    target.z = z;
+  }
+}
+
+/**
+ * 写入四元数分量:目标有 `.set(x, y, z, w)`(Quaternion 实例)时经 set() 写入,
+ * 触发 `_onChangeCallback` —— Object3D 的 _BoundQuaternion 借此标记脏矩阵;
+ * 无 set() 的结构对象(纯 `{x,y,z,w}`)回退直接写字段。
+ * 对齐 three.js Matrix4.decompose 的 `quaternion.setFromRotationMatrix(_m1)`
+ * (set 与 setFromRotationMatrix 都会触发 onChange)。
+ */
+function setQuatLike(
+  target: { x: number; y: number; z: number; w: number },
+  x: number,
+  y: number,
+  z: number,
+  w: number,
+): void {
+  const set = (target as { set?: (x: number, y: number, z: number, w: number) => unknown }).set;
+  if (set !== undefined) {
+    set.call(target, x, y, z, w);
+  } else {
+    target.x = x;
+    target.y = y;
+    target.z = z;
+    target.w = w;
   }
 }

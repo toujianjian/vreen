@@ -216,50 +216,6 @@ export class InstancedMesh extends Mesh {
   }
 
   /**
-   * 从 source 拷贝到 this。会重分配 instanceMatrix / instanceColor。
-   * geometry / material 引用共享(浅拷贝,与 three.js 行为一致)。
-   * transform (position/rotation/scale) 与 visible / perInstanceFrustumCulled 一并拷贝。
-   */
-  copy(source: InstancedMesh): this {
-    if (source.count !== this.count) {
-      this.count = source.count;
-      this.instanceMatrix = new Float32Array(this.count * 16);
-    }
-    this.instanceMatrix.set(source.instanceMatrix);
-    this.instanceMatrixVersion = source.instanceMatrixVersion + 1;
-
-    if (source.instanceColor !== null) {
-      if (this.instanceColor === null || this.instanceColor.length !== source.instanceColor.length) {
-        this.instanceColor = new Float32Array(source.instanceColor.length);
-      }
-      this.instanceColor.set(source.instanceColor);
-    } else {
-      this.instanceColor = null;
-    }
-    this.instanceColorVersion = source.instanceColorVersion + 1;
-
-    this.geometry = source.geometry;
-    this.material = source.material;
-    this.position.copy(source.position);
-    this.rotation.copy(source.rotation);
-    this.scale.copy(source.scale);
-    this.name = source.name;
-    this.visible = source.visible;
-    this.perInstanceFrustumCulled = source.perInstanceFrustumCulled;
-    return this;
-  }
-
-  /**
-   * 深拷贝:新 InstancedMesh 实例,共享 geometry/material 引用(three.js 行为),
-   * 拷贝 instanceMatrix / instanceColor 数据。
-   */
-  clone(): InstancedMesh {
-    const clone = new InstancedMesh(this.geometry, this.material, this.count);
-    clone.copy(this);
-    return clone;
-  }
-
-  /**
    * 释放本实例持有的资源。
    *
    * 注意:VREEN 的 InstancedMesh 不直接持有 WebGL 资源(VAO/buffer 由
@@ -285,6 +241,33 @@ export class InstancedMesh extends Mesh {
   /** 射线检测:对每个实例,把射线变到该实例的局部空间(base geometry 空间)
    *  后做三角形求交。命中结果带 instanceId。
    *  调用前需保证 matrixWorld 已更新。 */
+  /** 复制源 InstancedMesh 到 this(three.js InstancedMesh.copy 语义)。
+   *  在 Mesh.copy 之上额外复制 count / instanceMatrix / instanceColor
+   *  (独立新数组,避免共享)与版本号。 */
+  override copy(source: InstancedMesh, recursive: boolean = true): this {
+    super.copy(source, recursive);
+    this.count = source.count;
+    this.instanceMatrix = new Float32Array(source.instanceMatrix);
+    this.instanceMatrixVersion = source.instanceMatrixVersion;
+    this.instanceColor = source.instanceColor !== null ? new Float32Array(source.instanceColor) : null;
+    this.instanceColorVersion = source.instanceColorVersion;
+    this.perInstanceFrustumCulled = source.perInstanceFrustumCulled;
+    return this;
+  }
+
+  /** 返回新 InstancedMesh 副本。构造参数含 count,需覆盖 Mesh.clone
+   *  (three.js InstancedMesh.clone 同模式)。 */
+  override clone(recursive: boolean = true): InstancedMesh {
+    // `this.constructor` 静态类型是 Function,TS strict 下不可直接 new;
+    // 用构造签名 cast 保持子类克隆语义(同 Object3D.clone)。
+    const ctor = this.constructor as new (
+      geometry: BufferGeometry,
+      material: Material | Material[],
+      count: number,
+    ) => InstancedMesh;
+    return new ctor(this.geometry, this.material, this.count).copy(this, recursive);
+  }
+
   override raycast(raycaster: Raycaster, intersects: Intersection[]): void {
     const geometry = this.geometry;
     if (!geometry.attributes.position) return;

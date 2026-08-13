@@ -1228,6 +1228,11 @@
         "title": "TransformControls(three.js 编辑器 gizmo)",
         "desc": "编辑器物体变换手柄:translate/rotate/scale 三模式 + 世界/本地空间切换。轴端球 picker 经内部 raycast 做命中检测,拖拽映射到目标 position/rotation/scale。纯数据计算函数(buildDragPlane/computeTranslate/computeScale/computeRotate)无 WebGL 依赖、可单测(47 个测试)。getMeshData() 产出渲染数据供任意后端绘制。适配 three.js TransformControls。",
         "advantage": "soup3D 无编辑器手柄;VREEN 提供 three.js 级 TransformControls,含 translate/rotate/scale 三模式、世界/本地空间、轴端球拾取、吸附支持与 47 个纯数据单元测试。"
+      },
+      "skeletonUtils": {
+        "title": "SkeletonUtils(three.js examples/jsm/utils 适配)",
+        "desc": "骨骼重定向工具:retarget(实时姿势重定向,把源骨骼当前姿势逐骨拷贝到目标骨骼,支持骨长缩放保留目标肢体比例)/ retargetClip(动画烘焙,按 rest-pose 骨长比缩放位置轨道生成可直接播放的新 AnimationClip)/ clone(骨骼感知深拷贝,重映射 Bone + Skeleton.bones)。与 AnimationRetargeting(EMotionFX 相对 bind-pose 策略)互补,均为纯数据实现、无 WebGL 依赖、可单测(7 个测试)。适配 three.js examples/jsm/utils/SkeletonUtils。",
+        "advantage": "soup3D 无任何骨骼动画系统;VREEN 提供 three.js 级 SkeletonUtils,含实时 retarget、动画烘焙 retargetClip 与骨骼感知 clone,跨骨架动画复用开箱即用。"
       }
     }
   }

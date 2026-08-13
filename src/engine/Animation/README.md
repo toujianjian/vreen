@@ -39,6 +39,11 @@ Complementary systems:
   head track / idle sway / secondary motion).
 - `AnimationRetargeting` — adapt clips across skeletons of different
   proportions (relative-to-bind-pose, o3de EMotionFX style).
+- `SkeletonUtils` — three.js `examples/jsm/utils/SkeletonUtils` adaptation:
+  `retarget` (live pose retarget) / `retargetClip` (clip baking) / `clone`
+  (skeleton-aware deep copy). Complements `AnimationRetargeting` (the latter
+  is a relative-to-bind-pose data strategy; SkeletonUtils retargets a whole
+  live skeleton or bakes a clip via `SkeletonHelper`).
 - `TwoBoneIKSolver` / `LookAtIK` — analytic arm/leg IK + aim IK.
 - `SpringSolver` — secondary bone spring physics (hair / cloth / tail).
 - `RootMotionExtractor` — root-motion extraction (in-place clips drive
@@ -205,6 +210,37 @@ const retarget = new AnimationRetargeting({
 });
 const adaptedClip = retarget.retarget(walkClip);
 ```
+
+### `SkeletonUtils` (`SkeletonUtils.ts`)
+
+Adapted from three.js [`examples/jsm/utils/SkeletonUtils.js`](https://github.com/mrdoob/three.js/blob/r169/examples/jsm/utils/SkeletonUtils.js).
+Two retargeting entry points plus a skeleton-aware clone:
+
+| API | Purpose |
+|-----|---------|
+| `retarget(target, source, options?)` | **Live retarget** — copy the source skeleton's current pose onto the target skeleton, mapping bones by name. Supports a bone-scale array (per-bone length ratios so the target's limb proportions are preserved) and `preserveBoneMatrix` / `preserveWorldMatrix` / `preservePosition` / `preserveRotation` options. |
+| `retargetClip(target, source, clip, options?)` | **Clip baking** — bake a source clip onto the target skeleton as a new `AnimationClip`. Per-bone scale factor is computed from the source→target rest-pose bone-length ratios; position tracks are scaled accordingly, quaternion tracks copied 1:1. |
+| `clone(source)` | **Skeleton-aware deep copy** — deep-clones the object tree, replacing each `Bone` with a newly created bone and remapping the `Skeleton.bones` reference. |
+
+Internally builds a `SkeletonHelper`-style binding between the two skeletons
+and (for `retargetClip`) uses a `KeyframeTrack`-per-bone accumulation with
+times/values arrays — the same data shape `AnimationMixer` consumes, so the
+baked clip plays back directly.
+
+```ts
+import { retargetClip } from '@vreen/engine/animation';
+
+// Bake a walk clip authored for sourceSkeleton onto targetSkeleton
+const baked = retargetClip(targetSkeleton, sourceSkeleton, walkClip);
+const mixer = new AnimationMixer(targetSkinnedMesh);
+mixer.clipAction(baked).play();
+```
+
+Relationship to `AnimationRetargeting`: `AnimationRetargeting` is a
+relative-to-bind-pose data strategy (EMotionFX `RetargetingFile`) that
+returns an adapted `AnimationClip` from pre-extracted bind poses. SkeletonUtils
+is the three.js-style live-skeleton retarget + clone utility; both are
+independent and compose with `AnimationMixer`.
 
 ### `TwoBoneIKSolver` / `LookAtIK` (`TwoBoneIKSolver.ts`)
 
@@ -504,6 +540,7 @@ const s = matcher.getState();
 | `AdditiveBlend` / `AnimationSync` | `AdditiveBlend.ts` / `AnimationSync.ts` | additive + sync | UE additive pose / EMotionFX sync |
 | `ProceduralAnimation` | `ProceduralAnimation.ts` | procedural overlay | UE AnimDynamics / EMotionFX procedural |
 | `AnimationRetargeting` | `AnimationRetargeting.ts` | retarget | EMotionFX `RetargetingFile` / UE IK Rig |
+| `SkeletonUtils` (`retarget`/`retargetClip`/`clone`) | `SkeletonUtils.ts` | live retarget + clone | three.js `examples/jsm/utils/SkeletonUtils` |
 | `TwoBoneIKSolver` / `LookAtIK` | `TwoBoneIKSolver.ts` | analytic IK | UE `FAnimNode_TwoBoneIK` |
 | `SpringSolver` | `SpringSolver.ts` | secondary physics | EMotionFX `SpringSolver` |
 | `RootMotionExtractor` | `RootMotion.ts` | root motion | EMotionFX `RepositioningLayerPass` |

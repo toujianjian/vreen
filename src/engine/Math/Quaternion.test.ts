@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { Quaternion } from './Quaternion';
+import { Matrix4 } from './Matrix4';
 
 describe('Quaternion', () => {
   it('constructs with default identity', () => {
@@ -114,10 +115,46 @@ describe('Quaternion', () => {
     });
   });
 
-  describe('toArray', () => {
+  describe('toArray / fromArray', () => {
     it('returns [x, y, z, w]', () => {
       const q = new Quaternion(1, 2, 3, 4);
       expect(q.toArray()).toEqual([1, 2, 3, 4]);
+    });
+
+    it('toArray writes at an offset into a caller array', () => {
+      const arr = [0, 0, 0, 0, 0, 0];
+      new Quaternion(1, 2, 3, 4).toArray(arr, 2);
+      expect(arr).toEqual([0, 0, 1, 2, 3, 4]);
+    });
+
+    it('fromArray reads at an offset', () => {
+      const q = new Quaternion().fromArray([9, 9, 9, 9, 1, 2, 3, 4], 4);
+      expect(q.x).toBe(1);
+      expect(q.y).toBe(2);
+      expect(q.z).toBe(3);
+      expect(q.w).toBe(4);
+    });
+  });
+
+  describe('setFromRotationMatrix', () => {
+    it('extracts 90° around Z', () => {
+      const m = new Matrix4().makeRotationFromQuaternion(
+        new Quaternion().setFromEuler(0, 0, Math.PI / 2, 'XYZ'),
+      );
+      const q = new Quaternion().setFromRotationMatrix(m);
+      expect(q.z).toBeCloseTo(Math.SQRT1_2, 10);
+      expect(q.w).toBeCloseTo(Math.SQRT1_2, 10);
+    });
+
+    it('roundtrips arbitrary rotation', () => {
+      const q1 = new Quaternion().setFromEuler(0.3, -0.5, 0.2);
+      const m = new Matrix4().makeRotationFromQuaternion(q1);
+      const q2 = new Quaternion().setFromRotationMatrix(m);
+      // 从矩阵重新 compose,验证编码同一旋转(不受 ±q 等价影响)
+      const m2 = new Matrix4().compose({ x: 0, y: 0, z: 0 }, q2, { x: 1, y: 1, z: 1 });
+      for (let i = 0; i < 16; i++) {
+        expect(m2.elements[i]).toBeCloseTo(m.elements[i], 6);
+      }
     });
   });
 });

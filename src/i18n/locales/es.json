@@ -1228,6 +1228,11 @@
         "title": "TransformControls (gizmo de editor three.js)",
         "desc": "Gizmo de transformación de objetos del editor: modos translate/rotate/scale con conmutación de espacio mundo/local. Las esferas picker en los extremos de los ejes hacen hit-testing mediante un raycast interno; el arrastre se mapea a la position/rotation/scale del objetivo. Las funciones de cálculo de datos puros (buildDragPlane / computeTranslate / computeScale / computeRotate) no dependen de WebGL y son testeables por unidad (47 pruebas). getMeshData() emite datos de renderizado para cualquier backend. Adaptado de three.js TransformControls.",
         "advantage": "soup3D no tiene gizmo de editor; VREEN ofrece un TransformControls clase three.js con modos translate/rotate/scale, espacio mundo/local, pickers de eje, soporte de snapping y 47 pruebas unitarias de datos puros."
+      },
+      "skeletonUtils": {
+        "title": "SkeletonUtils (adaptación de three.js examples/jsm/utils)",
+        "desc": "Utilidades de retargeting de esqueletos: retarget (retargeting de pose en vivo — copia la pose actual del esqueleto fuente sobre el objetivo hueso a hueso, escalando por la razón de longitud de hueso para preservar las proporciones de las extremidades del objetivo) / retargetClip (horneado de clips — escala los tracks de posición por la razón de longitudes de hueso del rest-pose en un nuevo AnimationClip directamente reproducible) / clone (copia profunda con conciencia de esqueleto — remapea Bones y Skeleton.bones). Complementa a AnimationRetargeting (estrategia relative-to-bind-pose de o3de EMotionFX); todo datos puros, sin WebGL, testeable por unidad (7 pruebas). Adaptado de three.js examples/jsm/utils/SkeletonUtils.",
+        "advantage": "soup3D no tiene animación de esqueleto en absoluto; VREEN ofrece un SkeletonUtils clase three.js con retarget en vivo, horneado de clips vía retargetClip y clone con conciencia de esqueleto — reutilización de clips entre esqueletos lista para usar."
       }
     }
   }

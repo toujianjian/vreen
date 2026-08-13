@@ -31,6 +31,32 @@ export class Mesh extends Object3D {
     this.material = material;
   }
 
+  /**
+   * 复制源 mesh 到 this(three.js Mesh.copy 语义)。在 Object3D.copy 之上
+   * 额外复制 geometry(共享引用,不深拷贝)与 material(数组则 slice)。
+   * VREEN Mesh 无 morph 字段,故不复制 morphTargetInfluences。
+   */
+  override copy(source: Mesh, recursive: boolean = true): this {
+    super.copy(source, recursive);
+    this.geometry = source.geometry;
+    this.material = Array.isArray(source.material) ? source.material.slice() : source.material;
+    this.castShadow = source.castShadow;
+    this.receiveShadow = source.receiveShadow;
+    return this;
+  }
+
+  /** 返回新 Mesh 副本。子类若构造参数不同(如 InstancedMesh/BatchedMesh)
+   *  需覆盖此方法(见 three.js 同类约定)。 */
+  override clone(recursive: boolean = true): Mesh {
+    // `this.constructor` 静态类型是 Function,TS strict 下不可直接 new;
+    // 用构造签名 cast 保持子类克隆语义(同 Object3D.clone)。
+    const ctor = this.constructor as new (
+      geometry: BufferGeometry,
+      material: Material | Material[],
+    ) => Mesh;
+    return new ctor(this.geometry, this.material).copy(this, recursive);
+  }
+
   /** 射线检测:把世界射线变到 mesh 局部空间,对 geometry 三角形逐个求交。
    *  调用前需保证 matrixWorld 已更新(由 Raycaster 的调用方负责)。 */
   override raycast(raycaster: Raycaster, intersects: Intersection[]): void {

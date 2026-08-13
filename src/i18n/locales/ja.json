@@ -1228,6 +1228,11 @@
         "title": "TransformControls(three.js エディタ gizmo)",
         "desc": "エディタのオブジェクト変形ギズモ:translate/rotate/scale の 3 モード + ワールド/ローカル空間切替。軸端の球ピッカーが内部レイキャストでヒットテストし、ドラッグをターゲットの position/rotation/scale に反映。純データ計算関数(buildDragPlane/computeTranslate/computeScale/computeRotate)は WebGL 非依存でユニットテスト可能(47 テスト)。getMeshData() が任意バックエンド向けの描画データを生成。three.js TransformControls から適応。",
         "advantage": "soup3D にエディタギズモはありません;VREEN は translate/rotate/scale の 3 モード、ワールド/ローカル空間、軸端ピッカー、スナップ対応、47 の純データユニットテストを備えた three.js 級 TransformControls を提供します。"
+      },
+      "skeletonUtils": {
+        "title": "SkeletonUtils(three.js examples/jsm/utils 適応)",
+        "desc": "スケルトン再ターゲティングユーティリティ:retarget(リアルタイムポーズ再ターゲット — ソーススケルトンの現在ポーズをボーン単位でターゲットへコピーし、骨長比でスケールしてターゲットの四肢比率を維持)/ retargetClip(クリップベイク — rest-pose の骨長比で位置トラックをスケールし、直接再生可能な新しい AnimationClip を生成)/ clone(スケルトン対応ディープコピー — Bone と Skeleton.bones を再マップ)。AnimationRetargeting(o3de EMotionFX の relative-to-bind-pose 戦略)と相補的。すべて純データ実装・WebGL 非依存・ユニットテスト可能(7 テスト)。three.js examples/jsm/utils/SkeletonUtils から適応。",
+        "advantage": "soup3D にはスケルトンアニメーションが一切ありません;VREEN はリアルタイム retarget、retargetClip によるクリップベイク、スケルトン対応 clone を備えた three.js 級 SkeletonUtils を提供し、クロススケルトンクリップ再利用がそのまま使えます。"
       }
     }
   }

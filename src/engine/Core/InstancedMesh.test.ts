@@ -372,4 +372,40 @@ describe('InstancedMesh', () => {
     const c = src.clone();
     expect(c.instanceColor).toBeNull();
   });
+
+  describe('copy', () => {
+    it('copies count / instanceMatrix / instanceColor by value', () => {
+      const src = new InstancedMesh(makeGeometry(), makeMaterial(), 2);
+      src.setMatrixAt(0, new Matrix4().makeTranslation(1, 2, 3));
+      src.setColorAt(1, new Color(0.1, 0.2, 0.3));
+
+      const dst = new InstancedMesh(makeGeometry(), makeMaterial(), 5); // 不同 count
+      dst.copy(src);
+      expect(dst.count).toBe(2);
+      expect(dst.instanceMatrix).not.toBe(src.instanceMatrix);
+      expect(dst.instanceMatrix[13]).toBe(2); // translation.y = 2
+      expect(dst.instanceColor).not.toBeNull();
+      expect(dst.instanceColor![4]).toBeCloseTo(0.2, 6);
+    });
+
+    it('copy preserves name / visibility / perInstanceFrustumCulled via super', () => {
+      const src = new InstancedMesh(makeGeometry(), makeMaterial(), 1);
+      src.name = 'inst';
+      src.visible = false;
+      src.castShadow = false;
+      src.perInstanceFrustumCulled = true;
+      const dst = new InstancedMesh(makeGeometry(), makeMaterial(), 1).copy(src);
+      expect(dst.name).toBe('inst');
+      expect(dst.visible).toBe(false);
+      expect(dst.castShadow).toBe(false);
+      expect(dst.perInstanceFrustumCulled).toBe(true);
+    });
+
+    it('copy from instanceColor-less source sets null instanceColor', () => {
+      const src = new InstancedMesh(makeGeometry(), makeMaterial(), 2);
+      const dst = new InstancedMesh(makeGeometry(), makeMaterial(), 2);
+      dst.copy(src);
+      expect(dst.instanceColor).toBeNull();
+    });
+  });
 });

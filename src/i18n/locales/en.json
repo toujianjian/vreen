@@ -1228,6 +1228,11 @@
         "title": "TransformControls (three.js editor gizmo)",
         "desc": "Editor object-transform gizmo: translate / rotate / scale modes with world-local space toggle. Axis-end picker spheres hit-test via an internal raycast; dragging maps to the target's position/rotation/scale. The pure-data compute functions (buildDragPlane / computeTranslate / computeScale / computeRotate) are WebGL-free and unit-testable (47 tests). getMeshData() emits render data any backend can draw. Adapted from three.js TransformControls.",
         "advantage": "soup3D has no editor gizmo; VREEN ships a three.js-class TransformControls with translate/rotate/scale modes, world/local space, axis-end pickers, snap support, and 47 pure-data unit tests."
+      },
+      "skeletonUtils": {
+        "title": "SkeletonUtils (three.js examples/jsm/utils adaptation)",
+        "desc": "Skeleton retargeting utilities: retarget (live pose retarget — copies the source skeleton's current pose onto the target bone-by-bone, scaling by bone-length ratio to preserve the target's limb proportions) / retargetClip (clip baking — scales position tracks by rest-pose bone-length ratios into a directly playable new AnimationClip) / clone (skeleton-aware deep copy — remaps Bones and Skeleton.bones). Complements AnimationRetargeting (o3de EMotionFX relative-to-bind-pose strategy); all pure-data, WebGL-free, unit-testable (7 tests). Adapted from three.js examples/jsm/utils/SkeletonUtils.",
+        "advantage": "soup3D has no skeletal animation at all; VREEN ships a three.js-class SkeletonUtils with live retarget, clip baking via retargetClip, and skeleton-aware clone — cross-skeleton clip reuse out of the box."
       }
     }
   }

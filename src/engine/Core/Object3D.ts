@@ -33,48 +33,39 @@ export enum DirtyFlag {
 const ALL_DIRTY = DirtyFlag.MATRIX | DirtyFlag.MATRIX_WORLD | DirtyFlag.BOUNDS | DirtyFlag.VISIBLE;
 
 /**
- * 内部使用的"绑定向量":在 set/copy 等变更方法里回写 owner,
- * 实现 `obj.position.set(x,y,z)` 时自动 markDirty(MATRIX | MATRIX_WORLD)。
- * 字段类型对外仍是 Vector3(向后兼容直接赋值 `obj.position = new Vector3()`)。
+ * 内部使用的"绑定向量":把 Vector3._onChangeCallback 接到 owner.markDirty,
+ * 实现 `obj.position.set(x,y,z)` / `obj.position.add(v)` 等**一切**分量修改
+ * 自动标记脏矩阵(three.js Vector3._onChangeCallback 适配)。
+ *
+ * 字段类型对外仍是 Vector3(向后兼容直接赋值 `obj.position = new Vector3()`),
+ * 直接赋值会丢失绑定(与 three.js 一致 —— three.js 中直接赋值同样不触发
+ * _onChangeCallback,three.js 文档同样建议改字段而非替换实例)。
  */
 class _BoundVector3 extends Vector3 {
   _owner: Object3D | null = null;
 
-  override set(x: number, y: number, z: number): this {
-    super.set(x, y, z);
-    if (this._owner !== null) this._owner.markDirty(DirtyFlag.MATRIX | DirtyFlag.MATRIX_WORLD);
-    return this;
-  }
-
-  override copy(v: Vector3): this {
-    super.copy(v);
-    if (this._owner !== null) this._owner.markDirty(DirtyFlag.MATRIX | DirtyFlag.MATRIX_WORLD);
-    return this;
-  }
-
-  override fromArray(a: [number, number, number]): this {
-    super.fromArray(a);
-    if (this._owner !== null) this._owner.markDirty(DirtyFlag.MATRIX | DirtyFlag.MATRIX_WORLD);
-    return this;
+  constructor(x = 0, y = 0, z = 0) {
+    super(x, y, z);
+    // 所有 mutator 末尾都会调 _onChangeCallback;owner 绑定在
+    // Object3D 构造函数里回填(此时 `this` 引用尚未完全就绪)。
+    this._onChangeCallback = () => {
+      if (this._owner !== null) this._owner.markDirty(DirtyFlag.MATRIX | DirtyFlag.MATRIX_WORLD);
+    };
   }
 }
 
 /**
- * 内部使用的"绑定四元数":同 _BoundVector3,在 set/copy 时回写 owner。
+ * 内部使用的"绑定四元数":同 _BoundVector3,通过 Quaternion._onChangeCallback
+ * 覆盖 setFromAxisAngle / slerp / setFromEuler 等所有 mutator。
  */
 class _BoundQuaternion extends Quaternion {
   _owner: Object3D | null = null;
 
-  override set(x: number, y: number, z: number, w: number): this {
-    super.set(x, y, z, w);
-    if (this._owner !== null) this._owner.markDirty(DirtyFlag.MATRIX | DirtyFlag.MATRIX_WORLD);
-    return this;
-  }
-
-  override copy(q: Quaternion): this {
-    super.copy(q);
-    if (this._owner !== null) this._owner.markDirty(DirtyFlag.MATRIX | DirtyFlag.MATRIX_WORLD);
-    return this;
+  constructor() {
+    super();
+    this._onChangeCallback = () => {
+      if (this._owner !== null) this._owner.markDirty(DirtyFlag.MATRIX | DirtyFlag.MATRIX_WORLD);
+    };
   }
 }
 
@@ -84,13 +75,16 @@ export class Object3D {
 
   name: string = '';
   type: string = 'Object3D';
+  /** 类型标记,供运行时分支识别基类实例(与 three.js Object3D.isObject3D 一致)。 */
+  isObject3D: boolean = true;
 
   parent: Object3D | null = null;
   children: Object3D[] = [];
 
   /** 字段类型保持 Vector3/Quaternion 以兼容直接赋值(`obj.position = new Vector3()`);
    *  实际实例为 _BoundVector3/_BoundQuaternion,在构造函数里绑定 _owner,
-   *  使 set/copy 自动 markDirty(MATRIX | MATRIX_WORLD)。 */
+   *  使**一切**分量修改 mutator 自动 markDirty(MATRIX | MATRIX_WORLD)。
+   *  直接赋值 `obj.position = new Vector3()` 会替换为无绑定实例(与 three.js 一致)。 */
   position: Vector3 = new _BoundVector3();
   rotation: Quaternion = new _BoundQuaternion();
   scale: Vector3 = new _BoundVector3(1, 1, 1);
@@ -292,6 +286,58 @@ export class Object3D {
     const r10 = m01, r11 = m11, r12 = m21;
     const r20 = m02, r21 = m12, r22 = m22;
     setQuatFromRotationMatrix(this.rotation, r00, r01, r02, r10, r11, r12, r20, r21, r22);
+  }
+
+  /**
+   * 复制源对象的状态到 this(three.js Object3D.copy 语义)。复制:
+   *  name / position / rotation / scale / matrix / matrixWorld /
+   *  matrixWorldInverse / matrixAutoUpdate / matrixWorldAutoUpdate /
+   *  matrixWorldNeedsUpdate / visible / frustumCulled / renderOrder /
+   *  userData(深拷贝 JSON)。
+   *
+   *  `recursive=true` 时同时深拷贝子树(每个子节点 clone 后 add 到 this)。
+   *  position/rotation/scale 是 _Bound* 绑定向量,copy 自动触发 markDirty,
+   *  因此 clone 后的对象无需额外 updateMatrixWorld 即可正确 compose。
+   *
+   *  VREEN 的 Object3D 没有 three.js 的 `up` 向量字段(相机朝上统一 +Y),
+   *  故不复制 up;`matrixWorldInverse` 在 VREEN 中是持久字段,一并复制保持
+   *  clone 完整性(three.js 会在 updateMatrixWorld 时按需重算,复制无害)。
+   */
+  copy(source: Object3D, recursive: boolean = true): this {
+    this.name = source.name;
+    this.position.copy(source.position);
+    this.rotation.copy(source.rotation);
+    this.scale.copy(source.scale);
+    this.matrix.copy(source.matrix);
+    this.matrixWorld.copy(source.matrixWorld);
+    this.matrixWorldInverse.copy(source.matrixWorldInverse);
+    this.matrixAutoUpdate = source.matrixAutoUpdate;
+    this.matrixWorldAutoUpdate = source.matrixWorldAutoUpdate;
+    this.matrixWorldNeedsUpdate = source.matrixWorldNeedsUpdate;
+    this.visible = source.visible;
+    this.frustumCulled = source.frustumCulled;
+    this.renderOrder = source.renderOrder;
+    this.userData = JSON.parse(JSON.stringify(source.userData));
+    if (recursive) {
+      // three.js Object3D.copy 语义:先移除现有 children,再克隆 source 子树,
+      // 避免 copy 到已有对象时残留 stale 子节点。
+      for (let i = 0; i < this.children.length; i++) {
+        this.remove(this.children[i]);
+      }
+      for (const child of source.children) {
+        this.add(child.clone());
+      }
+    }
+    return this;
+  }
+
+  /**
+   * 返回本对象的一个新副本(类型保持子类)。`new this.constructor()`
+   * 使 Group/Mesh/Bone 等子类 clone 出正确类型;子类可在构造参数里
+   * 传默认值(如 Mesh 的 geometry/material)再 copy 覆盖。
+   */
+  clone(recursive: boolean = true): Object3D {
+    return new (this.constructor as new () => Object3D)().copy(this, recursive);
   }
 
   /** Serialize the subtree as plain JSON — the wire format the Java
