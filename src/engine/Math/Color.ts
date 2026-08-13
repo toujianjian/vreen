@@ -1,12 +1,13 @@
 // Color — RGB 颜色,r/g/b 为 0..1 浮点,参考 three.js Color.js。
 // 简化点:
 //   * 不引入 ColorManagement,r/g/b 存储即输入值;线性 ↔ sRGB 转换由
-//     convertSRGBToLinear / convertLinearToSRGB 显式调用。
-//   * set(string) 仅支持 #rgb / #rrggbb 十六进制字符串,不支持 X11 颜色名
-//     与 rgb()/hsl() CSS 函数(保持文件精简)。
+//     convertSRGBToLinear / convertLinearToSRGB 显式调用。因此 setStyle /
+//     setColorName / getRGB / getStyle 等无 colorSpace 参数,直接读写通道。
+//   * set(string) 委托 setStyle:支持 #rgb / #rrggbb 十六进制、X11 颜色名
+//     (经 Color.NAMES)与 rgb()/hsl() CSS 函数,与 three.js 一致。
 //   * setHex/getHex 直接按通道读写,不做色彩空间转换。
 
-import { clamp } from './MathUtils';
+import { clamp, lerp } from './MathUtils';
 
 /** HSL 输出容器,所有字段范围 0..1。 */
 export interface HSL {
@@ -39,7 +40,166 @@ function hue2rgb(p: number, q: number, t: number): number {
   return p;
 }
 
+/** X11 颜色名 → 0xRRGGBB,与 three.js `_colorKeywords` 一致。 */
+const _colorKeywords: Record<string, number> = {
+  aliceblue: 0xF0F8FF,
+  antiquewhite: 0xFAEBD7,
+  aqua: 0x00FFFF,
+  aquamarine: 0x7FFFD4,
+  azure: 0xF0FFFF,
+  beige: 0xF5F5DC,
+  bisque: 0xFFE4C4,
+  black: 0x000000,
+  blanchedalmond: 0xFFEBCD,
+  blue: 0x0000FF,
+  blueviolet: 0x8A2BE2,
+  brown: 0xA52A2A,
+  burlywood: 0xDEB887,
+  cadetblue: 0x5F9EA0,
+  chartreuse: 0x7FFF00,
+  chocolate: 0xD2691E,
+  coral: 0xFF7F50,
+  cornflowerblue: 0x6495ED,
+  cornsilk: 0xFFF8DC,
+  crimson: 0xDC143C,
+  cyan: 0x00FFFF,
+  darkblue: 0x00008B,
+  darkcyan: 0x008B8B,
+  darkgoldenrod: 0xB8860B,
+  darkgray: 0xA9A9A9,
+  darkgreen: 0x006400,
+  darkgrey: 0xA9A9A9,
+  darkkhaki: 0xBDB76B,
+  darkmagenta: 0x8B008B,
+  darkolivegreen: 0x556B2F,
+  darkorange: 0xFF8C00,
+  darkorchid: 0x9932CC,
+  darkred: 0x8B0000,
+  darksalmon: 0xE9967A,
+  darkseagreen: 0x8FBC8F,
+  darkslateblue: 0x483D8B,
+  darkslategray: 0x2F4F4F,
+  darkslategrey: 0x2F4F4F,
+  darkturquoise: 0x00CED1,
+  darkviolet: 0x9400D3,
+  deeppink: 0xFF1493,
+  deepskyblue: 0x00BFFF,
+  dimgray: 0x696969,
+  dimgrey: 0x696969,
+  dodgerblue: 0x1E90FF,
+  firebrick: 0xB22222,
+  floralwhite: 0xFFFAF0,
+  forestgreen: 0x228B22,
+  fuchsia: 0xFF00FF,
+  gainsboro: 0xDCDCDC,
+  ghostwhite: 0xF8F8FF,
+  gold: 0xFFD700,
+  goldenrod: 0xDAA520,
+  gray: 0x808080,
+  green: 0x008000,
+  greenyellow: 0xADFF2F,
+  grey: 0x808080,
+  honeydew: 0xF0FFF0,
+  hotpink: 0xFF69B4,
+  indianred: 0xCD5C5C,
+  indigo: 0x4B0082,
+  ivory: 0xFFFFF0,
+  khaki: 0xF0E68C,
+  lavender: 0xE6E6FA,
+  lavenderblush: 0xFFF0F5,
+  lawngreen: 0x7CFC00,
+  lemonchiffon: 0xFFFACD,
+  lightblue: 0xADD8E6,
+  lightcoral: 0xF08080,
+  lightcyan: 0xE0FFFF,
+  lightgoldenrodyellow: 0xFAFAD2,
+  lightgray: 0xD3D3D3,
+  lightgreen: 0x90EE90,
+  lightgrey: 0xD3D3D3,
+  lightpink: 0xFFB6C1,
+  lightsalmon: 0xFFA07A,
+  lightseagreen: 0x20B2AA,
+  lightskyblue: 0x87CEFA,
+  lightslategray: 0x778899,
+  lightslategrey: 0x778899,
+  lightsteelblue: 0xB0C4DE,
+  lightyellow: 0xFFFFE0,
+  lime: 0x00FF00,
+  limegreen: 0x32CD32,
+  linen: 0xFAF0E6,
+  magenta: 0xFF00FF,
+  maroon: 0x800000,
+  mediumaquamarine: 0x66CDAA,
+  mediumblue: 0x0000CD,
+  mediumorchid: 0xBA55D3,
+  mediumpurple: 0x9370DB,
+  mediumseagreen: 0x3CB371,
+  mediumslateblue: 0x7B68EE,
+  mediumspringgreen: 0x00FA9A,
+  mediumturquoise: 0x48D1CC,
+  mediumvioletred: 0xC71585,
+  midnightblue: 0x191970,
+  mintcream: 0xF5FFFA,
+  mistyrose: 0xFFE4E1,
+  moccasin: 0xFFE4B5,
+  navajowhite: 0xFFDEAD,
+  navy: 0x000080,
+  oldlace: 0xFDF5E6,
+  olive: 0x808000,
+  olivedrab: 0x6B8E23,
+  orange: 0xFFA500,
+  orangered: 0xFF4500,
+  orchid: 0xDA70D6,
+  palegoldenrod: 0xEEE8AA,
+  palegreen: 0x98FB98,
+  paleturquoise: 0xAFEEEE,
+  palevioletred: 0xDB7093,
+  papayawhip: 0xFFEFD5,
+  peachpuff: 0xFFDAB9,
+  peru: 0xCD853F,
+  pink: 0xFFC0CB,
+  plum: 0xDDA0DD,
+  powderblue: 0xB0E0E6,
+  purple: 0x800080,
+  rebeccapurple: 0x663399,
+  red: 0xFF0000,
+  rosybrown: 0xBC8F8F,
+  royalblue: 0x4169E1,
+  saddlebrown: 0x8B4513,
+  salmon: 0xFA8072,
+  sandybrown: 0xF4A460,
+  seagreen: 0x2E8B57,
+  seashell: 0xFFF5EE,
+  sienna: 0xA0522D,
+  silver: 0xC0C0C0,
+  skyblue: 0x87CEEB,
+  slateblue: 0x6A5ACD,
+  slategray: 0x708090,
+  slategrey: 0x708090,
+  snow: 0xFFFAFA,
+  springgreen: 0x00FF7F,
+  steelblue: 0x4682B4,
+  tan: 0xD2B48C,
+  teal: 0x008080,
+  thistle: 0xD8BFD8,
+  tomato: 0xFF6347,
+  turquoise: 0x40E0D0,
+  violet: 0xEE82EE,
+  wheat: 0xF5DEB3,
+  white: 0xFFFFFF,
+  whitesmoke: 0xF5F5F5,
+  yellow: 0xFFFF00,
+  yellowgreen: 0x9ACD32,
+};
+
+/** offsetHSL / lerpHSL 的模块级临时容器,避免每帧分配。 */
+const _hslA: HSL = { h: 0, s: 0, l: 0 };
+const _hslB: HSL = { h: 0, s: 0, l: 0 };
+
 export class Color {
+  /** X11 颜色名 → 0xRRGGBB 静态查表 (three.js `Color.NAMES`)。 */
+  static NAMES: Record<string, number>;
+
   r: number;
   g: number;
   b: number;
@@ -57,37 +217,21 @@ export class Color {
     }
   }
 
-  /** 设置颜色:接受 Color / 数字(hex) / 字符串(#hex) / (r, g, b)。 */
+  /** 设置颜色:接受 Color / 数字(hex) / 字符串(#hex、颜色名或 CSS 函数) / (r, g, b)。 */
   set(r: number | string | Color, g?: number, b?: number): this {
     if (g !== undefined && b !== undefined) {
       this.setRGB(r as number, g, b);
+      return this;
+    }
+    if (typeof r === 'string') {
+      this.setStyle(r);
       return this;
     }
     if (typeof r === 'number') {
       this.setHex(r);
       return this;
     }
-    if (r instanceof Color) {
-      this.copy(r);
-      return this;
-    }
-    // 字符串:仅支持 #rgb / #rrggbb
-    if (r.startsWith('#')) {
-      const hex = r.slice(1);
-      if (hex.length === 3) {
-        this.setRGB(
-          parseInt(hex.charAt(0), 16) / 15,
-          parseInt(hex.charAt(1), 16) / 15,
-          parseInt(hex.charAt(2), 16) / 15,
-        );
-        return this;
-      }
-      if (hex.length === 6) {
-        this.setHex(parseInt(hex, 16));
-        return this;
-      }
-    }
-    console.warn(`Color: unknown color string: ${r}`);
+    this.copy(r);
     return this;
   }
 
@@ -287,4 +431,186 @@ export class Color {
   toJSON(): number {
     return this.getHex();
   }
+
+  /** 从 CSS 风格字符串设置颜色:#hex / #hex / rgb() / rgb%() / hsl() / 颜色名。 */
+  setStyle(style: string): this {
+    const m = /^(\w+)\(([^\)]*)\)/.exec(style);
+    if (m) {
+      // rgb / hsl
+      const name = m[1];
+      const components = m[2];
+      switch (name) {
+        case 'rgb':
+        case 'rgba': {
+          const regex = /^\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*(\d*\.?\d+)\s*)?$/;
+          const c = regex.exec(components);
+          if (c) {
+            // rgb(255,0,0) rgba(255,0,0,0.5)
+            this.r = Math.min(255, parseInt(c[1], 10)) / 255;
+            this.g = Math.min(255, parseInt(c[2], 10)) / 255;
+            this.b = Math.min(255, parseInt(c[3], 10)) / 255;
+            if (c[4] !== undefined) {
+              const alpha = parseFloat(c[4]);
+              if (alpha !== 1) {
+                console.warn(`Color: alpha (${alpha}) is ignored for rgb/rgba color strings`);
+              }
+            }
+            return this;
+          }
+          // rgb(100%,0%,0%) rgba(100%,0%,0%,0.5)
+          const regexPercent = /^\s*(\d+)\%\s*,\s*(\d+)\%\s*,\s*(\d+)\%\s*(?:,\s*(\d*\.?\d+)\s*)?$/;
+          const cp = regexPercent.exec(components);
+          if (cp) {
+            this.r = Math.min(100, parseInt(cp[1], 10)) / 100;
+            this.g = Math.min(100, parseInt(cp[2], 10)) / 100;
+            this.b = Math.min(100, parseInt(cp[3], 10)) / 100;
+            if (cp[4] !== undefined) {
+              const alpha = parseFloat(cp[4]);
+              if (alpha !== 1) {
+                console.warn(`Color: alpha (${alpha}) is ignored for rgb/rgba color strings`);
+              }
+            }
+            return this;
+          }
+          break;
+        }
+        case 'hsl':
+        case 'hsla': {
+          const regexHSL = /^\s*(\d*\.?\d+)\s*,\s*(\d*\.?\d+)\%\s*,\s*(\d*\.?\d+)\%\s*(?:,\s*(\d*\.?\d+)\s*)?$/;
+          const c = regexHSL.exec(components);
+          if (c) {
+            this.setHSL(
+              parseFloat(c[1]) / 360,
+              parseFloat(c[2]) / 100,
+              parseFloat(c[3]) / 100,
+            );
+            if (c[4] !== undefined) {
+              const alpha = parseFloat(c[4]);
+              if (alpha !== 1) {
+                console.warn(`Color: alpha (${alpha}) is ignored for hsl/hsla color strings`);
+              }
+            }
+            return this;
+          }
+          break;
+        }
+        default:
+          break;
+      }
+      console.warn(`Color: unknown color model ${name}`);
+      return this;
+    }
+
+    // hex
+    const hex = /^\#([A-Fa-f\d]+)$/.exec(style);
+    if (hex) {
+      const hexStr = hex[1];
+      if (hexStr.length === 3) {
+        // #ff0
+        this.setRGB(
+          parseInt(hexStr.charAt(0), 16) / 15,
+          parseInt(hexStr.charAt(1), 16) / 15,
+          parseInt(hexStr.charAt(2), 16) / 15,
+        );
+        return this;
+      }
+      if (hexStr.length === 6) {
+        // #ff0000
+        this.setHex(parseInt(hexStr, 16));
+        return this;
+      }
+      console.warn(`Color: invalid hex color ${style}`);
+      return this;
+    }
+
+    // 颜色名
+    if (style && style.length > 0) {
+      return this.setColorName(style);
+    }
+
+    return this;
+  }
+
+  /** 从 X11 颜色名设置颜色(经 Color.NAMES 查表,大小写不敏感)。 */
+  setColorName(style: string): this {
+    const hex = _colorKeywords[style.toLowerCase()];
+    if (hex !== undefined) {
+      this.setHex(hex);
+      return this;
+    }
+    console.warn(`Color: unknown color ${style}`);
+    return this;
+  }
+
+  /** 从 0..1 通道读入 target 并返回(target 为简化返回值,无 colorSpace 参数)。 */
+  getRGB(target: Color): Color {
+    target.r = this.r;
+    target.g = this.g;
+    target.b = this.b;
+    return target;
+  }
+
+  /** 返回 CSS rgb() 字符串,与 three.js 一致。 */
+  getStyle(): string {
+    return `rgb(${Math.round(this.r * 255)},${Math.round(this.g * 255)},${Math.round(this.b * 255)})`;
+  }
+
+  /** 偏移 HSL 分量(h/s/l 单位为 0..1)。 */
+  offsetHSL(h: number, s: number, l: number): this {
+    this.getHSL(_hslA);
+    return this.setHSL(_hslA.h + h, _hslA.s + s, _hslA.l + l);
+  }
+
+  /** 减色,通道下限截断到 0。 */
+  sub(color: Color): this {
+    this.r = Math.max(0, this.r - color.r);
+    this.g = Math.max(0, this.g - color.g);
+    this.b = Math.max(0, this.b - color.b);
+    return this;
+  }
+
+  /** 在 HSL 空间线性插值 RGB,alpha 0..1。 */
+  lerpHSL(color: Color, alpha: number): this {
+    this.getHSL(_hslA);
+    color.getHSL(_hslB);
+
+    const h = lerp(_hslA.h, _hslB.h, alpha);
+    const s = lerp(_hslA.s, _hslB.s, alpha);
+    const l = lerp(_hslA.l, _hslB.l, alpha);
+
+    this.setHSL(h, s, l);
+    return this;
+  }
+
+  /** 从 { x, y, z } 结构设置 r/g/b。 */
+  setFromVector3(v: { x: number; y: number; z: number }): this {
+    this.r = v.x;
+    this.g = v.y;
+    this.b = v.z;
+    return this;
+  }
+
+  /** 用 Matrix3 的元素列主序对 r/g/b 施加线性变换。 */
+  applyMatrix3(m: { elements: ArrayLike<number> }): this {
+    const e = m.elements;
+    const r = this.r, g = this.g, b = this.b;
+    this.r = e[0] * r + e[3] * g + e[6] * b;
+    this.g = e[1] * r + e[4] * g + e[7] * b;
+    this.b = e[2] * r + e[5] * g + e[8] * b;
+    return this;
+  }
+
+  /** 从 BufferAttribute 的 index 处读 x/y/z 到 r/g/b。 */
+  fromBufferAttribute(
+    attribute: { getX(i: number): number; getY(i: number): number; getZ(i: number): number },
+    index: number,
+  ): this {
+    this.r = attribute.getX(index);
+    this.g = attribute.getY(index);
+    this.b = attribute.getZ(index);
+    return this;
+  }
 }
+
+/** X11 颜色名查表 (hex),与 three.js `Color.NAMES` 一致。 */
+Color.NAMES = _colorKeywords;

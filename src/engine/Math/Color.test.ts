@@ -1,5 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { Color, type HSL } from './Color';
+import { Matrix3 } from './Matrix3';
+import { BufferAttribute } from '../Core/BufferAttribute';
 
 describe('Color', () => {
   describe('construction', () => {
@@ -446,6 +448,285 @@ describe('Color', () => {
     it('returns hex integer', () => {
       expect(new Color(0xff0000).toJSON()).toBe(0xff0000);
       expect(new Color(0xabcdef).toJSON()).toBe(0xabcdef);
+    });
+  });
+
+  describe('setStyle', () => {
+    it('#rrggbb hex', () => {
+      const c = new Color().setStyle('#ff8800');
+      expect(c.r).toBeCloseTo(1, 10);
+      expect(c.g).toBeCloseTo(0x88 / 255, 10);
+      expect(c.b).toBeCloseTo(0, 10);
+    });
+
+    it('#rgb short hex', () => {
+      const c = new Color().setStyle('#f0f');
+      expect(c.r).toBeCloseTo(1, 10);
+      expect(c.g).toBeCloseTo(0, 10);
+      expect(c.b).toBeCloseTo(1, 10);
+    });
+
+    it('rgb(255,0,0)', () => {
+      const c = new Color().setStyle('rgb(255,0,0)');
+      expect(c.r).toBeCloseTo(1, 10);
+      expect(c.g).toBeCloseTo(0, 10);
+      expect(c.b).toBeCloseTo(0, 10);
+    });
+
+    it('rgb with whitespace and 3-digit ints', () => {
+      const c = new Color().setStyle('rgb(  0 , 128 , 255 )');
+      expect(c.r).toBeCloseTo(0, 10);
+      expect(c.g).toBeCloseTo(128 / 255, 10);
+      expect(c.b).toBeCloseTo(1, 10);
+    });
+
+    it('rgb with percentages', () => {
+      const c = new Color().setStyle('rgb(100%,0%,50%)');
+      expect(c.r).toBeCloseTo(1, 10);
+      expect(c.g).toBeCloseTo(0, 10);
+      expect(c.b).toBeCloseTo(0.5, 10);
+    });
+
+    it('rgba with alpha 1 is accepted silently', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const c = new Color().setStyle('rgba(255,0,0,1)');
+      expect(c.r).toBeCloseTo(1, 10);
+      expect(warn).not.toHaveBeenCalled();
+      warn.mockRestore();
+    });
+
+    it('rgba with alpha != 1 warns that alpha is ignored', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const c = new Color().setStyle('rgba(255,0,0,0.5)');
+      expect(c.r).toBeCloseTo(1, 10);
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('alpha (0.5) is ignored for rgb/rgba'),
+      );
+      warn.mockRestore();
+    });
+
+    it('hsl(120,100%,50%) → green', () => {
+      const c = new Color().setStyle('hsl(120,100%,50%)');
+      expect(c.r).toBeCloseTo(0, 10);
+      expect(c.g).toBeCloseTo(1, 10);
+      expect(c.b).toBeCloseTo(0, 10);
+    });
+
+    it('hsl with float hue and fractional values', () => {
+      const c = new Color().setStyle('hsl(120, 50%, 25%)');
+      const ref = new Color().setHSL(120 / 360, 0.5, 0.25);
+      expect(c.r).toBeCloseTo(ref.r, 10);
+      expect(c.g).toBeCloseTo(ref.g, 10);
+      expect(c.b).toBeCloseTo(ref.b, 10);
+    });
+
+    it('hsla with alpha 1 is accepted silently', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const c = new Color().setStyle('hsla(0,100%,50%,1)');
+      expect(c.r).toBeCloseTo(1, 10);
+      expect(warn).not.toHaveBeenCalled();
+      warn.mockRestore();
+    });
+
+    it('unknown color model warns and returns this', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const c = new Color(1, 1, 1);
+      const ret = c.setStyle('cmyk(0,1,0,0)');
+      expect(ret).toBe(c);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('unknown color model'));
+      warn.mockRestore();
+    });
+
+    it('invalid hex length warns', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      new Color().setStyle('#12345');
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('invalid hex color'));
+      warn.mockRestore();
+    });
+  });
+
+  describe('setColorName', () => {
+    it('lowercase X11 name', () => {
+      const c = new Color().setColorName('red');
+      expect(c.r).toBeCloseTo(1, 10);
+      expect(c.g).toBeCloseTo(0, 10);
+      expect(c.b).toBeCloseTo(0, 10);
+    });
+
+    it('case-insensitive', () => {
+      const c = new Color().setColorName('ReD');
+      expect(c.r).toBeCloseTo(1, 10);
+      expect(c.g).toBeCloseTo(0, 10);
+      expect(c.b).toBeCloseTo(0, 10);
+    });
+
+    it('black', () => {
+      const c = new Color().setColorName('black');
+      expect(c.r).toBeCloseTo(0, 10);
+      expect(c.g).toBeCloseTo(0, 10);
+      expect(c.b).toBeCloseTo(0, 10);
+    });
+
+    it('unknown name warns and leaves color unchanged', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const c = new Color(0.1, 0.2, 0.3);
+      c.setColorName('notacolor');
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('unknown color'));
+      expect(c.r).toBeCloseTo(0.1, 10);
+      warn.mockRestore();
+    });
+
+    it('set(string) routes through setStyle for color names', () => {
+      const c = new Color().set('blue');
+      expect(c.b).toBeCloseTo(1, 10);
+      expect(c.r).toBeCloseTo(0, 10);
+    });
+  });
+
+  describe('Color.NAMES', () => {
+    it('is a populated static lookup table', () => {
+      expect(typeof Color.NAMES).toBe('object');
+      expect(Color.NAMES).not.toBeNull();
+      expect(Color.NAMES.red).toBe(0xff0000);
+      expect(Color.NAMES.white).toBe(0xffffff);
+      expect(Color.NAMES.yellowgreen).toBe(0x9acd32);
+    });
+
+    it('contains the X11 keyword count used by three.js', () => {
+      expect(Object.keys(Color.NAMES).length).toBeGreaterThanOrEqual(140);
+    });
+  });
+
+  describe('getRGB', () => {
+    it('writes channels into target and returns it', () => {
+      const src = new Color(0.1, 0.2, 0.3);
+      const target = new Color(1, 1, 1);
+      const ret = src.getRGB(target);
+      expect(ret).toBe(target);
+      expect(target.r).toBeCloseTo(0.1, 10);
+      expect(target.g).toBeCloseTo(0.2, 10);
+      expect(target.b).toBeCloseTo(0.3, 10);
+      // source unchanged
+      expect(src.r).toBeCloseTo(0.1, 10);
+    });
+  });
+
+  describe('getStyle', () => {
+    it('formats as rgb() with rounded 0..255 channels', () => {
+      expect(new Color(1, 0, 0).getStyle()).toBe('rgb(255,0,0)');
+      expect(new Color(0, 0, 1).getStyle()).toBe('rgb(0,0,255)');
+    });
+
+    it('rounds fractional channels', () => {
+      const c = new Color(0.5, 0.25, 0.75);
+      expect(c.getStyle()).toBe('rgb(128,64,191)');
+    });
+  });
+
+  describe('offsetHSL', () => {
+    it('offsets h/s/l', () => {
+      // red (0,1,0.5) → offset h +0.5 → cyan (0.5,1,0.5)
+      const c = new Color(1, 0, 0).offsetHSL(0.5, 0, 0);
+      const ref = new Color().setHSL(0.5, 1, 0.5);
+      expect(c.r).toBeCloseTo(ref.r, 10);
+      expect(c.g).toBeCloseTo(ref.g, 10);
+      expect(c.b).toBeCloseTo(ref.b, 10);
+    });
+
+    it('returns this and mutates in place', () => {
+      const c = new Color(1, 0, 0);
+      const ret = c.offsetHSL(0.25, 0, 0);
+      expect(ret).toBe(c);
+    });
+  });
+
+  describe('sub', () => {
+    it('subtracts component-wise', () => {
+      const c = new Color(0.7, 0.6, 0.5).sub(new Color(0.2, 0.4, 0.1));
+      expect(c.r).toBeCloseTo(0.5, 10);
+      expect(c.g).toBeCloseTo(0.2, 10);
+      expect(c.b).toBeCloseTo(0.4, 10);
+    });
+
+    it('clamps at zero (three.js semantics)', () => {
+      const c = new Color(0.2, 0.2, 0.2).sub(new Color(0.9, 0.5, 0.3));
+      expect(c.r).toBe(0);
+      expect(c.g).toBe(0);
+      expect(c.b).toBe(0);
+    });
+  });
+
+  describe('lerpHSL', () => {
+    it('alpha=0 keeps source, alpha=1 reaches target', () => {
+      const a = new Color(1, 0, 0); // red
+      const b = new Color(0, 1, 0); // green
+      const at0 = a.clone().lerpHSL(b, 0);
+      expect(at0.r).toBeCloseTo(1, 10);
+      const at1 = a.clone().lerpHSL(b, 1);
+      expect(at1.r).toBeCloseTo(0, 10);
+      expect(at1.g).toBeCloseTo(1, 10);
+    });
+
+    it('alpha=0.5 crosses through yellow (hue midpoint, saturated)', () => {
+      const c = new Color(1, 0, 0).lerpHSL(new Color(0, 1, 0), 0.5);
+      // red h=0, green h=1/3 → mid h=1/6, s=1, l=0.5 → yellow
+      const ref = new Color().setHSL(1 / 6, 1, 0.5);
+      expect(c.r).toBeCloseTo(ref.r, 10);
+      expect(c.g).toBeCloseTo(ref.g, 10);
+      expect(c.b).toBeCloseTo(ref.b, 10);
+    });
+
+    it('returns this', () => {
+      const a = new Color(1, 0, 0);
+      const ret = a.lerpHSL(new Color(0, 1, 0), 0.5);
+      expect(ret).toBe(a);
+    });
+  });
+
+  describe('setFromVector3', () => {
+    it('sets r/g/b from x/y/z', () => {
+      const c = new Color().setFromVector3({ x: 0.1, y: 0.2, z: 0.3 });
+      expect(c.r).toBeCloseTo(0.1, 10);
+      expect(c.g).toBeCloseTo(0.2, 10);
+      expect(c.b).toBeCloseTo(0.3, 10);
+    });
+  });
+
+  describe('applyMatrix3', () => {
+    it('applies a diagonal scale matrix', () => {
+      // diagonal (1,1,2): r→r, g→g, b→2b
+      const m = new Matrix3().set(1, 0, 0, 0, 1, 0, 0, 0, 2);
+      const c = new Color(0.5, 0.25, 0.1).applyMatrix3(m);
+      expect(c.r).toBeCloseTo(0.5, 10);
+      expect(c.g).toBeCloseTo(0.25, 10);
+      expect(c.b).toBeCloseTo(0.2, 10);
+    });
+
+    it('mixes channels via off-diagonal elements', () => {
+      // row1: e[1]=1 (g adds to r), row2: e[5]=1 (b adds to g)
+      const m = new Matrix3().set(1, 1, 0, 0, 1, 1, 0, 0, 1);
+      const c = new Color(1, 1, 1).applyMatrix3(m);
+      expect(c.r).toBeCloseTo(2, 10);
+      expect(c.g).toBeCloseTo(2, 10);
+      expect(c.b).toBeCloseTo(1, 10);
+    });
+  });
+
+  describe('fromBufferAttribute', () => {
+    it('reads x/y/z from attribute at index', () => {
+      const attr = new BufferAttribute(new Float32Array([1, 2, 3, 4, 5, 6]), 3);
+      const c = new Color().fromBufferAttribute(attr, 1);
+      expect(c.r).toBeCloseTo(4, 10);
+      expect(c.g).toBeCloseTo(5, 10);
+      expect(c.b).toBeCloseTo(6, 10);
+    });
+
+    it('works with non-zero itemSize strides', () => {
+      const attr = new BufferAttribute(new Float32Array([1, 2, 3, 4, 5, 6, 7, 8]), 4);
+      const c = new Color().fromBufferAttribute(attr, 1);
+      expect(c.r).toBeCloseTo(5, 10);
+      expect(c.g).toBeCloseTo(6, 10);
+      expect(c.b).toBeCloseTo(7, 10);
     });
   });
 });
