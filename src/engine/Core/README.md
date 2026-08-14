@@ -91,6 +91,92 @@ interface LODLevel { distance: number; object: Object3D; hysteresis?: number; }
 | `BufferGeometry` | Vertex attribute container + optional index. Carries `boundingBox` / `boundingSphere`, `morphTargets`, optional `bvh`. `version` increments on attribute edits. Supports `addGroup` / `clearGroups` for multi-material draw groups. Instance methods: `computeVertexNormals()` (flat + averaged normals), `computeTangents()` (MikkTSpace tangent space, vec4 with handedness w), `computeBoundingBox()` / `computeBoundingSphere()`, `applyMatrix4()`, `clone()`, `toJSON()`, `dispose()`. |
 | `BufferAttribute` | Typed-array view over one attribute (`position` / `normal` / `uv` / etc.). `version` increments on `set` / `setXY` / `setXYZ`. |
 | `InstancedBufferAttribute` | Per-instance attribute; `meshPerAttribute` maps to `gl.vertexAttribDivisor(loc, N)` (default 1). |
+| `InterleavedBuffer` | Shared TypedArray + `stride` — packs multiple attributes into one buffer so the GPU fetches an entire vertex in a single stride (cache-friendlier than one-buffer-per-attribute). Supports quantised types (`Int16` / `Uint8` / `Uint8Clamped`) and half-float; `copy` deep-copies, `clone` deduplicates the underlying `ArrayBuffer` across a shared `data` context, `toJSON` serialises references by `ArrayBuffer` uuid. |
+| `InterleavedBufferAttribute` | Slice over an `InterleavedBuffer` (holds `data` + `itemSize` + `offset`); `getX`..`getW` / `setX..setXYZW` address by `index * stride + offset`; auto-quantises/de-quantises when `normalized`; `clone`/`toJSON` de-interleave into a standalone `BufferAttribute` (no `data`) or keep interleaved reference (with `data`, deduplicating across attributes). |
+| `InstancedInterleavedBuffer` | `InterleavedBuffer` + `meshPerAttribute` (per N instances → `gl.vertexAttribDivisor`); the interleaved counterpart of `InstancedBufferAttribute`. |
+
+#### Interleaved Vertex Layout (`InterleavedBuffer` / `InterleavedBufferAttribute`)
+
+Adapted from three.js `src/core/InterleavedBuffer.js` (r169). The *interleaved* layout stores
+several vertex attributes in **one shared TypedArray**, each attribute reading its slice at a
+different `offset`. The vertex shader's `gl.vertexAttribPointer(..., stride, offset)` then
+fetches the whole vertex (position + normal + uv + color…) in one contiguous stride — a
+single memory transaction — which is markedly more cache-friendly than giving each attribute
+its own buffer.
+
+This is exactly the geometry form that glTF produces via `KHR_mesh_quantization` (quantised
+attributes) and `EXT_mesh_gpu_instancing` (interleaved instance attributes). Before this
+module, VREEN's GLB loader had to *de-interleave* such buffers back into independent
+`Float32Array`s to feed `BufferAttribute`; `InterleavedBuffer` provides a native interleaved
+representation so that copy is avoided at load time.
+
+**`InterleavedBuffer`** — owns the shared `array` (any `TypedArray`: `Float32Array` /
+`Int16Array` / `Uint8Array` / `Uint8ClampedArray` / …, supporting quantised and half-float
+encoding) plus a `stride` (number of TypedArray elements per vertex) and derived `count`
+(= `array.length / stride`). Maintenance surface:
+
+- `needsUpdate = true` bumps `version` (renderer re-uploads).
+- `setUsage(hint)` / `addUpdateRange(start, count)` / `clearUpdateRanges()` for partial
+  re-upload (e.g. a skinned-subset range); `onUpload(cb)` registers a callback the renderer
+  fires after handing data to the GPU (used to reclaim CPU buffers).
+- `copy(source)` deep-copies the array with the same TypedArray constructor.
+- `copyAt(i1, src, i2)` copies one whole vertex from another interleaved buffer.
+- `clone(data)` — **deduplicates** the underlying `ArrayBuffer`: a tap is attached to the
+  `ArrayBuffer` as `_uuid`; when multiple attributes sit on the same buffer, `clone` only
+  materialises the bytes once and hands out views (TypedArrays) over the shared allocation.
+  `count`/`stride`/`usage` are propagated.
+- `toJSON(data)` — stores a dense `arrayBuffers` map keyed by `_uuid` (any TypedArray bytes
+  are sliced as `Uint32Array` for JSON) so the whole interleaved block round-trips with no
+  duplication.
+
+**`InterleavedBufferAttribute`** — a *slice* over an `InterleavedBuffer` identified by
+`offset` (TypedArray elements from the vertex start) + `itemSize` (1/2/3/4). It does **not**
+own the array; `array` / `count` / `needsUpdate` are proxied to `data`. All accessors compute
+the index as `index * data.stride + offset (+ component)`:
+
+- `getX`/`getY`/`getZ`/`getW`, `setX`..`setW`, `getComponent`/`setComponent`,
+  `setXY`/`setXYZ`/`setXYZW`.
+- When `normalized` is set, reads transparently *de-quantise* via `MathUtils.denormalize`
+  (e.g. `Uint8` → 0..1) and writes *quantise* via `MathUtils.normalize` — so a quantised
+  `(Uint8, normalized=true)` attribute behaves like a float attribute to the caller while
+  still storing one byte per component.
+- `applyMatrix4` / `applyNormalMatrix` / `transformDirection` bulk-transform every vertex's
+  3-component slice through `Vector3` (the first two re-write position/normal; the last
+  treats the slice as a direction and ignores translation).
+- `clone(data?)` — without `data`, it **de-interleaves**: extracts this attribute's slice
+  into a fresh standalone `Float32Array`-backed `BufferAttribute` (the cost is losing the
+  shared-buffer cache benefit; the gain is a plain attribute usable anywhere BufferAttribute
+  is expected). With `data` (carrying an `interleavedBuffers` map), it clones as an
+  `InterleavedBufferAttribute` and **deduplicates** the underlying `InterleavedBuffer` so
+  several cloned attributes keep sharing one buffer.
+- `toJSON(data?)` mirrors `clone`: without `data` → plain attribute JSON (inline array);
+  with `data` → an interleaved *reference* (only `data.uuid` + `offset`, the actual buffer
+  is serialised once via the `interleavedBuffers` map).
+
+**`InstancedInterleavedBuffer`** — `InterleavedBuffer` + `meshPerAttribute`. Like
+`InstancedBufferAttribute`, `meshPerAttribute` is the divisor N fed to
+`gl.vertexAttribDivisor(loc, N)` (default 1 = one attribute batch per instance). This is the
+interleaved counterpart of `InstancedBufferAttribute` and the form produced by
+`EXT_mesh_gpu_instancing`'s interleaved instance buffers. `copy`/`clone`/`toJSON` propagate
+`meshPerAttribute`.
+
+> **Why a separate type rather than more fields on BufferAttribute?** `BufferAttribute` is
+> "owns the array + itemSize". Interleaving fundamentally changes the storage contract
+> (shared buffer, stride-based addressing, slice ownership) enough that bolting it onto
+> `BufferAttribute` would muddy the simpler type every other path uses; a dedicated slice
+> type (`InterleavedBufferAttribute`) keeps each clean and lets `clone`/`toJSON` explicitly
+> choose de-interleave vs. keep-interleaved.
+
+> **soup3D 对比** — soup3D 把顶点数据存成朴素散列的 Python list,没有交错布局、没有
+> stride/offset 概念、没有量化属性、没有实例化属性;VREEN 的 `InterleavedBuffer` 提供
+> 原生 interleaved 表达(避免 glTF 加载时 de-interleave 的拷贝)、量化属性(normalized
+> `Uint8`/`Int16` 节省显存)与实例化交错(`meshPerAttribute`),是写实级顶点缓冲布局的
+> 基石——soup3D 架构上没有对应物。
+
+This module is pure data (no WebGL dependency); vertexAttribPointer wiring lives in the
+renderer's MeshShaderPipeline / WebGL2Renderer, which already provides the buffer-config
+entry point for non-zero `stride`/`offset`. See `InterleavedBuffer.test.ts` — 45 tests,
+all green, no GPU touching.
 
 ### Tangent Space (Normal Mapping)
 

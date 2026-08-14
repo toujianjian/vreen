@@ -1253,6 +1253,11 @@
         "title": "光源与骨骼调试辅助器(three.js helpers 家族适配)",
         "desc": "顶点色线段辅助器,可视化四类光源 + 一具骨骼,统一走渲染器 helper 旁路(userData.__helper='line'、gl.LINES 绘制)。DirectionalLightHelper 画垂直于 light.direction 的方框 + 一条 10×size 方向射线(用 VREEN 显式 direction 字段而非 position→target)。PointLightHelper 画线框球体(经线×纬线),distance>0 时再画一个半径=distance 的外环表示有效照明范围。SpotLightHelper 画锥体(5 条辐射线 + 32 段底环;锥长=distance 或回退 1000,锥宽=锥长×tan(angle)),本地 +Z 朝向 target。HemisphereLightHelper 画八面体,上半边取 light.color、下半边取 groundColor。SkeletonHelper 对每对 bone→父 bone 画一条线、蓝→绿渐变,updateMatrixWorld() 时按每根骨世界矩阵回填位置。几何构造函数 buildXxxGeometry 全为纯数据,无 WebGL 也可单测。",
         "advantage": "soup3D 完全没有光源调试可视化——光源只是无类型 intensity 值,无任何 gizmo,无骨骼/骨调试绘制,无场景图层级检视面板;光照摆放或 rig 骨姿态全靠盲调。VREEN 给出完整 three.js helper 家族(适配到顶点色 Mesh 管线:Directional/Point/Spot/HemisphereLightHelper + SkeletonHelper),全部可无头测试,并直接接入引擎自有 Lights(direction/distance/angle/groundColor/sky)与 Bone,实现编辑器内即时反馈——soup3D 架构上做不到。"
+      },
+      "interleavedBuffer": {
+        "title": "InterleavedBuffer 交错缓冲(three.js r169 顶点属性布局)",
+        "desc": "把多个顶点属性(position/normal/uv/color)打包进单个共享 TypedArray 的交错缓冲,GPU 一次 vertex fetch 即可拿到一顶点的全部属性,缓存命中率高于每个属性独占 buffer 的布局——正是 glTF 量化属性(KHR_mesh_quantization)与 EXT_mesh_gpu_instancing 产出的几何体形态。InterleavedBuffer 持 stride + 共享 array(支持 Float32/Int16/Uint8/Uint8Clamped 等量化与 half-float 类型);InterleavedBufferAttribute 按 index*stride+offset 寻址读写、normalized 时自动量化/反量化;clone 无 data 时 de-interleave 为独立 BufferAttribute、有 data 时多条属性去重复用同一底层 ArrayBuffer;InstancedInterleavedBuffer 加 meshPerAttribute(对应 gl.vertexAttribDivisor)。45 个纯数据单元测试、无 WebGL 依赖。适配 three.js src/core InterleavedBuffer.js。",
+        "advantage": "soup3D 顶点数据是朴素散列 Python list,无交错布局、无 stride/offset 概念、无量化属性支持、无实例化属性;VREEN 提供原生 interleaved 表达避免 glTF 加载时 de-interleave 回独立数组的拷贝开销,支持量化属性(normalized Uint8/Int16 编码节省显存)与实例化交错(meshPerAttribute),是写实级顶点缓冲布局的基石——soup3D 在架构层面没有对应物。"
       }
     }
   }

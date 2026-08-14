@@ -1252,7 +1252,12 @@
       "lightHelpers": {
         "title": "光源・スケルトン デバッグギズモ(three.js helpers 派生)",
         "desc": "頂点色線分ギズモで四種光源と一つのスケルトンを可視化、レンダラの helper 旁路(userData.__helper='line'、gl.LINES)で一括描画。DirectionalLightHelper は light.direction に垂直な方形フレーム + 10×size の方向光線を描画(VREEN の明示的 direction フィールド採用、position→target に非依存)。PointLightHelper は経緯線枠球を描画、distance>0 時は半径=distance の外輪で有効照明範囲を示す。SpotLightHelper は錐体(5 放射線 + 32 分割底環;錐長=distance 又は 1000 フォールバック、錐幅=錐長×tan(angle))を描画しローカル +Z が target を向く。HemisphereLightHelper は八面体を描画し上半の辺=light.color、下半の辺=groundColor。SkeletonHelper は bone→親 bone 各ペアに一本の線を描画し青→緑グラデーション、updateMatrixWorld() で各骨の世界行列から位置を再充填。幾何構築関数 buildXxxGeometry は全て純データ、WebGL 無しでもテスト可。",
-        "advantage": "soup3D には光源デバッグ可視化が全くなく——光源は型なし intensity 値のみ、ギズモも骨・スケルトンデバッグ描画もシーングラフ階層ビューアもなく、照明配置や rig 骨姿勢の調整は暗中模索。VREEN は three.js helpers 家族を頂点色 Mesh パイプラインに派生(Directional/Point/Spot/HemisphereLightHelper + SkeletonHelper)、全てヘッドレス可でエンジン内蔵 Lights(direction/distance/angle/groundColor/sky)と Bone に直結しエディタ内即時フィードバックを実現——soup3D では構造上不可能です。"
+        "advantage": "soup3D には光源デバッグ可視化が全くなく——光源は型なし intensity 値のみ、ギズモも骨・スケルトンデバッグ描画もシーングラフ階層ビューアもなく、照明配置や rig 骨姿勢の調整は暗中模索。VREEN は three.js helpers 家族を頂点色 Mesh パイプライに派生(Directional/Point/Spot/HemisphereLightHelper + SkeletonHelper)、全てヘッドレス可でエンジン内蔵 Lights(direction/distance/angle/groundColor/sky)と Bone に直結しエディタ内即時フィードバックを実現——soup3D では構造上不可能です。"
+      },
+      "interleavedBuffer": {
+        "title": "InterleavedBuffer(three.js r169 頂点属性レイアウト)",
+        "desc": "複数の頂点属性(position/normal/uv/color)を単一の共有 TypedArray に詰め込むインターリーブバッファ。GPU は 1 回の vertex fetch で1頂点の全属性を取得でき、属性ごとの独立 buffer よりキャッシュ命中率が高い——これは glTF 量子化属性(KHR_mesh_quantization)と EXT_mesh_gpu_instancing が生成する幾何体の形態でもある。InterleavedBuffer は stride + 共有 array を持ち(Float32/Int16/Uint8/Uint8Clamped 等の量子化・half-float 型対応)、InterleavedBufferAttribute は index*stride+offset でアドレッシングし、normalized 時は自動で量子化/逆量子化。clone で data 無し時は de-interleave して独立 BufferAttribute に、data 有り時は複数属性が同一 ArrayBuffer を重複排除で再利用。InstancedInterleavedBuffer は meshPerAttribute 追加(gl.vertexAttribDivisor に対応)。45 個の純データ単体テスト、WebGL 非依存。three.js src/core InterleavedBuffer.js から派生。",
+        "advantage": "soup3D の頂点データは素朴な散らばった Python list で、インターリーブレイアウトも stride/offset 概念も量子化属性もインスタンス化属性もない。VREEN はネイティブインターリーブ表現を提供し glTF ロード時の de-interleave から独立配列へのコピーを回避、量子化属性(normalized Uint8/Int16 符号化で VRAM 節約)とインスタンスインターリーブ(meshPerAttribute)をサポート——本格的な頂点バッファレイアウトの基盤であり、soup3D アーキテクチャには対応物がない。"
       }
     }
   }

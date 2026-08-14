@@ -1253,6 +1253,11 @@
         "title": "광원·스켈레톤 디버그 기즈모(three.js helpers 파생)",
         "desc": "정점색 선분 기즈모로 네 종 광원과 하나의 스켈레톤을 시각화, 렌더러 helper 우회통로(userData.__helper='line'、gl.LINES)로 일괄 그린다. DirectionalLightHelper는 light.direction에 수직인 사각 프레임 + 10×size 방향 광선(VREEN의 명시적 direction 필드 사용, position→target 비의존). PointLightHelper는 경위선 와이어 구를 그리고 distance>0일 때 반경=distance 외륜으로 유효 조명 범위 표시. SpotLightHelper는 원뿔(5 방사선 + 32 분할 저환;원뿔 길이=distance 또는 1000 폴백, 원뿔 폭=원뿔길이×tan(angle))을 그리고 로컬 +Z가 target을 향함. HemisphereLightHelper는 팔면체를 그려 윗부분 변=light.color, 아랫부분 변=groundColor. SkeletonHelper는 bone→부모 bone 각 쌍에 한 선을 그리고 청→녹 그라데이션, updateMatrixWorld()에서 각 골의 세계 행렬로 위치 재충전. 기하 구축 함수 buildXxxGeometry는 모두 순 데이터, WebGL 없이도 단위 테스트 가능.",
         "advantage": "soup3D에는 광원 디버그 시각화가 전혀 없다——광원은 타입 없는 intensity 값뿐, 기즈모도 골·스켈레톤 디버그 그리기도 장면그래프 계층 뷰어도 없어 조명 배치나 rig 골 자세 조정은 암중모색. VREEN은 three.js helpers 가족을 정점색 Mesh 파이프라인에 파생(Directional/Point/Spot/HemisphereLightHelper + SkeletonHelper), 모두 헤드리스 테스트 가능하고 엔진 내장 Lights(direction/distance/angle/groundColor/sky)와 Bone에 직결해 에디터 내 즉시 피드백을 실현——soup3D는 구조상 불가능하다."
+      },
+      "interleavedBuffer": {
+        "title": "InterleavedBuffer(three.js r169 정점 속성 레이아웃)",
+        "desc": "여러 정점 속성(position/normal/uv/color)을 단일 공유 TypedArray에 담는 인터리브 버퍼. GPU가 1회 vertex fetch로 한 정점의 전체 속성을 가져올 수 있어 속성마다 독립 buffer를 쓰는 것보다 캐시 적중률이 높다——이는 glTF 양자화 속성(KHR_mesh_quantization)과 EXT_mesh_gpu_instancing이 생성하는 기하체 형태이기도 하다. InterleavedBuffer는 stride + 공유 array를 가지며(Float32/Int16/Uint8/Uint8Clamped 등 양자화·half-float 타입 지원), InterleavedBufferAttribute는 index*stride+offset으로 어드레싱하고 normalized 시 자동 양자화/역양자화. clone에 data가 없으면 de-interleave하여 독립 BufferAttribute로, data가 있으면 여러 속성이 동일 ArrayBuffer를 중복제거 재사용. InstancedInterleavedBuffer는 meshPerAttribute 추가(gl.vertexAttribDivisor에 대응). 45개 순 데이터 단위 테스트, WebGL 비의존. three.js src/core InterleavedBuffer.js에서 파생.",
+        "advantage": "soup3D의 정점 데이터는 소박한 흩어진 Python list로 인터리브 레이아웃도 stride/offset 개념도 양자화 속성도 인스턴스화 속성도 없다. VREEN은 네이티브 인터리브 표현을 제공해 glTF 로드 시 de-interleave에서 독립 배열로의 복사를 회피하고, 양자화 속성(normalized Uint8/Int16 인코딩으로 VRAM 절약)과 인스턴스 인터리브(meshPerAttribute)를 지원——실용급 정점 버퍼 레이아웃의 기반이며 soup3D 아키텍처에는 대응물이 없다."
       }
     }
   }
