@@ -1258,6 +1258,11 @@
         "title": "InterleavedBuffer 交错缓冲(three.js r169 顶点属性布局)",
         "desc": "把多个顶点属性(position/normal/uv/color)打包进单个共享 TypedArray 的交错缓冲,GPU 一次 vertex fetch 即可拿到一顶点的全部属性,缓存命中率高于每个属性独占 buffer 的布局——正是 glTF 量化属性(KHR_mesh_quantization)与 EXT_mesh_gpu_instancing 产出的几何体形态。InterleavedBuffer 持 stride + 共享 array(支持 Float32/Int16/Uint8/Uint8Clamped 等量化与 half-float 类型);InterleavedBufferAttribute 按 index*stride+offset 寻址读写、normalized 时自动量化/反量化;clone 无 data 时 de-interleave 为独立 BufferAttribute、有 data 时多条属性去重复用同一底层 ArrayBuffer;InstancedInterleavedBuffer 加 meshPerAttribute(对应 gl.vertexAttribDivisor)。45 个纯数据单元测试、无 WebGL 依赖。适配 three.js src/core InterleavedBuffer.js。",
         "advantage": "soup3D 顶点数据是朴素散列 Python list,无交错布局、无 stride/offset 概念、无量化属性支持、无实例化属性;VREEN 提供原生 interleaved 表达避免 glTF 加载时 de-interleave 回独立数组的拷贝开销,支持量化属性(normalized Uint8/Int16 编码节省显存)与实例化交错(meshPerAttribute),是写实级顶点缓冲布局的基石——soup3D 在架构层面没有对应物。"
+      },
+      "glBufferAttribute": {
+        "title": "GLBufferAttribute(GPU buffer 句柄直绑顶点属性)",
+        "desc": "直接持有已住在 GPU 上的原生 WebGLBuffer 句柄的顶点属性——没有 CPU array,渲染器跳过 gl.bufferData 上传,直接 gl.bindBuffer + gl.vertexAttribPointer 复用该 VBO。专为 GPGPU 产出的 VBO(transform feedback / compute 写出的蒙皮后位置、粒子模拟结果、CTM geometry shrink)直通 vertex stream 而生,免去 GPU→CPU→GPU 读写往返。因无 array 可推长度,count/type/itemSize 由调用方显式声明;elementSize 按 type 自动查 GL_ELEMENT_SIZE 表(VREEN 改进,免调用方每次手传且杜绝 type 与 elementSize 错配);byteLength = count×itemSize×elementSize;needsUpdate→version 自增;copy/clone 浅拷贝 buffer 句柄别名(VBO 是 GPU 单例,同一 VBO 多属性复用合法);toJSON 把 buffer 记 null(GPU 资源不序列化)。22 个纯数据单元测试、无 WebGL 依赖。适配 three.js src/core GLBufferAttribute.js。",
+        "advantage": "soup3D 顶点是裸散列 Python list,渲染前需全量上 CPU→GPU,没有 buffer 句柄已住 GPU 的概念,亦无任何 GPGPU 产出 VBO 直接复用为顶点属性的路径;VREEN 的 GLBufferAttribute 显式建模 GPU 单例 VBO 当顶点属性语义,使 GPGPU→vertex stream 直通成为可能,免去 GPU→CPU→GPU 读写往返——soup3D 架构上无对应物。"
       }
     }
   }

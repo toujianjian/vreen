@@ -1,7 +1,7 @@
 // Capabilities — 渲染能力展示区(赛博朋克风格 + i18n)。
 // 把 VREEN 旗舰渲染特性与 soup3D 对比亮出来,直接服务"比 soup3D 更有优势"。
 import { useTranslation } from 'react-i18next';
-import { Sparkles, Sun, Scan, Aperture, Droplets, Waves, FastForward, Box, Cloud, CloudSun, CloudOff, Mountain, Lightbulb, Moon, Palette, Sticker, Smile, Focus, Maximize, Gem, Layers, Globe, Sailboat, Anchor, Sunrise, Star, Flame, Contrast, Camera, GlassWater, Wind, Hourglass, Filter, SprayCan, Boxes, Eye, ScanLine, Umbrella, Map, Trees, Grid3x3, SlidersHorizontal, Atom, Brain, Move, Expand, Brush, Frame, Orbit, Film, Blend, BarChart3, ThermometerSun, Monitor, Zap, Haze, Sparkle, Waypoints, EyeOff, SquareDashed, Network, Layers3, Eclipse, BrickWall, Grid2x2, Cpu, Radar, Database, Cuboid, Radio, PaintBucket, Gauge, PersonStanding, PanelsTopLeft, Glasses, MousePointerClick, Move3d, Bone, BoxSelect } from 'lucide-react';
+import { Sparkles, Sun, Scan, Aperture, Droplets, Waves, FastForward, Box, Cloud, CloudSun, CloudOff, Mountain, Lightbulb, Moon, Palette, Sticker, Smile, Focus, Maximize, Gem, Layers, Globe, Sailboat, Anchor, Sunrise, Star, Flame, Contrast, Camera, GlassWater, Wind, Hourglass, Filter, SprayCan, Boxes, Eye, ScanLine, Umbrella, Map, Trees, Grid3x3, SlidersHorizontal, Atom, Brain, Move, Expand, Brush, Frame, Orbit, Film, Blend, BarChart3, ThermometerSun, Monitor, Zap, Haze, Sparkle, Waypoints, EyeOff, SquareDashed, Network, Layers3, Eclipse, BrickWall, Grid2x2, Cpu, Radar, Database, Cuboid, Radio, PaintBucket, Gauge, PersonStanding, PanelsTopLeft, Glasses, MousePointerClick, Move3d, Bone, BoxSelect, MemoryStick } from 'lucide-react';
 
 interface Cap {
   key: string;        // i18n key suffix under capabilities.items
@@ -96,6 +96,7 @@ const CAPS: Cap[] = [
   { key: 'octree', icon: BoxSelect, accent: 'text-neon-cyan' },
   { key: 'lightHelpers', icon: Lightbulb, accent: 'text-neon-amber' },
   { key: 'interleavedBuffer', icon: Layers3, accent: 'text-neon-magenta' },
+  { key: 'glBufferAttribute', icon: MemoryStick, accent: 'text-neon-cyan' },
 ];
 
 export function Capabilities() {

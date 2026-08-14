@@ -94,6 +94,7 @@ interface LODLevel { distance: number; object: Object3D; hysteresis?: number; }
 | `InterleavedBuffer` | Shared TypedArray + `stride` — packs multiple attributes into one buffer so the GPU fetches an entire vertex in a single stride (cache-friendlier than one-buffer-per-attribute). Supports quantised types (`Int16` / `Uint8` / `Uint8Clamped`) and half-float; `copy` deep-copies, `clone` deduplicates the underlying `ArrayBuffer` across a shared `data` context, `toJSON` serialises references by `ArrayBuffer` uuid. |
 | `InterleavedBufferAttribute` | Slice over an `InterleavedBuffer` (holds `data` + `itemSize` + `offset`); `getX`..`getW` / `setX..setXYZW` address by `index * stride + offset`; auto-quantises/de-quantises when `normalized`; `clone`/`toJSON` de-interleave into a standalone `BufferAttribute` (no `data`) or keep interleaved reference (with `data`, deduplicating across attributes). |
 | `InstancedInterleavedBuffer` | `InterleavedBuffer` + `meshPerAttribute` (per N instances → `gl.vertexAttribDivisor`); the interleaved counterpart of `InstancedBufferAttribute`. |
+| `GLBufferAttribute` | Vertex attribute that binds an **already-on-GPU `WebGLBuffer` handle** directly — no CPU `array`, the renderer skips `gl.bufferData` upload and just `gl.bindBuffer` + `gl.vertexAttribPointer`. Use it to feed a GPGPU-produced VBO (transform feedback / compute output / particle-sim result) straight into a vertex stream, avoiding a GPU→CPU→GPU round-trip. `elementSize` auto-resolved from `type` via `GL_ELEMENT_SIZE`; `byteLength = count × itemSize × elementSize`. |
 
 #### Interleaved Vertex Layout (`InterleavedBuffer` / `InterleavedBufferAttribute`)
 
@@ -177,6 +178,68 @@ This module is pure data (no WebGL dependency); vertexAttribPointer wiring lives
 renderer's MeshShaderPipeline / WebGL2Renderer, which already provides the buffer-config
 entry point for non-zero `stride`/`offset`. See `InterleavedBuffer.test.ts` — 45 tests,
 all green, no GPU touching.
+
+#### GPU-Buffer-Bound Attribute (`GLBufferAttribute`)
+
+Adapted from three.js `src/core/GLBufferAttribute.js` (r169). Whereas `BufferAttribute` /
+`InterleavedBufferAttribute` hold a CPU `TypedArray` that the renderer uploads every time
+something changes, `GLBufferAttribute` holds **a native `WebGLBuffer` handle that is
+already on the GPU** — the renderer skips `gl.bufferData` and goes straight to
+`gl.bindBuffer(gl.ARRAY_BUFFER, attribute.buffer)` + `gl.vertexAttribPointer(...)`.
+
+The canonical use case is feeding a **GPGPU-produced VBO** directly into a vertex stream
+with no round-trip to the CPU: transform-feedback skinning that writes deformed positions
+into a feedback buffer and renders that buffer as `position`; a particle simulation whose
+compute/feedback pass writes positions+velocities and the render pass reads them as
+attributes; a CSM/indirect-draw setup where the draw commands and instance matrices live
+in GPU buffers built by a compute pass. In all of these, the data never touches the CPU,
+so a CPU `array` would only force an unnecessary GPU→CPU→GPU copy. `GLBufferAttribute` is
+the typed handle that lets the renderer treat such a VBO as a first-class vertex attribute.
+
+Because there is no `array` to read the length from, the caller must state `count`
+(vertex count), `type` (the `gl.vertexAttribPointer` `type` argument — `gl.FLOAT`,
+`gl.UNSIGNED_SHORT`, …) and `itemSize` explicitly. `elementSize` (bytes per component) is
+auto-resolved from `type` through the bundled `GL_ELEMENT_SIZE` lookup (VREEN improvement
+over the three.js original, which forces the caller to pass `elementSize` every time and
+disagrees with `type` at the call site is a common bug); `glElementSize(type)` exposes the
+lookup and falls back to `4` for an unknown type so a wrong `type` can't silently produce
+`undefined`-byte strides.
+
+Surface:
+
+- `version` + `needsUpdate = true` (bumps `version`) — renderer re-binds / reconfigures the
+  vertex-attribute pointer on change.
+- `byteLength = count × itemSize × elementSize` (getter) — whole attribute footprint in the
+  VBO, for budgeting / debug.
+- Chainable setters `setBuffer(handle)` / `setType(type, elementSize?)` / `setItemSize(n)` /
+  `setCount(n)` — every one returns `this`; `setType` also re-resolves `elementSize` from
+  the new `type` unless an explicit `elementSize` is passed.
+- `copy(source)` — aliases the same `WebGLBuffer` handle (a VBO is a GPU singleton; two
+  `GLBufferAttribute`s over the same buffer is legitimate, e.g. the same VBO read as
+  `position` by one pass and `previousPosition` by another) and copies the metadata.
+- `clone()` — same aliasing semantics; a new wrapper with fresh metadata over the shared
+  VBO.
+- `toJSON()` — serialises the metadata and records `buffer: null` (a `WebGLBuffer` is a GPU
+  resource and has no JSON representation; the handle is rebuilt by the caller/gpgpu pass
+  on load).
+
+> **Why a separate class instead of more fields on `BufferAttribute`?** `BufferAttribute`'s
+> contract is "I own a CPU array; upload me." A GPU-bound attribute is the opposite — "there
+> is no CPU array; bind my handle." Bolting the latter onto `BufferAttribute` would make the
+> renderer branch on `isGLBufferAttribute` everywhere and force `array` to always be
+> nullable; a dedicated type keeps the upload path unconditional and makes the "this is a
+> GPU resource" intent explicit at the attribute site.
+
+> **soup3D 对比** — soup3D 顶点数据是裸的散列 Python list,渲染前要全量上 CPU→GPU;
+> 没有"buffer 句柄已住在 GPU 上"的概念,没有 GPGPU 产出的 VBO 直接复用为顶点属性
+> 的任何路径。VREEN 的 `GLBufferAttribute` 显式建模"GPU 单例 VBO 当顶点属性"语义,
+> 使 GPGPU(transform feedback / compute 写出)→ vertex stream 直通成为可能,免去
+> GPU→CPU→GPU 读写往返——soup3D 架构上无对应物。
+
+The renderer-side branch ("`attribute.isGLBufferAttribute` → bind-only, skip bufferData")
+lives in `WebGL2Renderer` / the mesh shader pipeline; the class itself is pure data and is
+unit-tested with a plain object standing in for the `WebGLBuffer` handle. See
+`GLBufferAttribute.test.ts` — 22 tests, all green, no GPU touching.
 
 ### Tangent Space (Normal Mapping)
 

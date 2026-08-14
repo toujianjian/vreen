@@ -1258,6 +1258,11 @@
         "title": "InterleavedBuffer(three.js r169 정점 속성 레이아웃)",
         "desc": "여러 정점 속성(position/normal/uv/color)을 단일 공유 TypedArray에 담는 인터리브 버퍼. GPU가 1회 vertex fetch로 한 정점의 전체 속성을 가져올 수 있어 속성마다 독립 buffer를 쓰는 것보다 캐시 적중률이 높다——이는 glTF 양자화 속성(KHR_mesh_quantization)과 EXT_mesh_gpu_instancing이 생성하는 기하체 형태이기도 하다. InterleavedBuffer는 stride + 공유 array를 가지며(Float32/Int16/Uint8/Uint8Clamped 등 양자화·half-float 타입 지원), InterleavedBufferAttribute는 index*stride+offset으로 어드레싱하고 normalized 시 자동 양자화/역양자화. clone에 data가 없으면 de-interleave하여 독립 BufferAttribute로, data가 있으면 여러 속성이 동일 ArrayBuffer를 중복제거 재사용. InstancedInterleavedBuffer는 meshPerAttribute 추가(gl.vertexAttribDivisor에 대응). 45개 순 데이터 단위 테스트, WebGL 비의존. three.js src/core InterleavedBuffer.js에서 파생.",
         "advantage": "soup3D의 정점 데이터는 소박한 흩어진 Python list로 인터리브 레이아웃도 stride/offset 개념도 양자화 속성도 인스턴스화 속성도 없다. VREEN은 네이티브 인터리브 표현을 제공해 glTF 로드 시 de-interleave에서 독립 배열로의 복사를 회피하고, 양자화 속성(normalized Uint8/Int16 인코딩으로 VRAM 절약)과 인스턴스 인터리브(meshPerAttribute)를 지원——실용급 정점 버퍼 레이아웃의 기반이며 soup3D 아키텍처에는 대응물이 없다."
+      },
+      "glBufferAttribute": {
+        "title": "GLBufferAttribute(GPU buffer 핸들 직결 정점 속성)",
+        "desc": "이미 GPU에 있는 네이티브 WebGLBuffer 핸들을 직접 보유하는 정점 속성——CPU array가 없어 렌더러는 gl.bufferData를 건너뛰고 gl.bindBuffer + gl.vertexAttribPointer로 VBO를 재사용한다. GPGPU 산출 VBO(transform feedback / compute 출력의 스킨 적용 위치, 파티클 시뮬레이션 결과, CTM geometry shrink)을 vertex stream에 직결하기 위해 만들어졌고, GPU→CPU→GPU 왕복을 생략한다. array가 없어 길이를 추론할 수 없으므로 count/type/itemSize를 명시 선언;elementSize는 type에서 GL_ELEMENT_SIZE 표로 자동 해결(VREEN 개선, 호출 측이 매번 elementSize를 수동 전달하지 않고 type과 elementSize 불일치를 방지);byteLength = count×itemSize×elementSize;needsUpdate→version 자증;copy/clone은 buffer 핸들을 별칭 참조(VBO는 GPU 싱글톤, 동일 VBO의 다속성 재사용은 합법);toJSON은 buffer를 null로(GPU 리소스는 비직렬화). 22개 순 데이터 단위 테스트, WebGL 비의존. three.js src/core GLBufferAttribute.js에서 파생.",
+        "advantage": "soup3D의 정점은 노출된 흩어진 Python list로 렌더링 전 CPU→GPU 전량 업로드가 필수이며, buffer 핸들이 이미 GPU에 있다는 개념도 GPGPU 산출 VBO를 정점 속성으로 직접 재사용하는 경로도 없다. VREEN의 GLBufferAttribute는 GPU 싱글톤 VBO를 속성으로 다루는 의미를 명시 모델링해 GPGPU→vertex stream 직결을 가능케 하고 GPU→CPU→GPU 왕복을 회피——soup3D 아키텍처에는 대응물이 없다."
       }
     }
   }

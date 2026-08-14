@@ -1258,6 +1258,11 @@
         "title": "InterleavedBuffer(three.js r169 頂点属性レイアウト)",
         "desc": "複数の頂点属性(position/normal/uv/color)を単一の共有 TypedArray に詰め込むインターリーブバッファ。GPU は 1 回の vertex fetch で1頂点の全属性を取得でき、属性ごとの独立 buffer よりキャッシュ命中率が高い——これは glTF 量子化属性(KHR_mesh_quantization)と EXT_mesh_gpu_instancing が生成する幾何体の形態でもある。InterleavedBuffer は stride + 共有 array を持ち(Float32/Int16/Uint8/Uint8Clamped 等の量子化・half-float 型対応)、InterleavedBufferAttribute は index*stride+offset でアドレッシングし、normalized 時は自動で量子化/逆量子化。clone で data 無し時は de-interleave して独立 BufferAttribute に、data 有り時は複数属性が同一 ArrayBuffer を重複排除で再利用。InstancedInterleavedBuffer は meshPerAttribute 追加(gl.vertexAttribDivisor に対応)。45 個の純データ単体テスト、WebGL 非依存。three.js src/core InterleavedBuffer.js から派生。",
         "advantage": "soup3D の頂点データは素朴な散らばった Python list で、インターリーブレイアウトも stride/offset 概念も量子化属性もインスタンス化属性もない。VREEN はネイティブインターリーブ表現を提供し glTF ロード時の de-interleave から独立配列へのコピーを回避、量子化属性(normalized Uint8/Int16 符号化で VRAM 節約)とインスタンスインターリーブ(meshPerAttribute)をサポート——本格的な頂点バッファレイアウトの基盤であり、soup3D アーキテクチャには対応物がない。"
+      },
+      "glBufferAttribute": {
+        "title": "GLBufferAttribute(GPU buffer ハンドル直結頂点属性)",
+        "desc": "既に GPU 上にあるネイティブ WebGLBuffer ハンドルを直接持つ頂点属性——CPU array は無く、レンダラは gl.bufferData をスキップし gl.bindBuffer + gl.vertexAttribPointer で VBO を再利用。GPGPU 産出 VBO(transform feedback / compute 書き出しのスキン後位置、パーティクルシミュレーション結果、CTM geometry shrink)を vertex stream に直結するために生まれたもので、GPU→CPU→GPU 往復を読み飛ばす。array が無いので長さ推論できず、count/type/itemSize を明示宣言;elementSize は type から GL_ELEMENT_SIZE 表で自動解決(VREEN 改良、呼び出し側が毎回 elementSize を手渡さず、type と elementSize の不一致を防ぐ);byteLength = count×itemSize×elementSize;needsUpdate→version 自増;copy/clone は buffer ハンドルを別名参照(VBO は GPU シングルトン、同一 VBO の多属性再利用は合法);toJSON は buffer を null に(GPU リソースは非シリアライズ)。22 個の純データ単体テスト、WebGL 非依存。three.js src/core GLBufferAttribute.js から派生。",
+        "advantage": "soup3D の頂点は裸の散らばった Python list で、レンダリング前に CPU→GPU へ全量アップロード必須、buffer ハンドルが既に GPU にある概念も、GPGPU 産出 VBO を頂点属性として直接再利用するパスもない。VREEN の GLBufferAttribute は GPU シングルトン VBO を属性として扱うセマンティクスを明示モデリングし、GPGPU→vertex stream 直結を可能にし GPU→CPU→GPU 往復を回避——soup3D アーキテクチャには対応物がない。"
       }
     }
   }
