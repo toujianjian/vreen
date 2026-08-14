@@ -178,11 +178,23 @@ export function setQuaternionFromProperEuler(
 
 /** 把归一化浮点换算回整型分量 (与 three.js 相反方向)。
  * 注意:此 normalize 是 "值 → 整型存储" 的量化,与 Vector.normalize() 方向量归一不同。 */
-export function normalize(value: number, array: Float32Array | Uint32Array | Uint16Array | Uint8Array | Int32Array | Int16Array | Int8Array): number {
+// 量化属性支持的 TypedArray 联合(与 InterleavedBuffer.TypedArray 对齐)。
+// 注意 Uint8ClampedArray 用于归一化时归到 Uint8 的 0..255 量化(three.js r169 一致)。
+export type NormalizedArray =
+  | Float32Array
+  | Uint32Array
+  | Uint16Array
+  | Uint8Array
+  | Uint8ClampedArray
+  | Int32Array
+  | Int16Array
+  | Int8Array;
+
+export function normalize(value: number, array: NormalizedArray): number {
   if (array instanceof Float32Array) return value;
   if (array instanceof Uint32Array) return Math.round(value * 4294967295.0);
   if (array instanceof Uint16Array) return Math.round(value * 65535.0);
-  if (array instanceof Uint8Array) return Math.round(value * 255.0);
+  if (array instanceof Uint8Array || array instanceof Uint8ClampedArray) return Math.round(value * 255.0);
   if (array instanceof Int32Array) return Math.round(value * 2147483647.0);
   if (array instanceof Int16Array) return Math.round(value * 32767.0);
   if (array instanceof Int8Array) return Math.round(value * 127.0);
@@ -190,11 +202,11 @@ export function normalize(value: number, array: Float32Array | Uint32Array | Uin
 }
 
 /** 整型分量 → 归一化浮点 (与 three.js 相反方向)。 */
-export function denormalize(value: number, array: Float32Array | Uint32Array | Uint16Array | Uint8Array | Int32Array | Int16Array | Int8Array): number {
+export function denormalize(value: number, array: NormalizedArray): number {
   if (array instanceof Float32Array) return value;
   if (array instanceof Uint32Array) return value / 4294967295.0;
   if (array instanceof Uint16Array) return value / 65535.0;
-  if (array instanceof Uint8Array) return value / 255.0;
+  if (array instanceof Uint8Array || array instanceof Uint8ClampedArray) return value / 255.0;
   if (array instanceof Int32Array) return Math.max(value / 2147483647.0, -1.0);
   if (array instanceof Int16Array) return Math.max(value / 32767.0, -1.0);
   if (array instanceof Int8Array) return Math.max(value / 127.0, -1.0);
