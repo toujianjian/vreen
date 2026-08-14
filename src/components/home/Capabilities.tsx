@@ -91,6 +91,7 @@ const CAPS: Cap[] = [
   { key: 'gpuPicking', icon: MousePointerClick, accent: 'text-neon-amber' },
   { key: 'transformControls', icon: Move3d, accent: 'text-neon-cyan' },
   { key: 'skeletonUtils', icon: Bone, accent: 'text-neon-amber' },
+  { key: 'interpolant', icon: Waves, accent: 'text-neon-cyan' },
 ];
 
 export function Capabilities() {

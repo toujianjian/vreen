@@ -1233,6 +1233,11 @@
         "title": "SkeletonUtils(three.js examples/jsm/utils 適応)",
         "desc": "スケルトン再ターゲティングユーティリティ:retarget(リアルタイムポーズ再ターゲット — ソーススケルトンの現在ポーズをボーン単位でターゲットへコピーし、骨長比でスケールしてターゲットの四肢比率を維持)/ retargetClip(クリップベイク — rest-pose の骨長比で位置トラックをスケールし、直接再生可能な新しい AnimationClip を生成)/ clone(スケルトン対応ディープコピー — Bone と Skeleton.bones を再マップ)。AnimationRetargeting(o3de EMotionFX の relative-to-bind-pose 戦略)と相補的。すべて純データ実装・WebGL 非依存・ユニットテスト可能(7 テスト)。three.js examples/jsm/utils/SkeletonUtils から適応。",
         "advantage": "soup3D にはスケルトンアニメーションが一切ありません;VREEN はリアルタイム retarget、retargetClip によるクリップベイク、スケルトン対応 clone を備えた three.js 級 SkeletonUtils を提供し、クロススケルトンクリップ再利用がそのまま使えます。"
+      },
+      "interpolant": {
+        "title": "Interpolant 補間器ファミリー(three.js r169 キーフレーム基盤)",
+        "desc": "パラメトリックサンプル補間器 — キーフレームアニメーショントラック(KeyframeTrack)の中核基盤。パラメータ列(時間/弧長)+ 多次元サンプル値を与え、任意位置 t で滑らかな結果を再利用バッファに求値。基底クラスは区間探索(キャッシュインデックス → 逐次アクセス償却 O(1)、ランダムは二分探索 O(log N) にフォールバック)を担当;5 つのサブクラス:Discrete(ステップ)/ Linear(線形)/ Cubic(Hermite 三次スプライン、端点ポリシー ZeroCurvature/ZeroSlope/WrapAround)/ QuaternionLinear(フラットバッファ slerp、Quaternion.slerpFlat 経由)/ Bezier(明示 in/out タンジェント、COLLADA/Maya キーフレーム)。GLB の animation.samplers STEP/LINEAR/CUBICSPLINE に対応。",
+        "advantage": "soup3D には単純な状態機関駆動のアニメーションミキサーしかなく補間器層がありません;VREEN は 5 補間器ファミリー全種を提供し、キャッシュ O(1) 逐次探索、三次スプラインとベジェキーフレーム、ゼロアロケーションのフラット四元数 slerp を備え — アーティスト忠実なインポートアニメーション曲線の基盤です。"
       }
     }
   }

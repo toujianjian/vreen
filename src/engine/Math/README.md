@@ -241,6 +241,66 @@ parameterisation.
 | `Spherical` | `radius`, `phi` (polar from +Y), `theta` (azimuthal from +Z) | `setFromVector3(v)` / `setFromCartesianCoords(x,y,z)` / `makeSafe()` (clamps `phi` to `[ε, π−ε]`) / `applyToVector3(target)` |
 | `Cylindrical` | `radius`, `theta` (azimuthal), `y` (height) | `setFromVector3(v)` / `setFromCartesianCoords(x,y,z)` / `applyToVector3(target)` |
 
+### Interpolants (`Interpolant.ts` + `interpolants/`)
+
+Parametric-sample interpolants — the core substrate for keyframe animation
+tracks (`KeyframeTrack`, planned). Given a 1-D parameter sequence (typically
+time or arc length) and a multi-dimensional sample-value sequence, evaluate a
+smooth result at an arbitrary parameter position `t`, writing into a reused
+result buffer. Adapted from three.js r169 `src/math/Interpolant.js` and its
+five `interpolants/` subclasses.
+
+The base class implements the **interval seek** (Template Method): locate which
+two samples `t` falls between, maintaining a cached index so sequential access
+is amortised **O(1)** while random access degrades gracefully to
+**O(log N)** via a binary-search fallback. Subclasses override
+`interpolate_(i1, t0, t, t1)` for the actual blend and optionally
+`intervalChanged_` for per-interval precomputation (used by the cubic spline).
+
+| Export | Strategy | Boundary / Polynomial |
+|--------|----------|-----------------------|
+| `Interpolant` | abstract base | cached-index seek + linear/binary scan |
+| `DiscreteInterpolant` | step (hold previous key) | no blending — returns left endpoint |
+| `LinearInterpolant` | linear (lerp) | `C⁰`, constant velocity |
+| `CubicInterpolant` | cubic Hermite spline | `C¹`, velocity = chord slope between neighbours; endpoint ending policies `ZeroCurvatureEnding` / `ZeroSlopeEnding` / `WrapAroundEnding` |
+| `QuaternionLinearInterpolant` | spherical-linear (slerp) | per-4-tuple via `Quaternion.slerpFlat`, keeps unit length (rigid rotation) |
+| `BezierInterpolant` | cubic Bézier with explicit in/out tangents | COLLADA/Maya keyframe style; falls back to linear when tangents absent |
+
+**Constants** (values aligned with three.js `constants.js` for serialisation
+compatibility): `InterpolateDiscrete` 2300, `InterpolateLinear` 2301,
+`InterpolateSmooth` 2302; `ZeroCurvatureEnding` 2400 (natural spline,
+`f''=0`), `ZeroSlopeEnding` 2401 (`f'=0`), `WrapAroundEnding` 2402 (wrap to
+the other end).
+
+**`Quaternion.slerpFlat(dst, dstOffset, src0, srcOffset0, src1, srcOffset1, t)`**
+— flat-array slerp (`QuaternionLinearInterpolant` consumes it). Writes the
+interpolated unit quaternion directly into a `Float32Array`/`number[]` buffer
+at `dstOffset`, reading from two source buffers at `srcOffset0`/`srcOffset1`;
+supports aliasing (`src0 === src1`), picks the shorter arc, and degenerates to
+normalised linear for near-parallel inputs — no `Quaternion` instance needed,
+zero allocation per evaluation. See `Quaternion.ts`.
+
+**Comparison to soup3D** — soup3D has only a naïve state-machine-driven bone
+animation mixer; it has no parametric interpolant layer, no continuous cubic
+spline or Bézier keyframes, and no flat-buffer quaternion slerp. VREEN's
+Interpolant family is the foundation for asset-imported animation curves (GLB
+`animation.samplers` map directly to these interpolants by
+`INTERPOLATION` = `STEP`/`LINEAR`/`CUBICSPLINE`), giving smooth, artist-faithful
+animation with O(1) sequential evaluation.
+
+**Invariants:**
+
+- `parameterPositions` must be **monotonically non-decreasing** (the seek
+  assumes forward order); out-of-order input undefined behaviour.
+- `valueSize` must be a **positive divisor** of `sampleValues.length` and (for
+  `QuaternionLinearInterpolant`) a multiple of 4.
+- `BezierInterpolant.inTangents`/`outTangents`, when provided, must have length
+  `N * valueSize * 2` (`N` keyframes, `2` = `(time, value)` per control point,
+  per component). Missing tangent data degrades safely to linear.
+- `CubicInterpolant` reads `settings.endingStart`/`endingEnd` only at the
+  first/last segment where the neighbouring sample is absent; interior
+  segments always use real neighbours.
+
 ### ConvexHull (`ConvexHull.ts`)
 
 Standalone convex hull computation via incremental QuickHull with

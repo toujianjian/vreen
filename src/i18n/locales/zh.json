@@ -1233,6 +1233,11 @@
         "title": "SkeletonUtils(three.js examples/jsm/utils 适配)",
         "desc": "骨骼重定向工具:retarget(实时姿势重定向,把源骨骼当前姿势逐骨拷贝到目标骨骼,支持骨长缩放保留目标肢体比例)/ retargetClip(动画烘焙,按 rest-pose 骨长比缩放位置轨道生成可直接播放的新 AnimationClip)/ clone(骨骼感知深拷贝,重映射 Bone + Skeleton.bones)。与 AnimationRetargeting(EMotionFX 相对 bind-pose 策略)互补,均为纯数据实现、无 WebGL 依赖、可单测(7 个测试)。适配 three.js examples/jsm/utils/SkeletonUtils。",
         "advantage": "soup3D 无任何骨骼动画系统;VREEN 提供 three.js 级 SkeletonUtils,含实时 retarget、动画烘焙 retargetClip 与骨骼感知 clone,跨骨架动画复用开箱即用。"
+      },
+      "interpolant": {
+        "title": "Interpolant 插值器家族(three.js r169 关键帧地基)",
+        "desc": "参数化采样插值器 —— 关键帧动画轨道(KeyframeTrack)的核心地基。给定参数序列(时间/弧长)+ 多维采样值,在任意位置 t 求出平滑结果并写入复用缓冲。基类负责区间查找(缓存下标 → 顺序访问摊销 O(1),随机回退二分 O(log N));五个子类:Discrete(阶梯)/ Linear(线性)/ Cubic(Hermite 三次样条,端点策略 ZeroCurvature/ZeroSlope/WrapAround)/ QuaternionLinear(扁平数组 slerp,经 Quaternion.slerpFlat)/ Bezier(显式 in/out 切线,COLLADA/Maya 关键帧)。对应 GLB animation.samplers 的 STEP/LINEAR/CUBICSPLINE。",
+        "advantage": "soup3D 只有朴素状态机驱动的动画混合器,无插值器层;VREEN 提供五插值器全家族,含缓存 O(1) 顺序查找、三次样条与贝塞尔关键帧、零分配扁平四元数 slerp —— 美术级保真导入动画曲线的基石。"
       }
     }
   }

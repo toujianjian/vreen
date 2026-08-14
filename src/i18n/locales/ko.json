@@ -1233,6 +1233,11 @@
         "title": "SkeletonUtils(three.js examples/jsm/utils 어댑테이션)",
         "desc": "스켈레톤 리타겟 유틸리티:retarget(실시간 포즈 리타겟 — 소스 스켈레톤의 현재 포즈를 본 단위로 타깃에 복사하고, 뼈 길이 비율로 스케일해 타깃의 사지 비율 유지)/ retargetClip(클립 베이킹 — rest-pose 뼈 길이 비율로 포지션 트랙을 스케일해 바로 재생 가능한 새 AnimationClip 생성)/ clone(스켈레톤 인식 딥 카피 — Bone과 Skeleton.bones 재매핑). AnimationRetargeting(o3de EMotionFX relative-to-bind-pose 전략)과 상호 보완. 모두 순수 데이터 구현, WebGL 비의존, 유닛 테스트 가능(7개 테스트). three.js examples/jsm/utils/SkeletonUtils에서 적응.",
         "advantage": "soup3D에는 스켈레톤 애니메이션이 전혀 없습니다; VREEN은 실시간 retarget, retargetClip 클립 베이킹, 스켈레톤 인식 clone을 갖춘 three.js급 SkeletonUtils를 제공해 크로스 스켈레톤 클립 재사용이 바로 가능합니다."
+      },
+      "interpolant": {
+        "title": "Interpolant 보간기 패밀리(three.js r169 키프레임 기반)",
+        "desc": "매개변수 샘플 보간기 — 키프레임 애니메이션 트랙(KeyframeTrack)의 핵심 기반. 매개변수열(시간/호장) + 다차원 샘플값을 주고 임의 위치 t에서 부드러운 결과를 재사용 버퍼에 평가. 기반 클래스는 구간 탐색(캐시 인덱스 → 순차 접근 상각 O(1), 무작위는 이진 탐색 O(log N) 폴백)을 담당; 5개 서브클래스: Discrete(스텝)/ Linear(선형)/ Cubic(Hermite 삼차 스플라인, 엔드포인트 정책 ZeroCurvature/ZeroSlope/WrapAround)/ QuaternionLinear(플랫 버퍼 slerp, Quaternion.slerpFlat 경유)/ Bezier(명시 in/out 탄젠트, COLLADA/Maya 키프레임). GLB animation.samplers STEP/LINEAR/CUBICSPLINE에 대응.",
+        "advantage": "soup3D는 단순 상태기계 구동 애니메이션 믹서만 있고 보간기 계층이 없습니다; VREEN은 5 보간기 패밀리 전종을 제공하며 캐시 O(1) 순차 탐색, 삼차 스플라인과 베지어 키프레임, 제로-할당 플랫 쿼터니언 slerp를 갖춰 — 아티스트 충실한 임포트 애니메이션 곡선의 기반입니다."
       }
     }
   }

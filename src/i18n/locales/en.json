@@ -1233,6 +1233,11 @@
         "title": "SkeletonUtils (three.js examples/jsm/utils adaptation)",
         "desc": "Skeleton retargeting utilities: retarget (live pose retarget — copies the source skeleton's current pose onto the target bone-by-bone, scaling by bone-length ratio to preserve the target's limb proportions) / retargetClip (clip baking — scales position tracks by rest-pose bone-length ratios into a directly playable new AnimationClip) / clone (skeleton-aware deep copy — remaps Bones and Skeleton.bones). Complements AnimationRetargeting (o3de EMotionFX relative-to-bind-pose strategy); all pure-data, WebGL-free, unit-testable (7 tests). Adapted from three.js examples/jsm/utils/SkeletonUtils.",
         "advantage": "soup3D has no skeletal animation at all; VREEN ships a three.js-class SkeletonUtils with live retarget, clip baking via retargetClip, and skeleton-aware clone — cross-skeleton clip reuse out of the box."
+      },
+      "interpolant": {
+        "title": "Interpolant family (three.js r169 keyframe substrate)",
+        "desc": "Parametric-sample interpolants — the core substrate for keyframe animation tracks. Given a parameter sequence (time/arc-length) + multi-dim sample values, evaluate a smooth result at any t into a reused buffer. Base class does the interval seek (cached index → amortised O(1) sequential, O(log N) binary fallback); five subclasses: Discrete (step) / Linear (lerp) / Cubic (Hermite spline, ending policies ZeroCurvature/ZeroSlope/WrapAround) / QuaternionLinear (flat-buffer slerp via Quaternion.slerpFlat) / Bezier (explicit in/out tangents, COLLADA/Maya keyframes). Maps to GLB animation.samplers INTERPOLATION STEP/LINEAR/CUBICSPLINE.",
+        "advantage": "soup3D has only a naïve state-machine animation mixer with no interpolant layer; VREEN ships the full five-interpolant family with cached O(1) sequential seek, cubic spline and Bézier keyframes, and zero-alloc flat-buffer quaternion slerp — the foundation for artist-faithful imported animation curves."
       }
     }
   }
