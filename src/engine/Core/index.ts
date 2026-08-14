@@ -46,6 +46,7 @@ export { BufferAttribute, type AttributeKind } from './BufferAttribute';
 export { InstancedBufferAttribute } from './InstancedBufferAttribute';
 export { InterleavedBuffer, InstancedInterleavedBuffer, type TypedArray, type UpdateRange, STATIC_DRAW } from './InterleavedBuffer';
 export { InterleavedBufferAttribute } from './InterleavedBufferAttribute';
+export { GLBufferAttribute, type GLBufferHandle, type GLType, GL_BYTE, GL_UNSIGNED_BYTE, GL_SHORT, GL_UNSIGNED_SHORT, GL_INT, GL_UNSIGNED_INT, GL_FLOAT, GL_ELEMENT_SIZE, glElementSize } from './GLBufferAttribute';
 // BufferGeometry — 顶点属性容器 + 可选索引,含 computeVertexNormals / computeTangents
 // (MikkTSpace 切线空间,vec4 + 手性 w) / computeBoundingBox / computeBoundingSphere /
 // applyMatrix4 / clone / toJSON / dispose。适配 three.js BufferGeometry.js。
