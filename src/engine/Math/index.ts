@@ -101,3 +101,4 @@ export {
 
 // 工具
 export * as MathUtils from './MathUtils';
+export { DataUtils, toHalfFloat, fromHalfFloat } from './DataUtils';

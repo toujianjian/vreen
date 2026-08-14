@@ -397,11 +397,27 @@ const height = n.fbm2D(x * 0.01, z * 0.01, 6, 0.5, 2.0);  // 6-octave terrain
 | Export | Role |
 |--------|------|
 | `MathUtils` | Namespace with `clamp` / `lerp` / `degToRad` / `radToDeg` / `randInt` / `randFloat` / `smoothstep` / `smootherstep` / `pingpong` / `euclideanModulo` / `generateUUID`. |
+| `DataUtils` | Half-float (FP16 ↔ FP32) codec: `toHalfFloat(val)` / `fromHalfFloat(val)` + static `DataUtils` class. Lookup-table IEEE 754 binary16 conversion (Fast Half Float Conversions); module-scope 12 KB tables built once. |
 
 ```ts
-import { MathUtils } from '@vreen/engine/math';
+import { MathUtils, DataUtils } from '@vreen/engine/math';
 const id = MathUtils.generateUUID();        // RFC4122 v4 string
 const t = MathUtils.clamp(x, 0, 1);
+const h = DataUtils.toHalfFloat(1.5);        // 0x3e00 — pack to Uint16Array
+const f = DataUtils.fromHalfFloat(0x3e00);  // 1.5  — readback FP32
+```
+
+```
+FP16 encoding surface (disjoint by exponent band):
+  | band (FP32 exp)        | result class            | example
+  | e < -27                | ±0                      | tiny → 0x0000 / 0x8000
+  | -27 ≤ e < -14          | denormalized            | 2^-24 .. 2^-15
+  | -14 ≤ e ≤ 15           | normal (11-bit mantissa)| 1.0 → 0x3c00
+  | 15 < e < 128           | ±Infinity               | 0x7c00 / 0xfc00
+  | e ≥ 128 (NaN)          | NaN                     | 0x7e00-ish
+
+fromHalfFloat restores 0/-0/Inf/NaN/denorm/normal exactly.
+toHalfFloat clamps |val| > 65504 to ±65504 (warn) — Infinity → max representable.
 ```
 
 ---

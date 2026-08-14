@@ -15,7 +15,7 @@ VREEN 是一个基于**自研 WebGL2 渲染引擎**的可视化 3D 模型检视�
 ## 📊 项目统计
 
 - **代码行数**: 228K+ (含引擎 + 应用 + 测试;引擎源码 108K+ + 引擎测试 ~90K + 应用 ~30K)
-- **测试数量**: 11600+ (446 个测试文件,全量回归 11606 tests 全绿)
+- **测试数量**: 11900+ (452 个测试文件,全量回归 11910 tests 全绿)
 - **引擎模块**: 42 个顶层模块 (本批次新增 8 个:Curves/SurfaceData/Shapes/Vegetation/LocalUser/ScriptCanvas/WhiteBox + PassGraph 作为 Renderer 子模块)
 - **源码文件**: 450+ (`src/engine/`, 不含测试) + 440 测试文件
 - **Commits**: 73
