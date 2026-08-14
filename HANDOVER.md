@@ -2,7 +2,8 @@
 
 > 本文档为**新接管的 Agent** 编写，内容覆盖：项目目标、工程结构、开发流程约定、
 > **已收尾的工作（SkeletonUtils 模块完成 + TransformControls 模块完成 + Matrix4 语义修复 + AI/Materials 断言修复 +
-> 全量回归 11557 tests 全绿）**，以及后续推进建议。
+> InterleavedBuffer 模块完成 + DataUtils Half-Float codec 完成 + MathUtils 签名放宽支持 Uint8ClampedArray）**，
+> 以及后续推进建议。全量回归 **454 文件 / 11973 tests 全绿**。
 > 请务必先通读本文档，再动手修改代码。
 
 ---
@@ -10,7 +11,7 @@
 ## 一、项目总览与长期目标
 
 **VREEN** 是一个自研的 3D 游戏引擎（TypeScript 实现，WebGL 渲染，零运行时三方 3D 依赖）。
-项目位于 `f:\开发\开源\GitHub\vreen\vreen`（Windows，PowerShell 环境）。
+项目位于 `/www/vreen`（Linux 环境，bash shell）。
 
 长期目标（用户原始指令，务必保持完整）：
 
@@ -44,13 +45,13 @@
 | 测试 | Vitest：`npm test` 或 `npx vitest run`（单文件：`npx vitest run <路径>`） |
 | 桌面端 | Electron 可选（`npm run electron:dev`），主入口 `electron/main.cjs` |
 
-常用命令（Windows PowerShell 下注意：**不要用 `&&`**，用 `;` 连接命令）：
+常用命令（Linux bash 下 `&&` 与 `;` 均可用；本仓库 typecheck 较慢，约 60–120s）：
 
-```powershell
-npm run typecheck                     # 全量类型检查
-npx vitest run src/engine/Controls/TransformControls.test.ts   # 单文件测试
-npx vitest run                        # 全量测试
-git add <具体文件> ; git commit -m "..."    # 提交（按文件粒度）
+```bash
+npm run typecheck                     # 全量类型检查（tsc -b --noEmit）
+npx vitest run src/engine/Core/InterleavedBuffer.test.ts   # 单文件测试
+npx vitest run                        # 全量测试（约 130s）
+git add <具体文件> && git commit -m "..."    # 提交（按文件粒度）
 ```
 
 ---
@@ -208,17 +209,24 @@ VelocityPass、BRDFLUT.test、PostProcessPasses.test，共 6 文件）。
 最新提交（git log 前 8 条）：
 
 ```
-6f13530 test(Materials): fix ShaderLibrary/ShaderCompiler pre-existing assertion bugs
-0e83cf2 fix(AI): fix BehaviorTree infinite-loop, Parallel policy init, abort contract
-6f3f6e1 fix(Math): correct Matrix4.multiplyMatrices to standard a×b semantics
-73e24fd feat(Controls): finish TransformControls — README, exports, homepage card, i18n
-aaae524 docs: add HANDOVER.md — handover guide for new agent (project overview, WIP state, root-cause analysis)
-b737639 feat(Controls): add TransformControls — translate/rotate/scale gizmo (WIP)
-cc57319 feat(Renderer): add GPUPicking — O(1) object picking via offscreen ID render + readPixels
-a37701d feat(Renderer): enhance FilmGrainPass to o3de Atom algorithm — luminance dampening + 24fps + CPU reference
+448654f docs(Core): 补 InterleavedBuffer 的 README + 主页卡片 + 5 语言 i18n
+faed373 test(Core): add InterleavedBuffer 单元测试(45 tests 全绿)
+b235950 feat(Core): add InterleavedBuffer 交错缓冲(three.js r169 顶点属性布局)
+9c6c47e refactor(Math): 放宽 normalize/denormalize 签名支持 Uint8ClampedArray
+9cb02e9 feat(Math): add DataUtils Half-Float (FP16↔FP32) codec (three.js r169 DataUtils)
+229db88 feat(Helpers): light & skeleton debug gizmos (three.js helpers adapted to per-vertex-coloured Mesh)
+0f3c5ee feat(Acceleration): add Octree volume collision (three.js r169 character-controller)
+222fd26 feat(Math): add Matrix2 — complete 2×2 linear algebra (three.js r169)
 ```
 
 每个模块的落地模式（新 Agent 应沿用）：
+- **InterleavedBuffer**（Core）：three.js r169 顶点属性交错布局（InterleavedBuffer /
+  InterleavedBufferAttribute / InstancedInterleavedBuffer 三类）—— 共享 TypedArray + stride，
+  GPU 一次 fetch 拿整顶点；按 index*stride+offset 寻址、normalized 量化/反量化（Uint8/Int16）、
+  clone 去重复用同底层 ArrayBuffer、无 data 时 de-interleave 为独立 BufferAttribute；
+  MathUtils.normalize/denormalize 放宽到 NormalizedArray（含 Uint8ClampedArray）。45 tests 全绿、
+  全量 11973 tests 全绿。对比 soup3D（朴素散列 Python list，无交错/无量化/无实例化属性）。
+- **DataUtils Half-Float**（Math）：FP16↔FP32 编解码（three.js r169 DataUtils），half-float 顶点属性前置。
 - **GPUPicking**（Renderer）：24-bit pickId 编码 RGB、离屏 MRT FBO、readPixels O(1) 拾取、
   InstancedMesh 逐实例、pickRect 去重、resolutionScale；对比 soup3D 的 CPU 射线拾取优势。
 - **WebXR**（WebXR/）：会话生命周期、控制器/手部 25 关节 + 捏合、AR 光估计/平面检测/深度遮挡、
@@ -232,8 +240,8 @@ a37701d feat(Renderer): enhance FilmGrainPass to o3de Atom algorithm — luminan
 
 ## 七、关键经验与注意事项（新 Agent 必读）
 
-1. **Windows PowerShell**：不支持 `&&`；用 `;`。不要用 `cat`/`grep`/`tail`，
-   用专用工具（Read/Write/Edit/Grep/Glob）。
+1. **运行环境（Linux bash）**：`/www/vreen` 是 Linux 环境；`&&` 与 `;` 均可用。
+   优先用专用工具（Read/Write/Edit/Grep/Glob）而非 `cat`/`grep`/`tail`。
 2. **测试是纯数据层**：不要在 `.test.ts` 里依赖 WebGL；DOM 用最小 mock
    （TransformControls.test.ts 顶部 `makeDomEl()` 可复用）。
 3. **VREEN 的 Object3D 与 three.js 差异**：
@@ -254,7 +262,7 @@ a37701d feat(Renderer): enhance FilmGrainPass to o3de Atom algorithm — luminan
 
 ---
 
-## 八、下一步建议（TransformControls 收尾后的高价值方向）
+## 八、下一步建议（InterleavedBuffer 收尾后的高价值方向）
 
 按用户目标（超越 soup3D、顶级引擎），可选方向（供新 Agent 判断优先级）：
 - 补齐 **网络/多人** 模块（soup3D 未有）；
@@ -262,6 +270,12 @@ a37701d feat(Renderer): enhance FilmGrainPass to o3de Atom algorithm — luminan
 - **SSAO / 屏幕空间次表面散射 / 级联阴影** 等渲染进阶（GPUPicking/FilmGrain 已有基础）；
 - **物理引擎** 强化（现有 ECS 物理为自研，可对照 o3de PhysX）。
 
-> 最后提醒：当前工作区**干净**（`git status` 无未提交变更），TransformControls
-> 已收尾（§5.5 全部完成）。接管后若需要：新 Agent 从第八节方向里选高价值模块，
-> 按第四节「开发流程约定」走完整闭环，全量回归 11557 tests 保持全绿。
+> 最近完成模块之一（候选下一模块的素材，按用户 `/loop` 指令"完成本阶段后从本地
+> references/ 的 three.js 与 o3de 源码抄写适配下一个高价值功能"）：InterleavedBuffer
+> 是顶点缓冲布局的基石，后续可承接 KHR_mesh_quantization / EXT_mesh_gpu_instancing 的
+> 量化实例化几何加载链路。下一个模块可从第八节方向里选高价值目标，按第四节「开发流程
+> 约定」走完整闭环（代码 + 单测 + typecheck + README + 主页多语言 + 按文件粒度提交）。
+>
+> 提醒：当前工作区**干净**（`git status` 无未提交变更），InterleavedBuffer 已收尾
+>（4 个提交：refactor MathUtils 签名 + feat 核心 + test 单测 + docs README/主页/i18n）。
+> 全量回归 **454 文件 / 11973 tests 全绿**。
