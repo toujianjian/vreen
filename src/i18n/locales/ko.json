@@ -1243,6 +1243,11 @@
         "title": "Matrix2 — 2×2 행렬(완전 선형대수, three.js超越)",
         "desc": "2×2 정방행렬은 Matrix3/Matrix4와 동일한 열 우선 저장, 생성자와 set()은 row-major 인수를 받음(three.js Matrix2와 일치). VREEN은 three.js r169 원본이 bare하게 남겨둔(constructor/set/identity/fromArray만) 진짜 선형대수 면을 보완:multiply/premultiply/multiplyMatrices, determinant, invert(특이행렬은 영화, Matrix3과 동일), transpose, makeRotation(반시계)/makeScale, scale/rotate 및 applyToVector(Vector2에 직접 적용). translate는 2×2 선형행렬에서 의미 없어 명시적으로 예외를 던지며 Matrix3을 가리킨다. 회전행렬은 직교(invert==transpose, det=1).",
         "advantage": "soup3D에는 전용 2-D 행렬 타입이 없어 2-D 연산은 범용 4-D 행렬에 손으로 채워야 합니다; VREEN의 Matrix2는 three.js 스스로 미완성으로 남긴 완전한 2×2 선형대수 타입 — 행렬식/역행렬/전치/곱셈, 2-D 회전과 스케일, 직접 벡터 적용 — 할당 가볍고 의미 명확, 텍스처 UV·2-D 물리·SDF 수학을 즉시 사용 가능하게 합니다."
+      },
+      "octree": {
+        "title": "Octree 팔진트리 체적 충돌(three.js 캐릭터 컨트롤러 방안)",
+        "desc": "장면 삼각형을 자식 박스로 재귀 팔분하는 팔진트리(잎은 최대 8 삼각형, 깊이 상한 16). 쿼리는 2단:넓은 단에서 collider의 AABB로 겹치는 자식 옥탄트만 가지치기하고, 좁은 단에서 평면 거리 + 삼각 내점 + 캡슐 축-삼각형 변 최근점쌍으로 각 후보 삼각형을 정밀 교차 판정;삼각형마다 물체를 표면에서 밀어내 총 변위를 최종 충돌 normal/depth로 삼는다. capsuleIntersect/sphereIntersect/boxIntersect/rayIntersect 및 fromGraphNode 장면그래프 입구, 조정 가능 trianglesPerLeaf/maxLevel 제공. OctreeHelper는 시각화용 자식/잎 박스 배열을 산출. Box3에 intersectsTriangle(SAT 13 분리축)을 보충해 split 가지치기 전제로 삼는다.",
+        "advantage": "soup3D에는 충돌 감지나 공간 가속 구조가 전혀 없고(넓은 단도 좁은 단도 캐릭터 컨트롤러도 없다), 유일한 기하는 Face/Model이어서 메시를 쿼리 가능한 충돌체로 바꿀 수 없다;VREEN은 three.js가 지형 보행 게임에 쓰는 완전한 캐릭터 컨트롤러 파이프라인(트리 구축 + AABB 넓은 단 가지치기 + swept-sphere 좁은 단 + 집합 밀어내기 해결)을 제공해 BVH와 보완(BVH는 단발 레이 피킹 최적화, Octree는 매 프레임 체적 샘플링 최적화),soup3D에는 대응물이 전혀 없다."
       }
     }
   }

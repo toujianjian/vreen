@@ -151,6 +151,67 @@ current best squared distance, the subtree is skipped. Inside leaves it uses
 
 ---
 
+### Octree (`Octree.ts` + `Capsule.ts` + `OctreeHelper.ts`)
+
+Another spatial-acceleration structure — but where BVH/MeshBVH optimise
+**single-shot ray queries** (picking, occlusion tests), the Octree optimises
+**repeated volume-vs-mesh collisions** (a player capsule sampling the world
+every frame). Adapted from three.js r169 `examples/jsm/math/Octree.js`, the
+official Three.js character-controller collision solution, with the o3de Atom
+voxel/grid acceleration philosophy in mind.
+
+| Export | Role |
+|--------|------|
+| `Octree` | Recursive 8-way subdivision of scene triangles. `build()` / `fromGraphNode(root)` / `capsuleIntersect` / `sphereIntersect` / `boxIntersect` / `rayIntersect`. |
+| `Capsule` | Swept-sphere collider `start` + `end` + `radius`. `translate` / `getCenter` / `intersectsBox`. |
+| `OctreeHelper` | Tree visualisation data: `getBoxes(maxDepth?)` / `getLeafBoxes()` / `getNodeCount()` / `getLeafTriangleCount()`. No GL resources — emits `Box3[]` for the caller to draw. |
+
+**How a query works.** `capsuleIntersect(collider)` first does a *broad-phase*
+walk: recurse only into subtrees whose `box` the capsule's AABB overlaps
+(`Capsule.intersectsBox` × `box`), collecting candidate leaf triangles. Then
+the *narrow-phase* `triangleCapsuleIntersect` tests each candidate:
+planes-distance early-out, in-plane point containment, then closest-line-pairs
+between the capsule axis and the triangle's three edges. Each hit ` translates`
+the working capsule copy out of the surface; after all hits the total
+displacement becomes the returned `{ normal, depth }`. Calling code resolves
+the collision with `collider.translate(hit.normal.multiplyScalar(hit.depth))`.
+
+**Tuning.** `trianglesPerLeaf` (default 8) and `maxLevel` (default 16) bound
+leaf density and tree depth. Lower `trianglesPerLeaf` → more subdivision,
+faster narrow-phase at the cost of tree size.
+
+**Prerequisite.** `Octree.split` relies on `Box3.intersectsTriangle` (SAT,
+this module's contribution to `Math/Box3`) to assign each triangle to the
+child octants it overlaps; that 13-axis separating-axis test was ported from
+three.js `Box3.intersectsTriangle` and is unit-tested on its own.
+
+```ts
+const octree = new Octree().fromGraphNode(sceneMesh);
+const player = new Capsule(new Vector3(0, 1.0, 0), new Vector3(0, 1.8, 0), 0.35);
+const hit = octree.capsuleIntersect(player);
+if (hit) player.translate(hit.normal.clone().multiplyScalar(hit.depth));
+
+// visualise the tree ( daughters drawn by the renderer):
+const boxes = new OctreeHelper(octree).getLeafBoxes();
+```
+
+**Comparison to soup3D** — soup3D has *no* collision or spatial-acceleration
+code at all (no broad-phase, no narrow-phase, no character controller). Its
+only geometry primitives are `Face`/`Model`; round-tripping a mesh into a
+queryable collision proxy is not possible. VREEN's Octree ships the full
+character-collision pipeline (tree build + broad-phase AABB prune + swept-sphere
+narrow-phase + aggregate push-out resolution) the Three.js community uses for
+walk-on-terrain gameplay — soup3D simply has no analogue.
+
+**Why Octree alongside BVH?** Both are trees; they do not overlap:
+`BVH`/`MeshBVH` build per-mesh and answer `raycast`/`closestPointToPoint`
+(point queries, O(log N) per call). `Octree` builds per-world and answers
+volume queries (capsule/sphere/box) where the query is *itself* a region —
+the per-frame collision pattern of a moving body. The two coexist: pick with
+`MeshBVH`, walk with `Octree`.
+
+---
+
 ## Usage
 
 ### Build and raycast a mesh

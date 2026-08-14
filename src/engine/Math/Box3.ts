@@ -6,6 +6,7 @@ import { Matrix4 } from './Matrix4';
 import { Vector3 } from './Vector3';
 import type { Sphere } from './Sphere';
 import type { Plane } from './Plane';
+import type { Triangle } from './Triangle';
 
 // applyMatrix4 复用 8 个角点缓冲区,避免每帧分配
 const _points: Vector3[] = [
@@ -13,6 +14,48 @@ const _points: Vector3[] = [
   new Vector3(), new Vector3(), new Vector3(), new Vector3(),
 ];
 const _vector = new Vector3();
+
+// intersectsTriangle (SAT) 复用缓冲区,避免每次调用分配
+const _boxCenter = new Vector3();
+const _extents = new Vector3();
+const _v0 = new Vector3();
+const _v1 = new Vector3();
+const _v2 = new Vector3();
+const _f0 = new Vector3();
+const _f1 = new Vector3();
+const _f2 = new Vector3();
+const _testAxis = new Vector3();
+const _triangleNormal = new Vector3();
+
+/**
+ * 对一条候选分离轴执行 SAT 投影测试。
+ * 把 AABB 半径与三角形三顶点都投影到 axis 上,若三角形投影区间完全在 ±r 之外,
+ * 则该轴为分离轴 → 返回 false(不相交)。
+ * 适配 three.js r169 `src/math/Box3.js` 的 `satForAxes`(私有辅助)。
+ */
+function satForAxes(
+  axes: number[],
+  v0: Vector3, v1: Vector3, v2: Vector3,
+  extents: Vector3,
+): boolean {
+  for (let i = 0, j = axes.length - 3; i <= j; i += 3) {
+    _testAxis.set(axes[i], axes[i + 1], axes[i + 2]);
+    // AABB 在该轴上的投影半长 r = Σ |extent_k| * |axis_k|
+    const r =
+      extents.x * Math.abs(_testAxis.x) +
+      extents.y * Math.abs(_testAxis.y) +
+      extents.z * Math.abs(_testAxis.z);
+    // 三角形三顶点在该轴上的投影
+    const p0 = v0.dot(_testAxis);
+    const p1 = v1.dot(_testAxis);
+    const p2 = v2.dot(_testAxis);
+    // 若 max(−max(p), min(p)) > r ⇒ 三角形投影区间完全在 ±r 之外 → 分离
+    if (Math.max(-Math.max(p0, p1, p2), Math.min(p0, p1, p2)) > r) {
+      return false;
+    }
+  }
+  return true;
+}
 
 export class Box3 {
   min: Vector3;
@@ -114,6 +157,53 @@ export class Box3 {
   intersectsSphere(sphere: Sphere): boolean {
     this.clampPoint(sphere.center, _vector);
     return _vector.distanceToSquared(sphere.center) <= sphere.radius * sphere.radius;
+  }
+
+  /**
+   * 与三角形是否相交(SAT 分离轴测试)。
+   *
+   * 适配 three.js r169 `src/math/Box3.js` 的 `intersectsTriangle`,把 AABB 平移到
+   * 原点用 (center, extents) 表示,对 13 条候选分离轴做投影:9 条 AABB 边 ×
+   * 三角形边的叉积轴、3 条 AABB 面法线轴 (世界 X/Y/Z)、1 条三角形面法线轴。
+   * 任一轴能把两者在轴上投影区间分开 → 不相交。全部 13 条无分离 → 相交。
+   *
+   * @param triangle 待测三角形(只读 a/b/c 顶点)。
+   * @returns 相交返回 true;空盒或分离返回 false。
+   */
+  intersectsTriangle(triangle: Triangle): boolean {
+    if (this.isEmpty()) return false;
+
+    // 把 AABB 用中心 + 半边长表示
+    this.getCenter(_boxCenter);
+    _extents.subVectors(this.max, _boxCenter);
+
+    // 三角形顶点平移到以 AABB 中心为原点
+    _v0.subVectors(triangle.a, _boxCenter);
+    _v1.subVectors(triangle.b, _boxCenter);
+    _v2.subVectors(triangle.c, _boxCenter);
+
+    // 三角形三条边向量
+    _f0.subVectors(_v1, _v0);
+    _f1.subVectors(_v2, _v1);
+    _f2.subVectors(_v0, _v2);
+
+    // 9 条候选分离轴:AABB 三条边(=世界 X/Y/Z)与三角形三条边的叉积
+    // axis_ij = u_i × f_j (u0,u1,u2 = X,Y,Z 单位向量,因 AABB 轴对齐)
+    let axes = [
+      0, -_f0.z, _f0.y, 0, -_f1.z, _f1.y, 0, -_f2.z, _f2.y,
+      _f0.z, 0, -_f0.x, _f1.z, 0, -_f1.x, _f2.z, 0, -_f2.x,
+      -_f0.y, _f0.x, 0, -_f1.y, _f1.x, 0, -_f2.y, _f2.x, 0,
+    ];
+    if (!satForAxes(axes, _v0, _v1, _v2, _extents)) return false;
+
+    // 3 条 AABB 面法线轴(世界 X/Y/Z)
+    axes = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+    if (!satForAxes(axes, _v0, _v1, _v2, _extents)) return false;
+
+    // 三角形面法线轴(cross(f0, f1))
+    _triangleNormal.crossVectors(_f0, _f1);
+    axes = [_triangleNormal.x, _triangleNormal.y, _triangleNormal.z];
+    return satForAxes(axes, _v0, _v1, _v2, _extents);
   }
 
   /** 与平面是否相交:计算法线点积的 min/max,若跨过 -constant 则相交。 */

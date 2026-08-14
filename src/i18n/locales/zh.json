@@ -1243,6 +1243,11 @@
         "title": "Matrix2 — 2×2 矩阵(完整线性代数,超越 three.js)",
         "desc": "2×2 方阵与 Matrix3/Matrix4 同为列主序存储,构造与 set() 按 row-major 传入(与 three.js Matrix2 一致)。VREEN 在 three.js r169 原版仅有 constructor/set/identity/fromArray 的基础上,补齐了真正的线性代数面:multiply/premultiply/multiplyMatrices、determinant、invert(奇异矩阵清零,与 Matrix3 一致)、transpose、makeRotation(逆时针旋转)/makeScale、scale/rotate 与 applyToVector(直接作用于 Vector2)。translate 在 2×2 线性矩阵上无意义故显式抛错并指引用 Matrix3。旋转矩阵正交(invert==transpose,det=1)。",
         "advantage": "soup3D 无任何专属 2-D 矩阵类型,2-D 运算只能手填 4-D 矩阵;VREEN 的 Matrix2 是 three.js 自身留白的完整 2×2 线性代数类型(行列式/求逆/转置/乘法/2-D 旋转缩放/向量作用),分配极轻、语义清晰,让引擎与纹理 UV、2-D 物理、SDF 数学开箱即用。"
+      },
+      "octree": {
+        "title": "Octree 八叉树体碰撞(three.js 角色控制器方案)",
+        "desc": "场景三角形递归八分到子盒的八叉树,叶子最多 8 三角形、深度上限 16。查询分两段:宽相按 collider 的 AABB 预剪子盒(只走相交的八分之一),窄相用平面距离 + 三角内点 + 胶囊轴-三角形边最近点对每个候选三角形精确求交;逐三角形把物体推离表面,汇总位移作为最终碰撞 normal/depth。提供 capsuleIntersect/sphereIntersect/boxIntersect/rayIntersect 与 fromGraphNode 场景图入口,trianglesPerLeaf/maxLevel 可调。OctreeHelper 产出子盒/叶子盒 Box3[] 供可视化。配套给 Box3 补了 intersectsTriangle(SAT 13 分离轴)作为 split 预剪基石。",
+        "advantage": "soup3D 无任何碰撞检测或空间加速结构(无宽相、无窄相、无角色控制器),唯一几何是 Face/Model,网格无法转成可查询碰撞体;VREEN 提供完整角色行走进地管线(建树 + AABB 宽相剪枝 + swept-sphere 窄相 + 聚合推离解算,即 three.js 官方走地场景方案),与 BVH 互补(BVH 优化单次射线拾取,Octree 优化每帧体采样),soup3D 完全无对标。"
       }
     }
   }

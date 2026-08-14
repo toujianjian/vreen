@@ -1243,6 +1243,11 @@
         "title": "Matrix2 — 2×2 行列(完全線形代数、three.js を超越)",
         "desc": "2×2 正方行列は Matrix3/Matrix4 と同じ列優先で格納、コンストラクタと set() は row-major 引数を受け取る(three.js Matrix2 と一致)。VREEN は three.js r169 原版が bare なまま残した(constructor/set/identity/fromArray のみ)真の線形代数面を補完:multiply/premultiply/multiplyMatrices、determinant、invert(特異行列はゼロ化、Matrix3 と同一)、transpose、makeRotation(反時計回り)/makeScale、scale/rotate および applyToVector(Vector2 に直接作用)。translate は 2×2 線形行列では意味がないため明示的に例外を投げ Matrix3 を指し示す。回転行列は直交(invert==transpose、det=1)。",
         "advantage": "soup3D には専用 2-D 行列型がなく、2-D 演算は汎用 4-D 行列に手で詰めるしかありません;VREEN の Matrix2 は three.js 自身が未完成のまま残した完全な 2×2 線形代数型 — 行列式/逆行列/転置/乗算、2-D 回転とスケール、直接的なベクトル適用 — 割当て軽量で意味明確、テクスチャ UV・2-D 物理・SDF 数学を即座に使えるようにします。"
+      },
+      "octree": {
+        "title": "Octree 八分木体衝突(three.js キャラクターコントローラ方案)",
+        "desc": "シーン三角形を子ボックスへ再帰八分する八分木(葉は最大 8 三角形、深さ上限 16)。クエリは 2 段:広相で collider の AABB で交差する子オクタンтуだけ剪定し、狭相で平面距離 + 三角内点 + 胶囊軸-三角形辺の最近点対により各候補三角形を精密に交差判定;三角形ごとに物体を表面から押し出し、総変位を最終衝突 normal/depth とする。capsuleIntersect/sphereIntersect/boxIntersect/rayIntersect と fromGraphNode シーングラフ入口、調整可能な trianglesPerLeaf/maxLevel を提供。OctreeHelper は可視化のため子/葉ボックス配列を産出。Box3 に intersectsTriangle(SAT 13 分離軸)を補い split 剪定の前提とする。",
+        "advantage": "soup3D には衝突判定や空間加速構造が一切なく(広相も狭相もキャラクターコントローラもない)、唯一の幾何は Face/Model でメッシュをクエリ可能な衝突体に変えられません;VREEN は three.js が地形歩行ゲームに用いる完全なキャラクターコントローラパイプライン(ツリー構築 + AABB 広相剪定 + swept-sphere 狭相 + 集約押し出し解決)を提供し BVH と補完し合い(BVH は単発レイピッキング最適化、Octree は毎フレーム体サンプリング最適化)、soup3D に対応物は全くありません。"
       }
     }
   }
