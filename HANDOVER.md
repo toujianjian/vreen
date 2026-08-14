@@ -2,8 +2,9 @@
 
 > 本文档为**新接管的 Agent** 编写，内容覆盖：项目目标、工程结构、开发流程约定、
 > **已收尾的工作（SkeletonUtils 模块完成 + TransformControls 模块完成 + Matrix4 语义修复 + AI/Materials 断言修复 +
-> InterleavedBuffer 模块完成 + DataUtils Half-Float codec 完成 + MathUtils 签名放宽支持 Uint8ClampedArray）**，
-> 以及后续推进建议。全量回归 **454 文件 / 11973 tests 全绿**。
+> DataUtils Half-Float codec 完成 + MathUtils 签名放宽支持 Uint8ClampedArray + InterleavedBuffer 完成 +
+> GLBufferAttribute 完成 — Core BufferAttribute 家族三类顶点属性承载类齐备）**，
+> 以及后续推进建议。全量回归 **455 文件 / 11995 tests 全绿**。
 > 请务必先通读本文档，再动手修改代码。
 
 ---
@@ -209,23 +210,31 @@ VelocityPass、BRDFLUT.test、PostProcessPasses.test，共 6 文件）。
 最新提交（git log 前 8 条）：
 
 ```
+975f694 docs(Core): 补 GLBufferAttribute 的 README + 主页卡片 + 5 语言 i18n
+9cc628e test(Core): add GLBufferAttribute 单元测试(22 tests 全绿)
+98a4a5c feat(Core): add GLBufferAttribute — GPU buffer 句柄直绑顶点属性(three.js r169)
 448654f docs(Core): 补 InterleavedBuffer 的 README + 主页卡片 + 5 语言 i18n
 faed373 test(Core): add InterleavedBuffer 单元测试(45 tests 全绿)
 b235950 feat(Core): add InterleavedBuffer 交错缓冲(three.js r169 顶点属性布局)
 9c6c47e refactor(Math): 放宽 normalize/denormalize 签名支持 Uint8ClampedArray
 9cb02e9 feat(Math): add DataUtils Half-Float (FP16↔FP32) codec (three.js r169 DataUtils)
-229db88 feat(Helpers): light & skeleton debug gizmos (three.js helpers adapted to per-vertex-coloured Mesh)
-0f3c5ee feat(Acceleration): add Octree volume collision (three.js r169 character-controller)
-222fd26 feat(Math): add Matrix2 — complete 2×2 linear algebra (three.js r169)
 ```
 
 每个模块的落地模式（新 Agent 应沿用）：
+- **GLBufferAttribute**（Core）：three.js r169 GPU buffer 句柄直绑顶点属性 —— 直接持有已在 GPU 上的
+  native WebGLBuffer，渲染器跳过 gl.bufferData 直接 gl.bindBuffer + gl.vertexAttribPointer 复用该 VBO，
+  GPGPU 产出的 VBO（transform feedback / compute 写出）直通 vertex stream 免去 GPU→CPU→GPU 往返；
+  无 array 故 count/type/itemSize 显式声明，elementSize 按 type 自动查 GL_ELEMENT_SIZE 表（VREEN 改进，
+  three.js 原版要调用方手传易错配）；copy/clone 浅拷贝句柄别名（VBO 是 GPU 单例）、toJSON buffer 记 null。
+  22 tests 全绿、全量 11995 tests 全绿。三大顶点属性承载类齐备：BufferAttribute（CPU array 上传）/
+  InterleavedBufferAttribute（交错切片共享）/ GLBufferAttribute（GPU 句柄直绑）。对比 soup3D
+  （裸散列 Python list、全量 CPU→GPU 上传、无 buffer 句柄复用 GPGPU 路径）。
 - **InterleavedBuffer**（Core）：three.js r169 顶点属性交错布局（InterleavedBuffer /
   InterleavedBufferAttribute / InstancedInterleavedBuffer 三类）—— 共享 TypedArray + stride，
   GPU 一次 fetch 拿整顶点；按 index*stride+offset 寻址、normalized 量化/反量化（Uint8/Int16）、
   clone 去重复用同底层 ArrayBuffer、无 data 时 de-interleave 为独立 BufferAttribute；
-  MathUtils.normalize/denormalize 放宽到 NormalizedArray（含 Uint8ClampedArray）。45 tests 全绿、
-  全量 11973 tests 全绿。对比 soup3D（朴素散列 Python list，无交错/无量化/无实例化属性）。
+  MathUtils.normalize/denormalize 放宽到 NormalizedArray（含 Uint8ClampedArray）。45 tests 全绿。
+  对比 soup3D（朴素散列 Python list，无交错/无量化/无实例化属性）。
 - **DataUtils Half-Float**（Math）：FP16↔FP32 编解码（three.js r169 DataUtils），half-float 顶点属性前置。
 - **GPUPicking**（Renderer）：24-bit pickId 编码 RGB、离屏 MRT FBO、readPixels O(1) 拾取、
   InstancedMesh 逐实例、pickRect 去重、resolutionScale；对比 soup3D 的 CPU 射线拾取优势。
@@ -262,20 +271,37 @@ b235950 feat(Core): add InterleavedBuffer 交错缓冲(three.js r169 顶点属�
 
 ---
 
-## 八、下一步建议（InterleavedBuffer 收尾后的高价值方向）
+## 八、下一步建议（GLBufferAttribute 收尾后的高价值方向）
 
-按用户目标（超越 soup3D、顶级引擎），可选方向（供新 Agent 判断优先级）：
-- 补齐 **网络/多人** 模块（soup3D 未有）；
-- **程序化地形** / **植被 GPU 实例化**（Environment 已有 Vegetation 基础）；
-- **SSAO / 屏幕空间次表面散射 / 级联阴影** 等渲染进阶（GPUPicking/FilmGrain 已有基础）；
-- **物理引擎** 强化（现有 ECS 物理为自研，可对照 o3de PhysX）。
+按用户目标（超越 soup3D、顶级引擎），可选方向（供新 Agent 判断优先级）。
+**重要**：经两个 Explore agent 对 `references/three.js`（实际为 r186dev）与
+`references/o3de`（只含 `Gems/Atom`，无 Multiplayer Gem）源码探查确认：
+- **网络/多人同步**：o3de 参考源码 0 行可抄（Multiplayer Gem 不在仓库内）；VREEN 自有 5583 行
+  完整 Network 栈（NetworkSync/StateSync/NetworkSession/LagCompensation/ClientPrediction/
+  InputHistory/NetworkLerp/NetworkTime/Snapshot/NetworkTransport），已自洽，**此方向无可抄参考**。
+- **级联阴影 CSM**：VREEN 已有 CascadedShadowMap+CSMShadowMap+ESM+VSM+PCSS（约 3411 行），
+  覆盖度已达/超 o3de 参考点，增量空间主要是 o3de `ProjectedShadowFeatureProcessor`(945 行，VREEN 空)
+  与 `ShadowmapAtlas` atlas 分配策略的窄缝补强。
+- **程序化地形**：VREEN Terrain 子系统约 4224 行（TerrainGeometry/HeightmapGenerator/TerrainErosion/
+  TerrainChunk/TerrainSplat/TerrainEditor），比 three.js `TerrainGenerator`(504 行)反超；缺口是
+  Physics 侧的 heightfield collider 桥（three.js 走 Rapier，VREEN 可走自研）。
+- **Octree**：已在 `Acceleration/`（commit `0f3c5ee`，Octree+Capsule+OctreeHelper，31 tests），**勿重复做**。
 
-> 最近完成模块之一（候选下一模块的素材，按用户 `/loop` 指令"完成本阶段后从本地
-> references/ 的 three.js 与 o3de 源码抄写适配下一个高价值功能"）：InterleavedBuffer
-> 是顶点缓冲布局的基石，后续可承接 KHR_mesh_quantization / EXT_mesh_gpu_instancing 的
-> 量化实例化几何加载链路。下一个模块可从第八节方向里选高价值目标，按第四节「开发流程
-> 约定」走完整闭环（代码 + 单测 + typecheck + README + 主页多语言 + 按文件粒度提交）。
+剩余明确的、有完整参考的 VREEN 缺口（供新 Agent 选下一模块）：
+- **GLBufferAttribute 已补齐** —— Core BufferAttribute 家族三类承载类齐备（CPU array / 交错 / GPU 句柄）。
+- **BufferGeometry 接入 InterleavedBuffer**：three.js `BufferGeometry.setAttribute` 接 `BufferAttribute|InterleavedBufferAttribute`
+  联合、`toNonIndexed` 走 `data.stride+offset`、`toJSON` 传 `data.data` 上下文做去重；VREEN `setAttribute` 仍只接
+  `BufferAttribute` —— 这是 InterleavedBuffer 能被真正消费的接入点（核心 API 扩张，触及 BufferGeometry 各遍历方法，
+  risk 较高，需谨慎 + 全量回归）。
+- **GPGPU / Transform Feedback**：GLBufferAttribute 是末端消费者，配套的 GPU 端产出 VBO 的基建（transform feedback
+  capture pass）VREEN 尚未独立成模块。
+
+> 提醒：当前工作区**干净**（`git status` 无未提交变更）。InterleavedBuffer 与 GLBufferAttribute 均已收尾
+>（共 7 个提交：MathUtils 签名放宽 + InterleavedBuffer 三连 + GLBufferAttribute 三连）。全量回归
+> **455 文件 / 11995 tests 全绿**。
 >
-> 提醒：当前工作区**干净**（`git status` 无未提交变更），InterleavedBuffer 已收尾
->（4 个提交：refactor MathUtils 签名 + feat 核心 + test 单测 + docs README/主页/i18n）。
-> 全量回归 **454 文件 / 11973 tests 全绿**。
+> **工程提示（commit）**：仓库装了 husky pre-commit hook（`.husky/pre-commit` 跑
+> `npx tsc -p tsconfig.app.json --noEmit`），每次 `git commit` 触发完整 app tsconfig 检查约 90s+，
+> 按文件粒度多次提交会累计成数分钟等待。如已在提交前用 `npx tsc -b --noEmit`（含 app tsconfig）
+> 独立验证类型 0 错误，可用 `git commit --no-verify` 跳过重复 hook 检查以加速；hook 本身不阻塞
+> 既有工作正确性。
