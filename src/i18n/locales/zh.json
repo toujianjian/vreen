@@ -1248,6 +1248,11 @@
         "title": "Octree 八叉树体碰撞(three.js 角色控制器方案)",
         "desc": "场景三角形递归八分到子盒的八叉树,叶子最多 8 三角形、深度上限 16。查询分两段:宽相按 collider 的 AABB 预剪子盒(只走相交的八分之一),窄相用平面距离 + 三角内点 + 胶囊轴-三角形边最近点对每个候选三角形精确求交;逐三角形把物体推离表面,汇总位移作为最终碰撞 normal/depth。提供 capsuleIntersect/sphereIntersect/boxIntersect/rayIntersect 与 fromGraphNode 场景图入口,trianglesPerLeaf/maxLevel 可调。OctreeHelper 产出子盒/叶子盒 Box3[] 供可视化。配套给 Box3 补了 intersectsTriangle(SAT 13 分离轴)作为 split 预剪基石。",
         "advantage": "soup3D 无任何碰撞检测或空间加速结构(无宽相、无窄相、无角色控制器),唯一几何是 Face/Model,网格无法转成可查询碰撞体;VREEN 提供完整角色行走进地管线(建树 + AABB 宽相剪枝 + swept-sphere 窄相 + 聚合推离解算,即 three.js 官方走地场景方案),与 BVH 互补(BVH 优化单次射线拾取,Octree 优化每帧体采样),soup3D 完全无对标。"
+      },
+      "lightHelpers": {
+        "title": "光源与骨骼调试辅助器(three.js helpers 家族适配)",
+        "desc": "顶点色线段辅助器,可视化四类光源 + 一具骨骼,统一走渲染器 helper 旁路(userData.__helper='line'、gl.LINES 绘制)。DirectionalLightHelper 画垂直于 light.direction 的方框 + 一条 10×size 方向射线(用 VREEN 显式 direction 字段而非 position→target)。PointLightHelper 画线框球体(经线×纬线),distance>0 时再画一个半径=distance 的外环表示有效照明范围。SpotLightHelper 画锥体(5 条辐射线 + 32 段底环;锥长=distance 或回退 1000,锥宽=锥长×tan(angle)),本地 +Z 朝向 target。HemisphereLightHelper 画八面体,上半边取 light.color、下半边取 groundColor。SkeletonHelper 对每对 bone→父 bone 画一条线、蓝→绿渐变,updateMatrixWorld() 时按每根骨世界矩阵回填位置。几何构造函数 buildXxxGeometry 全为纯数据,无 WebGL 也可单测。",
+        "advantage": "soup3D 完全没有光源调试可视化——光源只是无类型 intensity 值,无任何 gizmo,无骨骼/骨调试绘制,无场景图层级检视面板;光照摆放或 rig 骨姿态全靠盲调。VREEN 给出完整 three.js helper 家族(适配到顶点色 Mesh 管线:Directional/Point/Spot/HemisphereLightHelper + SkeletonHelper),全部可无头测试,并直接接入引擎自有 Lights(direction/distance/angle/groundColor/sky)与 Bone,实现编辑器内即时反馈——soup3D 架构上做不到。"
       }
     }
   }

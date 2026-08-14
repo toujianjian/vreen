@@ -26,6 +26,13 @@ Static gizmos (extend Mesh, built once)
    ArrowHelper         ── 5-line arrow (shaft + 4 head edges)
    GridHelper3D        ── 3-plane (XY/YZ/XZ) grid with center-line tint
 
+Light debug gizmos (mirror three.js `helpers/`, per-vertex-coloured LINES)
+   DirectionalLightHelper ── square plane (⊥ to light dir) + direction ray
+   PointLightHelper      ── wireframe sphere (long+lat) + optional distance ring
+   SpotLightHelper       ── cone (5 radial rays + 32-seg base ring)
+   HemisphereLightHelper ── octahedron: upper sky-colour / lower ground-colour
+   SkeletonHelper        ── one line per bone→parent, blue→green gradient
+
 Dynamic line mesh
    LineMesh / createLineMesh()   ── Dynamic VBO, updateVertices() per frame
 
@@ -130,6 +137,43 @@ export class CameraHelper extends Mesh {
 `update()` unprojects each NDC point through `projectionMatrixInverse`
 then `matrixWorld`. Default palette: frustum orange, cone red, up blue,
 target white, cross grey. WebGL depth convention (near z = -1, far z = +1).
+
+## Light debug gizmos (`LightHelpers.ts`)
+
+Adapted from three.js `src/helpers/{Directional,Point,Spot,Hemisphere}LightHelper.js`.
+VREEN has no `Line`/`LineSegments`/`LineBasicMaterial` runtime, so each
+helper is a single `Mesh` with a per-vertex-coloured line geometry
+(`userData.__helper = 'line'`, drawn via `gl.LINES`). Geometry builders
+(`buildXxxGeometry`) are pure-data functions, unit-testable without WebGL.
+
+| Export | Role |
+|--------|------|
+| `DirectionalLightHelper` | Square frame (⊥ to `light.direction`, half-edge `size`) + a direction ray (length = `size*10`). Uses VREEN's explicit `direction` field rather than `position→target`. `update()` rebuilds world-space verts. |
+| `PointLightHelper` | Wireframe sphere (`segments` longitudes × `rings` latitudes) + an outer ring of radius `light.distance` when `distance > 0`. `update()` syncs `this.matrix = light.matrixWorld`. |
+| `SpotLightHelper` | Cone: 5 radial rays + 32-seg base ring. Cone length = `distance` (or 1000 fallback), cone width = `length × tan(angle)`. `update()` sets position + `lookAt(target)` so local +Z faces the target. |
+| `HemisphereLightHelper` | Octahedron (12 edges, 24 verts); upper edges take `light.color`, lower edges `light.groundColor`. `update()` syncs color + matrix. |
+
+> Override colour: pass an `RGBColor` to the constructor or `build` fn;
+> omit it to follow `light.color` (Hemisphere: `light.color` / `groundColor`).
+
+### `SkeletonHelper` (`SkeletonHelper.ts`)
+
+Adapted from three.js `src/helpers/SkeletonHelper.js`. Draws one line per
+`bone → parent-bone` link; colour gradient blue→green (root→tip).
+
+| Export | Role |
+|--------|------|
+| `SkeletonHelper` | Collects all `isBone` nodes under `root` (`collectBones`), allocates 2 verts per parented bone, fills positions in `updateMatrixWorld()` from each bone's world matrix (relative to `root.matrixWorld` inverse). |
+| `collectBones(root)` | Recursive depth-first `isBone` collector — exported for reuse by the Outliner. |
+| `buildSkeletonHelperGeometry(root, c1?, c2?)` | Pure-data builder: zeroed positions + linear colour gradient; `setColors()` re-recipes the colour attribute. |
+
+```ts
+const helper = new SkeletonHelper(renderer, skinnedMesh);
+scene.add(helper);
+// after skeleton update & world matrix pass:
+helper.updateMatrixWorld(true);
+helper.setColors(0x0000ff, 0x00ff00);
+```
 
 ### `ArrowHelper` (`ArrowHelper.ts`)
 

@@ -1248,6 +1248,11 @@
         "title": "Octree 八分木体衝突(three.js キャラクターコントローラ方案)",
         "desc": "シーン三角形を子ボックスへ再帰八分する八分木(葉は最大 8 三角形、深さ上限 16)。クエリは 2 段:広相で collider の AABB で交差する子オクタンтуだけ剪定し、狭相で平面距離 + 三角内点 + 胶囊軸-三角形辺の最近点対により各候補三角形を精密に交差判定;三角形ごとに物体を表面から押し出し、総変位を最終衝突 normal/depth とする。capsuleIntersect/sphereIntersect/boxIntersect/rayIntersect と fromGraphNode シーングラフ入口、調整可能な trianglesPerLeaf/maxLevel を提供。OctreeHelper は可視化のため子/葉ボックス配列を産出。Box3 に intersectsTriangle(SAT 13 分離軸)を補い split 剪定の前提とする。",
         "advantage": "soup3D には衝突判定や空間加速構造が一切なく(広相も狭相もキャラクターコントローラもない)、唯一の幾何は Face/Model でメッシュをクエリ可能な衝突体に変えられません;VREEN は three.js が地形歩行ゲームに用いる完全なキャラクターコントローラパイプライン(ツリー構築 + AABB 広相剪定 + swept-sphere 狭相 + 集約押し出し解決)を提供し BVH と補完し合い(BVH は単発レイピッキング最適化、Octree は毎フレーム体サンプリング最適化)、soup3D に対応物は全くありません。"
+      },
+      "lightHelpers": {
+        "title": "光源・スケルトン デバッグギズモ(three.js helpers 派生)",
+        "desc": "頂点色線分ギズモで四種光源と一つのスケルトンを可視化、レンダラの helper 旁路(userData.__helper='line'、gl.LINES)で一括描画。DirectionalLightHelper は light.direction に垂直な方形フレーム + 10×size の方向光線を描画(VREEN の明示的 direction フィールド採用、position→target に非依存)。PointLightHelper は経緯線枠球を描画、distance>0 時は半径=distance の外輪で有効照明範囲を示す。SpotLightHelper は錐体(5 放射線 + 32 分割底環;錐長=distance 又は 1000 フォールバック、錐幅=錐長×tan(angle))を描画しローカル +Z が target を向く。HemisphereLightHelper は八面体を描画し上半の辺=light.color、下半の辺=groundColor。SkeletonHelper は bone→親 bone 各ペアに一本の線を描画し青→緑グラデーション、updateMatrixWorld() で各骨の世界行列から位置を再充填。幾何構築関数 buildXxxGeometry は全て純データ、WebGL 無しでもテスト可。",
+        "advantage": "soup3D には光源デバッグ可視化が全くなく——光源は型なし intensity 値のみ、ギズモも骨・スケルトンデバッグ描画もシーングラフ階層ビューアもなく、照明配置や rig 骨姿勢の調整は暗中模索。VREEN は three.js helpers 家族を頂点色 Mesh パイプラインに派生(Directional/Point/Spot/HemisphereLightHelper + SkeletonHelper)、全てヘッドレス可でエンジン内蔵 Lights(direction/distance/angle/groundColor/sky)と Bone に直結しエディタ内即時フィードバックを実現——soup3D では構造上不可能です。"
       }
     }
   }

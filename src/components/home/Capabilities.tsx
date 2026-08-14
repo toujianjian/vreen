@@ -94,6 +94,7 @@ const CAPS: Cap[] = [
   { key: 'interpolant', icon: Waves, accent: 'text-neon-cyan' },
   { key: 'matrix2', icon: Grid2x2, accent: 'text-neon-amber' },
   { key: 'octree', icon: BoxSelect, accent: 'text-neon-cyan' },
+  { key: 'lightHelpers', icon: Lightbulb, accent: 'text-neon-amber' },
 ];
 
 export function Capabilities() {

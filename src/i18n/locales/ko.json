@@ -1248,6 +1248,11 @@
         "title": "Octree 팔진트리 체적 충돌(three.js 캐릭터 컨트롤러 방안)",
         "desc": "장면 삼각형을 자식 박스로 재귀 팔분하는 팔진트리(잎은 최대 8 삼각형, 깊이 상한 16). 쿼리는 2단:넓은 단에서 collider의 AABB로 겹치는 자식 옥탄트만 가지치기하고, 좁은 단에서 평면 거리 + 삼각 내점 + 캡슐 축-삼각형 변 최근점쌍으로 각 후보 삼각형을 정밀 교차 판정;삼각형마다 물체를 표면에서 밀어내 총 변위를 최종 충돌 normal/depth로 삼는다. capsuleIntersect/sphereIntersect/boxIntersect/rayIntersect 및 fromGraphNode 장면그래프 입구, 조정 가능 trianglesPerLeaf/maxLevel 제공. OctreeHelper는 시각화용 자식/잎 박스 배열을 산출. Box3에 intersectsTriangle(SAT 13 분리축)을 보충해 split 가지치기 전제로 삼는다.",
         "advantage": "soup3D에는 충돌 감지나 공간 가속 구조가 전혀 없고(넓은 단도 좁은 단도 캐릭터 컨트롤러도 없다), 유일한 기하는 Face/Model이어서 메시를 쿼리 가능한 충돌체로 바꿀 수 없다;VREEN은 three.js가 지형 보행 게임에 쓰는 완전한 캐릭터 컨트롤러 파이프라인(트리 구축 + AABB 넓은 단 가지치기 + swept-sphere 좁은 단 + 집합 밀어내기 해결)을 제공해 BVH와 보완(BVH는 단발 레이 피킹 최적화, Octree는 매 프레임 체적 샘플링 최적화),soup3D에는 대응물이 전혀 없다."
+      },
+      "lightHelpers": {
+        "title": "광원·스켈레톤 디버그 기즈모(three.js helpers 파생)",
+        "desc": "정점색 선분 기즈모로 네 종 광원과 하나의 스켈레톤을 시각화, 렌더러 helper 우회통로(userData.__helper='line'、gl.LINES)로 일괄 그린다. DirectionalLightHelper는 light.direction에 수직인 사각 프레임 + 10×size 방향 광선(VREEN의 명시적 direction 필드 사용, position→target 비의존). PointLightHelper는 경위선 와이어 구를 그리고 distance>0일 때 반경=distance 외륜으로 유효 조명 범위 표시. SpotLightHelper는 원뿔(5 방사선 + 32 분할 저환;원뿔 길이=distance 또는 1000 폴백, 원뿔 폭=원뿔길이×tan(angle))을 그리고 로컬 +Z가 target을 향함. HemisphereLightHelper는 팔면체를 그려 윗부분 변=light.color, 아랫부분 변=groundColor. SkeletonHelper는 bone→부모 bone 각 쌍에 한 선을 그리고 청→녹 그라데이션, updateMatrixWorld()에서 각 골의 세계 행렬로 위치 재충전. 기하 구축 함수 buildXxxGeometry는 모두 순 데이터, WebGL 없이도 단위 테스트 가능.",
+        "advantage": "soup3D에는 광원 디버그 시각화가 전혀 없다——광원은 타입 없는 intensity 값뿐, 기즈모도 골·스켈레톤 디버그 그리기도 장면그래프 계층 뷰어도 없어 조명 배치나 rig 골 자세 조정은 암중모색. VREEN은 three.js helpers 가족을 정점색 Mesh 파이프라인에 파생(Directional/Point/Spot/HemisphereLightHelper + SkeletonHelper), 모두 헤드리스 테스트 가능하고 엔진 내장 Lights(direction/distance/angle/groundColor/sky)와 Bone에 직결해 에디터 내 즉시 피드백을 실현——soup3D는 구조상 불가능하다."
       }
     }
   }
