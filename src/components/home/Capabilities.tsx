@@ -92,6 +92,7 @@ const CAPS: Cap[] = [
   { key: 'transformControls', icon: Move3d, accent: 'text-neon-cyan' },
   { key: 'skeletonUtils', icon: Bone, accent: 'text-neon-amber' },
   { key: 'interpolant', icon: Waves, accent: 'text-neon-cyan' },
+  { key: 'matrix2', icon: Grid2x2, accent: 'text-neon-amber' },
 ];
 
 export function Capabilities() {

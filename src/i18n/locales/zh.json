@@ -1238,6 +1238,11 @@
         "title": "Interpolant 插值器家族(three.js r169 关键帧地基)",
         "desc": "参数化采样插值器 —— 关键帧动画轨道(KeyframeTrack)的核心地基。给定参数序列(时间/弧长)+ 多维采样值,在任意位置 t 求出平滑结果并写入复用缓冲。基类负责区间查找(缓存下标 → 顺序访问摊销 O(1),随机回退二分 O(log N));五个子类:Discrete(阶梯)/ Linear(线性)/ Cubic(Hermite 三次样条,端点策略 ZeroCurvature/ZeroSlope/WrapAround)/ QuaternionLinear(扁平数组 slerp,经 Quaternion.slerpFlat)/ Bezier(显式 in/out 切线,COLLADA/Maya 关键帧)。对应 GLB animation.samplers 的 STEP/LINEAR/CUBICSPLINE。",
         "advantage": "soup3D 只有朴素状态机驱动的动画混合器,无插值器层;VREEN 提供五插值器全家族,含缓存 O(1) 顺序查找、三次样条与贝塞尔关键帧、零分配扁平四元数 slerp —— 美术级保真导入动画曲线的基石。"
+      },
+      "matrix2": {
+        "title": "Matrix2 — 2×2 矩阵(完整线性代数,超越 three.js)",
+        "desc": "2×2 方阵与 Matrix3/Matrix4 同为列主序存储,构造与 set() 按 row-major 传入(与 three.js Matrix2 一致)。VREEN 在 three.js r169 原版仅有 constructor/set/identity/fromArray 的基础上,补齐了真正的线性代数面:multiply/premultiply/multiplyMatrices、determinant、invert(奇异矩阵清零,与 Matrix3 一致)、transpose、makeRotation(逆时针旋转)/makeScale、scale/rotate 与 applyToVector(直接作用于 Vector2)。translate 在 2×2 线性矩阵上无意义故显式抛错并指引用 Matrix3。旋转矩阵正交(invert==transpose,det=1)。",
+        "advantage": "soup3D 无任何专属 2-D 矩阵类型,2-D 运算只能手填 4-D 矩阵;VREEN 的 Matrix2 是 three.js 自身留白的完整 2×2 线性代数类型(行列式/求逆/转置/乘法/2-D 旋转缩放/向量作用),分配极轻、语义清晰,让引擎与纹理 UV、2-D 物理、SDF 数学开箱即用。"
       }
     }
   }

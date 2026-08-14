@@ -1238,6 +1238,11 @@
         "title": "Interpolant 보간기 패밀리(three.js r169 키프레임 기반)",
         "desc": "매개변수 샘플 보간기 — 키프레임 애니메이션 트랙(KeyframeTrack)의 핵심 기반. 매개변수열(시간/호장) + 다차원 샘플값을 주고 임의 위치 t에서 부드러운 결과를 재사용 버퍼에 평가. 기반 클래스는 구간 탐색(캐시 인덱스 → 순차 접근 상각 O(1), 무작위는 이진 탐색 O(log N) 폴백)을 담당; 5개 서브클래스: Discrete(스텝)/ Linear(선형)/ Cubic(Hermite 삼차 스플라인, 엔드포인트 정책 ZeroCurvature/ZeroSlope/WrapAround)/ QuaternionLinear(플랫 버퍼 slerp, Quaternion.slerpFlat 경유)/ Bezier(명시 in/out 탄젠트, COLLADA/Maya 키프레임). GLB animation.samplers STEP/LINEAR/CUBICSPLINE에 대응.",
         "advantage": "soup3D는 단순 상태기계 구동 애니메이션 믹서만 있고 보간기 계층이 없습니다; VREEN은 5 보간기 패밀리 전종을 제공하며 캐시 O(1) 순차 탐색, 삼차 스플라인과 베지어 키프레임, 제로-할당 플랫 쿼터니언 slerp를 갖춰 — 아티스트 충실한 임포트 애니메이션 곡선의 기반입니다."
+      },
+      "matrix2": {
+        "title": "Matrix2 — 2×2 행렬(완전 선형대수, three.js超越)",
+        "desc": "2×2 정방행렬은 Matrix3/Matrix4와 동일한 열 우선 저장, 생성자와 set()은 row-major 인수를 받음(three.js Matrix2와 일치). VREEN은 three.js r169 원본이 bare하게 남겨둔(constructor/set/identity/fromArray만) 진짜 선형대수 면을 보완:multiply/premultiply/multiplyMatrices, determinant, invert(특이행렬은 영화, Matrix3과 동일), transpose, makeRotation(반시계)/makeScale, scale/rotate 및 applyToVector(Vector2에 직접 적용). translate는 2×2 선형행렬에서 의미 없어 명시적으로 예외를 던지며 Matrix3을 가리킨다. 회전행렬은 직교(invert==transpose, det=1).",
+        "advantage": "soup3D에는 전용 2-D 행렬 타입이 없어 2-D 연산은 범용 4-D 행렬에 손으로 채워야 합니다; VREEN의 Matrix2는 three.js 스스로 미완성으로 남긴 완전한 2×2 선형대수 타입 — 행렬식/역행렬/전치/곱셈, 2-D 회전과 스케일, 직접 벡터 적용 — 할당 가볍고 의미 명확, 텍스처 UV·2-D 물리·SDF 수학을 즉시 사용 가능하게 합니다."
       }
     }
   }

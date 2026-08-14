@@ -7,6 +7,10 @@ export { Vector3 } from './Vector3';
 export { Vector4 } from './Vector4';
 
 // 矩阵
+// Matrix2 — 2×2 矩阵(列主序),three.js r169 Matrix2 的完整线性代数等价物:
+// 补齐 three.js 原版缺失的行列式/求逆/转置/乘法/2D 旋转与缩放构造与
+// 向量作用能力,可用于 2D 变换/纹理 UV/小矩阵数学。
+export { Matrix2 } from './Matrix2';
 export { Matrix3 } from './Matrix3';
 export { Matrix4 } from './Matrix4';
 

@@ -1238,6 +1238,11 @@
         "title": "Interpolant 補間器ファミリー(three.js r169 キーフレーム基盤)",
         "desc": "パラメトリックサンプル補間器 — キーフレームアニメーショントラック(KeyframeTrack)の中核基盤。パラメータ列(時間/弧長)+ 多次元サンプル値を与え、任意位置 t で滑らかな結果を再利用バッファに求値。基底クラスは区間探索(キャッシュインデックス → 逐次アクセス償却 O(1)、ランダムは二分探索 O(log N) にフォールバック)を担当;5 つのサブクラス:Discrete(ステップ)/ Linear(線形)/ Cubic(Hermite 三次スプライン、端点ポリシー ZeroCurvature/ZeroSlope/WrapAround)/ QuaternionLinear(フラットバッファ slerp、Quaternion.slerpFlat 経由)/ Bezier(明示 in/out タンジェント、COLLADA/Maya キーフレーム)。GLB の animation.samplers STEP/LINEAR/CUBICSPLINE に対応。",
         "advantage": "soup3D には単純な状態機関駆動のアニメーションミキサーしかなく補間器層がありません;VREEN は 5 補間器ファミリー全種を提供し、キャッシュ O(1) 逐次探索、三次スプラインとベジェキーフレーム、ゼロアロケーションのフラット四元数 slerp を備え — アーティスト忠実なインポートアニメーション曲線の基盤です。"
+      },
+      "matrix2": {
+        "title": "Matrix2 — 2×2 行列(完全線形代数、three.js を超越)",
+        "desc": "2×2 正方行列は Matrix3/Matrix4 と同じ列優先で格納、コンストラクタと set() は row-major 引数を受け取る(three.js Matrix2 と一致)。VREEN は three.js r169 原版が bare なまま残した(constructor/set/identity/fromArray のみ)真の線形代数面を補完:multiply/premultiply/multiplyMatrices、determinant、invert(特異行列はゼロ化、Matrix3 と同一)、transpose、makeRotation(反時計回り)/makeScale、scale/rotate および applyToVector(Vector2 に直接作用)。translate は 2×2 線形行列では意味がないため明示的に例外を投げ Matrix3 を指し示す。回転行列は直交(invert==transpose、det=1)。",
+        "advantage": "soup3D には専用 2-D 行列型がなく、2-D 演算は汎用 4-D 行列に手で詰めるしかありません;VREEN の Matrix2 は three.js 自身が未完成のまま残した完全な 2×2 線形代数型 — 行列式/逆行列/転置/乗算、2-D 回転とスケール、直接的なベクトル適用 — 割当て軽量で意味明確、テクスチャ UV・2-D 物理・SDF 数学を即座に使えるようにします。"
       }
     }
   }

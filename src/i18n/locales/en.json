@@ -1238,6 +1238,11 @@
         "title": "Interpolant family (three.js r169 keyframe substrate)",
         "desc": "Parametric-sample interpolants — the core substrate for keyframe animation tracks. Given a parameter sequence (time/arc-length) + multi-dim sample values, evaluate a smooth result at any t into a reused buffer. Base class does the interval seek (cached index → amortised O(1) sequential, O(log N) binary fallback); five subclasses: Discrete (step) / Linear (lerp) / Cubic (Hermite spline, ending policies ZeroCurvature/ZeroSlope/WrapAround) / QuaternionLinear (flat-buffer slerp via Quaternion.slerpFlat) / Bezier (explicit in/out tangents, COLLADA/Maya keyframes). Maps to GLB animation.samplers INTERPOLATION STEP/LINEAR/CUBICSPLINE.",
         "advantage": "soup3D has only a naïve state-machine animation mixer with no interpolant layer; VREEN ships the full five-interpolant family with cached O(1) sequential seek, cubic spline and Bézier keyframes, and zero-alloc flat-buffer quaternion slerp — the foundation for artist-faithful imported animation curves."
+      },
+      "matrix2": {
+        "title": "Matrix2 — 2×2 matrix (full linear algebra, surpassing three.js)",
+        "desc": "A 2×2 square matrix stored column-major, matching Matrix3/Matrix4, while the constructor and set() take row-major arguments (consistent with three.js Matrix2). VREEN fills in the real linear-algebra surface that three.js r169 leaves bare (only constructor/set/identity/fromArray): multiply/premultiply/multiplyMatrices, determinant, invert (singular matrices zero out, same as Matrix3), transpose, makeRotation (CCW)/makeScale, scale/rotate and applyToVector (applies directly to a Vector2). translate is intentionally a throw on a 2×2 linear matrix, pointing to Matrix3. Rotation matrices are orthogonal (invert==transpose, det=1).",
+        "advantage": "soup3D has no dedicated 2-D matrix type; 2-D operations must be hand-rolled through a generic 4-D matrix. VREEN's Matrix2 is the complete 2×2 linear-algebra type three.js itself leaves unfinished — determinant/invert/transpose/multiply, 2-D rotation & scale, and direct vector application — allocation-light and semantically clear, giving texture UV, 2-D physics and SDF maths first-class support."
       }
     }
   }

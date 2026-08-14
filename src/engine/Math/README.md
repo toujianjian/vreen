@@ -56,6 +56,7 @@ Mutating methods return `this` for chaining; pure queries (`dot`,
 
 | Export | Role |
 |--------|------|
+| `Matrix2` | 2×2 matrix (column-major `elements`). `set` / `identity` / `multiply` / `multiplyMatrices` / `premultiply` / `transpose` / `invert` / `determinant` / `makeRotation` / `makeScale` / `applyToVector`. |
 | `Matrix3` | 3×3 matrix (column-major `elements`). `set` / `identity` / `multiply` / `transpose` / `invert` / `getNormalMatrix`. |
 | `Matrix4` | 4×4 matrix. `makeTranslation` / `makeRotationX/Y/Z` / `makeScale` / `multiply` / `invert` / `compose(position, quaternion, scale)` / `decompose` / `makePerspective` / `makeOrthographic`. |
 
@@ -63,6 +64,61 @@ Mutating methods return `this` for chaining; pure queries (`dot`,
 const m = new Matrix4().compose(position, quaternion, scale);
 const normalMatrix = new Matrix3().getNormalMatrix(m);
 ```
+
+### `Matrix2` — 2×2 matrix (`Matrix2.ts`)
+
+Minimal square matrix for 2-D linear algebra — the dimensional peer of
+`Matrix3`/`Matrix4`. Like the larger matrices it stores four elements in
+column-major order in `elements` while the constructor and `set()` accept
+row-major arguments for ergonomic reading: `m.set(11,12, 21,22)` produces
+`elements = [11,21, 12,22]`. Adapted from three.js r169
+`src/math/Matrix2.js`.
+
+**Beyond three.js `Matrix2`.** The upstream three.js `Matrix2` (r169) ships a
+deliberately minimal surface — only the constructor, `set`, `identity` and
+`fromArray` (plus the `isMatrix2` flag). It lacks every linear-algebra
+operation a 2×2 matrix is actually used for: no `copy`/`clone`, no
+`multiply`/`premultiply`/`multiplyMatrices`, no `determinant`, no `invert`,
+no `transpose`, no 2-D rotation/scale builders, and no way to apply the
+matrix to a vector. VREEN's `Matrix2` fills this surface following the
+`Matrix3` method contract, so the class is directly usable for 2-D
+transforms, texture UV manipulation, and small-matrix maths without round-
+tripping through `Matrix3`.
+
+| Method | Behaviour |
+|--------|-----------|
+| `set(n11,n12, n21,n22)` | row-major input → column-major store; returns `this` |
+| `identity()` / `copy()` / `clone()` | structural |
+| `multiply(m)` | post-multiply `this = this * m` |
+| `premultiply(m)` | pre-multiply `this = m * this` |
+| `multiplyMatrices(a,b)` | `this = a * b` (standard column-major product) |
+| `multiplyScalar(s)` | in-place element-wise scale |
+| `determinant()` | `n11*n22 - n12*n21` |
+| `invert()` | in-place 2×2 inverse; singular (`det=0`) zeroes out, mirroring `Matrix3.invert` |
+| `transpose()` / `transposeIntoArray(r)` | swap the off-diagonal pair (`te[1]↔te[2]`) |
+| `makeRotation(θ)` | CCW rotation matrix `[[c,-s],[s,c]]` (linear, no translation) |
+| `makeScale(x,y)` | diagonal scale matrix |
+| `scale(sx,sy)` / `rotate(θ)` | `premultiply(makeScale)` / `premultiply(makeRotation(-θ))` |
+| `translate(tx,ty)` | **throws** — a 2×2 *linear* matrix cannot represent translation; use `Matrix3` (affine) instead |
+| `applyToVector(v)` | in-place `v = this * v` on a `Vector2` |
+| `fromArray` / `toArray` / `equals` | structural, matching `Matrix3` |
+
+**Orthogonality.** `makeRotation` yields an orthogonal matrix, so `invert()`
+equals `transpose()` and `determinant()` is `1` (orientation-preserving) —
+verified by the unit tests via the round-trip `rotate(+θ)` then `invert()`
+and the `m * inv(m) = identity` checks.
+
+**Why a 2×2 at all?** 2-D linear transforms (rotation/scale/shear of a
+`Vector2`, or orientation sub-block of a larger affine transform) are
+commonplace in texture/SDF math, 2-D physics and UV tools and do not need
+the 9/16 elements of `Matrix3`/`Matrix4`. A dedicated `Matrix2` keeps the
+hot path allocation-free and the intent obvious.
+
+**Comparison to soup3D** — soup3D has no dedicated 2-D matrix type; 2-D
+operations in soup3D must be funnelled through generic 4-D matrices by
+hand. VREEN's `Matrix2` provides a complete, allocation-light, three.js-
+aligned 2×2 linear-algebra type that three.js itself leaves unfinished, so
+imported/engine-internal 2-D maths has first-class support.
 
 ### Rotations
 
