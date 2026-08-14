@@ -5,6 +5,11 @@ import type { Vector3 } from './Vector3';
 import type { EulerOrder } from './Euler';
 import { clamp } from './MathUtils';
 import type { BufferAttribute } from '../Core/BufferAttribute';
+// 仅类型导入(编译期擦除,无运行时循环依赖):
+// WritableNumberArray 定义在 Interpolant.ts,这里复用其「可写数值数组」约束,
+// 供静态方法 slerpFlat 的扁平数组形参类型。Interpolant 基类不反向 import Quaternion
+// (只有其子类 QuaternionLinearInterpolant 依赖),无循环。
+import type { WritableNumberArray } from './Interpolant';
 
 export class Quaternion {
   x: number;
@@ -394,5 +399,108 @@ export class Quaternion {
   /** JSON-serializable form: [x, y, z, w] array (matches three.js). */
   toJSON(): [number, number, number, number] {
     return this.toArray();
+  }
+
+  /**
+   * 扁平数组版 slerp（Spherical linear interpolation of flat quaternion buffers）。
+   *
+   * 直接在 TypedArray/普通数组上做四元数球面插值,无需构造 Quaternion 实例。
+   * 这是 three.js `Quaternion.slerpFlat` 的等价实现,供 `QuaternionLinearInterpolant`
+   * (关键帧四元数动画轨道)消费 —— Interpolant 写入 `resultBuffer` 时只持有扁平 buffer,
+   * 不触达面向对象 API,因此需要一个「就地扁平 slerp」静态方法。
+   *
+   * 算法与实例方法 {@link Quaternion#slerp} 完全一致(最短弧选择 + 平行退化回退线性):
+   *   1. 计算 dot(src0, src1),取绝对值以走最短弧(dot<0 时翻转 src1 符号);
+   *   2. 平行(dot≈±1)时线性插值 + 归一;
+   *   3. 否则按半角 θ 的正弦加权: result = src0·sin((1-t)θ)/sinθ + src1·sin(tθ)/sinθ;
+   *   4. 写入 dst[dstOffset..dstOffset+3]。
+   *
+   * @param dst 目标数组,写入结果的 x/y/z/w 四个分量
+   * @param dstOffset 写入起始下标
+   * @param src0 源四元数 0 所在数组
+   * @param srcOffset0 src0 的起始下标
+   * @param src1 源四元数 1 所在数组(可与 src0 相同)
+   * @param srcOffset1 src1 的起始下标
+   * @param t 插值因子 ∈ [0,1]
+   * @returns 传入的 dst 数组
+   */
+  static slerpFlat(
+    dst: WritableNumberArray,
+    dstOffset: number,
+    src0: WritableNumberArray,
+    srcOffset0: number,
+    src1: WritableNumberArray,
+    srcOffset1: number,
+    t: number,
+  ): WritableNumberArray {
+    // 取出两个源四元数的分量
+    let x0 = src0[srcOffset0];
+    let y0 = src0[srcOffset0 + 1];
+    let z0 = src0[srcOffset0 + 2];
+    let w0 = src0[srcOffset0 + 3];
+
+    const x1 = src1[srcOffset1];
+    const y1 = src1[srcOffset1 + 1];
+    const z1 = src1[srcOffset1 + 2];
+    const w1 = src1[srcOffset1 + 3];
+
+    if (t === 0) {
+      dst[dstOffset] = x0;
+      dst[dstOffset + 1] = y0;
+      dst[dstOffset + 2] = z0;
+      dst[dstOffset + 3] = w0;
+      return dst;
+    }
+    if (t === 1) {
+      dst[dstOffset] = x1;
+      dst[dstOffset + 1] = y1;
+      dst[dstOffset + 2] = z1;
+      dst[dstOffset + 3] = w1;
+      return dst;
+    }
+
+    let cosHalfTheta = w0 * w1 + x0 * x1 + y0 * y1 + z0 * z1;
+
+    // 取最短弧:dot<0 时翻转 src1 符号(等价于使用 -src1)
+    let bSign = 1;
+    if (cosHalfTheta < 0) {
+      bSign = -1;
+      cosHalfTheta = -cosHalfTheta;
+    }
+
+    if (cosHalfTheta >= 1.0) {
+      // 两个四元数平行 —— 线性插值后归一即可
+      dst[dstOffset + 3] = w0 + (w1 * bSign - w0) * t;
+      dst[dstOffset] = x0 + (x1 * bSign - x0) * t;
+      dst[dstOffset + 1] = y0 + (y1 * bSign - y0) * t;
+      dst[dstOffset + 2] = z0 + (z1 * bSign - z0) * t;
+
+      // 归一化(t四元数长度需为 1)
+      const invLen =
+        1 /
+        Math.sqrt(
+          dst[dstOffset] * dst[dstOffset] +
+            dst[dstOffset + 1] * dst[dstOffset + 1] +
+            dst[dstOffset + 2] * dst[dstOffset + 2] +
+            dst[dstOffset + 3] * dst[dstOffset + 3],
+        );
+      dst[dstOffset] *= invLen;
+      dst[dstOffset + 1] *= invLen;
+      dst[dstOffset + 2] *= invLen;
+      dst[dstOffset + 3] *= invLen;
+      return dst;
+    }
+
+    const sinHalfTheta = Math.sqrt(Math.max(0, 1 - cosHalfTheta * cosHalfTheta));
+    const halfTheta = Math.atan2(sinHalfTheta, cosHalfTheta);
+    const ratioA = Math.sin((1 - t) * halfTheta) / sinHalfTheta;
+    const ratioB = (Math.sin(t * halfTheta) / sinHalfTheta) * bSign;
+
+    dst[dstOffset + 3] = w0 * ratioA + w1 * ratioB;
+    dst[dstOffset] = x0 * ratioA + x1 * ratioB;
+    dst[dstOffset + 1] = y0 * ratioA + y1 * ratioB;
+    dst[dstOffset + 2] = z0 * ratioA + z1 * ratioB;
+
+    return dst;
   }
 }

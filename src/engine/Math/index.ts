@@ -37,6 +37,27 @@ export { SimplexNoise } from './SimplexNoise';
 export { Spherical } from './Spherical';
 export { Cylindrical } from './Cylindrical';
 
+// 插值器(Interpolant 家族,适配 three.js r169 src/math/Interpolant.js)。
+// 关键帧动画轨道(KeyframeTrack)的核心基石:给定参数序列 + 采样值序列,在
+// 任意位置 t 求出插值结果。基类承担区间查找(缓存下标 + 线扫 + 二分回退),
+// 子类覆写 interpolate_ 完成具体插值。常量(Interpolate*/Ending*)与上游数值一致。
+export {
+  Interpolant,
+  InterpolateDiscrete,
+  InterpolateLinear,
+  InterpolateSmooth,
+  ZeroCurvatureEnding,
+  ZeroSlopeEnding,
+  WrapAroundEnding,
+  type InterpolantSettings,
+  type EndingPolicy,
+} from './Interpolant';
+export { DiscreteInterpolant } from './interpolants/DiscreteInterpolant';
+export { LinearInterpolant } from './interpolants/LinearInterpolant';
+export { CubicInterpolant } from './interpolants/CubicInterpolant';
+export { QuaternionLinearInterpolant } from './interpolants/QuaternionLinearInterpolant';
+export { BezierInterpolant } from './interpolants/BezierInterpolant';
+
 // 坐标系常量 (three.js WebGLCoordinateSystem/WebGPUCoordinateSystem)
 export { WebGLCoordinateSystem, WebGPUCoordinateSystem } from './Matrix4';
 
