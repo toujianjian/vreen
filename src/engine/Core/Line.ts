@@ -73,7 +73,7 @@ export class Line extends Object3D {
   computeLineDistances(): this {
     const geometry = this.geometry;
     if (geometry.index === null) {
-      const position = geometry.attributes.position;
+      const position = geometry.attributes.position as BufferAttribute;
       const lineDistances = new Float32Array(position.count);
       lineDistances[0] = 0;
       for (let i = 1; i < position.count; i++) {
@@ -106,7 +106,7 @@ export class Line extends Object3D {
    */
   override raycast(raycaster: Raycaster, intersects: Intersection[]): void {
     const geometry = this.geometry;
-    const position = geometry.attributes.position;
+    const position = geometry.attributes.position as BufferAttribute;
     if (position === undefined) return;
 
     const threshold = raycaster.params.Line.threshold;
@@ -224,7 +224,7 @@ export class LineSegments extends Line {
   override computeLineDistances(): this {
     const geometry = this.geometry;
     if (geometry.index === null) {
-      const position = geometry.attributes.position;
+      const position = geometry.attributes.position as BufferAttribute;
       const lineDistances = new Float32Array(position.count);
       for (let i = 0, l = position.count; i < l; i += 2) {
         const off0 = i * position.itemSize;

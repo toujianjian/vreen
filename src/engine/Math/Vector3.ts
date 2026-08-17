@@ -6,6 +6,18 @@ import { Quaternion } from './Quaternion';
 import type { EulerOrder } from './Euler';
 import type { BufferAttribute } from '../Core/BufferAttribute';
 
+/**
+ * 结构接口:任一可被 fromBufferAttribute 读取的顶点属性。
+ * BufferAttribute(compact)与 InterleavedBufferAttribute(interleaved)均结构兼容
+ * (都实现 getX/getY/getZ),故 fromBufferAttribute 对两类承载类通用,无需引 Core
+ * 运行时依赖(仅 type-only)。与 BufferGeometry.BufferAttributeLike 同义但解耦于 Core。
+ */
+export interface BufferAttributeXYZ {
+  getX(index: number): number;
+  getY(index: number): number;
+  getZ(index: number): number;
+}
+
 /** 满足 Vector3.project/unproject 的相机最小结构(Camera 的字段即此形态)。 */
 interface CameraLike {
   matrixWorld: { elements: Float32Array | number[] };
@@ -229,8 +241,10 @@ export class Vector3 {
     return this;
   }
 
-  /** 从 BufferAttribute 第 index 个元素读取 x/y/z(three.js Vector3.fromBufferAttribute)。 */
-  fromBufferAttribute(attribute: BufferAttribute, index: number): this {
+  /** 从顶点属性第 index 个元素读取 x/y/z(three.js Vector3.fromBufferAttribute)。
+   *  对 compact BufferAttribute 与 interleaved InterleavedBufferAttribute 通用
+   *  (两者都实现 getX/getY/getZ,按各自布局寻址)。 */
+  fromBufferAttribute(attribute: BufferAttribute | BufferAttributeXYZ, index: number): this {
     this.x = attribute.getX(index);
     this.y = attribute.getY(index);
     this.z = attribute.getZ(index);

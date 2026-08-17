@@ -197,7 +197,7 @@ class ExportContext {
     }
     if (!geometry.boundingBox) geometry.computeBoundingBox();
     const bb = geometry.boundingBox!;
-    const posAccessor = this.addFloatAccessor(pos, GLTF_ARRAY_BUFFER, 'VEC3', [
+    const posAccessor = this.addFloatAccessor(pos as BufferAttribute, GLTF_ARRAY_BUFFER, 'VEC3', [
       bb.min.x, bb.min.y, bb.min.z,
     ], [
       bb.max.x, bb.max.y, bb.max.z,
@@ -206,13 +206,13 @@ class ExportContext {
     // NORMAL accessor
     const normal = geometry.attributes.normal;
     const normalAccessor = normal
-      ? this.addFloatAccessor(normal, GLTF_ARRAY_BUFFER, 'VEC3')
+      ? this.addFloatAccessor(normal as BufferAttribute, GLTF_ARRAY_BUFFER, 'VEC3')
       : undefined;
 
     // UV accessor(itemSize=2)
     const uv = geometry.attributes.uv;
     const uvAccessor = uv
-      ? this.addFloatAccessor(uv, GLTF_ARRAY_BUFFER, 'VEC2')
+      ? this.addFloatAccessor(uv as BufferAttribute, GLTF_ARRAY_BUFFER, 'VEC2')
       : undefined;
 
     // 索引 accessor

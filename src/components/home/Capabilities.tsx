@@ -97,6 +97,7 @@ const CAPS: Cap[] = [
   { key: 'lightHelpers', icon: Lightbulb, accent: 'text-neon-amber' },
   { key: 'interleavedBuffer', icon: Layers3, accent: 'text-neon-magenta' },
   { key: 'glBufferAttribute', icon: MemoryStick, accent: 'text-neon-cyan' },
+  { key: 'bufferGeometryInterleaved', icon: Boxes, accent: 'text-neon-magenta' },
 ];
 
 export function Capabilities() {

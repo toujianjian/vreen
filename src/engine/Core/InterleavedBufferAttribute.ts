@@ -69,6 +69,22 @@ export class InterleavedBufferAttribute {
     this.data.needsUpdate = value;
   }
 
+  /** 版本号(代理到底层缓冲;渲染器据此判重传,与 BufferAttribute.version 同契约)。 */
+  get version(): number {
+    return this.data.version;
+  }
+  set version(value: number) {
+    this.data.version = value;
+  }
+
+  /** 使用模式(代理到底层缓冲;gl.bufferData hint,与 BufferAttribute.usage 同契约)。 */
+  get usage(): number {
+    return this.data.usage;
+  }
+  set usage(value: number) {
+    this.data.usage = value;
+  }
+
   /** 把 4×4 矩阵作用到该属性(仅 itemSize=3 合法)。 */
   applyMatrix4(m: Matrix4): this {
     for (let i = 0, l = this.data.count; i < l; i++) {

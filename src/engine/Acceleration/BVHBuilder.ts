@@ -72,7 +72,9 @@ export function extractTriangles(geometry: BufferGeometry): {
   if (!posAttr) {
     return { triangles: new Uint32Array(0), positions: new Float32Array(0), triangleCount: 0 };
   }
-  const positions = posAttr.array;
+  // BVH 当前仅消费 compact Float32Array position(下游 getCentroid/AABB 按紧凑下标读);
+  // interleaved 路径(buffer getter 返回共享整型 array)留待后续渲染器侧 interleaved 绑定时扩展。
+  const positions = posAttr.array as Float32Array;
   const indexAttr = geometry.index;
   let triangles: Uint32Array;
   let triangleCount: number;

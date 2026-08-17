@@ -88,7 +88,7 @@ interface LODLevel { distance: number; object: Object3D; hysteresis?: number; }
 
 | Export | Role |
 |--------|------|
-| `BufferGeometry` | Vertex attribute container + optional index. Carries `boundingBox` / `boundingSphere`, `morphTargets`, optional `bvh`. `version` increments on attribute edits. Supports `addGroup` / `clearGroups` for multi-material draw groups. Instance methods: `computeVertexNormals()` (flat + averaged normals), `computeTangents()` (MikkTSpace tangent space, vec4 with handedness w), `computeBoundingBox()` / `computeBoundingSphere()`, `applyMatrix4()`, `clone()`, `toJSON()`, `dispose()`. |
+| `BufferGeometry` | Vertex attribute container + optional index — **single intake point for all three attribute carriers** (`BufferAttribute` \| `InterleavedBufferAttribute`, dispatched by `isInterleavedBufferAttribute`). Carries `boundingBox` / `boundingSphere`, `morphTargets`, optional `bvh`. `version` increments on attribute edits. Supports `addGroup` / `clearGroups` for multi-material draw groups. Instance methods: `computeVertexNormals()` (flat + averaged normals, interleaved-aware), `computeTangents()` (MikkTSpace tangent space, vec4 with handedness w, interleaved-aware), `computeBoundingBox()` / `computeBoundingSphere()`, `applyMatrix4()` (interleaved-aware), `toNonIndexed()` (expand indexed → flat, de-interleaves interleaved input), `clone()` (preserves interleaved identity + dedups backing buffer by uuid), `toJSON()` (layered `interleavedBuffers` / `arrayBuffers` dedup), `hasAttribute()`, `dispose()`. |
 | `BufferAttribute` | Typed-array view over one attribute (`position` / `normal` / `uv` / etc.). `version` increments on `set` / `setXY` / `setXYZ`. |
 | `InstancedBufferAttribute` | Per-instance attribute; `meshPerAttribute` maps to `gl.vertexAttribDivisor(loc, N)` (default 1). |
 | `InterleavedBuffer` | Shared TypedArray + `stride` — packs multiple attributes into one buffer so the GPU fetches an entire vertex in a single stride (cache-friendlier than one-buffer-per-attribute). Supports quantised types (`Int16` / `Uint8` / `Uint8Clamped`) and half-float; `copy` deep-copies, `clone` deduplicates the underlying `ArrayBuffer` across a shared `data` context, `toJSON` serialises references by `ArrayBuffer` uuid. |
@@ -240,6 +240,84 @@ The renderer-side branch ("`attribute.isGLBufferAttribute` → bind-only, skip b
 lives in `WebGL2Renderer` / the mesh shader pipeline; the class itself is pure data and is
 unit-tested with a plain object standing in for the `WebGLBuffer` handle. See
 `GLBufferAttribute.test.ts` — 22 tests, all green, no GPU touching.
+
+### BufferGeometry — Unified Intake of the Three Attribute Carriers
+
+The three attribute carriers above (`BufferAttribute` — CPU array, uploaded each change;
+`InterleavedBufferAttribute` — interleaved slice over a shared `InterleavedBuffer`;
+`GLBufferAttribute` — GPU-resident handle) converge at `BufferGeometry`, which is now the
+**single point of admission** for all of them. This mirrors three.js's approach:
+`setAttribute` takes `BufferAttribute | InterleavedBufferAttribute` and dispatches purely by
+the `isInterleavedBufferAttribute` duck-type flag — there is no `getInterleavedAttribute`
+helper, the flag *is* the dispatch.
+
+Why this matters: before this intake landed, `LineSegmentsGeometry` carried `instanceStart` /
+`instanceEnd` in a hand-rolled `customAttributes: Map` *alongside* `BufferGeometry.attributes`,
+because `setAttribute` only accepted `BufferAttribute`. The intake closes that workaround —
+interleaved attributes are now first-class `geometry.attributes` entries.
+
+Traversal — every method that reads `position` / `normal` / `uv` goes through the carriers'
+shared `getX/Y/Z` API (both expose the identical signature), so the compact layout
+(`index * itemSize`) and the interleaved layout (`index * data.stride + offset`) are handled
+transparently:
+
+- `computeBoundingBox` / `computeBoundingSphere` read position via `getX/Y/Z`.
+- `computeVertexNormals` / `computeTangents` read position / uv (and normals for the tangent
+  face-normal approximation) via `getX/Y/Z`; a compact fast path is kept byte-identical for
+  non-interleaved attributes (the common case), so the existing 21-test suite is untouched.
+- The computation *products* (generated `normal` / `tangent`) are always written to a fresh,
+  independent, compact `BufferAttribute` — never back into the shared `InterleavedBuffer`.
+  This is three.js's semantic: a computation result leaves the shared buffer, so other slices
+  in the same `InterleavedBuffer` are not perturbed.
+- `applyMatrix4` (overload taking `{ elements }`) stays compact-fast-path for `BufferAttribute`
+  and *delegates* to `InterleavedBufferAttribute.applyMatrix4` (which already addresses by
+  `stride + offset`) for the interleaved case — both reduce to `Vector3.applyMatrix4` in the
+  end, so the two paths agree bit-for-bit on column-major layout.
+
+New `toNonIndexed()` (three.js `BufferGeometry.toNonIndexed` analogue, previously absent) is
+the first method to treat interleaved and compact asymmetrically in output yet identically in
+input: it walks `this.index.array`, and for each referenced vertex copies `itemSize`
+consecutive components into a flat target array — the only difference is the *source* offset
+(`vi * stride + offset` for interleaved, `vi * itemSize` for compact). The result is always a
+compact `BufferAttribute`, so `toNonIndexed` is also a *de-interleave*: an interleaved indexed
+geometry comes out flat and expanded.
+
+`clone()` threads a shared `data` context to `InterleavedBufferAttribute.clone`, so multiple
+attributes that share one underlying `InterleavedBuffer` clone that buffer exactly once (by
+`uuid`) rather than once per attribute — depth isolation is preserved (the clone's buffer is a
+fresh copy), but the *sharing* relationship survives cloning.
+
+`toJSON()` emits a layered dedup dictionary so a geometry whose attributes share one
+`InterleavedBuffer` (and one underlying `ArrayBuffer`) is serialised compactly:
+
+```
+{
+  attributes: {
+    position: { isInterleavedBufferAttribute: true, itemSize: 3, data: <ib.uuid>, offset: 0, ... },
+    normal:   { isInterleavedBufferAttribute: true, itemSize: 3, data: <ib.uuid>, offset: 3, ... }
+  },
+  interleavedBuffers: { <ib.uuid>: { uuid, buffer: <ab.uuid>, type, stride } },
+  arrayBuffers:        { <ab.uuid>: [ ...Uint32 view of the bytes... ] }
+}
+```
+
+Compact-only geometries keep their pre-existing JSON shape (independent `array` per
+attribute, no dedup dictionaries) — backwards compatible with the existing `.vreen` format.
+
+`hasAttribute(name)` added (three.js analogue). `dispose()` bumps the version on compact
+attributes and flips `needsUpdate` (→ `data.version++`) on interleaved attributes — both
+invalidated the renderer's WeakMap cache.
+
+**Tests** — `InterleavedBufferAttribute.test.ts` (32 tests, back-fills the suite the class
+shipped without) plus `BufferGeometry.interleaved.test.ts` (16 interleaved-integration tests
+asserting walk-through-product independence, toNonIndexed correctness, clone dedup & isolation,
+and the layered-JSON dedup) alongside the untouched `BufferGeometry.test.ts` (21 compact
+tests, byte-identical behaviour preserved). Full regression: 457 files / 12033 tests green.
+
+> **soup3D 对比** — soup3D 的几何体逐属性是平坦散列 Python list,无交错布局、无统一承载类
+> 抽象、无 `toNonIndexed`、无计算法线/切线,序列化也仅止于裸 list。VREEN 的 `BufferGeometry`
+> 是三类属性承载类(CPU array / 交错切片 / GPU 句柄)的唯一接入点,按 `isInterleavedBufferAttribute`
+> 标志鸭子类型分派,伴交错感知遍历、索引展开、克隆去重、分层 JSON 去重——soup3D 架构上无对应物。
 
 ### Tangent Space (Normal Mapping)
 

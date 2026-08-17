@@ -82,11 +82,11 @@ export class DecalGeometry extends BufferGeometry {
       const n = new Vector3();
 
       const pushVertex = (idx: number): void => {
-        readAttribute3(posAttr!, idx, v);
+        readAttribute3(posAttr! as BufferAttribute, idx, v);
         // mesh 局部 → 世界 → 投影器局部
         v.applyMatrix4(target.matrixWorld).applyMatrix4(projectorMatrixInverse);
         if (normAttr) {
-          readAttribute3(normAttr, idx, n);
+          readAttribute3(normAttr as BufferAttribute, idx, n);
           n.transformDirection(target.matrixWorld); // 世界空间法线
         } else {
           n.set(0, 0, 1);
