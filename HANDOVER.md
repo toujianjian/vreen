@@ -3,8 +3,9 @@
 > 本文档为**新接管的 Agent** 编写，内容覆盖：项目目标、工程结构、开发流程约定、
 > **已收尾的工作（SkeletonUtils 模块完成 + TransformControls 模块完成 + Matrix4 语义修复 + AI/Materials 断言修复 +
 > DataUtils Half-Float codec 完成 + MathUtils 签名放宽支持 Uint8ClampedArray + InterleavedBuffer 完成 +
-> GLBufferAttribute 完成 — Core BufferAttribute 家族三类顶点属性承载类齐备）**，
-> 以及后续推进建议。全量回归 **455 文件 / 11995 tests 全绿**。
+> GLBufferAttribute 完成 + BufferGeometry 接入 InterleavedBuffer 完成 —
+> Core BufferAttribute 家族三类顶点属性承载类齐备，InterleavedBuffer 已被 BufferGeometry 消费）**，
+> 以及后续推进建议。全量回归 **457 文件 / 12033 tests 全绿**。
 > 请务必先通读本文档，再动手修改代码。
 
 ---
@@ -210,14 +211,14 @@ VelocityPass、BRDFLUT.test、PostProcessPasses.test，共 6 文件）。
 最新提交（git log 前 8 条）：
 
 ```
+bd1e69a test(Renderer): BRDFLUT/ProceduralAudio/PreIntegratedSkin 超时提升 — 修全量并发超时抖动
+f1f6b15 feat(Core): BufferGeometry 接入 InterleavedBuffer/InterleavedBufferAttribute (three.js r169)
+e7a8784 docs: 更新 HANDOVER.md — 记录 GLBufferAttribute 收尾 + 探查结论 + commit hook 提示
 975f694 docs(Core): 补 GLBufferAttribute 的 README + 主页卡片 + 5 语言 i18n
 9cc628e test(Core): add GLBufferAttribute 单元测试(22 tests 全绿)
 98a4a5c feat(Core): add GLBufferAttribute — GPU buffer 句柄直绑顶点属性(three.js r169)
+57c5fba docs: 更新 HANDOVER.md — 环境/命令改 Linux bash + 记录 InterleavedBuffer 收尾
 448654f docs(Core): 补 InterleavedBuffer 的 README + 主页卡片 + 5 语言 i18n
-faed373 test(Core): add InterleavedBuffer 单元测试(45 tests 全绿)
-b235950 feat(Core): add InterleavedBuffer 交错缓冲(three.js r169 顶点属性布局)
-9c6c47e refactor(Math): 放宽 normalize/denormalize 签名支持 Uint8ClampedArray
-9cb02e9 feat(Math): add DataUtils Half-Float (FP16↔FP32) codec (three.js r169 DataUtils)
 ```
 
 每个模块的落地模式（新 Agent 应沿用）：
