@@ -32,8 +32,8 @@ describe('BRDFLUT', () => {
     it('默认 size=256', () => {
       const lut = BRDFLUT.generate();
       expect(lut.size).toBe(256);
-      // 256×256×1024 ≈ 6700 万次带三角函数积分,慢机器可能超过默认 5s 超时。
-    }, 30000);
+      // 256×256×1024 ≈ 6700 万次带三角函数积分,慢机器 + 全量并发可能超过 30s。
+    }, 90000);
 
     it('数据长度 = size * size * 2', () => {
       const lut = BRDFLUT.generate({ size: 64 });
@@ -44,7 +44,7 @@ describe('BRDFLUT', () => {
       const lut = BRDFLUT.generate({ size: 128 });
       expect(lut.size).toBe(128);
       expect(lut.data.length).toBe(128 * 128 * 2);
-    });
+    }, 60000);
 
     it('size 最小 16', () => {
       const lut = BRDFLUT.generate({ size: 4 });

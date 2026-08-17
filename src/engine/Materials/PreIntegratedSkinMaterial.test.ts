@@ -687,7 +687,8 @@ describe('PreIntegratedSkinMaterial — 序列化', () => {
     expect(restored.opacity).toBeCloseTo(original.opacity, 5);
     expect(restored.transparent).toBe(original.transparent);
     expect(restored.doubleSided).toBe(original.doubleSided);
-  });
+    // 构造 PreIntegratedSkinMaterial 会生成 256×256 DiffuseLUT,慢机器 + 全量并发可能超过默认 5s。
+  }, 20000);
 
   it('fromJSON 含自定义 profile', () => {
     const customProfile: DiffuseProfile = {

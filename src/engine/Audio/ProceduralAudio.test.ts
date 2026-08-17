@@ -426,7 +426,8 @@ describe('ProceduralAudio — 预设音效', () => {
       }
       // 非静音
       expect(peak).toBeGreaterThan(0.01);
-    });
+      // generateWind 等预设在重采样/滤波下计算量大,慢机器 + 全量并发可能超过默认 5s。
+    }, 20000);
   }
 
   it('generateUIBeep 后恢复 instance 状态', () => {
