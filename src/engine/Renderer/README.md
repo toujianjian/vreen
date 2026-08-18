@@ -601,7 +601,87 @@ both independently; combining them is left to the integration layer.
 - Karis "Real Shadows in Real Time with VSM" — UE blog (2020)
 - Myers & Bavoil "Stencil Routed K-Buffer" (2022) — K-buffer techniques
 
-### `MeshShaderPipeline` (`MeshShaderPipeline.ts`)
+### `ShadowmapAtlas` (`ShadowmapAtlas.ts`)
+
+**Shadowmap Atlas** — a quadtree packing algorithm adapted from o3de Atom
+`ShadowmapAtlas.{h,cpp}` that packs shadowmaps of **different resolutions**
+(2048 / 1024 / 512 / 256 …) into a **single image array** (`TEXTURE_2D_ARRAY`)
+allocation, so that a full scene's shadows can be rendered with one pass (or
+resolved with one compute dispatch) instead of N texture-bind jumps.
+
+**Why an atlas.** When many lights each have their own shadow map, binding and
+rendering them separately wastes state-change and resolves. Packing them into
+one array texture lets a shadow pass render all shadowmaps in a single
+invocation, mirroring how o3de Atom batches its lights.
+
+**Location encoding (the core idea).** Each shadowmap is given a *finite
+integer sequence* `loc = [slice, q₀, q₁, …]` describing its place in the array
+texture:
+
+- `loc[0]` is the **array slice** index in the image array resource;
+- for `k ≥ 0`, `loc[k+1] ∈ {0,1,2,3}` selects one of the four quadrants of the
+  square identified by `loc[0..k]` (see o3de's `+---+---+` / `|0|1|` / `|2|3|`
+  layout), so each additional digit halves the occupied size.
+
+Hence `shadowmapSize = baseSize * (1 / 2)^(length-1)`. Packing proceeds from the
+**largest** shadowmap down to the smallest, and same-size shadowmaps occupy
+locations in **lexicographic order** — large shadows grab the most complete
+quadrants first, small ones fill the remaining gaps.
+
+**Index table for the GPU.** The quad-tree is flattened into a
+`ShadowmapIndexNode[]` buffer consumed by a single compute dispatch:
+
+- the **root subtable** (Location `[]`) has `arraySliceCount` entries;
+- every **non-root subtable** has `4` entries (`LOCATION_INDEX_COUNT`);
+- an entry with `nextTableOffset !== 0` points at a child subtable (the
+  location is shared by multiple smaller shadows); otherwise `shadowmapIndex`
+  is the final answer (search terminator).
+
+```
+// o3de example: base 2048, light#0 → [0], #1 → [1,0], #2 → [1,1]
+// root[0] = {nextTableOffset:0, shadowmapIndex:0}
+// root[1] = {nextTableOffset:2, shadowmapIndex:invalid}  → subtable [1]
+// table[2..3] = shadowmapIndex 1, 2
+```
+
+**VREEN API** (pure data, no WebGL — fully unit-testable):
+
+```ts
+import { ShadowmapAtlas } from './ShadowmapAtlas';
+
+const atlas = new ShadowmapAtlas({ baseShadowmapSize: 2048, minShadowmapSize: 256 });
+atlas.setShadowmapSize(0, 1024); // light #0 → 1024×1024
+atlas.setShadowmapSize(1, 512);   // light #1 → 512×512
+atlas.finalize();
+
+atlas.getArraySliceCount();              // number of array slices (≥1)
+atlas.getOrigin(1);                      // → { arraySlice, originInSlice:[x,y] }
+atlas.getShadowmapIndexTable();          // → flat ShadowmapIndexNode[] for GPU
+atlas.initialize();                      // reset, then reuse the instance
+```
+
+`getOrigin(index)` decodes a location back into a slice + in-slice pixel origin,
+so a shadowmap can be written/read at its exact spot. Indices that were never
+registered, or whose size is below `minShadowmapSize`, are treated as *disabled*
+and return the empty origin `{ arraySlice: 0, originInSlice: [0,0] }`.
+
+**Key behaviors & invariants**
+
+- `baseShadowmapSize` follows o3de semantics: it is clamped to the maximum of
+  the configured base and any registered shadowmap size (default 2048).
+- Same-resource reuse via `initialize()` → `setShadowmapSize(...)` →
+  `finalize()`, so a single instance can be re-packed per frame / on light add.
+- Location `loc[0]` automatically advances to a new slice only when all
+  deeper digits are saturated (`SucceedLocation` four-ary carry).
+
+**Compared to the in-house shadow family** (`ShadowMapManager` basic/PCF/PCSS,
+`CascadedShadowMap`, `ExponentialShadowMap`, `VirtualShadowMap`): VSM does
+**on-demand virtual paging** with a view-independent page table; `ShadowmapAtlas`
+is the **static, classically-partitioned** counterpart that packs a known set of
+shadowmaps into one fixed array texture — complementary, not overlapping. Versus
+soup3D, which has no shadow-map-atlas / virtual-shadowmap architecture at all,
+VREEN now offers both a paged VSM and a quadtree atlas for clustered shadow
+management.
 
 **Mesh Shader Pipeline** — a two-stage (Task Shader + Mesh Shader) GPU-driven
 geometry pipeline adapted from o3de Atom `MeshShaderPass` /
