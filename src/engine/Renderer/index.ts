@@ -1047,6 +1047,20 @@ export {
   type PhysicalPage,
   type VSMSampleResult,
 } from './VirtualShadowMap';
+// ShadowmapAtlas — 阴影图集四叉树打包算法(适配自 o3de Atom ShadowmapAtlas)。
+// 把不同尺寸的阴影贴图打包进一张 image array atlas,并构造 GPU 可用的扁平化
+// 阴影索引表(根子表=切片数,非根子表=4,子表偏移跳转)。纯数据层,11 个单测。
+// 与 VirtualShadowMap(VSM 虚拟分页)互补:后者做 on-demand 虚拟页表,
+// 本类做经典"多阴影共享一张 atlas"的静态打包。
+export {
+  ShadowmapAtlas,
+  INVALID_SHADOWMAP_INDEX,
+  MIN_SHADOWMAP_IMAGE_SIZE,
+  MAX_SHADOWMAP_IMAGE_SIZE,
+  type ShadowmapAtlasOrigin,
+  type ShadowmapIndexNode,
+  type ShadowmapAtlasOptions,
+} from './ShadowmapAtlas';
 // MeshShaderPipeline — Mesh Shader 管线(Task + Mesh 两阶段,CPU 参考 + GLSL 模拟)。
 // 适配自 o3de Atom MeshShaderPass / MeshShaderDispatchItem +
 // NVIDIA Turing Mesh Shaders (SIGGRAPH 2019) + Vulkan VK_EXT_mesh_shader。
