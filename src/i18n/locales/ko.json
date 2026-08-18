@@ -1268,6 +1268,11 @@
         "title": "BufferGeometry 인터리브 속성 흡수(세 속성 캐리어 통일 소비)",
         "desc": "BufferGeometry.setAttribute가 BufferAttribute | InterleavedBufferAttribute를 받게 되어(three.js 준거), InterleavedBuffer가 마침내 직접 소비 가능해짐——LineSegmentsGeometry가 customAttributes Map으로 우회할 필요 없음. 전 순회(computeVertexNormals / computeTangents / computeBoundingBox / computeBoundingSphere / applyMatrix4)는 두 캐리어 공유의 getX/Y/Z API로 position/normal/uv를 읽어 컴팩트(index*itemSize)와 인터리브(index*stride+offset) 레이아웃을 투명 처리하며 컴팩트 fast path는 바이트급 불변 유지. 계산 산물(법선/접선)은 항상 독립 컴팩트 BufferAttribute에 기록됨(three.js 의미——산물은 공유 buffer에서 이탈, 동일 InterleavedBuffer의 다른 슬라이스에 영향 없음). 신규 toNonIndexed()는 index*stride+offset로 인터리브 인덱스 기하를 평탄 컴팩트 BufferAttribute로 전개. clone()은 인터리브 동일성을 보존하며 uuid로 다중 속성의 기저 InterleavedBuffer를 중복제거 재사용. toJSON()은 다층 interleavedBuffers / arrayBuffers 중복제거 사전을 출력해 동일 InterleavedBuffer/ArrayBuffer를 공유하는 다중 속성은 한 번만 직렬화. hasAttribute() 추가. InterleavedBufferAttribute에 자체 32 테스트군을 마침내 보충(이전 결손). 16개 인터리브 통합 테스트 + 전 기하 회귀 green.",
         "advantage": "soup3D의 기하는 속성별 평탄 흩어진 list로 인터리브 레이아웃, 통일 캐리어 추상, toNonIndexed, 계산 법선/접선 어느 것도 없고 직렬화도 벌거벗은 list에 그친다. VREEN의 BufferGeometry는 세 속성 캐리어의 유일 흡수점——CPU array(BufferAttribute), 인터리브 슬라이스(InterleavedBufferAttribute), GPU 핸들(GLBufferAttribute)——을 isInterleavedBufferAttribute 플래그(정확히 three.js의 덕 타이핑)로 분기하고 인터리브 인식 순회·인덱스 전개·클론 중복제거·계층화 JSON 중복제거를 수반, soup3D 아키텍처상 대응물 없음。"
+      },
+      "shadowmapAtlas": {
+        "title": "ShadowmapAtlas(o3de 섀도 아틀라스 쿼드트리 패킹)",
+        "desc": "서로 다른 해상도(2048/1024/512/256…)의 섀도우맵을 단일 image array 텍스처에 패킹해, 장면 전체 그림자를 한 번의 패스로 렌더(텍스처 바인드 전환 N회 제거). 각 섀도우맵에 Location을 부여——첫 자리가 array slice 인덱스, 이후 자리(0-3)가 정사각 영역을 쿼드트리로 선택(자릿수마다 크기 절반). 큰 그림자부터 패킹하고 동일 크기는 사전순(큰 그림자가 가장 완전한 사분면을 우선 점유). 쿼드트리를 ShadowmapIndexNode 테이블(루트 부분표=슬라이스 수, 비루트=4)로 평탄화해 GPU compute가 한 번의 dispatch로 점프 탐색(nextTableOffset 점프 or 종결 shadowmapIndex). getOrigin(index)은 Location을 슬라이스+픽셀 원점으로 복호. 미등록 또는 minShadowmapSize 미만은 disabled(빈 원점). initialize()→setShadowmapSize()→finalize()로 프레임별 재패킹 지원. 순수 데이터 단위 테스트 11개, WebGL 불필요. o3de Atom ShadowmapAtlas.{h,cpp}에서 이식.",
+        "advantage": "soup3D에는 섀도 아틀라스/가상 섀도 아키텍처가 전혀 없음——다중 광원 그림자를 단일 섀도 패스로 배치할 수 없음. VREEN은 온디맨드 가상 페이징 VirtualShadowMap과 이 쿼드트리 ShadowmapAtlas(o3de Atom 기준의 평탄 GPU 인덱스 테이블을 갖춘 고전적 정적 패킹)를 모두 갖춰, soup3D에 없는 두 가지 보완적 클러스터 섀도 관리 전략을 제공한다."
       }
     }
   }

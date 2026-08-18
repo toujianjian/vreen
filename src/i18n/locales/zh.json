@@ -1268,6 +1268,11 @@
         "title": "BufferGeometry 交错属性接入(三类承载类统一消费)",
         "desc": "BufferGeometry.setAttribute 现可接 BufferAttribute | InterleavedBufferAttribute(对齐 three.js),InterleavedBuffer 终于能被直接消费——LineSegmentsGeometry 不必再自造 customAttributes Map 绕路。所有遍历方法(computeVertexNormals / computeTangents / computeBoundingBox / computeBoundingSphere / applyMatrix4)经两类承载类共享的 getX/Y/Z API 读 position/normal/uv,对紧凑(index*itemSize)与交错(index*stride+offset)布局透明,且保留紧凑 fast path 字节级不变;计算产物(法线/切线)永远写进独立紧凑 BufferAttribute(three.js 语义——产物脱离共享 buffer,同 InterleavedBuffer 的其它切片不受影响)。新增 toNonIndexed() 按 index*stride+offset 把交错索引几何展开为平坦紧凑 BufferAttribute;clone() 保留交错身份并按 uuid 对多条属性去重复用底层 InterleavedBuffer;toJSON() 输出多层 interleavedBuffers / arrayBuffers 去重字典,共享同一 InterleavedBuffer 或同一 ArrayBuffer 的多条属性只序列化一次。新增 hasAttribute()。InterleavedBufferAttribute 终于补齐自己的 32 项单测(此前空缺)。16 个交错集成测试 + 全几何回归全绿。",
         "advantage": "soup3D 的几何体逐属性是平坦散列 list,无交错布局、无统一承载类抽象、无 toNonIndexed、无计算法线/切线,序列化也仅止于裸 list。VREEN 的 BufferGeometry 现是三类属性承载类的唯一接入点——CPU array(BufferAttribute)、交错切片(InterleavedBufferAttribute)、GPU 句柄(GLBufferAttribute)——按 isInterleavedBufferAttribute 标志分派(正是 three.js 的鸭子类型),伴交错感知遍历、索引展开、克隆去重、分层 JSON 去重,soup3D 架构上无对应物。"
+      },
+      "shadowmapAtlas": {
+        "title": "ShadowmapAtlas(o3de 阴影图集四叉树打包)",
+        "desc": "把不同分辨率(2048/1024/512/256…)的阴影贴图打包进一张 image array 纹理,整个场景的阴影可一次渲染完成,免去 N 次纹理绑定切换。每个阴影分配一个 Location——首段为 array slice 索引、其后各段(0-3)逐级在四方块中选象限的有限整数序列,尺寸每段减半;先打包大阴影、同尺寸按字典序,大阴影优先占完整象限。再把四叉树压平成 ShadowmapIndexNode 索引表(根子表=切片数,非根子表=4),GPU compute 一次 dispatch 即可跳转查表(nextTableOffset 跳转或终结的 shadowmapIndex)。getOrigin(index) 把 Location 解码回切片+切片内像素原点;未登记或小于 minShadowmapSize 的索引视为 disabled(空原点)。initialize()→setShadowmapSize()→finalize() 支持按帧重打包。11 个纯数据单测,无 WebGL 依赖。抄写自 o3de Atom ShadowmapAtlas.{h,cpp}。",
+        "advantage": "soup3D 完全没有阴影图集或虚拟阴影架构——无法把多光源阴影合并进一次渲染 pass。VREEN 现同时具备按需虚拟分页的 VirtualShadowMap 与该四叉树 ShadowmapAtlas(经典静态打包 + 扁平 GPU 索引表,对齐 o3de Atom),两种互补的集群化阴影策略,soup3D 两者皆无。"
       }
     }
   }
