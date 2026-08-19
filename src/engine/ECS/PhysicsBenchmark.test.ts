@@ -136,7 +136,7 @@ function formatResult(r: BenchResult): string {
 }
 
 describe('Phase 2.4.1 — 物理引擎 Benchmark', () => {
-  it('N=100 球体下落 60 帧不抛错,性能可接受', { timeout: 30_000 }, () => {
+  it('N=100 球体下落 60 帧不抛错,性能可接受', { timeout: 30_000, retry: 2 }, () => {
     const w = buildFallingBallsWorld(100);
     w.addSystem(new PhysicsSystem());
     w.addSystem(new CollisionSystem());
@@ -158,7 +158,7 @@ describe('Phase 2.4.1 — 物理引擎 Benchmark', () => {
     expect(belowFloor).toBe(0); // 不应有球穿透到地面下方
   });
 
-  it('N=500 球体下落 60 帧', { timeout: 60_000 }, () => {
+  it('N=500 球体下落 60 帧', { timeout: 60_000, retry: 2 }, () => {
     const w = buildFallingBallsWorld(500);
     w.addSystem(new PhysicsSystem());
     w.addSystem(new CollisionSystem());

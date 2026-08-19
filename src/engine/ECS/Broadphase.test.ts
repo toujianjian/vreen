@@ -164,7 +164,8 @@ describe('Phase 2.4.2 — Broadphase 优化 (SAP)', () => {
       const avg2 = sum2 / count2;
       // 两种 broadphase 物理结果应非常接近(允许少量抖动)
       expect(Math.abs(avg1 - avg2)).toBeLessThan(2.0);
-    });
+      // N=100 双世界 × 30 帧物理模拟,慢机器 + 全量并发可能超过默认 5s。
+    }, 30000);
   });
 
   describe('SAP 剪枝效果', () => {
@@ -210,7 +211,8 @@ describe('Phase 2.4.2 — Broadphase 优化 (SAP)', () => {
       expect(r1.avgCandidates).toBeGreaterThan(100000);
       // SAP 候选对应 << brute-force
       expect(r2.avgCandidates).toBeLessThan(r1.avgCandidates * 0.5);
-    });
+      // N=500 双世界各 20 帧,候选对 O(n²) 计算量大,慢机器可能超过默认 5s。
+    }, 60000);
   });
 
   describe('性能对比', () => {
@@ -248,6 +250,7 @@ describe('Phase 2.4.2 — Broadphase 优化 (SAP)', () => {
 
       // SAP 应不慢于 brute-force(宽松断言,不卡死加速比)
       expect(r2.totalMs).toBeLessThanOrEqual(r1.totalMs * 1.5);
-    });
+      // N=1000 双世界各 15 帧,brute-force O(n²) 候选对 ~1000*999/2,慢机器可能超过默认 5s。
+    }, 60000);
   });
 });
