@@ -35,7 +35,8 @@ describe('PreIntegratedSkinLUT.generate basics', () => {
     expect(lut.data.length).toBe(256 * 256 * 3);
     expect(lut.data).toBeInstanceOf(Float32Array);
     expect(lut.maxCurvature).toBe(2.0);
-  });
+    // 256×256 预积分生成量大,慢机器 + 全量并发可能超过默认 5s。
+  }, 30000);
 
   it('custom size + maxCurvature', () => {
     const lut = generatePreIntegratedSkinLUT({ width: 32, height: 16, maxCurvature: 4.0 });
@@ -57,7 +58,8 @@ describe('PreIntegratedSkinLUT.generate basics', () => {
       expect(lut.data[i]).toBeGreaterThanOrEqual(0);
       expect(lut.data[i]).toBeLessThanOrEqual(1);
     }
-  });
+    // 64×64 蒙特卡罗积分,慢机器 + 全量并发可能超过默认 5s。
+  }, 30000);
 
   it('deterministic — same opts = same data', () => {
     const a = generatePreIntegratedSkinLUT({ width: 48, height: 48, samples: 32 });

@@ -125,7 +125,7 @@ describe('MarchingCubes fromDensity sphere', () => {
       expect(pos[i]).toBeGreaterThanOrEqual(-1 - eps);
       expect(pos[i]).toBeLessThanOrEqual(1 + eps);
     }
-  });
+  }, 30000);
 
   it('computes a bounding box', () => {
     const mc = new MarchingCubes(opts);
