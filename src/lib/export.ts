@@ -22,8 +22,9 @@ import {
   type VreenManifest,
   type VreenWorldJson,
 } from './vreenPack';
+import { VREEN_PACKAGE_VERSION } from './vreenManifest';
 
-export const VREEN_PACKAGE_VERSION = '0.1.0' as const;
+export { VREEN_PACKAGE_VERSION };
 
 export interface VreenPackage {
   version: typeof VREEN_PACKAGE_VERSION;

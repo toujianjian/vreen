@@ -21,6 +21,18 @@ export const VREEN_FORMAT_VERSION = '0.2.1' as const;
 /** 旧版 (0.1.x) 兼容。 */
 export const VREEN_FORMAT_VERSION_LEGACY = '0.1.0' as const;
 
+/**
+ * 旧 0.1.x `.vreen` 包版本号。
+ *
+ * 定义在这里（而非常量曾经所在的 `export.ts` / `vreenPack.ts`）是为了打破
+ * `export.ts ↔ vreenPack.ts` 之间的循环引用：ES module 循环里一个模块的
+ * `const` 在对方初始化完成前被访问会抛 `ReferenceError: Cannot access
+ * 'VREEN_PACKAGE_VERSION' before initialization`（TDZ）。放到底层、且两边
+ * 都依赖但都不回引的 `vreenManifest.ts` 上，函数/类型的循环仍然安全，但不再
+ * 有跨循环的顶层 `const`。
+ */
+export const VREEN_PACKAGE_VERSION = '0.1.0' as const;
+
 /** 资产类型 → 子目录映射。 */
 export const VREEN_ASSET_DIRS = {
   model: 'assets',

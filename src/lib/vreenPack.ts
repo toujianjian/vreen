@@ -18,6 +18,7 @@ import {
   VreenFormatError,
   VREEN_FORMAT_VERSION,
   VREEN_FORMAT_VERSION_LEGACY,
+  VREEN_PACKAGE_VERSION,
   validateManifest,
   validateScene,
   VreenAssetEntry,
@@ -25,7 +26,7 @@ import {
   VreenScriptEntry,
   defaultAssetPath,
 } from './vreenManifest';
-import { applyVreenPackage, VreenPackage, VREEN_PACKAGE_VERSION } from './export';
+import { applyVreenPackage, type VreenPackage } from './export';
 
 export type { VreenScene, VreenWorldJson, VreenAssetEntry, VreenManifest, VreenScriptEntry } from './vreenManifest';
 export { VREEN_FORMAT_VERSION } from './vreenManifest';
