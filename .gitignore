@@ -51,10 +51,10 @@ out/
 *.deb
 *.rpm
 
-# Build resources (uncomment to track custom icons)
-# build/icon.icossssssssssswsaawq
-
-# build/icon.png
+# Build resources (track custom app icons; build/ dir itself stays ignored)
+!build/
+build/*
+!build/icon.ico
 
 # npm cache (when using mirror)
 .npmrc.local

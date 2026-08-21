@@ -50,16 +50,16 @@ body {
   background: rgba(10, 15, 26, 0.5);
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(0, 240, 255, 0.25);
-  border-radius: 4px;
+  background: rgba(0, 240, 255, 0.22);
+  border-radius: 999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 240, 255, 0.5);
+  background: rgba(0, 240, 255, 0.42);
 }
 
 /* Selection */
 ::selection {
-  background: rgba(0, 240, 255, 0.3);
+  background: rgba(0, 240, 255, 0.22);
   color: var(--color-haze);
 }
 
@@ -70,27 +70,29 @@ input:focus-visible,
 select:focus-visible {
   outline: 1px solid var(--color-neon-cyan);
   outline-offset: 2px;
+  border-radius: 6px;
 }
 
 /* Layered HUD components */
 @layer components {
   .hud-panel {
-    @apply relative bg-glass backdrop-blur-xl border border-neon-cyan/20;
+    @apply relative bg-glass backdrop-blur-xl;
+    border: 1px solid rgba(232, 244, 255, 0.09);
+    border-radius: 16px;
     /* overflow:hidden keeps the ::before gradient and the box-shadow
        strictly inside the panel. isolation:isolate creates a new
        stacking context so child z-indexes don't leak. */
     overflow: hidden;
     isolation: isolate;
     box-shadow:
-      inset 0 0 0 1px rgba(0, 240, 255, 0.06),
-      0 0 0 1px rgba(0, 0, 0, 0.6),
-      0 10px 30px rgba(0, 0, 0, 0.45);
+      0 0 0 1px rgba(0, 0, 0, 0.5),
+      0 12px 32px rgba(0, 0, 0, 0.45);
   }
   .hud-panel::before {
     content: '';
     position: absolute;
     inset: 0;
-    background: linear-gradient(135deg, rgba(0, 240, 255, 0.06) 0%, transparent 50%, rgba(255, 43, 214, 0.04) 100%);
+    background: linear-gradient(135deg, rgba(232, 244, 255, 0.025) 0%, transparent 55%);
     pointer-events: none;
     z-index: 0;
   }
@@ -100,66 +102,51 @@ select:focus-visible {
     z-index: 1;
   }
   .hud-panel-magenta {
-    @apply border-neon-magenta/30;
+    border-color: rgba(255, 43, 214, 0.16);
     box-shadow:
-      inset 0 0 0 1px rgba(255, 43, 214, 0.08),
-      0 0 0 1px rgba(0, 0, 0, 0.6),
-      0 10px 30px rgba(0, 0, 0, 0.45);
+      0 0 0 1px rgba(0, 0, 0, 0.5),
+      0 12px 32px rgba(0, 0, 0, 0.45);
   }
   .hud-clip {
-    clip-path: polygon(
-      12px 0,
-      100% 0,
-      100% calc(100% - 12px),
-      calc(100% - 12px) 100%,
-      0 100%,
-      0 12px
-    );
+    border-radius: 14px;
   }
   .hud-clip-sm {
-    clip-path: polygon(
-      6px 0,
-      100% 0,
-      100% calc(100% - 6px),
-      calc(100% - 6px) 100%,
-      0 100%,
-      0 6px
-    );
+    border-radius: 8px;
   }
   .hud-btn {
-    @apply relative inline-flex items-center justify-center gap-2 font-mono text-[11px] uppercase tracking-[0.18em] px-4 py-2 transition-all duration-200;
+    @apply relative inline-flex items-center justify-center gap-2 font-mono text-[11px] uppercase tracking-[0.16em] px-4 py-2 transition-all duration-200;
     color: var(--color-haze);
-    border: 1px solid rgba(0, 240, 255, 0.35);
-    background: linear-gradient(180deg, rgba(0, 240, 255, 0.04), rgba(0, 240, 255, 0));
-    clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+    border: 1px solid rgba(0, 240, 255, 0.28);
+    background: linear-gradient(180deg, rgba(0, 240, 255, 0.05), rgba(0, 240, 255, 0));
+    border-radius: 10px;
   }
   .hud-btn:hover {
     border-color: var(--color-neon-cyan);
     color: var(--color-neon-cyan);
-    box-shadow: 0 0 18px rgba(0, 240, 255, 0.4), inset 0 0 16px rgba(0, 240, 255, 0.08);
-    background: linear-gradient(180deg, rgba(0, 240, 255, 0.12), rgba(0, 240, 255, 0.04));
+    box-shadow: 0 0 16px rgba(0, 240, 255, 0.22);
+    background: linear-gradient(180deg, rgba(0, 240, 255, 0.12), rgba(0, 240, 255, 0.03));
   }
   .hud-btn-magenta {
-    border-color: rgba(255, 43, 214, 0.4);
-    background: linear-gradient(180deg, rgba(255, 43, 214, 0.04), rgba(255, 43, 214, 0));
+    border-color: rgba(255, 43, 214, 0.32);
+    background: linear-gradient(180deg, rgba(255, 43, 214, 0.05), rgba(255, 43, 214, 0));
   }
   .hud-btn-magenta:hover {
     border-color: var(--color-neon-magenta);
     color: var(--color-neon-magenta);
-    box-shadow: 0 0 18px rgba(255, 43, 214, 0.4), inset 0 0 16px rgba(255, 43, 214, 0.08);
+    box-shadow: 0 0 16px rgba(255, 43, 214, 0.25);
   }
   .hud-btn-amber {
-    border-color: rgba(255, 182, 72, 0.4);
-    background: linear-gradient(180deg, rgba(255, 182, 72, 0.04), rgba(255, 182, 72, 0));
+    border-color: rgba(255, 182, 72, 0.32);
+    background: linear-gradient(180deg, rgba(255, 182, 72, 0.05), rgba(255, 182, 72, 0));
   }
   .hud-btn-amber:hover {
     border-color: var(--color-neon-amber);
     color: var(--color-neon-amber);
-    box-shadow: 0 0 18px rgba(255, 182, 72, 0.4);
+    box-shadow: 0 0 14px rgba(255, 182, 72, 0.25);
   }
   .hud-btn-ghost {
-    border-color: rgba(90, 100, 120, 0.5);
-    background: transparent;
+    border-color: rgba(90, 100, 120, 0.45);
+    background: rgba(10, 15, 26, 0.25);
   }
   .hud-btn-ghost:hover {
     border-color: var(--color-haze);
@@ -172,28 +159,34 @@ select:focus-visible {
     cursor: not-allowed;
   }
   .hud-tag {
-    @apply inline-flex items-center font-mono text-[10px] uppercase tracking-[0.18em] px-1.5 py-0.5;
+    @apply inline-flex items-center font-mono text-[10px] uppercase tracking-[0.16em] px-2 py-0.5;
     color: var(--color-neon-cyan);
     background: rgba(0, 240, 255, 0.08);
-    border: 1px solid rgba(0, 240, 255, 0.3);
+    border: 1px solid rgba(0, 240, 255, 0.28);
+    border-radius: 999px;
   }
   .hud-tag-magenta {
     color: var(--color-neon-magenta);
     background: rgba(255, 43, 214, 0.08);
-    border-color: rgba(255, 43, 214, 0.3);
+    border-color: rgba(255, 43, 214, 0.28);
   }
   .hud-tag-amber {
     color: var(--color-neon-amber);
     background: rgba(255, 182, 72, 0.08);
-    border-color: rgba(255, 182, 72, 0.3);
+    border-color: rgba(255, 182, 72, 0.28);
   }
   .hud-tag-mist {
     color: var(--color-mist);
     background: rgba(90, 100, 120, 0.1);
-    border-color: rgba(90, 100, 120, 0.4);
+    border-color: rgba(90, 100, 120, 0.38);
   }
   .hud-input {
-    @apply w-full font-mono text-[12px] px-2 py-1.5 bg-space-800/60 text-haze border border-neon-cyan/20 focus:border-neon-cyan/70 transition-colors duration-200;
+    @apply w-full font-mono text-[12px] px-2.5 py-1.5 bg-space-800/60 text-haze border border-neon-cyan/20 focus:border-neon-cyan/70 transition-colors duration-200;
+    border-radius: 8px;
+    outline: none;
+  }
+  .hud-input:focus {
+    box-shadow: 0 0 0 3px rgba(0, 240, 255, 0.12);
   }
   /* Range slider — strip the browser's chrome so the track stays inside the panel. */
   .hud-range {
@@ -206,13 +199,13 @@ select:focus-visible {
     height: 4px;
     background: var(--color-space-700);
     border: 1px solid rgba(0, 240, 255, 0.15);
-    border-radius: 2px;
+    border-radius: 999px;
   }
   .hud-range::-moz-range-track {
     height: 4px;
     background: var(--color-space-700);
     border: 1px solid rgba(0, 240, 255, 0.15);
-    border-radius: 2px;
+    border-radius: 999px;
   }
   .hud-range::-webkit-slider-thumb {
     -webkit-appearance: none;
@@ -222,7 +215,7 @@ select:focus-visible {
     margin-top: -5px;
     background: var(--color-neon-cyan);
     border: 1px solid var(--color-space-900);
-    border-radius: 2px;
+    border-radius: 999px;
     box-shadow: 0 0 6px rgba(0, 240, 255, 0.5);
   }
   .hud-range::-moz-range-thumb {
@@ -230,7 +223,7 @@ select:focus-visible {
     height: 12px;
     background: var(--color-neon-cyan);
     border: 1px solid var(--color-space-900);
-    border-radius: 2px;
+    border-radius: 999px;
     box-shadow: 0 0 6px rgba(0, 240, 255, 0.5);
   }
   .hud-range:focus {
@@ -243,6 +236,7 @@ select:focus-visible {
     width: 32px;
     height: 32px;
     padding: 0;
+    border-radius: 8px;
     background-image:
       linear-gradient(45deg, #1a2030 25%, transparent 25%),
       linear-gradient(-45deg, #1a2030 25%, transparent 25%),
@@ -258,16 +252,10 @@ select:focus-visible {
   }
   .hud-divider {
     @apply h-px w-full;
-    background: linear-gradient(90deg, transparent, rgba(0, 240, 255, 0.4), transparent);
+    background: linear-gradient(90deg, transparent, rgba(232, 244, 255, 0.16), transparent);
   }
   .hud-corner {
-    position: absolute;
-    width: 12px;
-    height: 12px;
-    border-color: var(--color-neon-cyan);
-    /* Corner accents are pure decoration — they must NEVER swallow clicks. */
-    pointer-events: none;
-    z-index: 2;
+    display: none;
   }
   .hud-corner-tl {
     top: 0;
@@ -344,7 +332,7 @@ select:focus-visible {
     align-items: center;
     gap: 4px;
     padding: 4px 10px;
-    border-radius: 4px;
+    border-radius: 999px;
     background: rgba(0, 240, 255, 0.04);
     color: rgba(255, 255, 255, 0.7);
     font-size: 11px;

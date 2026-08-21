@@ -120,6 +120,55 @@ val v = VreenRegistry.resolveVersion(pkg, "^1.0.0")
 val url = VreenRegistry.resolveDownloadUrl(v, reg.baseUrl)
 ```
 
+---
+
+## Java API (`io.vreen.api.VreenApi`)
+
+The core below is idiomatic Kotlin (`object` facades + positional `data class`
+inputs). For Java callers the package ships a thin **static facade + builders**
+in `io.vreen.api.VreenApi` so you never touch Kotlin named/default arguments:
+
+```java
+import io.vreen.api.VreenApi;
+import io.vreen.core.AssetKind;
+import io.vreen.core.UnpackedVreen;
+import io.vreen.core.ValidationReport;
+
+byte[] model = /* your model bytes */;
+
+// Pack with a builder chain.
+byte[] pkg = VreenApi.pack(
+    VreenApi.newPack()
+        .name("demo")
+        .assetName("robot.glb")
+        .addAsset(
+            VreenApi.newAsset()
+                .kind(AssetKind.MODEL)
+                .originalName("robot.glb")
+                .data(model)
+                .build()));
+
+// Unpack + validate.
+UnpackedVreen    head   = VreenApi.unpack(pkg);
+ValidationReport report = VreenApi.validate(head);
+```
+
+Every milestone in the table above is reachable from Java:
+
+| Operation | Java call |
+|---|---|
+| Pack → bytes | `VreenApi.pack(PackInputBuilder)` / `packWithManifest(...)` |
+| Unpack | `VreenApi.unpack(byte[])` |
+| Validate | `VreenApi.validate(UnpackedVreen)` |
+| Diff | `VreenApi.diff(base, head)` |
+| Delta create / apply | `VreenApi.createDelta(...)` / `applyDelta(...)` / `applyThenPack(...)` |
+| Registry | `VreenApi.loadRegistry(String)` / `loadRegistryJson(String)` / `resolveVersion(...)` / `resolveDownloadUrl(...)` |
+| vmesh | `VreenApi.vmeshQuad(...)` / `vmeshToJson(...)` / `vmeshFromJson(...)` |
+| Hashing / paths | `VreenApi.sha256Hex(...)` / `hmacSha256Hex(...)` / `uniqueAssetPath(...)` |
+
+The compile-time guarantee that this surface really is callable from Java is
+enforced by `src/test/java/io/vreen/api/VreenApiJavaTest` (runs under `mvn test`).
+
 ### vmesh (alternative to GLB)
 
 ```kotlin

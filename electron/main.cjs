@@ -14,6 +14,14 @@ const fsSync = require('node:fs');
 const isDev = process.env.VREEN_DEV === '1' || !app.isPackaged;
 const DEV_URL = process.env.VREEN_DEV_URL || 'http://localhost:5173';
 
+// App icon — resolves to public/favicon.ico when it exists (dev / unpacked).
+// Packaged builds get their icon from electron-builder's buildResources.
+const APP_ICON = [
+  path.join(__dirname, '..', 'public', 'favicon.ico'),
+  path.join(process.resourcesPath || '', 'app', 'public', 'favicon.ico'),
+  path.join(process.resourcesPath || '', 'public', 'favicon.ico'),
+].find((p) => { try { return fsSync.existsSync(p); } catch (_) { return false; } });
+
 // ── Diagnostics: mirror console → file in userData (works on Windows where
 //    GUI subsystem discards stdout). Only writes once userData exists, i.e.
 //    after `app.whenReady()`. ─────────────────────────────────────────────
@@ -81,6 +89,7 @@ function createSplash() {
     width: 600, height: 440,
     frame: false, backgroundColor: '#05070d',
     resizable: false, show: true, alwaysOnTop: true,
+    ...(APP_ICON ? { icon: APP_ICON } : {}),
     webPreferences: { contextIsolation: true, nodeIntegration: false },
   });
   w.setMenuBarVisibility(false);
@@ -101,6 +110,7 @@ function createMainWindow() {
     title: 'VREEN — 3D Display System',
     show: false,
     autoHideMenuBar: true,
+    ...(APP_ICON ? { icon: APP_ICON } : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,

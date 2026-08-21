@@ -25,11 +25,11 @@ export function TopBar() {
     <header className="sticky top-0 z-50 h-14 backdrop-blur-xl bg-space-900/70 border-b border-neon-cyan/15">
       <div className="h-full max-w-[1600px] mx-auto px-5 flex items-center justify-between gap-4">
         <Link to="/" className="group flex items-center gap-3">
-          <div className="relative w-7 h-7 flex items-center justify-center">
-            <div className="absolute inset-0 border border-neon-cyan/60 rotate-45 group-hover:rotate-[55deg] transition-transform duration-500" />
-            <div className="absolute inset-1 border border-neon-magenta/40 rotate-45 group-hover:rotate-[35deg] transition-transform duration-500" />
-            <span className="relative font-display font-black text-[11px] text-neon-cyan text-glow-soft">V</span>
-          </div>
+          <img
+            src="/favicon.ico"
+            alt={t('app.name')}
+            className="w-7 h-7 object-contain drop-shadow-[0_0_6px_rgba(0,240,255,0.45)]"
+          />
           <div className="flex flex-col leading-none">
             <span className="font-display font-bold text-[13px] tracking-[0.32em] text-haze">{t('app.name')}</span>
             <span className="font-mono text-[9px] tracking-[0.24em] text-mist mt-0.5">{t('app.systemLabel')}</span>
