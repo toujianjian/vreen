@@ -225,7 +225,7 @@
     "topDraws": "Top draw call 贡献"
   },
   "statusbar": {
-    "streaming": "流式传输中",
+    "streaming": "就绪",
     "time": "时间",
     "env": "环境",
     "exp": "曝光"
