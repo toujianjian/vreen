@@ -7,12 +7,12 @@
   --color-space-900: #05070d;
   --color-space-800: #0a0f1a;
   --color-space-700: #101828;
-  --color-neon-cyan: #00f0ff;
+  --color-neon-cyan: #31c0cb;
   --color-neon-magenta: #ff2bd6;
   --color-neon-amber: #ffb648;
   --color-haze: #e8f4ff;
   --color-mist: #5a6478;
-  --grid-line: rgba(0, 240, 255, 0.06);
+  --grid-line: rgba(49, 192, 203, 0.06);
 }
 
 * {
@@ -50,16 +50,16 @@ body {
   background: rgba(10, 15, 26, 0.5);
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(0, 240, 255, 0.22);
+  background: rgba(49, 192, 203, 0.20);
   border-radius: 999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 240, 255, 0.42);
+  background: rgba(49, 192, 203, 0.38);
 }
 
 /* Selection */
 ::selection {
-  background: rgba(0, 240, 255, 0.22);
+  background: rgba(49, 192, 203, 0.22);
   color: var(--color-haze);
 }
 
@@ -116,33 +116,30 @@ select:focus-visible {
   .hud-btn {
     @apply relative inline-flex items-center justify-center gap-2 font-mono text-[11px] uppercase tracking-[0.16em] px-4 py-2 transition-all duration-200;
     color: var(--color-haze);
-    border: 1px solid rgba(0, 240, 255, 0.28);
-    background: linear-gradient(180deg, rgba(0, 240, 255, 0.05), rgba(0, 240, 255, 0));
+    border: 1px solid rgba(232, 244, 255, 0.18);
+    background: linear-gradient(180deg, rgba(232, 244, 255, 0.04), rgba(232, 244, 255, 0));
     border-radius: 10px;
   }
   .hud-btn:hover {
-    border-color: var(--color-neon-cyan);
+    border-color: rgba(232, 244, 255, 0.45);
     color: var(--color-neon-cyan);
-    box-shadow: 0 0 16px rgba(0, 240, 255, 0.22);
-    background: linear-gradient(180deg, rgba(0, 240, 255, 0.12), rgba(0, 240, 255, 0.03));
+    background: linear-gradient(180deg, rgba(39, 185, 196, 0.10), rgba(39, 185, 196, 0.02));
   }
   .hud-btn-magenta {
-    border-color: rgba(255, 43, 214, 0.32);
+    border-color: rgba(255, 43, 214, 0.28);
     background: linear-gradient(180deg, rgba(255, 43, 214, 0.05), rgba(255, 43, 214, 0));
   }
   .hud-btn-magenta:hover {
     border-color: var(--color-neon-magenta);
     color: var(--color-neon-magenta);
-    box-shadow: 0 0 16px rgba(255, 43, 214, 0.25);
   }
   .hud-btn-amber {
-    border-color: rgba(255, 182, 72, 0.32);
+    border-color: rgba(255, 182, 72, 0.28);
     background: linear-gradient(180deg, rgba(255, 182, 72, 0.05), rgba(255, 182, 72, 0));
   }
   .hud-btn-amber:hover {
     border-color: var(--color-neon-amber);
     color: var(--color-neon-amber);
-    box-shadow: 0 0 14px rgba(255, 182, 72, 0.25);
   }
   .hud-btn-ghost {
     border-color: rgba(90, 100, 120, 0.45);
@@ -151,7 +148,6 @@ select:focus-visible {
   .hud-btn-ghost:hover {
     border-color: var(--color-haze);
     color: var(--color-haze);
-    box-shadow: none;
   }
   .hud-btn:disabled,
   .hud-btn[aria-disabled='true'] {
@@ -161,24 +157,24 @@ select:focus-visible {
   .hud-tag {
     @apply inline-flex items-center font-mono text-[10px] uppercase tracking-[0.16em] px-2 py-0.5;
     color: var(--color-neon-cyan);
-    background: rgba(0, 240, 255, 0.08);
-    border: 1px solid rgba(0, 240, 255, 0.28);
+    background: rgba(39, 185, 196, 0.08);
+    border: 1px solid rgba(39, 185, 196, 0.25);
     border-radius: 999px;
   }
   .hud-tag-magenta {
     color: var(--color-neon-magenta);
-    background: rgba(255, 43, 214, 0.08);
-    border-color: rgba(255, 43, 214, 0.28);
+    background: rgba(255, 43, 214, 0.06);
+    border-color: rgba(255, 43, 214, 0.22);
   }
   .hud-tag-amber {
     color: var(--color-neon-amber);
-    background: rgba(255, 182, 72, 0.08);
-    border-color: rgba(255, 182, 72, 0.28);
+    background: rgba(255, 182, 72, 0.06);
+    border-color: rgba(255, 182, 72, 0.22);
   }
   .hud-tag-mist {
     color: var(--color-mist);
-    background: rgba(90, 100, 120, 0.1);
-    border-color: rgba(90, 100, 120, 0.38);
+    background: rgba(90, 100, 120, 0.08);
+    border-color: rgba(90, 100, 120, 0.3);
   }
   .hud-input {
     @apply w-full font-mono text-[12px] px-2.5 py-1.5 bg-space-800/60 text-haze border border-neon-cyan/20 focus:border-neon-cyan/70 transition-colors duration-200;
@@ -186,7 +182,7 @@ select:focus-visible {
     outline: none;
   }
   .hud-input:focus {
-    box-shadow: 0 0 0 3px rgba(0, 240, 255, 0.12);
+    box-shadow: 0 0 0 3px rgba(49, 192, 203, 0.14);
   }
   /* Range slider — strip the browser's chrome so the track stays inside the panel. */
   .hud-range {
@@ -198,13 +194,13 @@ select:focus-visible {
   .hud-range::-webkit-slider-runnable-track {
     height: 4px;
     background: var(--color-space-700);
-    border: 1px solid rgba(0, 240, 255, 0.15);
+    border: 1px solid rgba(49, 192, 203, 0.16);
     border-radius: 999px;
   }
   .hud-range::-moz-range-track {
     height: 4px;
     background: var(--color-space-700);
-    border: 1px solid rgba(0, 240, 255, 0.15);
+    border: 1px solid rgba(49, 192, 203, 0.16);
     border-radius: 999px;
   }
   .hud-range::-webkit-slider-thumb {
@@ -216,7 +212,7 @@ select:focus-visible {
     background: var(--color-neon-cyan);
     border: 1px solid var(--color-space-900);
     border-radius: 999px;
-    box-shadow: 0 0 6px rgba(0, 240, 255, 0.5);
+    box-shadow: 0 0 6px rgba(49, 192, 203, 0.35);
   }
   .hud-range::-moz-range-thumb {
     width: 12px;
@@ -224,7 +220,7 @@ select:focus-visible {
     background: var(--color-neon-cyan);
     border: 1px solid var(--color-space-900);
     border-radius: 999px;
-    box-shadow: 0 0 6px rgba(0, 240, 255, 0.5);
+    box-shadow: 0 0 6px rgba(49, 192, 203, 0.35);
   }
   .hud-range:focus {
     outline: none;
@@ -305,15 +301,15 @@ select:focus-visible {
 
 @layer utilities {
   .text-glow {
-    text-shadow: 0 0 8px currentColor, 0 0 16px currentColor;
+    text-shadow: none;
   }
   .text-glow-soft {
-    text-shadow: 0 0 4px currentColor;
+    text-shadow: none;
   }
   .bg-grid {
     background-image:
-      linear-gradient(rgba(0, 240, 255, 0.06) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(0, 240, 255, 0.06) 1px, transparent 1px);
+      linear-gradient(rgba(49, 192, 203, 0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(49, 192, 203, 0.05) 1px, transparent 1px);
     background-size: 32px 32px;
   }
 
@@ -333,20 +329,20 @@ select:focus-visible {
     gap: 4px;
     padding: 4px 10px;
     border-radius: 999px;
-    background: rgba(0, 240, 255, 0.04);
-    color: rgba(255, 255, 255, 0.7);
+    background: rgba(49, 192, 203, 0.05);
+    color: rgba(255, 255, 255, 0.72);
     font-size: 11px;
-    border: 1px solid rgba(0, 240, 255, 0.15);
+    border: 1px solid rgba(49, 192, 203, 0.18);
     cursor: pointer;
     transition: all 0.15s;
   }
   .vreen-inspector .tab-btn:hover {
-    background: rgba(0, 240, 255, 0.10);
+    background: rgba(49, 192, 203, 0.10);
   }
   .vreen-inspector .tab-btn.active {
-    background: rgba(0, 240, 255, 0.18);
-    color: rgba(0, 240, 255, 1);
-    border-color: rgba(0, 240, 255, 0.4);
+    background: rgba(49, 192, 203, 0.16);
+    color: rgba(49, 192, 203, 1);
+    border-color: rgba(49, 192, 203, 0.38);
   }
   .vreen-inspector .tab-body {
     font-size: 12px;
@@ -358,10 +354,10 @@ select:focus-visible {
     gap: 4px;
     padding: 4px 10px;
     border-radius: 4px;
-    background: rgba(0, 240, 255, 0.10);
-    color: rgba(0, 240, 255, 1);
+    background: rgba(49, 192, 203, 0.10);
+    color: rgba(49, 192, 203, 1);
     font-size: 11px;
-    border: 1px solid rgba(0, 240, 255, 0.3);
+    border: 1px solid rgba(49, 192, 203, 0.3);
     cursor: pointer;
     margin: 2px 4px 2px 0;
   }
@@ -372,7 +368,7 @@ select:focus-visible {
   }
   .vreen-inspector .run-btn {
     margin: 6px 0;
-    background: rgba(0, 240, 255, 0.20);
+    background: rgba(49, 192, 203, 0.18);
   }
   .vreen-inspector .verbose-toggle {
     display: inline-flex;
@@ -384,12 +380,12 @@ select:focus-visible {
   }
   .vreen-inspector .report {
     background: rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(0, 240, 255, 0.15);
+    border: 1px solid rgba(49, 192, 203, 0.18);
     border-radius: 4px;
     padding: 6px 8px;
     font-family: var(--font-mono, monospace);
     font-size: 11px;
-    color: rgba(0, 240, 255, 0.85);
+    color: rgba(49, 192, 203, 0.85);
     white-space: pre-wrap;
     max-height: 240px;
     overflow: auto;
@@ -400,7 +396,7 @@ select:focus-visible {
   .vreen-inspector .ok { color: rgba(0, 255, 128, 1); display: inline-flex; align-items: center; gap: 4px; }
   .vreen-inspector .busy { color: rgba(255, 255, 255, 0.5); }
   .vreen-inspector .row { display: flex; flex-wrap: wrap; align-items: center; }
-  .vreen-inspector .asset-list code { color: rgba(0, 240, 255, 0.7); }
+  .vreen-inspector .asset-list code { color: rgba(49, 192, 203, 0.75); }
   .vreen-inspector .asset-list .path { color: rgba(255, 255, 255, 0.5); }
   .vreen-inspector .asset-list .size { color: rgba(255, 255, 255, 0.4); }
   .vreen-inspector table { border-collapse: collapse; width: 100%; margin-top: 4px; font-size: 11px; }
@@ -409,8 +405,8 @@ select:focus-visible {
   .vreen-inspector tr.removed td { color: rgba(255, 120, 120, 0.9); text-decoration: line-through; }
   .vreen-inspector tr.modified td { color: rgba(255, 200, 80, 0.9); }
   .vreen-inspector tr.unchanged td { color: rgba(255, 255, 255, 0.4); }
-  .vreen-inspector fieldset { border: 1px solid rgba(0, 240, 255, 0.15); border-radius: 4px; padding: 6px 8px; margin: 6px 0; }
-  .vreen-inspector legend { color: rgba(0, 240, 255, 0.8); font-size: 11px; padding: 0 4px; }
+  .vreen-inspector fieldset { border: 1px solid rgba(49, 192, 203, 0.16); border-radius: 4px; padding: 6px 8px; margin: 6px 0; }
+  .vreen-inspector legend { color: rgba(49, 192, 203, 0.8); font-size: 11px; padding: 0 4px; }
   .mask-radial {
     -webkit-mask-image: radial-gradient(ellipse at center, black 50%, transparent 85%);
     mask-image: radial-gradient(ellipse at center, black 50%, transparent 85%);

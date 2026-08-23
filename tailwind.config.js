@@ -12,7 +12,7 @@ export default {
           600: '#1a2235',
         },
         neon: {
-          cyan: '#00f0ff',
+          cyan: '#31c0cb',
           magenta: '#ff2bd6',
           amber: '#ffb648',
         },
@@ -33,15 +33,15 @@ export default {
         sans: ['"Noto Sans SC"', 'system-ui', 'sans-serif'],
       },
       boxShadow: {
-        glow: '0 0 24px rgba(0, 240, 255, 0.45), 0 0 48px rgba(0, 240, 255, 0.18)',
-        'glow-magenta': '0 0 24px rgba(255, 43, 214, 0.45), 0 0 48px rgba(255, 43, 214, 0.18)',
-        'glow-amber': '0 0 18px rgba(255, 182, 72, 0.45)',
-        panel: 'inset 0 0 0 1px rgba(0, 240, 255, 0.18), 0 8px 24px rgba(0, 0, 0, 0.4)',
+        glow: '0 0 18px rgba(49, 192, 203, 0.30), 0 0 36px rgba(49, 192, 203, 0.12)',
+        'glow-magenta': '0 0 18px rgba(255, 43, 214, 0.30), 0 0 36px rgba(255, 43, 214, 0.12)',
+        'glow-amber': '0 0 14px rgba(255, 182, 72, 0.32)',
+        panel: 'inset 0 0 0 1px rgba(49, 192, 203, 0.12), 0 8px 24px rgba(0, 0, 0, 0.4)',
       },
       backgroundImage: {
-        'radial-fade': 'radial-gradient(ellipse at center, rgba(0,240,255,0.10) 0%, rgba(0,240,255,0) 65%)',
-        'grid-lines': 'linear-gradient(rgba(0,240,255,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(0,240,255,0.06) 1px, transparent 1px)',
-        'scanlines': 'repeating-linear-gradient(0deg, rgba(0,240,255,0.04) 0px, rgba(0,240,255,0.04) 1px, transparent 1px, transparent 3px)',
+        'radial-fade': 'radial-gradient(ellipse at center, rgba(49,192,203,0.07) 0%, rgba(49,192,203,0) 65%)',
+        'grid-lines': 'linear-gradient(rgba(49,192,203,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(49,192,203,0.05) 1px, transparent 1px)',
+        'scanlines': 'repeating-linear-gradient(0deg, rgba(49,192,203,0.03) 0px, rgba(49,192,203,0.03) 1px, transparent 1px, transparent 3px)',
       },
       backgroundSize: {
         'grid-32': '32px 32px',

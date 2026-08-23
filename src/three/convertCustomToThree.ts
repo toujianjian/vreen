@@ -18,14 +18,21 @@ import type { Material as CustomMaterial } from '@/engine/Core/Material';
 import { generateTextureSet } from './proceduralTextures';
 
 /** 检测是否为自研 engine 的 Object3D（非 three.js）。
- *  用于在 normalizeObject / convertCustomToThree 等场景中区分运行时。 */
+ *  用于在 normalizeObject / convertCustomToThree 等场景中区分运行时。
+ *
+ *  注意:自研 engine 的 Object3D 会刻意设置 `isObject3D = true` 来模仿 three.js,
+ *  所以**不能**用 `!isObject3D` 判断(旧实现正是因此判定反了,把自定义对象误当成
+ *  真实 three 对象,导致 `<primitive>` 挂载时 `Object3D.add` 调用不存在的
+ *  `dispatchEvent` 而崩溃)。可靠的特征是:对象有引擎的矩阵遍历方法
+ *  (`updateMatrixWorld` / `updateWorldMatrix`),但**不是**事件派发器(没有
+ *  `dispatchEvent`) —— 真实 three.js Object3D 都继承 EventDispatcher。 */
 export function isCustomObject3D(root: unknown): root is CustomObject3D {
   if (!root || typeof root !== 'object') return false;
   const obj = root as Record<string, unknown>;
   return (
     typeof obj.type === 'string' &&
-    obj.type !== 'Object3D' && // three.js Object3D 也有 type
-    !(obj as { isObject3D?: boolean }).isObject3D &&
+    obj.type !== 'Object3D' && // three.js 基类 Object3D 也有 type="Object3D"
+    (obj as { dispatchEvent?: unknown }).dispatchEvent === undefined &&
     typeof obj.updateMatrixWorld === 'function' &&
     typeof (obj as { updateWorldMatrix?: unknown }).updateWorldMatrix === 'function'
   );

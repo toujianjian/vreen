@@ -28,7 +28,7 @@ export function TopBar() {
           <img
             src="/favicon.ico"
             alt={t('app.name')}
-            className="w-7 h-7 object-contain drop-shadow-[0_0_6px_rgba(0,240,255,0.45)]"
+            className="w-7 h-7 object-contain"
           />
           <div className="flex flex-col leading-none">
             <span className="font-display font-bold text-[13px] tracking-[0.32em] text-haze">{t('app.name')}</span>
