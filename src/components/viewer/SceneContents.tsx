@@ -267,7 +267,12 @@ export function SceneContents() {
       } catch (err) {
         if (cancelled) return;
         const msg = err instanceof Error ? err.message : String(err);
+        log.error('load failed:', msg);
         setError(msg);
+        // 复位加载态:否则 isLoading 保持 true,右下角的"加载中 X%"
+        // 会永远卡死在出错前的位置(例如一直 5%)。
+        setIsLoading(false);
+        setLoadProgress(0);
       }
     })();
 
