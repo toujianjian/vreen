@@ -386,6 +386,11 @@ export function CustomStage({ onError }: { onError?: () => void }) {
       log.info(`scene ready: ${triCount} triangles across ${geoCount} meshes`);
 
       setLoading(false);
+      // 关键:setAssetSource 会把 viewerStore.isLoading 置 true、loadProgress 置 0.05。
+      // 这一条路径(CustomStage)只维护自己的本地 loading,从不复位 viewerStore,
+      // 否则右下角状态条会永远卡在"加载中 5%"(即使模型已渲染)。
+      useViewerStore.getState().setLoading(false);
+      useViewerStore.getState().setLoadProgress(1);
     };
 
     let mixer: AnimationMixer | null = null;
@@ -456,6 +461,7 @@ export function CustomStage({ onError }: { onError?: () => void }) {
         log.error(`load failed: ${msg}`, err);
         setError(`Custom renderer load failed: ${msg}`);
         setLoading(false);
+        useViewerStore.getState().setLoading(false);
       }
     })();
 
