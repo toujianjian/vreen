@@ -543,8 +543,11 @@ export function CustomStage({ onError }: { onError?: () => void }) {
         renderer.render(scene, camera);
       } catch (e) {
         log.error(`render() threw: ${(e as Error).message}`, e);
-        // 不再 schedule raf,避免刷屏
+        setError(`Render error: ${(e as Error).message}`);
+        useViewerStore.getState().setLoading(false);
+        // 自研渲染器失败 → 通知 Stage 回退到 r3f Canvas 路径
         stop = true;
+        onError?.();
         return;
       }
       profiler.markEnd('render', { gpu: { gl: renderer.gl } });
