@@ -64,6 +64,7 @@ interface ViewerState {
   setLoading: (loading: boolean) => void;
   setLoadProgress: (p: number) => void;
   setError: (msg: string | null) => void;
+  clearError: () => void;
   toggleWireframe: () => void;
   toggleGround: () => void;
   toggleAutoRotate: () => void;
@@ -117,7 +118,7 @@ export const useViewerStore = create<ViewerState>((set) => ({
   autoRotate: true,
   sceneTree: [],
   currentModelFile: null,
-  useCustomRenderer: true,
+  useCustomRenderer: true, // 必须自研引擎:Primary = self-built WebGL2 renderer
   physicsDemo: false,
   physicsDebug: true,
   profilerEnabled: false,
@@ -161,6 +162,7 @@ export const useViewerStore = create<ViewerState>((set) => ({
   setLoading: (loading) => set({ isLoading: loading }),
   setLoadProgress: (p) => set({ loadProgress: p }),
   setError: (msg) => set({ errorMessage: msg, isLoading: false }),
+  clearError: () => set({ errorMessage: null }),
   toggleWireframe: () => set((s) => ({ showWireframe: !s.showWireframe })),
   toggleGround: () => set((s) => ({ showGround: !s.showGround })),
   toggleAutoRotate: () => set((s) => ({ autoRotate: !s.autoRotate })),

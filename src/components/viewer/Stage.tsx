@@ -30,6 +30,29 @@ import {
   animateCameraToPreset,
 } from '@/three/camera';
 
+/** 任何加载/渲染错误都显示在 3D 视口顶部,避免"静默黑屏"。 */
+function ErrorMessageBanner() {
+  const errorMessage = useViewerStore((s) => s.errorMessage);
+  const clearError = useViewerStore((s) => s.clearError);
+  if (!errorMessage) return null;
+  return (
+    <div className="pointer-events-none absolute top-2 left-1/2 -translate-x-1/2 z-20 max-w-lg">
+      <div className="flex items-start gap-2 hud-panel border-neon-magenta/40 px-4 py-2.5">
+        <div>
+          <div className="hud-label text-neon-magenta">RENDER ERROR</div>
+          <div className="font-mono text-[10px] text-mist break-words">{errorMessage}</div>
+        </div>
+        <button
+          className="pointer-events-auto ml-2 text-mist hover:text-haze font-mono text-[10px]"
+          onClick={() => clearError()}
+        >
+          ✕
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function Stage() {
   const environment = useUIStore((s) => s.environment);
   const postFX = useUIStore((s) => s.postFX);
@@ -52,6 +75,7 @@ export function Stage() {
 
   return (
     <div className="relative w-full h-full">
+      <ErrorMessageBanner />
       {canUseCustom ? (
         <CustomStage onError={() => setCustomRendererFailed(true)} />
       ) : (

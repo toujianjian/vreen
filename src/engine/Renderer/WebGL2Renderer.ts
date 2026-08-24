@@ -63,6 +63,7 @@ interface SSAOResources {
 interface PostProcessingResources {
   mainFbo: WebGLFramebuffer;
   mainTexture: WebGLTexture;
+  mainDepth: WebGLRenderbuffer;
   bloomFbo1: WebGLFramebuffer;
   bloomTexture1: WebGLTexture;
   bloomFbo2: WebGLFramebuffer;
@@ -134,6 +135,9 @@ export class WebGL2Renderer implements Renderer {
   private _shadowResourcesSet: Set<ShadowResources> = new Set();
   private ssaoResources: SSAOResources | null = null;
   private postResources: PostProcessingResources | null = null;
+  /** 真机 GPU 上后处理任一 FBO 不完整时置真,render() 降级为直绘到屏幕,
+   *  避免"静默黑屏"(SwiftShader 宽容自动补全而严格驱动拒绝写入)。 */
+  private _postFboBroken = false;
 
   /** Reusable scratch objects — avoid per-frame allocation. */
   private _viewMatrix = new Matrix4();
@@ -296,12 +300,19 @@ export class WebGL2Renderer implements Renderer {
     }
 
     // 3. Main pass
-    if (this.postProcessingEnabled) {
+    if (this.postProcessingEnabled && !this._postFboBroken) {
       const postRes = this._getPostProcessingResources();
       this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, postRes.mainFbo);
       this.gl.viewport(0, 0, postRes.width, postRes.height);
       this.gl.clearColor(this.clearColor.r, this.clearColor.g, this.clearColor.b, this.clearColor.a);
       this.gl.clear(this.gl.COLOR_BUFFER_BIT | this.gl.DEPTH_BUFFER_BIT);
+    } else if (this.postProcessingEnabled && this._postFboBroken) {
+      // 后处理 FBO 在真机不完整 → 降级:直接画到默认 framebuffer(带默认 depth)
+      this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, null);
+      this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+      this.gl.disable(this.gl.BLEND);
+      this.gl.depthMask(true);
+      this.clear();
     } else {
       this.clear();
     }
@@ -339,7 +350,7 @@ export class WebGL2Renderer implements Renderer {
     });
 
     // 4. Post-processing pass
-    if (this.postProcessingEnabled) {
+    if (this.postProcessingEnabled && !this._postFboBroken) {
       this._renderPostProcessingPass(camera);
     }
 
@@ -427,6 +438,7 @@ export class WebGL2Renderer implements Renderer {
   private _renderShadowPass(scene: Scene, light: DirectionalLight): void {
     const gl = this.gl;
     const res = this._getShadowResources(light);
+    if (!res) return; // shadow FBO broken on this device → skip (model stays lit) 
 
     // Build light viewProjection: orthographic around scene center.
     const dir = light.direction;
@@ -517,7 +529,7 @@ export class WebGL2Renderer implements Renderer {
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
   }
 
-  private _getShadowResources(light: DirectionalLight): ShadowResources {
+  private _getShadowResources(light: DirectionalLight): ShadowResources | null {
     const gl = this.gl;
     const cached = this.shadowCache.get(light);
     if (cached && cached.size === light.shadow.mapSize) return cached;
@@ -547,6 +559,17 @@ export class WebGL2Renderer implements Renderer {
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, tex, 0);
     gl.drawBuffers([gl.NONE]);
     gl.readBuffer(gl.NONE);
+    // 真机防御:depth-only FBO 若不完整,阴影 draw 静默 no-op,PCF 采黑
+    // → lighting*shadow 塌缩 → 整片黑。检测到则禁用该光源阴影。
+    const fboStatus = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+    if (fboStatus !== gl.FRAMEBUFFER_COMPLETE) {
+      log.error(`shadow FBO INCOMPLETE 0x${fboStatus.toString(16)} — casting shadows disabled for this light`);
+      light.castShadow = false;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.deleteFramebuffer(fbo);
+      gl.deleteTexture(tex);
+      return null;
+    }
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
     const res: ShadowResources = {
@@ -1734,6 +1757,9 @@ export class WebGL2Renderer implements Renderer {
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+    // H6: helper(网格)/粒子等可能遗留 BLEND,合成前强制关闭避免叠加异常
+    gl.disable(gl.BLEND);
+    gl.depthMask(true);
 
     const finalProg = this.getProgram('final-compose', POST_VERT, FINAL_COMPOSE_FRAG);
     finalProg.use();
@@ -1761,6 +1787,7 @@ export class WebGL2Renderer implements Renderer {
     if (this.postResources) {
       gl.deleteFramebuffer(this.postResources.mainFbo);
       gl.deleteTexture(this.postResources.mainTexture);
+      if (this.postResources.mainDepth) gl.deleteRenderbuffer(this.postResources.mainDepth);
       gl.deleteFramebuffer(this.postResources.bloomFbo1);
       gl.deleteTexture(this.postResources.bloomTexture1);
       gl.deleteFramebuffer(this.postResources.bloomFbo2);
@@ -1790,6 +1817,17 @@ export class WebGL2Renderer implements Renderer {
 
     const mainTex = createTexture();
     const mainFbo = createFbo(mainTex);
+    // 关键修复:mainFbo 渲染 **3D 几何**(主 pass),DEPTH_TEST 全程开启
+    // (见 init 里的 gl.enable(gl.DEPTH_TEST))。没有 depth attachment 时,
+    // 真实 GPU 上往无深度附件的 FBO 做深度测试行为未定义 —— 实测会在
+    // 真机黑屏,而软件渲染(SwiftShader)碰巧放行。补上 depth renderbuffer。
+    const mainDepth = gl.createRenderbuffer()!;
+    gl.bindRenderbuffer(gl.RENDERBUFFER, mainDepth);
+    gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, targetW, targetH);
+    gl.bindRenderbuffer(gl.RENDERBUFFER, null);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, mainFbo);
+    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, mainDepth);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
     const bloomTex1 = createTexture();
     const bloomFbo1 = createFbo(bloomTex1);
@@ -1801,13 +1839,29 @@ export class WebGL2Renderer implements Renderer {
     const finalFbo = createFbo(finalTex);
 
     this.postResources = {
-      mainFbo, mainTexture: mainTex,
+      mainFbo, mainTexture: mainTex, mainDepth,
       bloomFbo1, bloomTexture1: bloomTex1,
       bloomFbo2, bloomTexture2: bloomTex2,
       finalFbo, finalTexture: finalTex,
       width: targetW,
       height: targetH,
     };
+
+    // 真机 GPU 防御:检查各 FBO 完整性。严格驱动(FBO 不完整)会静默拒绝写入
+    // → 黑屏;SwiftShader 宽容自动补全。不完整则降级直绘到屏幕。
+    const postFbos: Array<[string, WebGLFramebuffer]> = [
+      ['main', mainFbo], ['bloom1', bloomFbo1], ['bloom2', bloomFbo2], ['final', finalFbo],
+    ];
+    for (const [name, fbo] of postFbos) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+      const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+      if (status !== gl.FRAMEBUFFER_COMPLETE) {
+        log.error(`post FBO '${name}' INCOMPLETE 0x${status.toString(16)} — disabling post-processing (fallback to direct draw)`);
+        this._postFboBroken = true;
+        break;
+      }
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
     log.info(`Post-processing FBOs created: ${targetW}x${targetH}`);
     return this.postResources;
@@ -1845,6 +1899,7 @@ export class WebGL2Renderer implements Renderer {
     if (this.postResources) {
       gl.deleteFramebuffer(this.postResources.mainFbo);
       gl.deleteTexture(this.postResources.mainTexture);
+      if (this.postResources.mainDepth) gl.deleteRenderbuffer(this.postResources.mainDepth);
       gl.deleteFramebuffer(this.postResources.bloomFbo1);
       gl.deleteTexture(this.postResources.bloomTexture1);
       gl.deleteFramebuffer(this.postResources.bloomFbo2);
