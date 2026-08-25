@@ -2,7 +2,7 @@
 import { Suspense } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { Link } from 'react-router-dom';
-import { ArrowRight, Crosshair, Zap } from 'lucide-react';
+import { ArrowRight, Crosshair, Zap, Gamepad2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { BackgroundScene } from '@/components/three/BackgroundScene';
 import { HudPanel } from '@/components/hud/HudPanel';
@@ -53,6 +53,11 @@ export function Hero() {
             >
               <Zap className="w-3.5 h-3.5" />
               <span>{t('hero.launch')}</span>
+              <ArrowRight className="w-3.5 h-3.5 transition-transform duration-200 group-hover:translate-x-0.5" />
+            </Link>
+            <Link to="/ball-game" className="hud-btn hud-btn-ghost group">
+              <Gamepad2 className="w-3.5 h-3.5 text-neon-cyan" />
+              <span>3D 圆球 Demo</span>
               <ArrowRight className="w-3.5 h-3.5 transition-transform duration-200 group-hover:translate-x-0.5" />
             </Link>
             <a href="#gallery" className="hud-btn hud-btn-ghost">
