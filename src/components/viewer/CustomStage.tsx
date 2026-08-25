@@ -579,10 +579,55 @@ export function CustomStage({ onError }: { onError?: () => void }) {
     log.info(`starting render loop: assetSource=${JSON.stringify(assetSource)}`);
     raf = requestAnimationFrame(tick);
 
+    // ── 黑屏兜底检测 ────────────────────────────────────────────────
+    // 自研渲染器在部分真实 GPU 上会"静默黑屏"(无异常但读不出像素,如后处理
+    // FBO 不完整被单曲面驱动拒绝 / mipmap 不完整贴图采样纯黑)。headless 软件
+    // 渲染能出图无法复现,故在此主动探测:渲染 ~2.5s 后 readPixels 采样画布,
+    // 若绝大多数像素=背景色(说明没画出任何几何),就回调 onError → Stage 降级
+    // 到已验证可渲染的 r3f 路径,保证用户始终能看到模型而非黑屏。
+    const blackCheckTimer = window.setTimeout(() => {
+      try {
+        const gl = renderer.gl;
+        // 只读中央 1/4 区域,避免高宽 0 或采样开销
+        const w = Math.max(1, Math.floor(canvas.width / 4));
+        const h = Math.max(1, Math.floor(canvas.height / 4));
+        const px = new Uint8Array(w * h * 4);
+        // 绑定回默认 framebuffer 并强制 flush,确保读到已渲染结果
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.finish();
+        gl.readPixels(Math.floor(canvas.width / 2 - w / 2), Math.floor(canvas.height / 2 - h / 2), w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+        let nonBg = 0;
+        const bgR = Math.round(renderer.clearColor.r * 255);
+        const bgG = Math.round(renderer.clearColor.g * 255);
+        const bgB = Math.round(renderer.clearColor.b * 255);
+        for (let i = 0; i < px.length; i += 4) {
+          const dr = Math.abs(px[i] - bgR);
+          const dg = Math.abs(px[i + 1] - bgG);
+          const db = Math.abs(px[i + 2] - bgB);
+          // 与背景有显著差异即视为"画出了内容"(overdraw 计数 overflow)
+          if (dr > 12 || dg > 12 || db > 12) nonBg++;
+        }
+        const total = w * h;
+        const ratio = nonBg / total;
+        log.info(`black-screen probe: non-bg=${nonBg}/${total} (${(ratio * 100).toFixed(1)}%) clearColor=(${bgR},${bgG},${bgB})`);
+        if (ratio < 0.03 && !cancelled) {
+          log.error(`black-screen detected (${(ratio * 100).toFixed(1)}% non-bg) → falling back to r3f path`);
+          setError('Custom renderer produced a blank frame on this device — switched to three.js fallback.');
+          stop = true;
+          cancelAnimationFrame(raf);
+          onError?.();
+        }
+      } catch (e) {
+        // 采样失败(如扩展不可用)不算黑屏,不误报
+        log.warn(`black-screen probe failed (ignored): ${(e as Error).message}`);
+      }
+    }, 2500);
+
     return () => {
       cancelled = true;
       stop = true;
       cancelAnimationFrame(raf);
+      window.clearTimeout(blackCheckTimer);
       stageRef.current = {};
       ro.disconnect();
       controls.dispose();

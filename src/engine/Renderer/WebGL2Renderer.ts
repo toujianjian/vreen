@@ -190,6 +190,7 @@ export class WebGL2Renderer implements Renderer {
       depth: true,
       stencil: false,
       powerPreference: 'high-performance',
+      preserveDrawingBuffer: true,
     });
     if (!gl) {
       log.error('WebGL2 is not available in this browser/environment');

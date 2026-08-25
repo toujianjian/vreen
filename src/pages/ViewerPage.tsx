@@ -78,7 +78,7 @@ export function ViewerPage() {
     <div className="flex flex-col h-[calc(100vh-3.5rem)] -mt-0">
       <ViewerToolbar />
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-[280px_1fr_340px] min-h-0 bg-space-950">
-        <aside className="hidden lg:flex flex-col border-r border-neon-cyan/10 min-h-0">
+        <aside className="hidden lg:flex flex-col overflow-y-auto overscroll-contain min-h-0 border-r border-neon-cyan/10">
           <Outliner />
         </aside>
         <main className="relative min-h-0 flex flex-col">
@@ -108,7 +108,7 @@ export function ViewerPage() {
             </>
           )}
         </main>
-        <aside className="hidden lg:flex flex-col border-l border-neon-magenta/15 min-h-0">
+        <aside className="hidden lg:flex flex-col overflow-y-auto overscroll-contain min-h-0 border-l border-neon-magenta/15">
           <Inspector />
           <VreenInspectorPanel />
         </aside>
