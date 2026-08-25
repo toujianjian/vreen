@@ -15,13 +15,13 @@ VREEN runs both in the browser (as a static SPA) and on the desktop (as a portab
 
 ---
 
-## Demo Video · 宣传视频
+## Demo Video
 
-VREEN 的自研 WebGL2 渲染内核与 3D 构建能力演示 —— PBR/IBL 材质、GPU 蒙皮、ECS、物理仿真、程序化生成与后期特效在同一工具链内运行。
+A demo of VREEN's self-developed WebGL2 rendering kernel and 3D building capabilities — PBR/IBL materials, GPU skinning, ECS, physics simulation, procedural generation, and post-processing, all in one toolchain.
 
 <video src="./docs/media/vreen-demo.mp4" controls muted loop playsinline width="100%"></video>
 
-> 若视频无法在线播放，可直接查看源文件 [`docs/media/vreen-demo.mp4`](./docs/media/vreen-demo.mp4)。
+> If the video does not play inline, open the source file [`docs/media/vreen-demo.mp4`](./docs/media/vreen-demo.mp4) directly.
 
 ---
 
@@ -92,7 +92,7 @@ VREEN is positioned as a **lightweight Web game engine** — comparable in scope
 | **i18n** | First-class zh / en / ja / ko / es via i18next; all user-facing strings flow through translation keys. |
 | **Audio** | `AudioListener` / `Audio` / `PositionalAudio` / `AudioLoader` / `AudioAnalyser` + `SpatialAudio` (HRTF + distance attenuation + Doppler effect). |
 | **Terrain** | `TerrainGeometry` / `HeightmapGenerator` / `TerrainSplat` / `TerrainLayer` + `TerrainErosion` (thermal / hydraulic / wind erosion). |
-| **AI** | `NavMesh` + `PathFinder` (A*) + `SteeringBehavior` (Reynolds) + `Agent` + `BehaviorTree` / `BTNode` / `BTAction` / `BTComposite` / `BTCondition` / `BTDecorator` + `Blackboard` + `CrowdSystem` (large-scale crowd调度 + Reynolds separation) + `SpatialGrid` (2D XZ neighbourhood acceleration). |
+| **AI** | `NavMesh` + `PathFinder` (A*) + `SteeringBehavior` (Reynolds) + `Agent` + `BehaviorTree` / `BTNode` / `BTAction` / `BTComposite` / `BTCondition` / `BTDecorator` + `Blackboard` + `CrowdSystem` (large-scale crowd scheduling + Reynolds separation) + `SpatialGrid` (2D XZ neighbourhood acceleration). |
 | **Network** | `NetworkSync` (server-authoritative) + `Snapshot` (binary serialization) + `NetworkTransport` (WebSocket/Mock) + `NetworkLerp` (interpolation + prediction + reconciliation) + `StateSync` (snapshot interpolation + Delta compression, pure data layer) + `LagCompensation` (server rewind + hit-check, client interpolation) + `NetworkSession` (lobby / loading / playing / paused / ended state machine, host-authoritative, slot management). |
 | **Geometries** | 15 primitives (Box / Sphere / Cylinder / Cone / Torus / Plane / Circle / Ring / Capsule / TorusKnot / Lathe / Extrude / Shape / Wireframe / Edges) + `InstancedGeometry` (instanced geometry, modeled after three.js `InstancedBufferGeometry`). |
 | **PCG** | Procedural Content Generation — `NoiseGenerator` (Perlin / Simplex / Worley / FBM), `BuildingGenerator`, `BuildingGenerator2` (5 styles + 4 roofs + decorations + interior), `CityGenerator`, `DungeonGenerator` (BSP / random walk), `TreeGenerator` (L-system), `RoadGenerator` (Catmull-Rom spline + terrain follow + intersections), `CharacterGenerator` (5 races + 4 body types + clothing + simplified Skeleton). |
@@ -654,7 +654,7 @@ Atmospheric, weather, vegetation, and water systems for outdoor scenes.
 
 | Export | Purpose |
 |--------|---------|
-| `WeatherSystem` | Weather state machine (Clear / Cloudy / Rain / Snow / Storm) with transition interpolation and fog联动. |
+| `WeatherSystem` | Weather state machine (Clear / Cloudy / Rain / Snow / Storm) with transition interpolation and fog linkage. |
 | `SkySystem` | Procedural sky + day/night cycle — sun position computed from time-of-day, atmospheric scattering approximation, gradient sky dome. |
 | `SkyAtmosphere` | UE5-style physical atmospheric scattering — Rayleigh (molecular) + Mie (aerosol, Henyey-Greenstein) + Ozone (Chappuis absorption) + multi-scatter (Bruneton ψ) + ground albedo reflection. Ray-marched (32 main + 8 sun-transmittance sub-steps). Earth + Mars presets. |
 | `CloudSystem` | Procedural cloud layer — noise-texture animation with altitude coverage and movement direction. |
