@@ -15,6 +15,16 @@ VREEN runs both in the browser (as a static SPA) and on the desktop (as a portab
 
 ---
 
+## Demo Video · 宣传视频
+
+VREEN 的自研 WebGL2 渲染内核与 3D 构建能力演示 —— PBR/IBL 材质、GPU 蒙皮、ECS、物理仿真、程序化生成与后期特效在同一工具链内运行。
+
+<video src="./docs/media/vreen-demo.mp4" controls muted loop playsinline width="100%"></video>
+
+> 若视频无法在线播放，可直接查看源文件 [`docs/media/vreen-demo.mp4`](./docs/media/vreen-demo.mp4)。
+
+---
+
 ## Table of Contents
 
 1. [Overview](#overview)
