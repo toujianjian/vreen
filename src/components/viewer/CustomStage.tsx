@@ -1,6 +1,6 @@
 // CustomStage — 在 /viewer 中启用自研 WebGL2 引擎渲染模型。
-// 支持:upload(.glb) 与 preset(6 个程序化模型)。
-// 其他来源(obj/fbx 等)自动 fallback 到 three.js 路径。
+// 支持:upload(GLB / OBJ / FBX / STL / PLY,统一走引擎 ModelLoader) 与 preset。
+// 模型导入不再使用 three.js 加载器。
 
 import { useEffect, useRef, useState } from 'react';
 import { useViewerStore } from '@/stores/viewerStore';
@@ -9,6 +9,7 @@ import { useUIStore } from '@/stores/uiStore';
 import { uploadBridge } from '@/lib/uploadBridge';
 import { GENERATORS, GeneratorName } from '@/three/generators';
 import { getPresetById } from '@/lib/presets';
+import { detectFormat } from '@/lib/format';
 import { Mesh as EngineMesh } from '@/engine/Core/Mesh';
 import { PhysicsDebugRenderer } from '@/engine/Helpers/PhysicsDebugRenderer';
 import {
@@ -23,7 +24,8 @@ import {
   StandardMaterial,
   Vector3,
   WebGL2Renderer,
-  GLBLoader,
+  loadModelBytes,
+  type EngineModelFormat,
   AnimationMixer,
   Profiler,
   HDRLoader,
@@ -139,23 +141,23 @@ export function CustomStage({ onError }: { onError?: () => void }) {
     setError(null);
 
     let file: File | null = null;
+    let modelFormat: EngineModelFormat | null = null;
     if (assetSource.kind === 'upload') {
-      file = uploadBridge.consume();
+      // 所有格式都在这里由引擎 ModelLoader 解析，不再有格式分流。
+      // React StrictMode 开发模式会双挂载本 effect：挂载#1 消费了文件，
+      // 被丢弃的 cleanup 又把 renderer 拆掉，挂载#2 还需要同一个文件。
+      // recover() 把它找回来，而不是报"没有文件"（这正是 GLB 之前退化成
+      // 占位模型的直接原因）。
+      file = uploadBridge.consume() ?? uploadBridge.recover(assetSource.uploadId);
       if (!file) {
-        log.error('uploadBridge has no file (race condition with upload state)');
-        setError('No file handed off. Please re-upload the .glb file.');
+        log.error('uploadBridge has no file for this asset');
+        setError('No file handed off. Please re-upload the model file.');
         setLoading(false);
         return;
       }
+      modelFormat = detectFormat(file.name) ?? 'glb';
+      log.info(`importing "${file.name}" as ${modelFormat} via engine loaders (no three.js)`);
       log.debug(`file from bridge: ${file.name}, ${(file.size / 1024).toFixed(1)} KB, type=${file.type}`);
-
-      const ext = file.name.split('.').pop()?.toLowerCase();
-      if (ext !== 'glb') {
-        log.warn(`reject: extension is .${ext}, expected .glb`);
-        setError(`Custom renderer only supports .glb; got .${ext}. Switch back to three.js.`);
-        setLoading(false);
-        return;
-      }
     }
 
     // ── 引擎装配 ────────────────────────────────────────────────────
@@ -398,14 +400,13 @@ export function CustomStage({ onError }: { onError?: () => void }) {
 
     (async () => {
       try {
-        if (assetSource.kind === 'upload' && file) {
+        if (assetSource.kind === 'upload' && file && modelFormat) {
           const tFile0 = performance.now();
           const buf = await file.arrayBuffer();
           log.info(`file read in ${(performance.now() - tFile0).toFixed(1)}ms: ${(buf.byteLength / 1024).toFixed(1)} KB`);
-          const loader = new GLBLoader();
           const tLoad0 = performance.now();
-          const result = await loader.load(new Uint8Array(buf));
-          log.info(`GLB parsed in ${(performance.now() - tLoad0).toFixed(1)}ms ` +
+          const result = await loadModelBytes(buf, modelFormat);
+          log.info(`${modelFormat.toUpperCase()} parsed by the engine in ${(performance.now() - tLoad0).toFixed(1)}ms ` +
             `(${result.root.children.length} root groups, ${result.animations.length} clips)`);
           if (cancelled) {
             log.info('load cancelled before scene attach');
@@ -427,7 +428,7 @@ export function CustomStage({ onError }: { onError?: () => void }) {
               duration: clips[0].duration,
             });
           } else {
-            log.info('no animations in GLB — model is static');
+            log.info('no animations in this model — model is static');
           }
           attachRoot(result.root);
         } else if (assetSource.kind === 'preset') {

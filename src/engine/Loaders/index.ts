@@ -46,6 +46,8 @@ export {
 // 几何体加载器:STL / PLY
 export { STLLoader, parseSTL } from './STLLoader';
 export { PLYLoader, parsePLY } from './PLYLoader';
+// 统一的引擎侧模型导入入口(GLB/OBJ/FBX/STL/PLY,零 three.js 依赖)
+export { loadModelBytes, type EngineModel, type EngineModelFormat } from './ModelLoader';
 // Collada (.dae) 简化版 XML 加载器
 export { ColladaLoader, parseCollada, type ColladaParseResult } from './ColladaLoader';
 // MagicaVoxel (.vox) 二进制体素加载器

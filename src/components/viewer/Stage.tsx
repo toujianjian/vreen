@@ -68,10 +68,13 @@ export function Stage() {
     setCustomRendererFailed(false);
   }, [assetSource]);
 
+  // 所有资产(任意格式的上传 + 程序化 preset)都走自研 WebGL2 引擎。
+  // 模型导入统一由引擎 ModelLoader 完成，three.js 加载器已不在导入链上；
+  // 下面的 r3f Canvas 只作为自定义渲染器在本机失败时的最后兜底。
   const canUseCustom =
     useCustomRenderer &&
     !customRendererFailed &&
-    (assetSource?.kind === 'upload' || assetSource?.kind === 'preset');
+    assetSource !== null;
 
   return (
     <div className="relative w-full h-full">

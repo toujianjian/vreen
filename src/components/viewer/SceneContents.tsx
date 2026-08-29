@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import * as THREE from 'three';
 import { GENERATORS } from '@/three/generators';
-import { loadModel } from '@/three/loaders';
+import { loadModelBytes } from '@/engine/Loaders/ModelLoader';
 import {
   applyMaterialPatch,
   buildSceneTree,
@@ -109,7 +109,10 @@ export function SceneContents() {
           setLoadProgress(0.9);
         } else {
           // Uploaded asset — read the file from the bridge and parse it
-          const file = uploadBridge.consume();
+          // recover() covers the two cases where the bridge is already drained:
+          // StrictMode dev double-mount, and a fallback from CustomStage after
+          // it consumed a .glb and then failed.
+          const file = uploadBridge.consume() ?? uploadBridge.recover(assetSource.uploadId);
           if (!file) {
             // No file was handed off (e.g. page reload). Show a friendly placeholder.
             const label = t('scene.placeholderLabel', { name: assetSource.uploadId });
@@ -124,20 +127,18 @@ export function SceneContents() {
             // re-export a self-contained `.vreen` (state + model) bundle.
             setCurrentModelFile(file);
             const fmt = detectFormat(file.name) ?? 'glb';
-            const url = URL.createObjectURL(file);
-            try {
-              const result = await loadModel(url, fmt, (p) => setLoadProgress(0.3 + p * 0.6));
-              // The three.js loaders fetch & parse synchronously into geometry/materials;
-              // the blob URL is no longer needed once the load resolves.
-              URL.revokeObjectURL(url);
-              if (cancelled) return;
-              root = result.root;
-              assetName = file.name;
-              setLoadProgress(0.95);
-            } catch (err) {
-              URL.revokeObjectURL(url);
-              throw err;
+            // 引擎 ModelLoader 解析字节 → 引擎场景图；这条兜底路径由 r3f Canvas
+            // 渲染，所以再把引擎节点转成 three.js 对象。
+            const bytes = await file.arrayBuffer();
+            const result = await loadModelBytes(bytes, fmt);
+            if (cancelled) return;
+            root = convertToThreeObject(result.root);
+            assetName = file.name;
+            if (result.animations.length > 0) {
+              log.warn(`fallback path (three.js canvas) cannot play ${result.animations.length} animation clip(s) ` +
+                `from the ${fmt} model — the custom engine renderer failed on this device`);
             }
+            setLoadProgress(0.95);
           }
         }
 
